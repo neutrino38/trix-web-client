@@ -5,6 +5,8 @@
  * pour une future implémentation Tauri (trousseau OS).
  */
 
+import type { CallMedia } from "../sip/port.js";
+
 export interface AccountConfig {
   proxy: string; // wss://…
   domain: string;
@@ -14,10 +16,37 @@ export interface AccountConfig {
   ha1: string; // jamais le mot de passe
 }
 
+export type CallDirection = "outgoing" | "incoming";
+/**
+ * `missed` : entrant non répondu (phase 3) ; `canceled` : sortant abandonné
+ * avant réponse ; `dropped` : incident réseau (proxy perdu pendant l'appel).
+ */
+export type CallOutcome = "answered" | "missed" | "failed" | "canceled" | "dropped";
+
+/** Qui a mis fin à un appel établi. */
+export type CallEndedBy = "local" | "remote" | "network";
+
+/** Une ligne de l'historique d'appels, persistée chiffrée par compte. */
+export interface CallLogEntry {
+  target: string; // user@domaine, sans préfixe sip:
+  direction: CallDirection;
+  outcome: CallOutcome;
+  media: CallMedia;
+  startedAt: number; // epoch ms
+  connectedAt: number | null;
+  endedAt: number;
+  /** Renseigné pour les appels établis : qui a raccroché. */
+  endedBy: CallEndedBy | null;
+  reason: string | null; // cause SIP en cas d'échec
+}
+
 export interface SecureStore {
   load(): Promise<AccountConfig | null>;
   save(cfg: AccountConfig): Promise<void>;
   clear(): Promise<void>;
+  /** Historique du compte (clé `user@domaine`), chiffré comme la configuration. */
+  loadHistory(account: string): Promise<CallLogEntry[]>;
+  saveHistory(account: string, entries: CallLogEntry[]): Promise<void>;
 }
 
 const DB_NAME = "stauri-communicator";
@@ -77,17 +106,41 @@ interface VaultRecord {
   cipher: ArrayBuffer;
 }
 
+async function encryptPut(db: IDBDatabase, id: string, value: unknown): Promise<void> {
+  const key = await getOrCreateKey(db);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new TextEncoder().encode(JSON.stringify(value));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
+  const record: VaultRecord = { iv, cipher };
+  await idbPut(db, id, record);
+}
+
+/** null si l'enregistrement est absent, corrompu ou que la clé est perdue. */
+async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
+  try {
+    const record = (await idbGet(db, id)) as VaultRecord | undefined;
+    if (!record) return null;
+    const key = (await idbGet(db, KEY_ID)) as CryptoKey | undefined;
+    if (!key) return null;
+    const plain = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: new Uint8Array(record.iv) },
+      key,
+      record.cipher,
+    );
+    return JSON.parse(new TextDecoder().decode(plain)) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+const historyId = (account: string): string => `history:${account}`;
+
 export function createBrowserStore(): SecureStore {
   return {
     async save(cfg: AccountConfig): Promise<void> {
       const db = await openDb();
       try {
-        const key = await getOrCreateKey(db);
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const plain = new TextEncoder().encode(JSON.stringify(cfg));
-        const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain);
-        const record: VaultRecord = { iv, cipher };
-        await idbPut(db, DATA_ID, record);
+        await encryptPut(db, DATA_ID, cfg);
       } finally {
         db.close();
       }
@@ -96,20 +149,10 @@ export function createBrowserStore(): SecureStore {
     async load(): Promise<AccountConfig | null> {
       const db = await openDb();
       try {
-        const record = (await idbGet(db, DATA_ID)) as VaultRecord | undefined;
-        if (!record) return null;
-        const key = (await idbGet(db, KEY_ID)) as CryptoKey | undefined;
-        if (!key) return null;
-        const plain = await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv: new Uint8Array(record.iv) },
-          key,
-          record.cipher,
-        );
-        const cfg = JSON.parse(new TextDecoder().decode(plain)) as AccountConfig;
+        const cfg = (await decryptGet(db, DATA_ID)) as AccountConfig | null;
+        if (!cfg) return null;
         // comptes enregistrés avant l'ajout du champ : pas d'identifiant séparé
         return { ...cfg, authUsername: cfg.authUsername ?? null };
-      } catch {
-        return null; // enregistrement corrompu ou clé perdue : repartir sans compte
       } finally {
         db.close();
       }
@@ -119,6 +162,25 @@ export function createBrowserStore(): SecureStore {
       const db = await openDb();
       try {
         await idbDelete(db, DATA_ID);
+      } finally {
+        db.close();
+      }
+    },
+
+    async loadHistory(account: string): Promise<CallLogEntry[]> {
+      const db = await openDb();
+      try {
+        const entries = (await decryptGet(db, historyId(account))) as CallLogEntry[] | null;
+        return Array.isArray(entries) ? entries : [];
+      } finally {
+        db.close();
+      }
+    },
+
+    async saveHistory(account: string, entries: CallLogEntry[]): Promise<void> {
+      const db = await openDb();
+      try {
+        await encryptPut(db, historyId(account), entries);
       } finally {
         db.close();
       }

@@ -5,9 +5,14 @@ import { renderCall } from "./screens/call.js";
 
 let lastState: string | null = null;
 
-/** Re-rend l'écran courant à chaque changement d'état de la machine. */
+/**
+ * Re-rend l'écran courant à chaque changement d'état de la machine.
+ * En `in_call`, on re-rend aussi sur les stay() (miroir de la CallMachine
+ * mis à jour par child:msg) ; ailleurs on s'en abstient pour ne pas
+ * écraser les champs en cours de saisie.
+ */
 export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
-  if (phone.state === lastState) return;
+  if (phone.state === lastState && phone.state !== "in_call") return;
   lastState = phone.state;
   root.replaceChildren(pick(phone));
 }

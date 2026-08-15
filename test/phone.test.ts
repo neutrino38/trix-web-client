@@ -6,8 +6,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
-import type { AccountConfig, SecureStore } from "../src/storage/store.js";
-import type { SipEvent, SipPort } from "../src/sip/port.js";
+import type { AccountConfig, CallLogEntry, SecureStore } from "../src/storage/store.js";
+import type { CallMedia, CallSipEvent, SipEvent, SipPort } from "../src/sip/port.js";
 import { computeHa1 } from "../src/storage/ha1.js";
 
 const CFG: AccountConfig = {
@@ -19,8 +19,12 @@ const CFG: AccountConfig = {
   ha1: computeHa1("alice", "example.fr", "secret123"),
 };
 
-function fakeStore(initial: AccountConfig | null = null) {
-  const box = { saved: initial as AccountConfig | null };
+function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[] = []) {
+  const box = {
+    saved: initial as AccountConfig | null,
+    history: new Map<string, CallLogEntry[]>(),
+  };
+  if (initial) box.history.set(`${initial.username}@${initial.domain}`, history);
   const store: SecureStore = {
     load: async () => box.saved,
     save: async (cfg) => {
@@ -29,20 +33,49 @@ function fakeStore(initial: AccountConfig | null = null) {
     clear: async () => {
       box.saved = null;
     },
+    loadHistory: async (account) => box.history.get(account) ?? [],
+    saveHistory: async (account, entries) => {
+      box.history.set(account, entries);
+    },
   };
   return { store, box };
+}
+
+class FakeCallSession {
+  terminated = 0;
+  mic: boolean[] = [];
+  cam: boolean[] = [];
+  terminate(): void {
+    this.terminated++;
+  }
+  setMicMuted(m: boolean): void {
+    this.mic.push(m);
+  }
+  setCamMuted(m: boolean): void {
+    this.cam.push(m);
+  }
+  attachMedia(): void {}
 }
 
 class FakeSip implements SipPort {
   started: AccountConfig[] = [];
   stopped = 0;
+  calls: { target: string; media: CallMedia }[] = [];
+  session = new FakeCallSession();
   send: (ev: SipEvent) => void = () => {};
+  sendCall: (ev: CallSipEvent) => void = () => {};
   start(cfg: AccountConfig, send: (ev: SipEvent) => void) {
     this.started.push(cfg);
     this.send = send;
     return {
       stop: () => {
         this.stopped++;
+      },
+      call: (target: string, media: CallMedia, sendCall: (ev: CallSipEvent) => void) => {
+        this.calls.push({ target, media });
+        this.sendCall = sendCall;
+        this.session = new FakeCallSession();
+        return this.session;
       },
     };
   }
@@ -51,7 +84,11 @@ class FakeSip implements SipPort {
 async function bootTo(
   state: string,
   initial: AccountConfig | null,
-): Promise<{ phone: PhoneInstance; sip: FakeSip; box: { saved: AccountConfig | null } }> {
+): Promise<{
+  phone: PhoneInstance;
+  sip: FakeSip;
+  box: { saved: AccountConfig | null; history: Map<string, CallLogEntry[]> };
+}> {
   const { store, box } = fakeStore(initial);
   const sip = new FakeSip();
   const phone = PhoneMachine.start({ args: { store, sip } });
@@ -294,10 +331,10 @@ describe("PhoneMachine — enregistrement", () => {
     expect(phone.context.suspectFields).toBeNull();
   });
 
-  it("perte de connexion en ready : reg_failed", async () => {
+  it("perte de connexion en ready : boucle de reconnexion", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
     sip.send({ type: "sip:disconnected" });
-    expect(phone.state).toBe("reg_failed");
+    expect(phone.state).toBe("reconnecting");
   });
 
   it("re-REGISTER périodique : ready reste ready", async () => {
@@ -337,6 +374,250 @@ describe("PhoneMachine — enregistrement", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("PhoneMachine — appel sortant (in_call + CallMachine)", () => {
+  it("ui:call : spawn de la CallMachine, vue miroir en contexte", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    expect(phone.state).toBe("in_call");
+    expect(sip.calls).toEqual([{ target: "sip:bob@example.fr", media: { audio: true, video: false } }]);
+    expect(phone.context.call?.state).toBe("dialing");
+
+    sip.sendCall({ type: "sip:progress" });
+    expect(phone.context.call?.state).toBe("ringing");
+    sip.sendCall({ type: "sip:accepted" });
+    expect(phone.context.call?.state).toBe("connected");
+    expect(phone.context.call?.connectedAt).not.toBeNull();
+
+    sip.sendCall({ type: "sip:ended", cause: "BYE" });
+    expect(phone.state).toBe("ready");
+    expect(phone.context.call).toBeNull();
+    expect(phone.context.callError).toBeNull();
+  });
+
+  it("appel refusé : retour en ready avec callError (cause + code SIP)", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    expect(sip.calls[0]!.media.video).toBe(true);
+    sip.sendCall({ type: "sip:failed", cause: "Busy", statusCode: 486 });
+    expect(phone.state).toBe("ready");
+    expect(phone.context.callError).toBe("Busy (SIP 486)");
+  });
+
+  it("raccrocher : relayé à la CallMachine, session terminée, retour ready", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    phone.send({ type: "ui:hangup" });
+    expect(sip.session.terminated).toBe(1);
+    expect(phone.context.call?.state).toBe("hangingup");
+    sip.sendCall({ type: "sip:ended", cause: "BYE" });
+    expect(phone.state).toBe("ready");
+  });
+
+  it("mute micro/caméra : relayés, reflétés dans la vue", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    sip.sendCall({ type: "sip:accepted" });
+    phone.send({ type: "ui:muteMic" });
+    expect(sip.session.mic).toEqual([true]);
+    expect(phone.context.call?.micMuted).toBe(true);
+    phone.send({ type: "ui:muteMic" });
+    expect(sip.session.mic).toEqual([true, false]);
+    phone.send({ type: "ui:muteCam" });
+    expect(sip.session.cam).toEqual([true]);
+    expect(phone.context.call?.camMuted).toBe(true);
+  });
+
+  it("Paramètres/Déconnexion pendant l'appel : consommés sans effet", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:logout" });
+    phone.send({ type: "ui:backToSettings" });
+    expect(phone.state).toBe("in_call");
+    expect(sip.stopped).toBe(0);
+  });
+
+  it("enregistrement perdu pendant l'appel (403) : reg_failed à la fin de l'appel", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.send({ type: "sip:registrationFailed", cause: "Forbidden", statusCode: 403 });
+    expect(phone.state).toBe("in_call"); // l'appel continue
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.state).toBe("reg_failed");
+    expect(phone.context.lastErrorCode).toBe("SIP 403");
+  });
+});
+
+describe("PhoneMachine — historique d'appels", () => {
+  it("appel répondu : consigné avec durée et qui a raccroché (distant)", async () => {
+    const { phone, sip, box } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.state).toBe("ready");
+
+    const [entry] = phone.context.history;
+    expect(entry).toMatchObject({
+      target: "bob@example.fr",
+      direction: "outgoing",
+      outcome: "answered",
+      endedBy: "remote",
+      media: { audio: true, video: true },
+    });
+    expect(entry!.connectedAt).not.toBeNull();
+    await vi.waitFor(() =>
+      expect(box.history.get("alice@example.fr")).toHaveLength(1),
+    );
+  });
+
+  it("appel raccroché localement : endedBy = local", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    phone.send({ type: "ui:hangup" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "local" });
+    expect(phone.context.history[0]).toMatchObject({ outcome: "answered", endedBy: "local" });
+  });
+
+  it("appel refusé : outcome failed, pas de endedBy (jamais établi)", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:failed", cause: "Busy", statusCode: 486, originator: "remote" });
+    expect(phone.context.history[0]).toMatchObject({
+      outcome: "failed",
+      endedBy: null,
+      reason: "Busy (SIP 486)",
+      connectedAt: null,
+    });
+  });
+
+  it("ui:clearHistory vide la liste et la persistance", async () => {
+    const { phone, sip, box } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history).toHaveLength(1);
+    phone.send({ type: "ui:clearHistory" });
+    expect(phone.context.history).toHaveLength(0);
+    await vi.waitFor(() => expect(box.history.get("alice@example.fr")).toEqual([]));
+  });
+
+  it("l'historique du compte est rechargé au boot", async () => {
+    const past: CallLogEntry = {
+      target: "carol@example.fr",
+      direction: "outgoing",
+      outcome: "answered",
+      media: { audio: true, video: false },
+      startedAt: 1,
+      connectedAt: 2,
+      endedAt: 3,
+      endedBy: "local",
+      reason: null,
+    };
+    const { store } = fakeStore(CFG, [past]);
+    const phone = PhoneMachine.start({ args: { store, sip: new FakeSip() } });
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(phone.context.history).toEqual([past]);
+  });
+});
+
+describe("PhoneMachine — perte du proxy et veille", () => {
+  it("proxy perdu hors appel : reconnecting, appel impossible, retry auto après 10 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store } = fakeStore(CFG);
+      const sip = new FakeSip();
+      const phone = PhoneMachine.start({ args: { store, sip } });
+      await vi.advanceTimersByTimeAsync(0);
+      phone.send({ type: "ui:useAccount" });
+      sip.send({ type: "sip:connected" });
+      sip.send({ type: "sip:registered" });
+      expect(phone.state).toBe("ready");
+
+      sip.send({ type: "sip:disconnected" });
+      expect(phone.state).toBe("reconnecting");
+      expect(phone.context.lastErrorCode).toBe("WSS_LOST");
+
+      // appeler est refusé dans cet état (l'UI grise le bouton)
+      phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+      expect(phone.state).toBe("reconnecting");
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(phone.state).toBe("connecting");
+      expect(sip.started).toHaveLength(2);
+
+      // nouvel échec : on repart en boucle, pas en reg_failed
+      sip.send({ type: "sip:disconnected" });
+      expect(phone.state).toBe("reconnecting");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(phone.state).toBe("connecting");
+      sip.send({ type: "sip:connected" });
+      sip.send({ type: "sip:registered" });
+      expect(phone.state).toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("les paramètres restent accessibles pendant la reconnexion", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    sip.send({ type: "sip:disconnected" });
+    expect(phone.state).toBe("reconnecting");
+    phone.send({ type: "ui:backToSettings" });
+    expect(phone.state).toBe("reconfiguring");
+  });
+
+  it("identifiants refusés : reg_failed (pas de boucle de reconnexion inutile)", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    sip.send({ type: "sip:disconnected" });
+    expect(phone.state).toBe("reconnecting");
+    phone.send({ type: "ui:retry" });
+    sip.send({ type: "sip:connected" });
+    sip.send({ type: "sip:registrationFailed", cause: "Forbidden", statusCode: 403 });
+    expect(phone.state).toBe("reg_failed");
+  });
+
+  it("proxy perdu en appel : appel raccroché, consigné 'dropped', puis reconnexion", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.send({ type: "sip:disconnected" });
+    expect(sip.session.terminated).toBe(1); // raccrochage demandé à la CallMachine
+    sip.sendCall({ type: "sip:ended", cause: "Connection Error", originator: "system" });
+
+    expect(phone.state).toBe("reconnecting");
+    expect(phone.context.callError).toBe("Appel interrompu — connexion au proxy perdue");
+    expect(phone.context.history[0]).toMatchObject({
+      outcome: "dropped",
+      endedBy: "network",
+      reason: "Connexion au proxy perdue pendant l'appel",
+    });
+  });
+
+  it("veille hors appel : sleeping, UA arrêté ; réveil : réenregistrement", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "sys:sleep" });
+    expect(phone.state).toBe("sleeping");
+    expect(sip.stopped).toBe(1);
+    phone.send({ type: "sys:wake" });
+    expect(phone.state).toBe("connecting");
+    expect(sip.started).toHaveLength(2);
+  });
+
+  it("veille en appel : l'appel est raccroché puis on dort", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    phone.send({ type: "sys:sleep" });
+    expect(sip.session.terminated).toBe(1);
+    expect(phone.state).toBe("in_call"); // on attend la fin de la CallMachine
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "local" });
+    expect(phone.state).toBe("sleeping");
+    expect(phone.context.history[0]).toMatchObject({ outcome: "answered", endedBy: "local" });
   });
 });
 

@@ -15,7 +15,7 @@
   --shadow: 0 10px 30px rgba(62, 42, 86, 0.12);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --ground: #17101F;
     --panel: #241933;
     --panel-2: #2E2140;
@@ -26,6 +26,17 @@
     --border: #3A2B4E;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
   }
+}
+:root[data-theme="dark"] {
+  --ground: #17101F;
+  --panel: #241933;
+  --panel-2: #2E2140;
+  --ink: #EDE6F5;
+  --ink-soft: #B4A5C8;
+  --accent: #A97FD1;
+  --accent-soft: #6B4487;
+  --border: #3A2B4E;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -129,7 +140,7 @@ body {
 }
 .form-actions { display: flex; gap: 0.7rem; margin-top: 0.4rem; }
 
-/* ---------- écran d'appel (coque phase 1) ---------- */
+/* ---------- écran d'appel (phase 2 — mockup §3/3bis) ---------- */
 .screen-call { height: 100%; display: flex; flex-direction: column; }
 .topbar {
   display: flex; align-items: center; gap: 1rem;
@@ -137,8 +148,173 @@ body {
 }
 .topbar .logo { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; letter-spacing: 1px; }
 .topbar .spacer { flex: 1; }
-.stage {
-  flex: 1; background: var(--video-bg);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
-  color: #8f83a3; font-size: 0.95rem; text-align: center; padding: 1rem;
+.dot.live { background: var(--red); animation: pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+.iconbtn.toggled { background: var(--accent); border-color: var(--accent); color: #fff; }
+.inactive { opacity: 0.5; cursor: default; }
+
+.callbody { flex: 1; display: flex; min-height: 0; }
+.stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.video {
+  flex: 1; position: relative; background: var(--video-bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1rem; padding: 1rem; overflow: hidden;
 }
+.video .idle-msg { color: #8f83a3; font-size: 0.95rem; text-align: center; }
+.video video.remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.video video.selfview {
+  position: absolute; top: 10px; left: 10px;
+  height: 25%; aspect-ratio: 4/3; object-fit: cover;
+  background: #000; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.call-overlay {
+  position: relative; z-index: 1; text-align: center;
+  color: #cfc4de; font-size: 1rem; font-weight: 600;
+}
+.call-overlay .target { font-weight: 400; font-size: 0.85rem; color: #8f83a3; }
+.vumeters {
+  position: absolute; right: 10px; bottom: 12px;
+  display: flex; align-items: flex-end; gap: 5px; height: 90px;
+}
+.vumeters .bar {
+  width: 5px; border-radius: 3px;
+  background: linear-gradient(180deg, #ffa84c 0%, #e72d4f 100%);
+  transition: height 90ms linear;
+}
+
+/* commandes média, regroupées sous le bouton d'appel */
+.mediabar {
+  display: flex; align-items: center; justify-content: center; gap: 0.35rem;
+  background: var(--panel-2); border-radius: 999px; padding: 0.25rem;
+}
+.mediabar .iconbtn { background: transparent; border-color: transparent; }
+.mediabar .iconbtn:not(.inactive):hover { background: var(--panel); }
+.mediabar .iconbtn.toggled { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* audio entrant détecté : le haut-parleur s'allume (voir startVuMeters) */
+.mediabar .iconbtn.speaking {
+  color: var(--green);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 55%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mediabar .iconbtn { transition: box-shadow 90ms linear, color 90ms linear; }
+}
+.dtmf-slot { display: inline-flex; align-items: flex-start; }
+.phase-tag {
+  font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--accent-soft); color: var(--ink);
+  border-radius: 4px; padding: 0.1rem 0.35rem; margin-left: -0.75rem; margin-top: 2px;
+}
+
+.sidebar {
+  width: 300px; flex: none; border-left: 1px solid var(--border);
+  background: var(--panel); display: flex; flex-direction: column; min-height: 0;
+}
+.sidebar .call-controls { padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; }
+.call-error { font-size: 0.78rem; color: var(--red); }
+
+.btn.call { background: var(--green); border-color: var(--green); color: #fff; }
+.btn.hangup { background: var(--red); border-color: var(--red); color: #fff; }
+.splitbtn { display: flex; width: 100%; position: relative; }
+.splitbtn .btn.call { flex: 1; border-radius: 999px 0 0 999px; }
+.splitbtn .caret {
+  border-radius: 0 999px 999px 0; border-left: 1px solid rgba(255, 255, 255, 0.35);
+  background: var(--green); color: #fff; border-color: var(--green);
+  width: 44px; padding: 0;
+}
+.dropdown {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow); min-width: 180px; overflow: hidden;
+}
+.dropdown button {
+  font: inherit; display: flex; align-items: center; gap: 0.6rem;
+  width: 100%; padding: 0.6rem 0.9rem; border: none; background: none;
+  color: var(--ink); cursor: pointer; font-size: 0.9rem;
+}
+.dropdown button:hover { background: var(--panel-2); }
+.dropdown button.selected { font-weight: 600; }
+.dropdown .check { margin-left: auto; color: var(--green); }
+
+.time-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+/* rappel discret d'un micro coupé : la commande vit dans la barre du bas */
+.mute-flag {
+  font-size: 0.72rem; font-weight: 600; color: var(--red);
+  border: 1px solid var(--red); border-radius: 999px; padding: 0.1rem 0.5rem;
+}
+.chrono {
+  font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.05rem;
+  display: inline-flex; align-items: center; gap: 0.45rem; color: var(--ink);
+}
+
+/* historique d'appels */
+.calllog {
+  flex: 1; min-height: 0; border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; background: var(--ground);
+}
+.calllog-head {
+  flex: none; display: flex; align-items: center; justify-content: space-between;
+  padding: 0.5rem 1rem; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);
+}
+.linkbtn {
+  font: inherit; font-size: 0.72rem; font-weight: 600; text-transform: none;
+  border: none; background: none; color: var(--accent); cursor: pointer; padding: 0;
+}
+.calllog-list { flex: 1; min-height: 0; overflow-y: auto; }
+.calllog-empty { padding: 1rem; font-size: 0.8rem; color: var(--ink-soft); text-align: center; }
+.calllog-row {
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.15rem 0.45rem;
+  align-items: center; padding: 0.45rem 1rem; cursor: pointer;
+  border-bottom: 1px solid var(--border); font-size: 0.82rem;
+}
+.calllog-row:hover { background: var(--panel-2); }
+/* l'adresse est tronquée plutôt que coupée en plein mot (valeur complète en infobulle) */
+.calllog-row .who {
+  font-weight: 600; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.calllog-row .when { font-size: 0.72rem; color: var(--ink-soft); white-space: nowrap; }
+.calllog-row .detail {
+  grid-column: 2 / -1; font-size: 0.72rem; color: var(--ink-soft);
+}
+.calllog-row .icon { width: 16px; height: 16px; }
+.calllog-row .icon.dir { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.calllog-row.answered .icon.dir { color: var(--green); }
+.calllog-row.canceled .icon.dir { color: var(--ink-soft); }
+.calllog-row.failed .icon.dir,
+.calllog-row.missed .icon.dir { color: var(--red); }
+.calllog-row.dropped .icon.dir { color: var(--orange); }
+
+.chat-strip {
+  flex: none; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  padding: 0.6rem 1rem; font-size: 0.78rem; font-weight: 600;
+  color: var(--ink-soft); background: var(--panel-2); opacity: 0.75;
+}
+.chat-strip .icon { width: 18px; height: 18px; }
+
+.sidefoot {
+  flex: none; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.5rem 1rem; font-size: 0.8rem; color: var(--ink-soft);
+}
+.sidefoot .fontsize { display: flex; gap: 0.4rem; }
+.sidefoot .fontsize button {
+  font: inherit; font-weight: 700; font-size: 0.75rem;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+  color: var(--ink); width: 30px; height: 26px; cursor: pointer;
+}
+.switch {
+  font: inherit; display: inline-flex; align-items: center; gap: 0.4rem;
+  border: none; background: none; color: var(--ink-soft); cursor: pointer;
+}
+.switch .track {
+  width: 34px; height: 18px; border-radius: 999px; background: var(--accent);
+  position: relative;
+}
+.switch .track::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+}
+.icon { width: 20px; height: 20px; fill: currentColor; flex: none; }

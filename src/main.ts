@@ -1,8 +1,13 @@
 import "./ui/theme.css";
 import { PhoneMachine } from "./machines/phone.js";
+import { CallMachine } from "./machines/call.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
 import { renderApp } from "./ui/app.js";
+import { applyPrefs } from "./ui/prefs.js";
+import { watchSystemLifecycle } from "./ui/lifecycle.js";
+
+applyPrefs();
 
 const phone = PhoneMachine.start({
   debug: true,
@@ -16,11 +21,20 @@ const root = document.getElementById("app")!;
 phone.subscribe(() => renderApp(root, phone));
 renderApp(root, phone);
 
+// veille / réveil de la machine : raccrocher + désenregistrer, puis réenregistrer
+watchSystemLifecycle({
+  onSleep: () => phone.send({ type: "sys:sleep" }),
+  onWake: () => phone.send({ type: "sys:wake" }),
+});
+
 // Observabilité (docs/CONCEPTION.md §4.4) : depuis la console,
-// stauri.mermaid() exporte le diagramme, stauri.phone.log les transitions.
+// stauri.mermaid() exporte les diagrammes, stauri.phone.log les transitions.
 declare global {
   interface Window {
     stauri: { phone: typeof phone; mermaid: () => string };
   }
 }
-window.stauri = { phone, mermaid: () => PhoneMachine.toMermaid() };
+window.stauri = {
+  phone,
+  mermaid: () => `${PhoneMachine.toMermaid()}\n${CallMachine.toMermaid()}`,
+};
