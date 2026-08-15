@@ -173,12 +173,13 @@ body {
   color: #cfc4de; font-size: 1rem; font-weight: 600;
 }
 .call-overlay .target { font-weight: 400; font-size: 0.85rem; color: #8f83a3; }
+/* vu-mètres sur toute la hauteur de la scène vidéo */
 .vumeters {
-  position: absolute; right: 10px; bottom: 12px;
-  display: flex; align-items: flex-end; gap: 5px; height: 90px;
+  position: absolute; right: 10px; top: 10px; bottom: 10px;
+  display: flex; align-items: flex-end; gap: 5px;
 }
 .vumeters .bar {
-  width: 5px; border-radius: 3px;
+  width: 5px; border-radius: 3px; min-height: 4px;
   background: linear-gradient(180deg, #ffa84c 0%, #e72d4f 100%);
   transition: height 90ms linear;
 }
@@ -318,3 +319,75 @@ body {
   width: 14px; height: 14px; border-radius: 50%; background: #fff;
 }
 .icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
+
+/* ---------- écran d'appel — vue mobile ---------- */
+.screen-call.mobile { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+.mtopbar {
+  flex: none; display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 0.75rem; background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.mtopbar .spacer { flex: 1; }
+.mtopbar .dot { width: 11px; height: 11px; }
+.mtopbar .mstatus {
+  font-size: 0.8rem; font-weight: 600; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* --- hors appel : composer + historique --- */
+.mdial {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  gap: 0.7rem; padding: 0.9rem 0.75rem 0;
+}
+.mdial .field input { font-size: 1rem; padding: 0.7rem 0.9rem; }
+.mdial .splitbtn .btn.call { font-size: 0.95rem; }
+.mdial .calllog { border-top: 1px solid var(--border); margin: 0 -0.75rem; }
+.mdial .error-actions { flex-direction: row; }
+.mdial .idle-msg { font-size: 0.85rem; color: var(--ink-soft); text-align: center; }
+
+/* --- en appel : vidéo plein cadre + contrôles en surimpression --- */
+.mvideo {
+  flex: 1; min-height: 0; position: relative; background: var(--video-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.mvideo video.remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.mvideo video.selfview {
+  position: absolute; top: 10px; right: 10px;
+  height: 22%; aspect-ratio: 3/4; object-fit: cover;
+  background: #000; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.mvideo .vumeters { top: 10px; bottom: 84px; right: 8px; }
+.mchrono {
+  position: absolute; top: 10px; left: 10px;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.85rem;
+  color: #fff; background: rgba(0, 0, 0, 0.45);
+  border-radius: 999px; padding: 0.2rem 0.6rem;
+}
+.mcontrols {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  padding: 0.7rem calc(0.7rem + env(safe-area-inset-right)) calc(0.9rem + env(safe-area-inset-bottom))
+           calc(0.7rem + env(safe-area-inset-left));
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55) 45%);
+}
+.mcontrols .iconbtn {
+  width: 46px; height: 46px;
+  background: rgba(255, 255, 255, 0.14); border-color: transparent; color: #fff;
+}
+.mcontrols .iconbtn.toggled { background: var(--accent); border-color: var(--accent); }
+.mcontrols .iconbtn.inactive { opacity: 0.4; }
+.mcontrols .iconbtn.speaking {
+  color: #7dffa0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 65%, transparent);
+}
+/* raccrocher : bouton rond rouge, à droite des contrôles média */
+.hangup-round {
+  width: 56px; height: 56px; border-radius: 50%; margin-left: 0.4rem;
+  border: none; background: var(--red); color: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+}
+.hangup-round:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.hangup-round .icon { width: 26px; height: 26px; }
+.hangup-round.inactive { opacity: 0.5; cursor: default; }

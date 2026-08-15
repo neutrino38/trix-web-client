@@ -1,25 +1,30 @@
 /**
- * Écran d'appel — phase 2 : appel sortant audio/vidéo.
- * Layout du mockup validé (docs/mockups/mockup.html, écrans 3 et 3bis) :
- * barre d'en-tête, scène vidéo + barre inférieure, sidebar (adresse,
- * Appeler/Raccrocher, chrono, tchat verrouillé ph. 4, préférences).
+ * Briques communes aux deux vues de l'écran d'appel (bureau et mobile) :
+ * libellés, icônes, registre des modes d'appel, rendu de l'historique,
+ * et surtout `wireCallScreen` — le câblage des événements.
  *
- * L'UI ne parle qu'à PhoneMachine : pendant un appel elle rend le miroir
- * `context.call` (CallView) publié par la CallMachine, et ses commandes
- * (raccrocher, mutes) transitent par le parent. Seul `attachMedia` de la
- * CallSession touche aux flux WebRTC.
+ * Le câblage est piloté par les attributs `data-act` / `data-ref` et
+ * tolère l'absence de chaque élément : les deux templates peuvent donc
+ * omettre ce qu'ils veulent sans qu'aucun `if (mobile)` n'apparaisse ici
+ * ni là-bas. C'est ce qui permet de garder **une seule** PhoneMachine.
  */
 
-import type { PhoneInstance } from "../../machines/phone.js";
-import type { CallView } from "../../machines/events.js";
-import type { CallLogEntry } from "../../storage/store.js";
-import { normalizeTarget } from "../../sip/uri.js";
-import { el, esc } from "../el.js";
-import { logoSvg } from "../logo.js";
-import { bumpFont, currentTheme, getCallModeId, setCallModeId, toggleTheme } from "../prefs.js";
-import type { CallMedia } from "../../sip/port.js";
+import type { PhoneInstance } from "../../../machines/phone.js";
+import type { CallView } from "../../../machines/events.js";
+import type { CallLogEntry } from "../../../storage/store.js";
+import type { CallMedia } from "../../../sip/port.js";
+import type { AccountConfig } from "../../../storage/store.js";
+import { normalizeTarget } from "../../../sip/uri.js";
+import { el, esc } from "../../el.js";
+import {
+  bumpFont,
+  currentTheme,
+  getCallModeId,
+  setCallModeId,
+  toggleTheme,
+} from "../../prefs.js";
 
-const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" }> = {
+export const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" }> = {
   connecting: { label: "Connexion…", cls: "warn" },
   registering: { label: "Enregistrement…", cls: "warn" },
   ready: { label: "Enregistré", cls: "ok" },
@@ -30,14 +35,14 @@ const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" }> = {
   unregistering: { label: "Déconnexion…", cls: "warn" },
 };
 
-const CALL_LABEL: Record<CallView["state"], string> = {
+export const CALL_LABEL: Record<CallView["state"], string> = {
   dialing: "Appel en cours",
   ringing: "Sonnerie",
   connected: "En communication",
   hangingup: "Fin d'appel",
 };
 
-const ICONS = {
+export const ICONS = {
   settings: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>`,
   logout: `<svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>`,
   cam: `<svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>`,
@@ -82,18 +87,29 @@ const CALL_MODES: CallModeDef[] = [
   },
 ];
 
-function currentMode(): CallModeDef {
+export function currentMode(): CallModeDef {
   return CALL_MODES.find((m) => m.id === getCallModeId()) ?? CALL_MODES[0]!;
 }
 
 // État UI pur, survivant aux re-rendus (l'écran est reconstruit à chaque
-// notification de la machine pendant un appel).
+// notification de la machine pendant un appel) et au changement de format.
 let draftTarget = "";
 let speakerMuted = false;
 let chronoTimer: ReturnType<typeof setInterval> | null = null;
 
+export const draft = (): string => draftTarget;
+export const isSpeakerMuted = (): boolean => speakerMuted;
+
+/** À appeler en tête de chaque rendu : l'ancien nœud disparaît avec son timer. */
+export function stopChrono(): void {
+  if (chronoTimer !== null) {
+    clearInterval(chronoTimer);
+    chronoTimer = null;
+  }
+}
+
 /** user@domaine sans le préfixe sip:, pour l'affichage. */
-function displayTarget(target: string): string {
+export function displayTarget(target: string): string {
   return target.replace(/^sips?:/i, "");
 }
 
@@ -126,10 +142,11 @@ const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
 
 function fmtWhen(ts: number): string {
   const d = new Date(ts);
-  const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
+  const sameDay = d.toDateString() === new Date().toDateString();
   const time = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  return sameDay ? time : `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${time}`;
+  return sameDay
+    ? time
+    : `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${time}`;
 }
 
 function fmtDuration(entry: CallLogEntry): string {
@@ -139,7 +156,7 @@ function fmtDuration(entry: CallLogEntry): string {
   return m > 0 ? `${m} min ${String(s % 60).padStart(2, "0")} s` : `${s} s`;
 }
 
-function historyRow(entry: CallLogEntry): string {
+export function historyRow(entry: CallLogEntry): string {
   const detail =
     entry.connectedAt !== null
       ? `${fmtDuration(entry)}${entry.endedBy ? ` — ${ENDED_BY_LABEL[entry.endedBy]}` : ""}`
@@ -154,219 +171,40 @@ function historyRow(entry: CallLogEntry): string {
   </div>`;
 }
 
-function fmtChrono(startedAt: number): string {
+export function fmtChrono(startedAt: number): string {
   const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   const p = (n: number): string => String(n).padStart(2, "0");
   return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
 }
 
-export function renderCall(phone: PhoneInstance): HTMLElement {
-  const cfg = phone.context.config;
-  const view = phone.state === "in_call" ? phone.context.call : null;
-  const status = STATUS[phone.state] ?? { label: phone.state, cls: "warn" as const };
-  const identity = cfg ? ` — ${esc(cfg.username)}@${esc(cfg.domain)}` : "";
-  const failed = phone.state === "reg_failed";
-  const ready = phone.state === "ready";
-  const reconnecting = phone.state === "reconnecting";
-  const sleeping = phone.state === "sleeping";
-  const connected = view?.state === "connected";
-  const err = phone.context.lastError;
-  const errCode = phone.context.lastErrorCode;
-  const callError = phone.context.callError;
-  const history = phone.context.history;
+// ---------------------------------------------------------------------------
+// Câblage commun
+// ---------------------------------------------------------------------------
 
-  if (chronoTimer !== null) {
-    clearInterval(chronoTimer);
-    chronoTimer = null;
-  }
+export interface CallScreenCtx {
+  phone: PhoneInstance;
+  view: CallView | null;
+  ready: boolean;
+  cfg: AccountConfig | null;
+}
 
-  const node = el(`
-    <div class="screen-call">
-      <div class="topbar">
-        <span class="logo">${logoSvg(26, false)}<span>STAURI</span></span>
-        <span class="pill"><span class="dot ${status.cls}"></span>
-          ${status.label}${ready ? identity : ""}</span>
-        ${
-          view
-            ? `<span class="pill"><span class="dot live"></span>
-                 ${CALL_LABEL[view.state]} — ${esc(displayTarget(view.target))}</span>`
-            : ""
-        }
-        <span class="spacer"></span>
-        <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
-                title="Paramètres${view ? " (indisponible en appel)" : ""}" aria-label="Paramètres">
-          ${ICONS.settings}
-        </button>
-        <button class="iconbtn ${view ? "inactive" : ""}" data-act="logout" ${view ? "disabled" : ""}
-                title="Se déconnecter${view ? " (indisponible en appel)" : ""}" aria-label="Se déconnecter">
-          ${ICONS.logout}
-        </button>
-      </div>
-      <div class="callbody">
-        <div class="stage">
-          <div class="video" data-ref="videozone">
-            ${
-              view
-                ? `<video class="remote" data-ref="remote" autoplay playsinline></video>
-                   ${
-                     view.media.video && !view.selfViewHidden
-                       ? `<video class="selfview" data-ref="self" autoplay playsinline muted></video>`
-                       : ""
-                   }
-                   ${
-                     connected
-                       ? `<div class="vumeters" aria-hidden="true">
-                            <span class="bar" data-ref="vu-remote" style="height:4%"></span>
-                            <span class="bar" data-ref="vu-local" style="height:4%"></span>
-                          </div>`
-                       : `<div class="call-overlay">${CALL_LABEL[view.state]}…<br>
-                            <span class="target">${esc(displayTarget(view.target))}</span></div>`
-                   }`
-                : failed
-                  ? `${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
-                     ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
-                     <div class="error-actions">
-                       <button class="btn primary" data-act="fix-settings">Corriger les paramètres</button>
-                       <button class="btn" data-act="retry">Réessayer</button>
-                     </div>`
-                  : reconnecting
-                    ? `${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
-                       ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
-                       <span class="idle-msg">Nouvelle tentative de connexion dans 10 s…</span>
-                       <div class="error-actions">
-                         <button class="btn primary" data-act="retry">Réessayer maintenant</button>
-                         <button class="btn" data-act="fix-settings">Paramètres</button>
-                       </div>`
-                    : sleeping
-                      ? `<span class="idle-msg">Veille — l'enregistrement reprendra au réveil</span>`
-                      : `<span class="idle-msg">${
-                          ready
-                            ? "Aucun appel en cours — saisissez une adresse SIP"
-                            : esc(status.label)
-                        }</span>`
-            }
-          </div>
-        </div>
-        <div class="sidebar">
-          <div class="call-controls">
-            <div class="field">
-              <label for="f-target">Adresse SIP</label>
-              <input id="f-target" data-ref="target" ${view ? "disabled" : ""}
-                     value="${view ? esc(displayTarget(view.target)) : esc(draftTarget)}">
-              ${cfg && !view ? `<span class="hint">Sans « @ » : appellera &lt;adresse&gt;@${esc(cfg.domain)}</span>` : ""}
-              ${callError && !view ? `<span class="call-error">${esc(callError)}</span>` : ""}
-            </div>
-            ${
-              view
-                ? `<button class="btn hangup ${view.state === "hangingup" ? "inactive" : ""}"
-                           data-act="hangup" ${view.state === "hangingup" ? "disabled" : ""}>
-                     ${ICONS.hangup} Raccrocher
-                   </button>`
-                : `<div class="splitbtn" data-ref="splitbtn">
-                     <button class="btn call" data-act="call" ${ready ? "" : "disabled"}>
-                       ${currentMode().icon} ${currentMode().buttonLabel}
-                     </button>
-                     <button class="btn caret" data-act="call-menu" ${ready ? "" : "disabled"}
-                             aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
-                     <div class="dropdown" data-ref="modemenu" hidden></div>
-                   </div>`
-            }
-            <div class="mediabar">
-              <button class="iconbtn ${connected ? (view.micMuted ? "toggled" : "") : "inactive"}"
-                      data-act="muteMic" ${connected ? "" : "disabled"}
-                      title="${view?.micMuted ? "Rétablir le micro" : "Couper le micro"}"
-                      aria-label="Couper le micro" aria-pressed="${view?.micMuted ?? false}">
-                ${ICONS.mic}
-              </button>
-              <button class="iconbtn ${connected && view.media.video ? (view.camMuted ? "toggled" : "") : "inactive"}"
-                      data-act="muteCam" ${connected && view?.media.video ? "" : "disabled"}
-                      title="${view?.camMuted ? "Rétablir la caméra" : "Couper la caméra"}"
-                      aria-label="Couper la caméra" aria-pressed="${view?.camMuted ?? false}">
-                ${ICONS.cam}
-              </button>
-              <button class="iconbtn ${connected && view.media.video ? (view.selfViewHidden ? "toggled" : "") : "inactive"}"
-                      data-act="selfview" ${connected && view?.media.video ? "" : "disabled"}
-                      title="${view?.selfViewHidden ? "Afficher le self-view" : "Masquer le self-view"}"
-                      aria-label="Masquer le self-view" aria-pressed="${view?.selfViewHidden ?? false}">
-                ${ICONS.selfview}
-              </button>
-              <button class="iconbtn ${connected ? (speakerMuted ? "toggled" : "") : "inactive"}"
-                      data-act="speaker" ${connected ? "" : "disabled"}
-                      title="${speakerMuted ? "Rétablir le son" : "Couper le son"}"
-                      aria-label="Haut-parleur" aria-pressed="${speakerMuted}">
-                ${ICONS.speaker}
-              </button>
-              <span class="dtmf-slot">
-                <button class="iconbtn inactive" disabled title="Clavier DTMF (phase 4)" aria-label="Clavier DTMF">
-                  ${ICONS.dtmf}
-                </button><span class="phase-tag">ph. 4</span>
-              </span>
-            </div>
-            <div class="time-row">
-              <span class="chrono" ${connected ? "" : 'style="opacity:.45"'}>
-                ${connected ? ICONS.clock : ""}<span data-ref="chrono">${
-                  connected && view.connectedAt !== null ? fmtChrono(view.connectedAt) : "00:00:00"
-                }</span>
-              </span>
-              ${
-                view?.micMuted
-                  ? `<span class="mute-flag">Micro coupé</span>`
-                  : ""
-              }
-            </div>
-          </div>
-          <div class="calllog">
-            <div class="calllog-head">
-              <span>Historique</span>
-              ${history.length ? `<button class="linkbtn" data-act="clear-history">Effacer</button>` : ""}
-            </div>
-            <div class="calllog-list">
-              ${
-                history.length
-                  ? history.map(historyRow).join("")
-                  : `<p class="calllog-empty">Aucun appel enregistré</p>`
-              }
-            </div>
-          </div>
-          <div class="chat-strip">
-            ${ICONS.chat}<span>Tchat — disponible en phase 4</span>
-          </div>
-          <div class="sidefoot">
-            <span class="fontsize">
-              <button data-act="font-down" aria-label="Réduire la taille du texte">A−</button>
-              <button data-act="font-up" aria-label="Augmenter la taille du texte">A+</button>
-            </span>
-            <button class="switch" data-act="theme" aria-label="Basculer le thème">
-              ${currentTheme() === "dark" ? "Foncé" : "Clair"} <span class="track" aria-hidden="true"></span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>`);
-
+export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
+  const { phone, view, ready, cfg } = ctx;
   const on = (sel: string, fn: (elem: HTMLElement) => void): void => {
     const elem = node.querySelector(sel) as HTMLElement | null;
     if (elem) elem.addEventListener("click", () => fn(elem));
   };
 
-  // --- barre d'en-tête -------------------------------------------------
+  // --- barre d'en-tête ----------------------------------------------------
   on('[data-act="settings"]', () => phone.send({ type: "ui:backToSettings" }));
   on('[data-act="logout"]', () => phone.send({ type: "ui:logout" }));
   on('[data-act="retry"]', () => phone.send({ type: "ui:retry" }));
   on('[data-act="fix-settings"]', () => phone.send({ type: "ui:backToSettings" }));
 
-  // --- lancement d'appel ------------------------------------------------
-  const targetInput = node.querySelector('[data-ref="target"]') as HTMLInputElement;
-  if (!view) {
-    targetInput.addEventListener("input", () => {
-      draftTarget = targetInput.value;
-    });
-    targetInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") placeCall();
-    });
-  }
+  // --- lancement d'appel ---------------------------------------------------
+  const targetInput = node.querySelector('[data-ref="target"]') as HTMLInputElement | null;
   const placeCall = (): void => {
-    if (!ready || !cfg) return;
+    if (!ready || !cfg || !targetInput) return;
     const target = normalizeTarget(targetInput.value, cfg.domain);
     if (!target) {
       targetInput.classList.add("invalid");
@@ -375,6 +213,14 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     }
     phone.send({ type: "ui:call", target, media: currentMode().media });
   };
+  if (targetInput && !view) {
+    targetInput.addEventListener("input", () => {
+      draftTarget = targetInput.value;
+    });
+    targetInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") placeCall();
+    });
+  }
   on('[data-act="call"]', () => placeCall());
 
   // menu de sélection du mode d'appel : choisir retient le mode et
@@ -389,16 +235,23 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     if (!modeMenu) return;
     modeMenu.replaceChildren(
       ...CALL_MODES.map((m) => {
+        const selected = m.id === currentMode().id;
         const item = el(
-          `<button role="menuitemradio" aria-checked="${m.id === currentMode().id}"
-                   class="${m.id === currentMode().id ? "selected" : ""}">
-             ${m.icon} ${esc(m.label)}${m.id === currentMode().id ? `<span class="check">✓</span>` : ""}
+          `<button role="menuitemradio" aria-checked="${selected}"
+                   class="${selected ? "selected" : ""}">
+             ${m.icon} ${esc(m.label)}${selected ? `<span class="check">✓</span>` : ""}
            </button>`,
         );
         item.addEventListener("click", () => {
           setCallModeId(m.id);
           const main = node.querySelector('[data-act="call"]');
-          if (main) main.innerHTML = `${m.icon} ${esc(m.buttonLabel)}`;
+          // le bouton mobile n'affiche que l'icône : on respecte son gabarit
+          if (main) {
+            main.innerHTML = main.classList.contains("iconlabel")
+              ? m.icon
+              : `${m.icon} ${esc(m.buttonLabel)}`;
+            main.setAttribute("title", m.buttonLabel);
+          }
           closeMenu();
         });
         return item;
@@ -422,7 +275,7 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     });
   }
 
-  // --- commandes en communication ----------------------------------------
+  // --- commandes en communication -----------------------------------------
   on('[data-act="hangup"]', () => phone.send({ type: "ui:hangup" }));
   on('[data-act="muteMic"]', () => phone.send({ type: "ui:muteMic" }));
   on('[data-act="muteCam"]', () => phone.send({ type: "ui:muteCam" }));
@@ -437,9 +290,9 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     btn.title = speakerMuted ? "Rétablir le son" : "Couper le son";
   });
 
-  // --- historique ---------------------------------------------------------
+  // --- historique ----------------------------------------------------------
   on('[data-act="clear-history"]', () => phone.send({ type: "ui:clearHistory" }));
-  if (!view) {
+  if (targetInput && !view) {
     // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler
     for (const row of node.querySelectorAll(".calllog-row")) {
       const who = row.querySelector(".who")?.textContent ?? "";
@@ -451,38 +304,39 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     }
   }
 
-  // --- préférences -------------------------------------------------------
+  // --- préférences ---------------------------------------------------------
   on('[data-act="font-down"]', () => bumpFont(-1));
   on('[data-act="font-up"]', () => bumpFont(1));
   on('[data-act="theme"]', (btn) => {
     toggleTheme();
-    btn.childNodes[0]!.textContent = `${currentTheme() === "dark" ? "Foncé" : "Clair"} `;
+    const label = btn.childNodes[0];
+    if (label) label.textContent = `${currentTheme() === "dark" ? "Foncé" : "Clair"} `;
   });
 
-  // --- média, chrono, vu-mètres -------------------------------------------
-  if (view) {
-    const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement;
+  // --- média, chrono, vu-mètres --------------------------------------------
+  const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
+  if (view && remote) {
     const self = node.querySelector('[data-ref="self"]') as HTMLVideoElement | null;
     remote.muted = speakerMuted;
     view.session?.attachMedia(remote, self);
 
-    const zone = node.querySelector('[data-ref="videozone"]') as HTMLElement;
-    zone.addEventListener("dblclick", () => {
+    const zone = node.querySelector('[data-ref="videozone"]') as HTMLElement | null;
+    zone?.addEventListener("dblclick", () => {
       if (document.fullscreenElement) void document.exitFullscreen();
       else void zone.requestFullscreen();
     });
 
-    if (connected && view.connectedAt !== null) {
+    if (view.state === "connected" && view.connectedAt !== null) {
       const startedAt = view.connectedAt;
-      const label = node.querySelector('[data-ref="chrono"]')!;
-      chronoTimer = setInterval(() => {
-        label.textContent = fmtChrono(startedAt);
-      }, 1000);
+      const label = node.querySelector('[data-ref="chrono"]');
+      if (label) {
+        chronoTimer = setInterval(() => {
+          label.textContent = fmtChrono(startedAt);
+        }, 1000);
+      }
       startVuMeters(node, remote, self);
     }
   }
-
-  return node;
 }
 
 // ---------------------------------------------------------------------------
@@ -545,7 +399,9 @@ function startVuMeters(
       const stream = video?.srcObject instanceof MediaStream ? video.srcObject : null;
       const an = stream ? analyserFor(stream) : null;
       const rms = an ? level(an, buf) : 0;
-      if (bar) bar.style.height = `${Math.max(4, Math.min(100, Math.round(rms * 260)))}%`;
+      // le plancher est en pixels (min-height CSS) : la barre court sur
+      // toute la hauteur de la scène, un plancher en % y serait énorme
+      if (bar) bar.style.height = `${Math.min(100, Math.round(rms * 260))}%`;
       if (video === remote && speakerBtn) {
         // maintien court : sinon le flash strobe entre deux syllabes
         if (rms > SPEECH_RMS) lastSpeech = Date.now();

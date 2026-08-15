@@ -6,6 +6,7 @@ import { createJsSipPort } from "./sip/port.js";
 import { renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
+import { watchLayout } from "./ui/layout.js";
 
 applyPrefs();
 
@@ -20,6 +21,9 @@ const phone = PhoneMachine.start({
 const root = document.getElementById("app")!;
 phone.subscribe(() => renderApp(root, phone));
 renderApp(root, phone);
+
+// bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé
+watchLayout(() => renderApp(root, phone));
 
 // veille / réveil de la machine : raccrocher + désenregistrer, puis réenregistrer
 watchSystemLifecycle({
