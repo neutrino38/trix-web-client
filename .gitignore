@@ -1,0 +1,8 @@
+# Instruction projet : ne jamais commiter goals.md ni les fichiers Elioz
+goals.md
+connect/
+
+# Dépendances / build
+node_modules/
+dist/
+*.log

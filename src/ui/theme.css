@@ -1,0 +1,144 @@
+/* Palette FSL (docs/SPECS.md — Conception UI/UX) */
+:root {
+  --ground: #F6F4FA;
+  --panel: #FFFFFF;
+  --panel-2: #EFEAF6;
+  --ink: #3E2A56;
+  --ink-soft: #6E5A86;
+  --accent: #7B54A0;
+  --accent-soft: #C9A9E0;
+  --border: #DFD7EA;
+  --video-bg: #0D0A12;
+  --green: #36AD45;
+  --orange: #D98324;
+  --red: #E94E3C;
+  --shadow: 0 10px 30px rgba(62, 42, 86, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #17101F;
+    --panel: #241933;
+    --panel-2: #2E2140;
+    --ink: #EDE6F5;
+    --ink-soft: #B4A5C8;
+    --accent: #A97FD1;
+    --accent-soft: #6B4487;
+    --border: #3A2B4E;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body, #app { height: 100%; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Poppins", "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+/* ---------- composants communs ---------- */
+.btn {
+  font: inherit; font-weight: 600; cursor: pointer;
+  border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--ink);
+  padding: 0.65rem 1.5rem; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+}
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.iconbtn {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--panel);
+  color: var(--ink); display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; font: inherit;
+}
+.iconbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.iconbtn svg { width: 20px; height: 20px; fill: currentColor; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  font-size: 0.8rem; font-weight: 600;
+  border-radius: 999px; padding: 0.3rem 0.85rem;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--ink);
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.dot.ok { background: var(--green); }
+.dot.warn { background: var(--orange); animation: pulse 1.4s ease-in-out infinite; }
+.dot.err { background: var(--red); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dot.warn { animation: none; } }
+
+.error-banner {
+  background: color-mix(in srgb, var(--red) 12%, var(--panel));
+  border: 1px solid var(--red); border-radius: 8px;
+  color: var(--ink); font-size: 0.85rem; padding: 0.6rem 0.9rem;
+}
+.error-code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.7rem; color: var(--ink-soft); opacity: 0.75;
+  user-select: text; max-width: min(420px, 90vw);
+  overflow-wrap: anywhere;
+}
+.error-actions { display: flex; flex-wrap: wrap; gap: 0.7rem; justify-content: center; }
+
+/* ---------- écran accueil ---------- */
+.screen-home {
+  height: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1.1rem; text-align: center;
+}
+.screen-home .name-big { font-size: 1.6rem; font-weight: 600; letter-spacing: 1.5px; }
+.screen-home .tagline { color: var(--ink-soft); font-size: 0.9rem; }
+.screen-home .actions { display: flex; flex-direction: column; gap: 0.8rem; width: 300px; margin-top: 0.8rem; }
+.screen-home .account-hint { font-size: 0.8rem; color: var(--ink-soft); }
+
+/* ---------- écran configuration ---------- */
+.screen-config { height: 100%; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
+.screen-config form { width: min(400px, 90vw); display: flex; flex-direction: column; gap: 0.9rem; padding: 2rem 0; }
+.screen-config h2 { font-size: 1.15rem; font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field label {
+  font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ink-soft);
+}
+.field input {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;
+}
+.field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.field input.invalid {
+  border-color: var(--red);
+  box-shadow: 0 1px 0 0 var(--red);
+}
+.field .hint { font-size: 0.75rem; color: var(--ink-soft); }
+.field .checkline {
+  display: flex; align-items: baseline; gap: 0.5rem;
+  font-size: 0.78rem; color: var(--ink-soft); text-transform: none; letter-spacing: normal;
+  cursor: pointer;
+}
+.field .checkline input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.field .checkline b { font-weight: 600; color: var(--ink); }
+.field input:disabled { opacity: 0.45; cursor: not-allowed; }
+.note {
+  font-size: 0.78rem; color: var(--ink-soft);
+  background: var(--panel-2); border-radius: 8px; padding: 0.6rem 0.8rem;
+}
+.form-actions { display: flex; gap: 0.7rem; margin-top: 0.4rem; }
+
+/* ---------- écran d'appel (coque phase 1) ---------- */
+.screen-call { height: 100%; display: flex; flex-direction: column; }
+.topbar {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.topbar .logo { display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; letter-spacing: 1px; }
+.topbar .spacer { flex: 1; }
+.stage {
+  flex: 1; background: var(--video-bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+  color: #8f83a3; font-size: 0.95rem; text-align: center; padding: 1rem;
+}
