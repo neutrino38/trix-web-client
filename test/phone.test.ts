@@ -7,7 +7,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
 import type { AccountConfig, CallLogEntry, SecureStore } from "../src/storage/store.js";
-import type { CallMedia, CallSipEvent, SipEvent, SipPort } from "../src/sip/port.js";
+import type {
+  CallMedia,
+  CallSipEvent,
+  IncomingCall,
+  RejectReason,
+  SipEvent,
+  SipPort,
+} from "../src/sip/port.js";
 import { computeHa1 } from "../src/storage/ha1.js";
 
 const CFG: AccountConfig = {
@@ -17,6 +24,7 @@ const CFG: AccountConfig = {
   username: "alice",
   authUsername: null,
   ha1: computeHa1("alice", "example.fr", "secret123"),
+  flashAlert: true,
 };
 
 function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[] = []) {
@@ -81,6 +89,33 @@ class FakeSip implements SipPort {
   }
 }
 
+/** INVITE entrant factice, tel que le port le remettrait à la machine. */
+function fakeIncoming(offered: CallMedia = { audio: true, video: false }) {
+  const session = new FakeCallSession();
+  const box = {
+    session,
+    answered: [] as CallMedia[],
+    rejected: [] as RejectReason[],
+    sendCall: (() => {}) as (ev: CallSipEvent) => void,
+  };
+  const call: IncomingCall = {
+    from: "sip:bob@example.fr",
+    displayName: "Bob Martin",
+    offered,
+    listen(send) {
+      box.sendCall = send;
+      return session;
+    },
+    answer: (media) => {
+      box.answered.push(media);
+    },
+    reject: (reason) => {
+      box.rejected.push(reason);
+    },
+  };
+  return { call, box };
+}
+
 async function bootTo(
   state: string,
   initial: AccountConfig | null,
@@ -130,6 +165,7 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: "secret123",
+        flashAlert: true,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -149,6 +185,7 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: "secret123",
+        flashAlert: true,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -166,6 +203,7 @@ describe("PhoneMachine — configuration", () => {
         displayName: "",
         authUsername: null,
         password: "secret123",
+        flashAlert: true,
       },
     });
     expect(phone.state).toBe("configuring");
@@ -183,6 +221,7 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: "alice-auth",
         password: "secret123",
+        flashAlert: true,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -196,7 +235,7 @@ describe("PhoneMachine — configuration", () => {
     phone.send({ type: "ui:configure" });
     phone.send({
       type: "ui:saveConfig",
-      form: { proxy: "wss://x", uri: "u@x.fr", displayName: "", authUsername: null, password: null },
+      form: { proxy: "wss://x", uri: "u@x.fr", displayName: "", authUsername: null, password: null, flashAlert: true },
     });
     expect(phone.state).toBe("configuring");
     expect(phone.context.lastError).toBe("Mot de passe requis");
@@ -213,6 +252,7 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
+        flashAlert: true,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -231,6 +271,7 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
+        flashAlert: true,
       },
     });
     expect(phone.state).toBe("configuring");
@@ -248,10 +289,30 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: "alice-auth",
         password: null,
+        flashAlert: true,
       },
     });
     expect(phone.state).toBe("configuring");
     expect(phone.context.lastError).toBe("Mot de passe requis");
+  });
+
+  it("flash d'appel entrant désactivé : réglage persisté avec le compte", async () => {
+    const { phone, box } = await bootTo("home", CFG);
+    phone.send({ type: "ui:configure" });
+    phone.send({
+      type: "ui:saveConfig",
+      form: {
+        proxy: CFG.proxy,
+        uri: `${CFG.username}@${CFG.domain}`,
+        displayName: CFG.displayName,
+        authUsername: null,
+        password: null,
+        flashAlert: false,
+      },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(box.saved!.flashAlert).toBe(false);
+    expect(phone.context.config!.flashAlert).toBe(false);
   });
 });
 
@@ -449,6 +510,107 @@ describe("PhoneMachine — appel sortant (in_call + CallMachine)", () => {
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.state).toBe("reg_failed");
     expect(phone.context.lastErrorCode).toBe("SIP 403");
+  });
+});
+
+describe("PhoneMachine — appel entrant", () => {
+  it("sip:incoming en ready : in_call, CallMachine en sonnerie entrante", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const { call } = fakeIncoming({ audio: true, video: true });
+    sip.send({ type: "sip:incoming", call });
+    expect(phone.state).toBe("in_call");
+    expect(phone.context.call).toMatchObject({
+      state: "ringing_in",
+      direction: "incoming",
+      target: "sip:bob@example.fr",
+      displayName: "Bob Martin",
+      offered: { audio: true, video: true },
+    });
+  });
+
+  it("réponse : médias relayés à la session, puis connected", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const { call, box } = fakeIncoming({ audio: true, video: true });
+    sip.send({ type: "sip:incoming", call });
+    phone.send({ type: "ui:answer", media: { audio: true, video: false } });
+    expect(box.answered).toEqual([{ audio: true, video: false }]);
+    box.sendCall({ type: "sip:accepted" });
+    expect(phone.context.call?.state).toBe("connected");
+    expect(phone.context.call?.media).toEqual({ audio: true, video: false });
+  });
+
+  it("refus : retour en ready sans erreur affichée", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const { call, box } = fakeIncoming();
+    sip.send({ type: "sip:incoming", call });
+    phone.send({ type: "ui:reject" });
+    expect(box.rejected).toEqual(["declined"]);
+    expect(phone.state).toBe("ready");
+    expect(phone.context.callError).toBeNull();
+  });
+
+  it("deuxième INVITE pendant un appel : refusé occupé, appel en cours intact", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const first = fakeIncoming();
+    sip.send({ type: "sip:incoming", call: first.call });
+    phone.send({ type: "ui:answer", media: { audio: true, video: false } });
+    first.box.sendCall({ type: "sip:accepted" });
+
+    const second = fakeIncoming();
+    sip.send({ type: "sip:incoming", call: second.call });
+    expect(second.box.rejected).toEqual(["busy"]);
+    expect(phone.state).toBe("in_call");
+    expect(phone.context.call?.state).toBe("connected");
+  });
+
+  it("INVITE hors ready (reconnexion en cours) : décliné sans changer d'état", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    sip.send({ type: "sip:disconnected" });
+    expect(phone.state).toBe("reconnecting");
+    const { call, box } = fakeIncoming();
+    sip.send({ type: "sip:incoming", call });
+    expect(box.rejected).toEqual(["timeout"]);
+    expect(phone.state).toBe("reconnecting");
+  });
+
+  it("historique : entrant répondu, avec les médias acceptés", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const { call, box } = fakeIncoming({ audio: true, video: true });
+    sip.send({ type: "sip:incoming", call });
+    phone.send({ type: "ui:answer", media: { audio: true, video: false } });
+    box.sendCall({ type: "sip:accepted" });
+    box.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.state).toBe("ready");
+    expect(phone.context.history[0]).toMatchObject({
+      target: "bob@example.fr",
+      direction: "incoming",
+      outcome: "answered",
+      endedBy: "remote",
+      media: { audio: true, video: false },
+    });
+  });
+
+  it("historique : entrant refusé et entrant annulé sont des appels manqués", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const refused = fakeIncoming();
+    sip.send({ type: "sip:incoming", call: refused.call });
+    phone.send({ type: "ui:reject" });
+    expect(phone.context.history[0]).toMatchObject({
+      direction: "incoming",
+      outcome: "missed",
+      connectedAt: null,
+      endedBy: null,
+      reason: "Appel refusé",
+    });
+
+    const missed = fakeIncoming();
+    sip.send({ type: "sip:incoming", call: missed.call });
+    missed.box.sendCall({ type: "sip:failed", cause: "Canceled", originator: "remote" });
+    expect(phone.context.history[0]).toMatchObject({
+      outcome: "missed",
+      reason: "Appel manqué",
+    });
+    expect(phone.context.history).toHaveLength(2);
   });
 });
 
@@ -681,6 +843,7 @@ describe("PhoneMachine — sorties", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
+        flashAlert: true,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));

@@ -184,6 +184,67 @@ body {
   transition: height 90ms linear;
 }
 
+/* ---------- appel entrant (phase 3) ---------- */
+.incoming-card {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  text-align: center; color: #ede6f5;
+}
+.incoming-card .who { font-size: 1.35rem; font-weight: 600; }
+.incoming-card .uri { font-size: 0.85rem; color: #8f83a3; }
+.incoming-card .offer { font-size: 0.8rem; color: #cfc4de; }
+/* pastille qui pulse au rythme de la sonnerie */
+.ring-badge {
+  width: 64px; height: 64px; border-radius: 50%; margin-bottom: 0.4rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--green); color: #fff;
+}
+.ring-badge .icon { width: 30px; height: 30px; }
+@media (prefers-reduced-motion: no-preference) {
+  .ring-badge { animation: ring-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes ring-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); }
+  60% { box-shadow: 0 0 0 16px transparent; }
+}
+.answer-actions { display: flex; flex-direction: column; gap: 0.5rem; }
+.btn.answer { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* Flash d'appel entrant — signal principal pour un public sourd (voir ui/alert.ts).
+   Cadence < 1 Hz et pas de rouge saturé : très en deçà du seuil des trois
+   flashs par seconde (WCAG 2.3.1). Non cliquable : les boutons restent
+   accessibles à travers.
+   Le clignotement porte sur un cadre opaque en périphérie — là où l'œil
+   détecte le mieux un mouvement — plutôt que sur un voile plein écran qui
+   rendrait l'interface illisible entre deux battements. */
+.callflash {
+  position: fixed; inset: 0; z-index: 60; pointer-events: none;
+  border: 16px solid var(--accent);
+  box-shadow: inset 0 0 45px color-mix(in srgb, var(--accent) 50%, transparent);
+  animation: callflash 1.2s steps(1, end) infinite;
+}
+@keyframes callflash {
+  0%, 49% {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 45px color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  50%, 100% {
+    border-color: var(--green);
+    box-shadow: inset 0 0 45px color-mix(in srgb, var(--green) 50%, transparent);
+  }
+}
+/* mouvement réduit : cadre permanent plutôt que clignotement — l'alerte
+   reste bien visible, sans rien faire vaciller */
+@media (prefers-reduced-motion: reduce) {
+  .callflash { animation: none; }
+}
+
+.alert-optin {
+  flex: none; border-top: 1px solid var(--border);
+  padding: 0.5rem 1rem; text-align: center; font-size: 0.75rem;
+}
+.alert-note { font-size: 0.72rem; color: var(--ink-soft); }
+
 /* commandes média, regroupées sous le bouton d'appel */
 .mediabar {
   display: flex; align-items: center; justify-content: center; gap: 0.35rem;
@@ -382,6 +443,26 @@ body {
   color: #7dffa0;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 65%, transparent);
 }
+/* --- appel entrant : identité plein écran, réponses en bas --- */
+.mincoming {
+  flex: 1; min-height: 0; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.35rem; text-align: center;
+  background: var(--video-bg); color: #ede6f5;
+  padding: 1rem calc(1rem + env(safe-area-inset-right)) 1rem calc(1rem + env(safe-area-inset-left));
+}
+.mincoming .who { font-size: 1.5rem; font-weight: 600; }
+.mincoming .uri { font-size: 0.85rem; color: #8f83a3; overflow-wrap: anywhere; }
+.mincoming .offer { font-size: 0.85rem; color: #cfc4de; }
+.mincoming-actions {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: space-evenly;
+  padding: 1rem calc(1rem + env(safe-area-inset-right)) calc(1.6rem + env(safe-area-inset-bottom))
+           calc(1rem + env(safe-area-inset-left));
+}
+.hangup-round.answer { background: var(--green); }
+.hangup-round.reject { background: var(--red); }
+
 /* raccrocher : bouton rond rouge, à droite des contrôles média */
 .hangup-round {
   width: 56px; height: 56px; border-radius: 50%; margin-left: 0.4rem;

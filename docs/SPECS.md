@@ -3,7 +3,7 @@
 **Statut :** Brouillon
 **Propriétaire :** Emmanuel Buu / IVèS
 **Créée le :** 2026-08-15
-**Dernière mise à jour :** 2026-08-15
+**Dernière mise à jour :** 2026-08-16
 
 ## Vue d'ensemble
 
@@ -19,9 +19,17 @@ la signalisation SIP repose sur JsSIP (SIP sur WebSocket sécurisé).
 `CONCEPTION.md` §8) : les choix d'architecture doivent rester compatibles, mais aucune
 intégration Tauri n'est réalisée dans les phases 0 à 4.
 
+## Public visé et contrainte majeure
+
+L'application s'adresse **d'abord à des personnes sourdes et malentendantes**. Conséquence
+directe sur la conception : **aucune information ne peut reposer sur le son seul**. La
+sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est visuelle
+(et haptique sur mobile). Voir « Alerte d'appel entrant » ci-dessous.
+
 ## Objectifs
 
 - Webphone SIP complet : enregistrement, appels sortants puis entrants, audio et vidéo.
+- **Alerte d'appel entrant perceptible sans le son**, y compris application en arrière-plan.
 - Trois écrans : accueil, configuration, appel.
 - Stockage local du compte SIP **sans stocker le mot de passe** (HA1 uniquement), chiffré.
 - Logique 100 % pilotée par machines à états FSL, observables (`toMermaid()`, logs de transitions).
@@ -31,7 +39,7 @@ intégration Tauri n'est réalisée dans les phases 0 à 4.
 
 - Intégration / packaging Tauri : **reportée** (perspective future, contraintes documentées dans `CONCEPTION.md`).
 - Tchat en phases 1–3 (désactivé/grisé ; ajouté en phase 4 via data channel).
-- Annuaire, historique d'appels, transfert d'appel, enregistrement de conversation.
+- Annuaire, transfert d'appel, enregistrement de conversation.
 - Multi-comptes (un seul compte SIP configuré à la fois).
 - Support de navigateurs sans WebRTC.
 
@@ -62,10 +70,26 @@ intégration Tauri n'est réalisée dans les phases 0 à 4.
 ### En tant qu'utilisateur, je veux recevoir un appel (phase 3)
 
 **Critères d'acceptation :**
-- [ ] Notification d'appel entrant avec identité de l'appelant.
-- [ ] Refuser.
-- [ ] Répondre en audio + vidéo (uniquement si la vidéo est proposée par l'appelant).
-- [ ] Répondre en audio seul (sauf si l'appelant ne propose **que** la vidéo).
+- [x] Notification d'appel entrant avec identité de l'appelant.
+- [x] Refuser.
+- [x] Répondre en audio + vidéo (uniquement si la vidéo est proposée par l'appelant).
+- [x] Répondre en audio seul (sauf si l'appelant ne propose **que** la vidéo).
+- [x] Alerte perceptible sans le son (voir « Alerte d'appel entrant »).
+
+### Alerte d'appel entrant (accessibilité sourds et malentendants)
+
+**Critères d'acceptation :**
+- [x] Flash visuel pendant toute la sonnerie, sans masquer ni bloquer les boutons de réponse.
+- [x] Cadence du flash très inférieure à trois flashs par seconde et sans rouge saturé (WCAG 2.3.1) ;
+      sous `prefers-reduced-motion`, cadre permanent au lieu du clignotement.
+- [x] Application en arrière-plan : titre d'onglet et favicon clignotants.
+- [x] Fenêtre masquée ou minimisée : notification système persistante avec l'identité de
+      l'appelant, permission demandée explicitement par l'utilisateur (jamais à l'improviste).
+- [x] Mobile : vibration rythmée pendant la sonnerie.
+- [x] L'écran ne s'éteint pas pendant la sonnerie (wake lock) — un flash sur écran éteint n'alerte personne.
+- [x] Le flash est désactivable dans la configuration du compte (activé par défaut) ; le réglage
+      est stocké chiffré **avec le compte**, il suit donc l'utilisateur et non le navigateur.
+      Les autres canaux restent actifs — ils ne perturbent pas l'écran.
 
 ### En tant qu'utilisateur, je veux me déconnecter proprement
 
@@ -111,6 +135,7 @@ Formulaire vertical centré, 5 champs :
 | Display name | texte libre |
 | Username | user SIP (sans domaine) |
 | Mot de passe | masqué ; converti en HA1 à l'enregistrement, jamais stocké |
+| Flash visuel à l'appel entrant | case à cocher, **activée par défaut** ; réglage du compte (accessibilité) |
 
 Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
 Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
@@ -150,17 +175,22 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 - [x] Contraintes de compatibilité Tauri documentées (intégration reportée)
 
 ### Phase 1 : Accueil + Configuration + REGISTER
-- [ ] Bootstrap Vite + TypeScript + FSL + JsSIP
-- [ ] Écrans accueil et configuration
-- [ ] Stockage chiffré (HA1), machine `PhoneMachine`, REGISTER OK avec indicateur d'état
+- [x] Bootstrap Vite + TypeScript + FSL + JsSIP
+- [x] Écrans accueil et configuration
+- [x] Stockage chiffré (HA1), machine `PhoneMachine`, REGISTER OK avec indicateur d'état
 
 ### Phase 2 : Écran d'appel, sortant uniquement
-- [ ] Écran d'appel complet (tchat désactivé)
-- [ ] `CallMachine` sortante (audio + vidéo), spawn depuis `PhoneMachine`
-- [ ] Observabilité : export `toMermaid()` des machines + log des transitions
+- [x] Écran d'appel complet (tchat désactivé), vues bureau et mobile
+- [x] `CallMachine` sortante (audio + vidéo), spawn depuis `PhoneMachine`
+- [x] Observabilité : export `toMermaid()` des machines + log des transitions
 
 ### Phase 3 : Appels entrants
-- [ ] Refus / réponse audio+vidéo (si vidéo proposée) / réponse audio seul (sauf vidéo pure)
+- [x] Refus / réponse audio+vidéo (si vidéo proposée) / réponse audio seul (sauf vidéo pure)
+- [x] Réponses proposées dérivées de l'offre SDP de l'INVITE (`sip/sdp.ts`)
+- [x] Un appel à la fois : INVITE refusé occupé en communication, indisponible ailleurs
+- [x] Appels entrants dans l'historique (répondu / manqué / refusé)
+- [x] Alerte multi-canal accessible : flash, onglet, notification système, vibration, wake lock
+- [x] Flash désactivable depuis la configuration du compte, réglage persisté avec lui
 
 ### Phase 4 : DTMF + Tchat data channel
 - [ ] DTMF (RFC 4733)

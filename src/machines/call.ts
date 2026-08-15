@@ -1,9 +1,14 @@
 /**
- * CallMachine — un appel sortant, une instance (docs/CONCEPTION.md §4.2).
+ * CallMachine — un appel, une instance (docs/CONCEPTION.md §4.2 et §4.3).
  * Spawnée par PhoneMachine (`fx.spawn(..., { as: "call" })`) ; elle ne
  * parle qu'au parent : vue publiée par notifyParent après chaque
  * changement significatif, commandes UI reçues en `parent:msg` et
  * réinjectées dans sa propre boucle d'événements.
+ *
+ * Une seule machine sert les deux sens : `initial_state` aiguille vers
+ * `dialing` (INVITE sortant) ou `ringing_in` (INVITE entrant, injecté par
+ * le parent dans `args.incoming`). Une fois établis, les deux sens
+ * partagent exactement le même état `connected`.
  *
  * Terminaison par success()/failure() → le parent reçoit `child:exit`
  * et revient en `ready` (ou `reg_failed` si l'enregistrement est tombé
@@ -12,7 +17,15 @@
 
 import { defineMachine, failure, goto, stay, success } from "finite-state-language";
 import type { Fx, ParentMsg } from "finite-state-language";
-import type { CallMedia, CallSession, SipHandle, SipOriginator } from "../sip/port.js";
+import type {
+  CallMedia,
+  CallSession,
+  IncomingCall,
+  RejectReason,
+  SipHandle,
+  SipOriginator,
+} from "../sip/port.js";
+import type { CallDirection } from "../storage/store.js";
 import type { CallEvent, CallView } from "./events.js";
 
 export interface CallCtx {
@@ -20,6 +33,12 @@ export interface CallCtx {
   handle: SipHandle;
   target: string;
   media: CallMedia;
+  /** Entrant uniquement : l'INVITE en attente de décision. */
+  incoming: IncomingCall | null;
+  direction: CallDirection;
+  displayName: string | null;
+  /** Médias proposés par l'appelant (entrant) ; = `media` pour un sortant. */
+  offered: CallMedia;
   session: CallSession | null;
   connectedAt: number | null;
   /** Qui a raccroché : renseigné au moment où l'appel se termine. */
@@ -32,7 +51,10 @@ export interface CallCtx {
 function report(state: CallView["state"], ctx: CallCtx, fx: Fx<CallEvent>): void {
   const view: CallView = {
     state,
+    direction: ctx.direction,
     target: ctx.target,
+    displayName: ctx.displayName,
+    offered: ctx.offered,
     media: ctx.media,
     micMuted: ctx.micMuted,
     camMuted: ctx.camMuted,
@@ -73,6 +95,16 @@ function sealed(
   report(state, ctx, fx);
 }
 
+/**
+ * Fin d'un appel entrant jamais décroché. `reason` part dans `child:exit`
+ * et devient le motif de la ligne d'historique (« manqué » vs « refusé »).
+ */
+function refuse(ctx: CallCtx, fx: Fx<CallEvent>, how: RejectReason, reason: string) {
+  ctx.incoming?.reject(how);
+  sealed("ringing_in", "local", ctx, fx);
+  return success(reason);
+}
+
 export const CallMachine = defineMachine<CallCtx, CallEvent>()({
   name: "CallMachine",
 
@@ -80,6 +112,10 @@ export const CallMachine = defineMachine<CallCtx, CallEvent>()({
     handle: null as unknown as SipHandle,
     target: "",
     media: { audio: true, video: false },
+    incoming: null,
+    direction: "outgoing" as CallDirection,
+    displayName: null,
+    offered: { audio: true, video: false },
     session: null,
     connectedAt: null,
     endedBy: null,
@@ -89,14 +125,34 @@ export const CallMachine = defineMachine<CallCtx, CallEvent>()({
   }),
 
   states: {
-    // dialing : INVITE envoyé, en attente de réponse provisoire ou finale
+    /**
+     * Aiguillage : traversé sans attendre d'événement. Pour un entrant,
+     * on s'abonne d'abord à la session (sinon une annulation immédiate de
+     * l'appelant passerait inaperçue), puis on part en `ringing_in`.
+     */
     initial_state: {
+      enter(ctx, fx) {
+        if (!ctx.incoming) return goto("dialing", "INVITE sortant");
+        ctx.direction = "incoming";
+        ctx.target = ctx.incoming.from;
+        ctx.displayName = ctx.incoming.displayName;
+        ctx.offered = ctx.incoming.offered;
+        ctx.media = ctx.incoming.offered; // avant décision, l'affichage montre l'offre
+        ctx.session = ctx.incoming.listen((ev) => fx.send(ev));
+        return goto("ringing_in", "INVITE entrant");
+      },
+      meta: { callState: "start" },
+    },
+
+    // INVITE envoyé, en attente de réponse provisoire ou finale
+    dialing: {
       enter(ctx, fx) {
         try {
           ctx.session = ctx.handle.call(ctx.target, ctx.media, (ev) => fx.send(ev));
         } catch (e) {
           return failure(e instanceof Error ? e.message : String(e));
         }
+        ctx.offered = ctx.media;
         report("dialing", ctx, fx);
       },
       on: {
@@ -149,6 +205,78 @@ export const CallMachine = defineMachine<CallCtx, CallEvent>()({
         },
       },
       meta: { callState: "ringing" },
+    },
+
+    /**
+     * Le téléphone sonne : l'UI propose les réponses compatibles avec
+     * l'offre (`ctx.offered`) et le refus. Un appel entrant non décroché
+     * n'est pas une erreur — il se termine en success avec un motif que
+     * le parent consigne dans l'historique.
+     */
+    ringing_in: {
+      enter(ctx, fx) {
+        report("ringing_in", ctx, fx);
+      },
+      on: {
+        "ui:answer": (ev, ctx) => {
+          ctx.media = ev.media;
+          ctx.incoming!.answer(ev.media);
+          return goto("answering", "200 OK");
+        },
+        "ui:reject": (_ev, ctx, fx) => refuse(ctx, fx, "declined", "Appel refusé"),
+        // le bouton rouge de la vue mobile pendant la sonnerie = refuser
+        "ui:hangup": (_ev, ctx, fx) => refuse(ctx, fx, "declined", "Appel refusé"),
+        // l'appelant a renoncé (CANCEL) : appel manqué, pas un échec
+        "sip:failed": (ev, ctx, fx) => {
+          sealed("ringing_in", endedBy(ev.originator), ctx, fx);
+          return success("Appel manqué");
+        },
+        "sip:ended": (ev, ctx, fx) => {
+          sealed("ringing_in", endedBy(ev.originator), ctx, fx);
+          return success("Appel manqué");
+        },
+        "parent:msg": replay,
+      },
+      after: {
+        delay: 60_000,
+        then: (ctx, fx) => refuse(ctx, fx, "timeout", "Appel manqué (sans réponse)"),
+      },
+      meta: { callState: "ringing_in" },
+    },
+
+    /** 200 OK envoyé : on attend la confirmation de la session par JsSIP. */
+    answering: {
+      enter(ctx, fx) {
+        report("answering", ctx, fx);
+      },
+      on: {
+        "sip:accepted": () => goto("connected", "200 OK"),
+        "sip:confirmed": () => goto("connected", "ACK"),
+        "sip:progress": () => undefined,
+        "sip:failed": (ev, ctx, fx) => {
+          sealed("answering", endedBy(ev.originator), ctx, fx);
+          return failure(failReason(ev));
+        },
+        "sip:ended": (ev, ctx, fx) => {
+          sealed("answering", endedBy(ev.originator), ctx, fx);
+          return success(ev.cause);
+        },
+        "ui:hangup": (_ev, ctx) => {
+          ctx.session?.terminate();
+          return goto("hangingup", "BYE");
+        },
+        "parent:msg": replay,
+      },
+      after: {
+        // média refusé par l'OS, ACK jamais reçu… : ne pas rester bloqué
+        delay: 30_000,
+        then: (ctx, fx) => {
+          ctx.session?.terminate();
+          sealed("answering", "local", ctx, fx);
+          return failure("Établissement de l'appel impossible");
+        },
+      },
+      meta: { callState: "answering" },
     },
 
     connected: {

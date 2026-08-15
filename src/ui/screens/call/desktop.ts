@@ -15,6 +15,9 @@ import {
   CALL_LABEL,
   ICONS,
   STATUS,
+  alertOptIn,
+  answerChoices,
+  callerName,
   currentMode,
   displayTarget,
   draft,
@@ -33,11 +36,13 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   const reconnecting = phone.state === "reconnecting";
   const sleeping = phone.state === "sleeping";
   const connected = view?.state === "connected";
+  const incoming = view?.state === "ringing_in";
   const speakerMuted = isSpeakerMuted();
   const err = phone.context.lastError;
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
+  const optIn = alertOptIn();
 
   return el(`
     <div class="screen-call">
@@ -65,7 +70,20 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         <div class="stage">
           <div class="video" data-ref="videozone">
             ${
-              view
+              incoming
+                ? `<div class="incoming-card">
+                     <span class="ring-badge">${ICONS.phone}</span>
+                     <span class="who">${esc(callerName(view))}</span>
+                     ${
+                       view.displayName
+                         ? `<span class="uri">${esc(displayTarget(view.target))}</span>`
+                         : ""
+                     }
+                     <span class="offer">${
+                       view.offered.video ? "Appel vidéo entrant" : "Appel audio entrant"
+                     }</span>
+                   </div>`
+                : view
                 ? `<video class="remote" data-ref="remote" autoplay playsinline></video>
                    ${
                      view.media.video && !view.selfViewHidden
@@ -109,14 +127,24 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         <div class="sidebar">
           <div class="call-controls">
             <div class="field">
-              <label for="f-target">Adresse SIP</label>
+              <label for="f-target">${incoming ? "Appelant" : "Adresse SIP"}</label>
               <input id="f-target" data-ref="target" ${view ? "disabled" : ""}
                      value="${view ? esc(displayTarget(view.target)) : esc(draft())}">
               ${cfg && !view ? `<span class="hint">Sans « @ » : appellera &lt;adresse&gt;@${esc(cfg.domain)}</span>` : ""}
               ${callError && !view ? `<span class="call-error">${esc(callError)}</span>` : ""}
             </div>
             ${
-              view
+              incoming
+                ? `<div class="answer-actions">
+                     ${answerChoices(view.offered)
+                       .map(
+                         (c) =>
+                           `<button class="btn answer" data-act="${c.act}">${c.icon} ${esc(c.label)}</button>`,
+                       )
+                       .join("")}
+                     <button class="btn hangup" data-act="reject">${ICONS.hangup} Refuser</button>
+                   </div>`
+                : view
                 ? `<button class="btn hangup ${view.state === "hangingup" ? "inactive" : ""}"
                            data-act="hangup" ${view.state === "hangingup" ? "disabled" : ""}>
                      ${ICONS.hangup} Raccrocher
@@ -186,6 +214,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           <div class="chat-strip">
             ${ICONS.chat}<span>Tchat — disponible en phase 4</span>
           </div>
+          ${optIn ? `<div class="alert-optin">${optIn}</div>` : ""}
           <div class="sidefoot">
             <span class="fontsize">
               <button data-act="font-down" aria-label="Réduire la taille du texte">A−</button>

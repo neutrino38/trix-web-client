@@ -98,7 +98,7 @@ stateDiagram-v2
   registering --> ready : sip.registered
   registering --> reg_failed : sip.registrationFailed / after 30s
   ready --> in_call : ui.call → spawn CallMachine
-  ready --> in_call : sip.newSession entrante (phase 3)
+  ready --> in_call : sip.incoming (INVITE entrant) → spawn CallMachine
   ready --> configuring : ui.backToSettings (unregister + UA.stop)
   ready --> unregistering : ui.logout
   in_call --> ready : child.exit
@@ -146,22 +146,79 @@ stateDiagram-v2
 
 ### 4.3 CallMachine — appel entrant (phase 3)
 
-Même machine avec un état initial alternatif (`args.direction`) :
+Même machine : `initial_state` est un aiguillage traversé sans attendre d'événement,
+vers `dialing` (sortant) ou `ringing_in` (entrant, `args.incoming` injecté par le parent).
+Une fois l'appel établi, les deux sens partagent le même état `connected` — mutes,
+chrono, vu-mètres et raccrochage sont écrits une seule fois.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> ringing_in
-  ringing_in --> answering : ui.answer (audio, ou audio+vidéo si proposée)
-  ringing_in --> [*] : ui.reject → failure(rejected)
-  ringing_in --> [*] : sip.failed (annulé par l'appelant)
-  answering --> connected : sip.accepted
-  answering --> failed : sip.failed
+  [*] --> initial_state
+  initial_state --> ringing_in : args.incoming présent
+  ringing_in --> answering : ui.answer (médias choisis dans l'offre)
+  ringing_in --> [*] : ui.reject → 603, success("Appel refusé")
+  ringing_in --> [*] : sip.failed (CANCEL) → success("Appel manqué")
+  ringing_in --> [*] : after 60s → 480, success("Appel manqué (sans réponse)")
+  answering --> connected : sip.accepted / sip.confirmed
+  answering --> [*] : sip.failed → failure(cause)
+  answering --> hangingup : ui.hangup
 ```
 
-Règles de réponse (depuis l'offre SDP de l'INVITE, exposée par JsSIP) :
-- vidéo proposée → boutons « Répondre A/V » **et** « Répondre audio seul » ;
+Un appel entrant non décroché n'est **pas** un échec : la machine sort en `success` avec
+le motif exact, que `PhoneMachine` consigne en `missed` dans l'historique (« Appel refusé »
+vs « Appel manqué »). Seul un échec après décrochage (média refusé par l'OS, réponse
+finale d'erreur) sort en `failure` et s'affiche comme erreur.
+
+Règles de réponse, dérivées de l'offre SDP de l'INVITE (`sip/sdp.ts` : un flux compte
+s'il a un port non nul et n'est pas `inactive`) :
+- vidéo proposée → boutons « Répondre en vidéo » **et** « Répondre en audio » ;
 - audio seul proposé → uniquement « Répondre en audio » ;
-- vidéo seule proposée → uniquement « Répondre A/V ».
+- vidéo seule proposée → uniquement « Répondre en vidéo ».
+
+Côté port (`sip/port.ts`), l'INVITE arrive en `sip:incoming` avec un objet `IncomingCall`
+— identité, médias proposés, `listen` / `answer(media)` / `reject(reason)`. Les codes SIP
+de refus ne vivent que là : `declined` → 603, `busy` → 486, `timeout` → 480.
+
+**Un appel à la fois** : `ready` est le seul état qui accepte un INVITE. En communication
+il est refusé occupé (486), partout ailleurs (connexion, reconnexion, veille, échec
+d'enregistrement) temporairement indisponible (480).
+
+#### Alerte d'appel entrant (accessibilité — `ui/alert.ts`)
+
+Le public visé étant sourd ou malentendant, la sonnerie est un canal d'appoint : l'alerte
+réelle est visuelle. `ui/alert.ts` est le point unique qui démarre et arrête **tous** les
+canaux, piloté par le seul état `ringing_in` — aucun canal n'a de cycle de vie propre :
+
+| canal                | couvre le cas où…                                |
+|----------------------|--------------------------------------------------|
+| flash plein écran    | l'application est à l'écran                       |
+| titre d'onglet       | l'application est dans un onglet d'arrière-plan   |
+| favicon clignotant   | idem, repérable dans la barre d'onglets           |
+| notification système | la fenêtre est masquée ou minimisée               |
+| vibration            | téléphone en poche ou posé (Android)              |
+| wake lock            | l'écran allait s'éteindre — le flash serait perdu |
+
+Contraintes tenues :
+- **photosensibilité** : cadence < 1 Hz, très en deçà des trois flashs par seconde de
+  WCAG 2.3.1, et pas de rouge saturé (violet ⇄ vert) ; sous `prefers-reduced-motion`,
+  le cadre devient permanent au lieu de clignoter ;
+- **lisibilité** : le flash porte sur un cadre périphérique, pas sur un voile plein écran —
+  les boutons de réponse restent lisibles et cliquables (`pointer-events: none`) ;
+- **permissions** : la notification système n'est demandée que sur clic explicite
+  (`Activer les alertes système`), jamais à l'ouverture ;
+- **extinction sûre** : `ui/app.ts` coupe l'alerte dès qu'un écran hors appel est rendu —
+  l'alerte vit hors de `#app` (flash, titre, notification), elle ne peut donc pas être
+  emportée par un simple re-rendu ;
+- **réglage utilisateur** : le flash est débrayable par `AccountConfig.flashAlert` (case à
+  cocher de l'écran de configuration, active par défaut). Il est stocké **avec le compte**,
+  chiffré comme le reste — pas dans les préférences locales (`ui/prefs.ts`, thème et taille
+  de texte) : c'est un réglage d'accessibilité de la personne, il doit suivre le compte et
+  non le navigateur. Seul le flash est débrayable ; les autres canaux ne perturbent pas
+  l'écran et restent le filet de sécurité de l'alerte.
+
+Pour un futur empaquetage Tauri (§8), ces canaux ont des équivalents natifs plus visibles
+(notification système native, `requestUserAttention` sur la fenêtre) : `ui/alert.ts` est
+l'unique endroit à adapter.
 
 ### 4.4 Observabilité (phase 2)
 
@@ -219,7 +276,9 @@ interface AccountConfig {
   domain: string;
   displayName: string;
   username: string;
+  authUsername: string | null; // identifiant d'authentification, si distinct
   ha1: string;          // jamais le mot de passe
+  flashAlert: boolean;  // réglage d'accessibilité (§4.3) — suit le compte, pas le navigateur
 }
 interface SecureStore {
   load(): Promise<AccountConfig | null>;

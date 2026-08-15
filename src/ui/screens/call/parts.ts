@@ -17,6 +17,12 @@ import type { AccountConfig } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
 import {
+  alertPermission,
+  requestAlertPermission,
+  startIncomingAlert,
+  stopIncomingAlert,
+} from "../../alert.js";
+import {
   bumpFont,
   currentTheme,
   getCallModeId,
@@ -38,6 +44,8 @@ export const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" 
 export const CALL_LABEL: Record<CallView["state"], string> = {
   dialing: "Appel en cours",
   ringing: "Sonnerie",
+  ringing_in: "Appel entrant",
+  answering: "Connexion…",
   connected: "En communication",
   hangingup: "Fin d'appel",
 };
@@ -111,6 +119,62 @@ export function stopChrono(): void {
 /** user@domaine sans le préfixe sip:, pour l'affichage. */
 export function displayTarget(target: string): string {
   return target.replace(/^sips?:/i, "");
+}
+
+// ---------------------------------------------------------------------------
+// Appel entrant
+// ---------------------------------------------------------------------------
+
+/**
+ * Réponses proposées, dérivées des seuls médias offerts par l'INVITE
+ * (docs/SPECS.md, phase 3) : vidéo proposée → réponse A/V possible ;
+ * audio proposé → réponse audio seul possible. Une offre vidéo pure ne
+ * laisse donc que la réponse A/V, une offre audio pure que l'audio.
+ *
+ * Règle tenue ici et nulle part ailleurs : les deux gabarits déroulent
+ * simplement cette liste.
+ */
+export interface AnswerChoice {
+  act: "answer-av" | "answer-audio";
+  label: string;
+  icon: string;
+}
+
+export function answerChoices(offered: CallMedia): AnswerChoice[] {
+  const choices: AnswerChoice[] = [];
+  if (offered.video) choices.push({ act: "answer-av", label: "Répondre en vidéo", icon: ICONS.cam });
+  if (offered.audio)
+    choices.push({ act: "answer-audio", label: "Répondre en audio", icon: ICONS.phone });
+  return choices;
+}
+
+/** Médias de la réponse pour un choix donné (jamais plus que ce qui est proposé). */
+function answerMedia(act: AnswerChoice["act"], offered: CallMedia): CallMedia {
+  return act === "answer-av"
+    ? { audio: offered.audio, video: true }
+    : { audio: true, video: false };
+}
+
+/** Identité de l'appelant : nom affiché si le From en porte un, URI sinon. */
+export function callerName(view: CallView): string {
+  return view.displayName ?? displayTarget(view.target);
+}
+
+/**
+ * Invite à autoriser les notifications système — le seul canal d'alerte
+ * qui traverse une fenêtre masquée, donc important ici. Rien à afficher
+ * une fois accordées ; si l'utilisateur a refusé, on le dit plutôt que
+ * de laisser croire à une alerte qui ne viendra pas.
+ */
+export function alertOptIn(): string {
+  switch (alertPermission()) {
+    case "default":
+      return `<button class="linkbtn" data-act="enable-alerts">Activer les alertes système</button>`;
+    case "denied":
+      return `<span class="alert-note">Alertes système bloquées par le navigateur</span>`;
+    default:
+      return "";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +338,33 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       if (e.key === "Escape") closeMenu();
     });
   }
+
+  // --- appel entrant --------------------------------------------------------
+  if (view?.state === "ringing_in") {
+    for (const choice of answerChoices(view.offered)) {
+      on(`[data-act="${choice.act}"]`, () =>
+        phone.send({ type: "ui:answer", media: answerMedia(choice.act, view.offered) }),
+      );
+    }
+    on('[data-act="reject"]', () => phone.send({ type: "ui:reject" }));
+    // alerte multi-canal : l'application s'adresse d'abord à des sourds
+    startIncomingAlert({
+      caller: callerName(view),
+      video: view.offered.video,
+      flash: cfg?.flashAlert !== false,
+    });
+  } else {
+    stopIncomingAlert();
+  }
+
+  // demande de permission : toujours déclenchée par un clic, jamais à l'improviste
+  on('[data-act="enable-alerts"]', (btn) => {
+    void requestAlertPermission().then(() => {
+      const next = alertOptIn();
+      if (next) btn.replaceWith(el(next));
+      else btn.remove();
+    });
+  });
 
   // --- commandes en communication -----------------------------------------
   on('[data-act="hangup"]', () => phone.send({ type: "ui:hangup" }));

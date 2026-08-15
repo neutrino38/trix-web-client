@@ -15,8 +15,13 @@
 
 import { defineMachine, goto, stay } from "finite-state-language";
 import type { ChildExit, Fx } from "finite-state-language";
-import type { AccountConfig, CallLogEntry, SecureStore } from "../storage/store.js";
-import type { CallMedia, SipHandle, SipPort } from "../sip/port.js";
+import type {
+  AccountConfig,
+  CallDirection,
+  CallLogEntry,
+  SecureStore,
+} from "../storage/store.js";
+import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
 import { computeHa1 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
 import { CallMachine } from "./call.js";
@@ -34,7 +39,14 @@ export interface PhoneCtx {
   /** Champs du formulaire à surligner après un échec : le proxy (connexion) ou les identifiants SIP. */
   suspectFields: "proxy" | "credentials" | null;
   /** Appel en cours de lancement/déroulement, gardé jusqu'au child:exit pour l'historique. */
-  pendingCall: { target: string; media: CallMedia; startedAt: number } | null;
+  pendingCall: {
+    target: string;
+    media: CallMedia;
+    direction: CallDirection;
+    startedAt: number;
+  } | null;
+  /** INVITE entrant accepté par `ready`, transmis à la CallMachine au spawn. */
+  incoming: IncomingCall | null;
   /** Miroir de la CallMachine (child:msg) — ce que l'UI rend pendant in_call. */
   call: CallView | null;
   /** Issue du dernier appel raté (486, pas de réponse…), affichée près du champ d'adresse. */
@@ -97,10 +109,15 @@ function forwardToCall(ev: CallControlEvent, _ctx: PhoneCtx, fx: Fx<PhoneEvent>)
  * Consigne l'appel terminé dans l'historique et le persiste (fire-and-forget :
  * un échec d'écriture ne doit pas perturber la machine — l'historique en
  * mémoire reste juste).
+ *
+ * Un entrant jamais décroché (refusé, annulé par l'appelant, sans réponse)
+ * est `missed` : ce n'est pas un échec, et la CallMachine en donne le motif
+ * exact dans la raison du `child:exit`.
  */
 function recordCall(ctx: PhoneCtx, ev: ChildExit): void {
   const info = ctx.pendingCall;
   if (!info || !ctx.config) return;
+  const incoming = info.direction === "incoming";
   const connectedAt = ctx.call?.connectedAt ?? null;
   const answered = connectedAt !== null;
   // le proxy perdu pendant l'appel prime sur ce que rapporte la session
@@ -111,26 +128,40 @@ function recordCall(ctx: PhoneCtx, ev: ChildExit): void {
       ? endedBy === "network"
         ? "dropped"
         : "answered"
-      : ev.outcome === "failure"
-        ? "failed"
-        : "canceled";
+      : incoming
+        ? "missed"
+        : ev.outcome === "failure"
+          ? "failed"
+          : "canceled";
   const entry: CallLogEntry = {
     target: info.target.replace(/^sips?:/i, ""),
-    direction: "outgoing",
+    direction: info.direction,
     outcome,
-    media: info.media,
+    // entrant : les médias réellement acceptés, pas ceux proposés
+    media: ctx.call?.media ?? info.media,
     startedAt: info.startedAt,
     connectedAt,
     endedAt: Date.now(),
     endedBy: answered ? endedBy : null,
     reason: ctx.callDropped
       ? "Connexion au proxy perdue pendant l'appel"
-      : ev.outcome === "failure"
+      : outcome === "missed" || ev.outcome === "failure"
         ? (ev.reason ?? null)
         : null,
   };
   ctx.history = [entry, ...ctx.history].slice(0, HISTORY_MAX);
   void ctx.store.saveHistory(accountKey(ctx.config), ctx.history).catch(() => {});
+}
+
+/**
+ * Un appel à la fois : tout INVITE arrivant hors de `ready` est refusé sur
+ * place (486 en communication, 480 sinon — l'UA est en train de tomber ou
+ * de se rétablir). L'événement est consommé sans changer d'état.
+ */
+function refuseIncoming(reason: RejectReason) {
+  return (ev: Extract<PhoneEvent, { type: "sip:incoming" }>): void => {
+    ev.call.reject(reason);
+  };
 }
 
 /** 401/403/407 : credentials refusés ; 404 : user ou domaine inconnu du registrar. */
@@ -168,6 +199,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     username,
     authUsername,
     ha1,
+    flashAlert: f.flashAlert,
   };
   return goto("saving");
 }
@@ -184,6 +216,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     lastErrorCode: null,
     suspectFields: null,
     pendingCall: null,
+    incoming: null,
     call: null,
     callError: null,
     history: [],
@@ -225,6 +258,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // événements SIP tardifs d'un UA arrêté : consommés sans effet
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
       },
@@ -239,6 +273,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:cancelConfig": () => goto("home"),
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
       },
@@ -253,6 +288,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // suites de l'arrêt de l'UA : consommées sans effet
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": () => undefined,
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
@@ -293,6 +329,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       },
       on: {
         "sip:connected": () => goto("registering", "WebSocket ouverte"),
+        // pas encore enregistré : un INVITE qui traînerait est décliné
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:invalidProxy": (ev, ctx) =>
           fail(ctx, "Nom du proxy invalide — vérifiez l'adresse WSS", `URL: ${ev.detail}`, "proxy"),
         "sip:disconnected": (_ev, ctx) =>
@@ -316,6 +354,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     registering: {
       on: {
         "sip:registered": () => goto("ready", "REGISTER OK"),
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": (ev, ctx) =>
           isCredentialsError(ev.statusCode)
             ? fail(
@@ -351,8 +390,25 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           const target = ev.target.trim();
           if (!target) return stay("cible vide");
           ctx.callError = null;
-          ctx.pendingCall = { target, media: ev.media, startedAt: Date.now() };
+          ctx.pendingCall = {
+            target,
+            media: ev.media,
+            direction: "outgoing",
+            startedAt: Date.now(),
+          };
           return goto("in_call", `appel vers ${target}`);
+        },
+        // INVITE entrant : même écran d'appel, la CallMachine démarre en sonnerie
+        "sip:incoming": (ev, ctx) => {
+          ctx.callError = null;
+          ctx.incoming = ev.call;
+          ctx.pendingCall = {
+            target: ev.call.from,
+            media: ev.call.offered,
+            direction: "incoming",
+            startedAt: Date.now(),
+          };
+          return goto("in_call", `appel entrant de ${ev.call.from}`);
         },
         // rafraîchissements périodiques du REGISTER
         "sip:registered": () => stay("re-REGISTER OK"),
@@ -392,7 +448,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         const req = ctx.pendingCall!;
         fx.spawn(CallMachine, {
           as: "call",
-          args: { handle: ctx.handle!, target: req.target, media: req.media },
+          args: {
+            handle: ctx.handle!,
+            target: req.target,
+            media: req.media,
+            direction: req.direction,
+            incoming: ctx.incoming,
+          },
         });
       },
       on: {
@@ -407,6 +469,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           ctx.callDropped = false;
           ctx.sleepRequested = false;
           ctx.pendingCall = null;
+          ctx.incoming = null;
           ctx.call = null;
           if (sleep) return goto("sleeping", "veille : appel raccroché");
           if (dropped) {
@@ -423,6 +486,10 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:muteMic": forwardToCall,
         "ui:muteCam": forwardToCall,
         "ui:toggleSelfView": forwardToCall,
+        "ui:answer": forwardToCall,
+        "ui:reject": forwardToCall,
+        // deuxième INVITE pendant un appel : occupé (pas de double appel)
+        "sip:incoming": refuseIncoming("busy"),
         // Paramètres/Déconnexion sont désactivés pendant l'appel : on consomme
         // pour éviter qu'un clic ne reste en attente et s'exécute après coup
         "ui:backToSettings": () => undefined,
@@ -482,6 +549,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         },
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": () => undefined,
         "sip:invalidProxy": () => undefined,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
@@ -508,6 +576,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:clearHistory": clearHistory,
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": () => undefined,
         "ui:logout": () => goto("home"),
         "ui:backToSettings": () => goto("reconfiguring"),
@@ -527,6 +596,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // suites de l'arrêt de l'UA : consommées sans effet
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": () => undefined,
         "sip:invalidProxy": () => undefined,
         "sys:sleep": () => undefined,
@@ -542,6 +612,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "sip:unregistered": () => undefined, // on attend la fermeture du transport
         "sip:registrationFailed": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
         "sip:disconnected": (_ev, ctx) => {
           ctx.handle = null;
           return goto("home", "déconnecté");

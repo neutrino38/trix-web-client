@@ -3,6 +3,7 @@ import { renderHome } from "./screens/home.js";
 import { renderConfig } from "./screens/config.js";
 import { renderCall } from "./screens/call/index.js";
 import { layoutMode, type LayoutMode } from "./layout.js";
+import { stopIncomingAlert } from "./alert.js";
 
 let lastState: string | null = null;
 let lastLayout: LayoutMode | null = null;
@@ -29,10 +30,14 @@ function pick(phone: PhoneInstance): HTMLElement {
     case "initial_state":
       return document.createElement("div"); // chargement de la config (< 3 s)
     case "home":
+      stopIncomingAlert();
       return renderHome(phone);
     case "configuring":
     case "reconfiguring":
     case "saving":
+      // filet : l'alerte d'appel entrant vit hors de #app (flash, titre,
+      // notification) — quitter l'écran d'appel doit toujours l'éteindre
+      stopIncomingAlert();
       return renderConfig(phone);
     default:
       return renderCall(phone);

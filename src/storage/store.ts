@@ -14,6 +14,13 @@ export interface AccountConfig {
   username: string; // userpart de l'URI SIP
   authUsername: string | null; // identifiant d'authentification, si différent de username
   ha1: string; // jamais le mot de passe
+  /**
+   * Flash visuel à l'appel entrant (accessibilité sourds — `ui/alert.ts`).
+   * Réglage du compte, donc persisté chiffré avec lui : il suit l'utilisateur
+   * et non le navigateur. Actif par défaut, y compris pour les comptes
+   * enregistrés avant son introduction.
+   */
+  flashAlert: boolean;
 }
 
 export type CallDirection = "outgoing" | "incoming";
@@ -151,8 +158,9 @@ export function createBrowserStore(): SecureStore {
       try {
         const cfg = (await decryptGet(db, DATA_ID)) as AccountConfig | null;
         if (!cfg) return null;
-        // comptes enregistrés avant l'ajout du champ : pas d'identifiant séparé
-        return { ...cfg, authUsername: cfg.authUsername ?? null };
+        // comptes enregistrés avant l'ajout de ces champs : identifiant séparé
+        // absent, et flash actif (le désactiver ne peut être qu'un choix explicite)
+        return { ...cfg, authUsername: cfg.authUsername ?? null, flashAlert: cfg.flashAlert ?? true };
       } finally {
         db.close();
       }

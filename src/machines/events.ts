@@ -1,5 +1,5 @@
 import type { ChildExit, ChildMsg, ParentMsg, TaskResult } from "finite-state-language";
-import type { AccountConfig, CallLogEntry } from "../storage/store.js";
+import type { AccountConfig, CallDirection, CallLogEntry } from "../storage/store.js";
 import type { CallMedia, CallSession, CallSipEvent, SipEvent } from "../sip/port.js";
 
 /** Contenu du formulaire de configuration. `password: null` = inchangé (conserver le HA1 existant). */
@@ -11,6 +11,8 @@ export interface ConfigForm {
   /** Identifiant d'authentification si différent du userpart de l'URI, sinon null. */
   authUsername: string | null;
   password: string | null;
+  /** Flash visuel à l'appel entrant (accessibilité sourds), réglage du compte. */
+  flashAlert: boolean;
 }
 
 /** Commandes UI valables pendant un appel — relayées par PhoneMachine à la CallMachine. */
@@ -18,7 +20,10 @@ export type CallControlEvent =
   | { type: "ui:hangup" }
   | { type: "ui:muteMic" }
   | { type: "ui:muteCam" }
-  | { type: "ui:toggleSelfView" };
+  | { type: "ui:toggleSelfView" }
+  /** Appel entrant : répondre avec la combinaison choisie parmi les médias proposés. */
+  | { type: "ui:answer"; media: CallMedia }
+  | { type: "ui:reject" };
 
 /** Événements de la CallMachine (une instance par appel). */
 export type CallEvent = CallControlEvent | CallSipEvent | ParentMsg;
@@ -29,8 +34,14 @@ export type CallEvent = CallControlEvent | CallSipEvent | ParentMsg;
  * de PhoneMachine pour rendre l'écran d'appel.
  */
 export interface CallView {
-  state: "dialing" | "ringing" | "connected" | "hangingup";
+  state: "dialing" | "ringing" | "ringing_in" | "answering" | "connected" | "hangingup";
+  direction: CallDirection;
   target: string;
+  /** Nom affiché de l'appelant (entrant), s'il en porte un. */
+  displayName: string | null;
+  /** Entrant : médias proposés par l'INVITE — décide des réponses possibles. */
+  offered: CallMedia;
+  /** Médias effectivement négociés (entrant : ceux de la réponse). */
   media: CallMedia;
   micMuted: boolean;
   camMuted: boolean;

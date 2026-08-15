@@ -12,6 +12,7 @@ const CFG: AccountConfig = {
   username: "alice",
   authUsername: null,
   ha1: "939e7578ed9e3c518a452acee763bce9",
+  flashAlert: true,
 };
 
 describe("browserStore", () => {
@@ -24,6 +25,20 @@ describe("browserStore", () => {
     const store = createBrowserStore();
     await store.save(CFG);
     expect(await store.load()).toEqual(CFG);
+  });
+
+  it("réglage du flash conservé au round-trip", async () => {
+    const store = createBrowserStore();
+    await store.save({ ...CFG, flashAlert: false });
+    expect((await store.load())!.flashAlert).toBe(false);
+  });
+
+  it("compte enregistré avant l'ajout du réglage : flash actif par défaut", async () => {
+    const store = createBrowserStore();
+    const legacy = { ...CFG } as Partial<AccountConfig>;
+    delete legacy.flashAlert;
+    await store.save(legacy as AccountConfig);
+    expect((await store.load())!.flashAlert).toBe(true);
   });
 
   it("clear efface le compte", async () => {

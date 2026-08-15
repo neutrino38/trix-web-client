@@ -7,6 +7,7 @@
 
 import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
+import { offeredMedia } from "./sdp.js";
 
 export type SipEvent =
   | { type: "sip:connected" }
@@ -15,7 +16,9 @@ export type SipEvent =
   | { type: "sip:unregistered" }
   | { type: "sip:registrationFailed"; cause: string; statusCode?: number }
   /** URL de proxy rejetée par JsSIP avant toute tentative réseau (schéma/syntaxe). */
-  | { type: "sip:invalidProxy"; detail: string };
+  | { type: "sip:invalidProxy"; detail: string }
+  /** INVITE entrant : la machine décide de répondre ou de refuser. */
+  | { type: "sip:incoming"; call: IncomingCall };
 
 /**
  * Combinaison de médias d'un appel. Extensible : les modes exotiques à
@@ -48,6 +51,32 @@ export interface CallSession {
   setMicMuted(muted: boolean): void;
   setCamMuted(muted: boolean): void;
   attachMedia(remote: HTMLVideoElement, local: HTMLVideoElement | null): void;
+}
+
+/**
+ * Motif de refus d'un appel entrant. Le port seul connaît les codes SIP
+ * correspondants — les machines raisonnent en intentions.
+ */
+export type RejectReason = "declined" | "busy" | "timeout";
+
+/**
+ * Appel entrant en attente de décision (docs/CONCEPTION.md §4.3).
+ * L'identité et les médias proposés sont figés à l'arrivée de l'INVITE ;
+ * `listen` doit être appelé avant toute décision pour ne pas manquer une
+ * annulation de l'appelant.
+ */
+export interface IncomingCall {
+  /** URI de l'appelant (`sip:bob@example.fr`). */
+  from: string;
+  /** Nom affiché porté par l'en-tête From, s'il y en a un. */
+  displayName: string | null;
+  /** Médias réellement proposés par l'offre SDP de l'INVITE. */
+  offered: CallMedia;
+  /** Branche les événements de la session (annulation comprise) et rend la session. */
+  listen(send: (ev: CallSipEvent) => void): CallSession;
+  /** 200 OK avec la combinaison de médias choisie (sous-ensemble de `offered`). */
+  answer(media: CallMedia): void;
+  reject(reason: RejectReason): void;
 }
 
 export interface SipHandle {
@@ -112,6 +141,18 @@ export function createJsSipPort(): SipPort {
             statusCode: e.response?.status_code,
           }),
       );
+      // INVITE entrant : on ne fait que le signaler, la décision (répondre,
+      // refuser) appartient aux machines. Les sessions sortantes passent
+      // aussi par cet événement — elles sont déjà pilotées par call().
+      // le listener est typé sur une union de deux formes d'événement :
+      // on décrit la partie commune dont on a besoin
+      ua.on(
+        "newRTCSession",
+        (e: { originator: string; session: Session; request: { body?: string | null } }) => {
+          if (e.originator !== "remote") return;
+          send({ type: "sip:incoming", call: wrapIncoming(e.session, e.request.body ?? null) });
+        },
+      );
       ua.start();
 
       return {
@@ -123,23 +164,56 @@ export function createJsSipPort(): SipPort {
           const session = ua.call(target, {
             mediaConstraints: { audio: media.audio, video: media.video },
           });
-          session.on("progress", () => sendCall({ type: "sip:progress" }));
-          session.on("accepted", () => sendCall({ type: "sip:accepted" }));
-          session.on("confirmed", () => sendCall({ type: "sip:confirmed" }));
-          session.on("ended", (e) =>
-            sendCall({ type: "sip:ended", cause: causeOf(e), originator: originatorOf(e) }),
-          );
-          session.on("failed", (e) =>
-            sendCall({
-              type: "sip:failed",
-              cause: causeOf(e),
-              statusCode: statusOf(e),
-              originator: originatorOf(e),
-            }),
-          );
+          bindSession(session, sendCall);
           return wrapSession(session);
         },
       };
+    },
+  };
+}
+
+type Session = ReturnType<JsSIP.UA["call"]>;
+
+/** Seul point de traduction des événements d'une session JsSIP en événements de machine. */
+function bindSession(session: Session, send: (ev: CallSipEvent) => void): void {
+  session.on("progress", () => send({ type: "sip:progress" }));
+  session.on("accepted", () => send({ type: "sip:accepted" }));
+  session.on("confirmed", () => send({ type: "sip:confirmed" }));
+  session.on("ended", (e) =>
+    send({ type: "sip:ended", cause: causeOf(e), originator: originatorOf(e) }),
+  );
+  session.on("failed", (e) =>
+    send({
+      type: "sip:failed",
+      cause: causeOf(e),
+      statusCode: statusOf(e),
+      originator: originatorOf(e),
+    }),
+  );
+}
+
+/** Codes SIP de refus : le reste de l'application raisonne en motifs. */
+const REJECT: Record<RejectReason, { status_code: number; reason_phrase: string }> = {
+  declined: { status_code: 603, reason_phrase: "Decline" },
+  busy: { status_code: 486, reason_phrase: "Busy Here" },
+  timeout: { status_code: 480, reason_phrase: "Temporarily Unavailable" },
+};
+
+function wrapIncoming(session: Session, sdp: string | null): IncomingCall {
+  const from = session.remote_identity;
+  return {
+    from: from.uri.toString(),
+    displayName: from.display_name || null,
+    offered: offeredMedia(sdp),
+    listen(send) {
+      bindSession(session, send);
+      return wrapSession(session);
+    },
+    answer(media) {
+      session.answer({ mediaConstraints: { audio: media.audio, video: media.video } });
+    },
+    reject(reason) {
+      if (!session.isEnded()) session.terminate(REJECT[reason]);
     },
   };
 }

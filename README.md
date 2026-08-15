@@ -22,9 +22,12 @@ npm run diagrams  # régénère docs/DIAGRAMS.md depuis toMermaid()
 
 - [x] Phase 0 — specs, conception, maquettes
 - [x] Phase 1 — accueil, configuration (HA1 chiffré, jamais de mot de passe stocké), REGISTER
-- [x] Phase 2 — écran d'appel, appels sortants (CallMachine), historique chiffré,
-      reconnexion automatique, veille/réveil, observabilité `toMermaid()`
-- [ ] Phase 3 — appels entrants
+- [x] Phase 2 — écran d'appel (vues bureau et mobile), appels sortants (CallMachine),
+      historique chiffré, reconnexion automatique, veille/réveil, observabilité `toMermaid()`
+- [x] Phase 3 — appels entrants : réponse audio ou audio+vidéo selon l'offre SDP, refus,
+      un appel à la fois (486/480), appels manqués dans l'historique, et **alerte accessible
+      aux personnes sourdes** (flash écran, onglet et favicon clignotants, notification
+      système, vibration, écran maintenu allumé)
 - [ ] Phase 4 — DTMF, tchat sur data channel
 - [ ] Phase 5 (future) — empaquetage Tauri
 

@@ -19,6 +19,9 @@ import {
   CALL_LABEL,
   ICONS,
   STATUS,
+  alertOptIn,
+  answerChoices,
+  callerName,
   currentMode,
   displayTarget,
   draft,
@@ -41,6 +44,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
+  const optIn = alertOptIn();
 
   return el(`
     <div class="screen-call mobile">
@@ -58,7 +62,32 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
       </div>
 
       ${
-        view
+        view?.state === "ringing_in"
+          ? `<div class="mincoming">
+               <span class="ring-badge">${ICONS.phone}</span>
+               <span class="who">${esc(callerName(view))}</span>
+               ${
+                 view.displayName
+                   ? `<span class="uri">${esc(displayTarget(view.target))}</span>`
+                   : ""
+               }
+               <span class="offer">${
+                 view.offered.video ? "Appel vidéo entrant" : "Appel audio entrant"
+               }</span>
+               <div class="mincoming-actions">
+                 <button class="hangup-round reject" data-act="reject" aria-label="Refuser">
+                   ${ICONS.hangup}
+                 </button>
+                 ${answerChoices(view.offered)
+                   .map(
+                     (c) =>
+                       `<button class="hangup-round answer" data-act="${c.act}"
+                                title="${esc(c.label)}" aria-label="${esc(c.label)}">${c.icon}</button>`,
+                   )
+                   .join("")}
+               </div>
+             </div>`
+          : view
           ? `<div class="mvideo" data-ref="videozone">
                <video class="remote" data-ref="remote" autoplay playsinline></video>
                ${
@@ -130,6 +159,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                          aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
                  <div class="dropdown" data-ref="modemenu" hidden></div>
                </div>
+               ${optIn ? `<div class="alert-optin">${optIn}</div>` : ""}
                <div class="calllog">
                  <div class="calllog-head">
                    <span>Historique</span>

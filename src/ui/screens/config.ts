@@ -48,6 +48,16 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
                  placeholder="${cfg ? "•••••• (déjà défini)" : ""}" ${cfg ? "" : "required"}${inv("credentials")}>
           ${cfg ? `<span class="hint">Laisser vide pour conserver le mot de passe actuel.</span>` : ""}
         </div>
+        <div class="field">
+          <label class="checkline" for="f-flash">
+            <input type="checkbox" id="f-flash" name="flashAlert"
+                   ${cfg?.flashAlert === false ? "" : "checked"}>
+            <span><b>Flash visuel à l'appel entrant</b> — l'écran clignote pendant
+              la sonnerie, pour être alerté sans le son</span>
+          </label>
+          <span class="hint">Les autres alertes (onglet, notification système, vibration)
+            restent actives. Réglage enregistré avec le compte.</span>
+        </div>
         <div class="note">Le mot de passe n'est pas conservé : seule une empreinte (HA1)
           est stockée, chiffrée, dans ce navigateur.</div>
         <div class="form-actions">
@@ -62,6 +72,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const form = node.querySelector("form")!;
   const authToggle = form.querySelector("#f-auth-toggle") as HTMLInputElement;
   const authInput = form.querySelector("#f-auth") as HTMLInputElement;
+  const flashToggle = form.querySelector("#f-flash") as HTMLInputElement;
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -77,6 +88,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         displayName: v("displayName"),
         authUsername: authUsername === "" ? null : authUsername,
         password: password === "" ? null : password,
+        flashAlert: flashToggle.checked,
       },
     });
   });
