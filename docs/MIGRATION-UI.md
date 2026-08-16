@@ -3,7 +3,7 @@
 **Maquette cible :** `docs/mockups/trix-call-screen-mockups.html` (options 1a → 1g)
 **Maquette de départ :** `docs/mockups/mockup.html` (état implémenté, phases 0 à 3)
 **Périmètre :** code des phases 2 et 3 (écran d'appel, appels sortants, appels entrants)
-**Dernière mise à jour :** 2026-08-16 (lot L3)
+**Dernière mise à jour :** 2026-08-16 (lot L4)
 
 ---
 
@@ -71,6 +71,7 @@ vibration, wake lock).
 | `src/ui/screens/config.ts` | Formulaire scindé en deux sections : compte SIP (chiffré) et alertes/affichage (localStorage, effet immédiat) — accueille les notifications et le thème (L1b) |
 | `src/ui/prefs.ts` | Trois réglages de plus : `trix-panel` (replié/déplié), `trix-panel-width` (px, plafonné à 33 %), et le thème qui passe à trois états (clair / sombre / système) — `toggleTheme()` devient `setTheme(mode)` |
 | `src/ui/screens/call/panel.ts` | **Nouveau (L3)** : icône, intitulés, poignée et câblage du panneau repliable — repli, glisser, pilotage clavier |
+| `src/ui/screens/call/incoming.ts` | **Nouveau (L4)** : gabarit de la popup modale (bureau et mobile) et son comportement — focus déplacé, piégé, rendu ; Échap = refuser |
 | `src/ui/theme.css` | Classes nouvelles (`.overlaybar`, `.panel-handle`, `.chatcol`, `.incoming-dialog`), et `.mediabar`/`.incoming-card`/`.chat-strip` retirées. **Palette étendue** pour la conformité AA : `--green-surface`, `--red-surface`, `--*-signal`, `--field-border` (§7.2) |
 | `index.html` | Déclaration du favicon, `<h1>` et régions ARIA (§6) |
 
@@ -263,11 +264,11 @@ un même gabarit. Le câblage de `wireCallScreen` prenait le premier `data-act` 
 et la règle « Raccrocher atteignable dans tous les états » redevient vraie dans les deux états.
 À retenir pour L4 et L5, qui vont eux aussi doubler des commandes entre popup, sidebar et scène.
 
-### L4 — Appel entrant en popup modale *(indépendant)*
+### L4 — Appel entrant en popup modale ✅ *fait* *(indépendant)*
 
 1. Nouveau module `incoming.ts`, partagé bureau/mobile : voile `rgba(13,10,18,.55)` + carte 520 px
    (pleine largeur sur mobile), badge vert 64 px avec halo, sur-titre, nom 34 px, URI, boutons
-   pleine largeur, phrase d'explication de l'offre.
+   pleine largeur.
 2. Supprimer `.incoming-card` (scène bureau) et `.mincoming` (mobile).
 3. Accessibilité (RGAA 7.x) : `role="dialog" aria-modal="true"`, focus déplacé sur la popup à
    l'ouverture, **focus piégé**, Échap = refuser, focus rendu au déclencheur à la fermeture.
@@ -277,8 +278,37 @@ et la règle « Raccrocher atteignable dans tous les états » redevient vraie d
    seulement que la popup passe **au-dessus** du voile et **en dessous** du cadre.
 6. L'invite de permission quitte l'écran d'appel — voir **L1b**.
 
-*Recette :* la popup s'ouvre sur `ringing_in`, le focus y entre, Échap refuse, et le rendu est
-identique sur les deux formats.
+*Recette (passée) :* la popup s'ouvre sur `ringing_in` avec le focus sur la première réponse ;
+quatre tabulations en font le tour sans jamais en sortir, Maj+Tab revient en arrière de même ;
+un clic sur le voile ne ferme rien et ne déplace pas le focus ; Échap émet **un seul** `ui:reject` ;
+répondre referme la popup, éteint l'alerte et rend l'écran à nouveau interactif. Vérifiée dans les
+deux thèmes et les deux formats sur un banc de rendu jetable (faux `PhoneInstance` en `ringing_in`),
+avec l'offre A/V puis l'offre audio seule ; les deux maquettes correspondantes sont dans
+`mockup.html` (écrans 5 et 9).
+
+*Écarts par rapport au plan initial :*
+- **La phrase d'explication de l'offre est supprimée** (« L'offre contient audio + vidéo :
+  répondre en audio seul reste possible »). Elle parlait le vocabulaire du SDP, pas celui de
+  l'utilisateur. C'est le **sur-titre** qui porte désormais seul l'information — d'où sa taille,
+  très au-dessus des 10,5 px de la maquette, qui en faisaient une mention de bas de page alors
+  qu'il dit la nature de l'appel et donc pourquoi tel bouton de réponse manque.
+- **Le reste de l'écran passe `inert` pendant la sonnerie**, en plus du `aria-modal`. Le premier
+  vaut pour la souris et le clavier, le second n'est lu que des lecteurs d'écran : sans lui, un
+  clic sur l'historique derrière le voile restait possible.
+- **Les réponses quittent aussi la sidebar bureau** (`.answer-actions`), que le plan ne
+  mentionnait pas : les laisser aurait doublé des boutons devenus inatteignables sous l'écran
+  `inert`. C'est l'inverse du cas Raccrocher de L3 — là, les deux exemplaires servaient dans deux
+  états différents ; ici, un seul état existe.
+- **Le focus est posé dans une microtâche.** `renderCall` câble le nœud **avant** que l'appelant
+  ne le pose dans `#app`, et `focus()` sur un nœud détaché ne fait rien : le piège se refermait
+  sur un écran dont le focus était resté sur `<body>`. La microtâche s'exécute juste après
+  `replaceChildren`, et vérifie `isConnected` au cas où un rendu plus récent aurait pris la main.
+- **Le bouton qui avait le focus le retrouve après un re-rendu.** L'écran est reconstruit à chaque
+  notification de la machine : sans cette mémoire, un `stay()` pendant la sonnerie ramènerait le
+  focus sur « Répondre » sous les doigts de qui s'apprêtait à refuser.
+- **Le voile ne prend pas le focus** (`preventDefault` sur son `mousedown`) : il ne suffisait pas
+  de ne pas fermer au clic — sortir le focus du piège aurait rendu Échap inopérant, son écouteur
+  vivant sur la popup.
 
 ### L5 — Colonne tchat (gabarit seul) *(dépend de L3, D2)*
 

@@ -258,22 +258,56 @@ fieldset.field { border: none; }
   transition: height 90ms linear;
 }
 
-/* ---------- appel entrant (phase 3) ---------- */
-.incoming-card {
-  position: relative; z-index: 1;
-  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
-  text-align: center; color: #ede6f5;
+/* ---------- appel entrant en popup modale (maquettes 1e/1g) ---------- */
+/* Un appel entrant n'est pas un contenu de plus dans la page : c'est une
+   interruption qui attend une décision. D'où la modale — et non plus une carte
+   incrustée dans la scène — posée au-dessus de tout l'écran d'appel, cadre
+   clignotant excepté : celui-ci reste en z-index 60 (voir .callflash), pour
+   qu'aucun voile ne vienne atténuer le signal principal d'un public sourd. */
+.incoming-veil {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; background: rgba(13, 10, 18, 0.55);
 }
-.incoming-card .who { font-size: 1.35rem; font-weight: 600; }
-.incoming-card .uri { font-size: 0.85rem; color: #8f83a3; }
-.incoming-card .offer { font-size: 0.8rem; color: #cfc4de; }
-/* pastille qui pulse au rythme de la sonnerie */
+.incoming-dialog {
+  width: min(520px, 100%); max-height: 100%; overflow-y: auto;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(13, 10, 18, 0.5);
+  padding: 2rem 2rem 1.75rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  text-align: center;
+}
+/* Le média offert, avant même le nom : seul à dire pourquoi tel bouton de
+   réponse manque, depuis que la phrase d'explication de la maquette a été
+   retirée (elle parlait le vocabulaire du SDP). D'où une taille très au-dessus
+   des 10,5 px de la maquette, qui en faisaient une mention de bas de page. */
+.incoming-dialog .kicker {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.15rem; font-weight: 700; letter-spacing: 0.1em; color: var(--accent);
+  text-wrap: balance;
+}
+.incoming-dialog .who { font-size: 2.1rem; font-weight: 600; line-height: 1.15; }
+.incoming-dialog .uri { font-size: 0.95rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+.incoming-actions {
+  display: flex; flex-direction: column; gap: 0.6rem;
+  width: 100%; margin-top: 0.9rem;
+}
+/* boutons pleine largeur, libellé 19 px gras : à cette taille le rouge de la
+   palette tient déjà le contraste exigé (voir docs/MIGRATION-UI.md §7.2) */
+.incoming-actions .btn {
+  width: 100%; min-height: 64px; border-radius: 16px; font-size: 1.19rem; gap: 0.75rem;
+}
+.incoming-actions .btn .icon { width: 26px; height: 26px; }
+
+/* pastille qui pulse au rythme de la sonnerie ; sans mouvement, le halo reste */
 .ring-badge {
   width: 64px; height: 64px; border-radius: 50%; margin-bottom: 0.4rem;
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--green); color: #fff;
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--green) 18%, transparent);
 }
-.ring-badge .icon { width: 30px; height: 30px; }
+.ring-badge .icon { width: 26px; height: 26px; }
 @media (prefers-reduced-motion: no-preference) {
   .ring-badge { animation: ring-pulse 1.6s ease-in-out infinite; }
 }
@@ -281,7 +315,6 @@ fieldset.field { border: none; }
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 55%, transparent); }
   60% { box-shadow: 0 0 0 16px transparent; }
 }
-.answer-actions { display: flex; flex-direction: column; gap: 0.5rem; }
 .btn.answer { background: var(--green); border-color: var(--green); color: #fff; }
 
 /* Flash d'appel entrant — signal principal pour un public sourd (voir ui/alert.ts).
@@ -517,25 +550,15 @@ fieldset.field { border: none; }
   color: #fff; background: rgba(0, 0, 0, 0.45);
   border-radius: 999px; padding: 0.2rem 0.6rem;
 }
-/* --- appel entrant : identité plein écran, réponses en bas --- */
-.mincoming {
-  flex: 1; min-height: 0; position: relative;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 0.35rem; text-align: center;
-  background: var(--video-bg); color: #ede6f5;
-  padding: 1rem calc(1rem + env(safe-area-inset-right)) 1rem calc(1rem + env(safe-area-inset-left));
+/* appel entrant : la popup modale (voir plus haut) sert les deux formats — le
+   même gabarit, la carte simplement élargie à la fenêtre */
+@media (max-width: 720px) {
+  .incoming-veil { padding: 0.75rem calc(0.75rem + env(safe-area-inset-right))
+                            calc(0.75rem + env(safe-area-inset-bottom))
+                            calc(0.75rem + env(safe-area-inset-left)); }
+  .incoming-dialog { padding: 1.5rem 1.25rem 1.25rem; }
+  .incoming-dialog .who { font-size: 1.75rem; }
 }
-.mincoming .who { font-size: 1.5rem; font-weight: 600; }
-.mincoming .uri { font-size: 0.85rem; color: #8f83a3; overflow-wrap: anywhere; }
-.mincoming .offer { font-size: 0.85rem; color: #cfc4de; }
-.mincoming-actions {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  display: flex; align-items: center; justify-content: space-evenly;
-  padding: 1rem calc(1rem + env(safe-area-inset-right)) calc(1.6rem + env(safe-area-inset-bottom))
-           calc(1rem + env(safe-area-inset-left));
-}
-.hangup-round.answer { background: var(--green); }
-.hangup-round.reject { background: var(--red); }
 
 /* raccrocher : bouton rond rouge, à droite des contrôles média */
 .hangup-round {

@@ -4,6 +4,7 @@ import { renderConfig } from "./screens/config.js";
 import { renderCall } from "./screens/call/index.js";
 import { layoutMode, type LayoutMode } from "./layout.js";
 import { stopIncomingAlert } from "./alert.js";
+import { closeIncoming } from "./screens/call/incoming.js";
 import { announce } from "./announce.js";
 import { setStateTitle } from "./title.js";
 import { CALL_LABEL, STATUS, displayTarget, fmtChrono } from "./screens/call/parts.js";
@@ -68,13 +69,16 @@ function pick(phone: PhoneInstance): HTMLElement {
       return document.createElement("div"); // chargement de la config (< 3 s)
     case "home":
       stopIncomingAlert();
+      closeIncoming();
       return renderHome(phone);
     case "configuring":
     case "reconfiguring":
     case "saving":
       // filet : l'alerte d'appel entrant vit hors de #app (flash, titre,
-      // notification) — quitter l'écran d'appel doit toujours l'éteindre
+      // notification) — quitter l'écran d'appel doit toujours l'éteindre,
+      // et refermer la popup pour que le focus ne reste pas piégé
       stopIncomingAlert();
+      closeIncoming();
       return renderConfig(phone);
     default:
       return renderCall(phone);

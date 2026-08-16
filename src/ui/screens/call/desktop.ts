@@ -11,14 +11,13 @@ import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
+import { incomingDialog } from "./incoming.js";
 import { panelHandle } from "./panel.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
   CALL_LABEL,
   ICONS,
   STATUS,
-  answerChoices,
-  callerName,
   currentMode,
   displayTarget,
   draft,
@@ -79,23 +78,16 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           ${ICONS.logout}
         </button>
       </div>
-      <div class="callbody">
+      <!-- pendant la sonnerie, la popup est la seule chose à laquelle répondre :
+           \`inert\` retire tout le reste de l'écran au clavier comme à la souris,
+           ce que \`aria-modal\` ne dit qu'aux lecteurs d'écran -->
+      <div class="callbody" ${incoming ? "inert" : ""}>
         <div class="stage">
           <div class="video" data-ref="videozone">
             ${
               incoming
-                ? `<div class="incoming-card">
-                     <span class="ring-badge">${ICONS.phone}</span>
-                     <span class="who">${esc(callerName(view))}</span>
-                     ${
-                       view.displayName
-                         ? `<span class="uri">${esc(displayTarget(view.target))}</span>`
-                         : ""
-                     }
-                     <span class="offer">${
-                       view.offered.video ? "Appel vidéo entrant" : "Appel audio entrant"
-                     }</span>
-                   </div>`
+                ? `<div class="call-overlay">${CALL_LABEL.ringing_in}…<br>
+                     <span class="target">${esc(displayTarget(view.target))}</span></div>`
                 : view
                 ? `<video class="remote" data-ref="remote" autoplay playsinline></video>
                    ${
@@ -158,16 +150,11 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
               ${callError && !view ? `<span class="call-error">${esc(callError)}</span>` : ""}
             </div>
             ${
+              // pendant la sonnerie, répondre et refuser n'existent que dans la
+              // popup : les doubler ici les rendrait inatteignables (l'écran est
+              // `inert`) tout en laissant croire le contraire
               incoming
-                ? `<div class="answer-actions">
-                     ${answerChoices(view.offered)
-                       .map(
-                         (c) =>
-                           `<button class="btn answer" data-act="${c.act}">${c.icon} ${esc(c.label)}</button>`,
-                       )
-                       .join("")}
-                     <button class="btn hangup" data-act="reject">${ICONS.hangup} Refuser</button>
-                   </div>`
+                ? ""
                 : view
                 ? `<button class="btn hangup ${view.state === "hangingup" ? "inactive" : ""}"
                            data-act="hangup" ${view.state === "hangingup" ? "disabled" : ""}>
@@ -208,5 +195,6 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           </div>
         </div>
       </div>
+      ${incoming ? incomingDialog(view) : ""}
     </div>`);
 }

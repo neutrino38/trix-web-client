@@ -16,12 +16,11 @@
 import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
+import { incomingDialog } from "./incoming.js";
 import {
   CALL_LABEL,
   ICONS,
   STATUS,
-  answerChoices,
-  callerName,
   currentMode,
   displayTarget,
   draft,
@@ -39,6 +38,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const reconnecting = phone.state === "reconnecting";
   const sleeping = phone.state === "sleeping";
   const connected = view?.state === "connected";
+  const incoming = view?.state === "ringing_in";
   const speakerMuted = isSpeakerMuted();
   const err = phone.context.lastError;
   const errCode = phone.context.lastErrorCode;
@@ -61,30 +61,12 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
       </div>
 
       ${
-        view?.state === "ringing_in"
-          ? `<div class="mincoming">
-               <span class="ring-badge">${ICONS.phone}</span>
-               <span class="who">${esc(callerName(view))}</span>
-               ${
-                 view.displayName
-                   ? `<span class="uri">${esc(displayTarget(view.target))}</span>`
-                   : ""
-               }
-               <span class="offer">${
-                 view.offered.video ? "Appel vidéo entrant" : "Appel audio entrant"
-               }</span>
-               <div class="mincoming-actions">
-                 <button class="hangup-round reject" data-act="reject" aria-label="Refuser">
-                   ${ICONS.hangup}
-                 </button>
-                 ${answerChoices(view.offered)
-                   .map(
-                     (c) =>
-                       `<button class="hangup-round answer" data-act="${c.act}"
-                                title="${esc(c.label)}" aria-label="${esc(c.label)}">${c.icon}</button>`,
-                   )
-                   .join("")}
-               </div>
+        // sonnerie : la scène reste au repos derrière la popup, seul endroit où
+        // l'on répond ou refuse (voir incoming.ts)
+        incoming
+          ? `<div class="mvideo" inert>
+               <div class="call-overlay">${CALL_LABEL.ringing_in}…<br>
+                 <span class="target">${esc(displayTarget(view.target))}</span></div>
              </div>`
           : view
           ? `<div class="mvideo" data-ref="videozone">
@@ -149,5 +131,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                </div>
              </div>`
       }
+      ${incoming ? incomingDialog(view) : ""}
     </div>`);
 }
