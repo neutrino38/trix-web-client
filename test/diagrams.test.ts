@@ -27,7 +27,7 @@ function notesToDescriptions(src: string): string {
   for (const line of src.split("\n")) {
     const open = /^\s*note (?:right|left) of (\S+)\s*$/.exec(line);
     if (open) {
-      noted = open[1];
+      noted = open[1] ?? null;
     } else if (noted === null) {
       out.push(line);
     } else if (/^\s*end note\s*$/.test(line)) {
