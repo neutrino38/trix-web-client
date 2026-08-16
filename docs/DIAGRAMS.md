@@ -6,19 +6,19 @@ Régénérer avec `npm run diagrams` (source : `toMermaid()` des machines).
 
 ```mermaid
 stateDiagram-v2
-  state initial_state
-  state home
-  state configuring
-  state reconfiguring
-  state saving
-  state connecting
-  state registering
-  state ready
-  state in_call
-  state reconnecting
-  state sleeping
-  state reg_failed
-  state unregistering
+  state "initial_state" as initial_state
+  state "home" as home
+  state "configuring" as configuring
+  state "reconfiguring" as reconfiguring
+  state "saving" as saving
+  state "connecting" as connecting
+  state "registering" as registering
+  state "ready" as ready
+  state "in_call" as in_call
+  state "reconnecting" as reconnecting
+  state "sleeping" as sleeping
+  state "reg_failed" as reg_failed
+  state "unregistering" as unregistering
   [*] --> initial_state
   initial_state : on: task:loadConfig
   home : on: ui:configure, ui:useAccount, sip:disconnected, sip:unregistered, sip:incoming, sys:sleep, sys:wake
@@ -44,12 +44,12 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
   state initial_state
-  state dialing
-  state ringing
-  state ringing_in
-  state answering
-  state connected
-  state hangingup
+  state "dialing" as dialing
+  state "ringing" as ringing
+  state "ringing_in" as ringing_in
+  state "answering" as answering
+  state "connected" as connected
+  state "hangingup" as hangingup
   [*] --> initial_state
   dialing : on: sip:progress, sip:accepted, sip:failed, sip:ended, ui:hangup, parent:msg
   ringing : on: sip:progress, sip:accepted, sip:failed, sip:ended, ui:hangup, parent:msg
