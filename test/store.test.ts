@@ -52,7 +52,7 @@ describe("browserStore", () => {
     const store = createBrowserStore();
     await store.save(CFG);
     const raw = await new Promise<unknown>((resolve, reject) => {
-      const req = indexedDB.open("stauri-communicator", 1);
+      const req = indexedDB.open("trix", 1);
       req.onsuccess = () => {
         const get = req.result.transaction("vault").objectStore("vault").get("account");
         get.onsuccess = () => resolve(get.result);

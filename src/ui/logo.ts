@@ -1,19 +1,45 @@
 /**
- * Logo placeholder (arcs du logo FSL) — à remplacer par l'icône LSF
- * définitive quand elle sera fournie (cf. SPECS.md, questions ouvertes).
+ * Marque Trix. Les images vivent dans `public/` et sont servies en `<img>` :
+ * l'écran d'appel est reconstruit à chaque notification de la machine, et
+ * réinjecter 260 ko de SVG dans le DOM à chaque rendu serait absurde — le
+ * navigateur, lui, ne charge et ne décode l'image qu'une fois.
  */
-export function logoSvg(size: number, withText: boolean): string {
-  const text = withText
-    ? `<text x="60" y="70" text-anchor="middle" font-family="Poppins, system-ui, sans-serif"
-             font-size="26" font-weight="600" fill="currentColor">LSF</text>`
-    : "";
+
+/**
+ * Icône carrée. `alt` vide par défaut : dans la barre d'en-tête, le mot
+ * « Trix » est déjà écrit à côté, et le répéter ne ferait que doubler
+ * l'annonce des lecteurs d'écran (RGAA 1.2 — image décorative).
+ */
+export function trixIcon(size: number, alt = ""): string {
+  return `<img src="/trix-icon.svg" width="${size}" height="${size}" alt="${alt}"${
+    alt === "" ? ' aria-hidden="true"' : ""
+  }>`;
+}
+
+/*
+ * `trix-logo.svg` (icône + mot-marque) n'est volontairement pas utilisé dans
+ * l'application : le mot « Trix » y est peint en violet foncé, illisible sur
+ * le fond du thème sombre — et le texte d'une image ne suit pas le thème.
+ * L'accueil compose donc l'icône et un titre en vrai texte, qui prend la
+ * couleur courante (et se sélectionne, se traduit, se zoome). Le fichier
+ * reste dans `public/` pour les supports à fond clair — README, partage.
+ */
+
+/** Dépôt du framework d'orchestration — la cible du crédit ci-dessous. */
+const FSL_URL = "https://github.com/neutrino38/finite-state-language/";
+
+/**
+ * Crédit du framework qui orchestre l'UI (`finite-state-language`), en pied
+ * d'accueil. Ouvert dans un onglet séparé : Trix est un téléphone, quitter la
+ * page couperait l'enregistrement SIP. L'intitulé accessible dit la
+ * destination **et** l'ouverture d'une nouvelle fenêtre (RGAA 6.1, 13.2) ;
+ * l'icône, elle, est décorative — le texte la double déjà.
+ */
+export function fslBadge(): string {
   return `
-  <svg width="${size}" height="${size}" viewBox="0 0 120 120" role="img" aria-label="Logo LSF">
-    <path d="M 92 30 A 42 42 0 1 0 92 90" fill="none" stroke="#7B54A0"
-          stroke-width="${withText ? 4 : 8}" stroke-linecap="round"/>
-    <path d="M 92 30 A 42 42 0 0 1 92 90" fill="none" stroke="#7B54A0"
-          stroke-width="${withText ? 4 : 8}" stroke-linecap="round"
-          stroke-dasharray="${withText ? "8 8" : "14 14"}"/>
-    ${text}
-  </svg>`;
+    <a class="fsl-badge" href="${FSL_URL}" target="_blank" rel="noopener noreferrer"
+       aria-label="Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)">
+      <img src="/fsl-icon.svg" width="36" height="36" alt="" aria-hidden="true">
+      <span>Powered by FSL</span>
+    </a>`;
 }

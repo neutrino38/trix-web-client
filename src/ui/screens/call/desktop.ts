@@ -9,13 +9,12 @@
 
 import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
-import { logoSvg } from "../../logo.js";
-import { currentTheme } from "../../prefs.js";
+import { trixIcon } from "../../logo.js";
+import { overlayBar } from "./overlay.js";
 import {
   CALL_LABEL,
   ICONS,
   STATUS,
-  alertOptIn,
   answerChoices,
   callerName,
   currentMode,
@@ -42,18 +41,24 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
-  const optIn = alertOptIn();
 
   return el(`
     <div class="screen-call">
       <div class="topbar">
-        <span class="logo">${logoSvg(26, false)}<span>STAURI</span></span>
+        <span class="logo">${trixIcon(38)}<span>Trix</span></span>
         <span class="pill"><span class="dot ${status.cls}"></span>
           ${status.label}${ready ? identity : ""}</span>
         ${
           view
             ? `<span class="pill"><span class="dot live"></span>
                  ${CALL_LABEL[view.state]} — ${esc(displayTarget(view.target))}</span>`
+            : ""
+        }
+        ${
+          connected
+            ? `<span class="chrono">${ICONS.clock}<span data-ref="chrono">${
+                view.connectedAt !== null ? fmtChrono(view.connectedAt) : "00:00:00"
+              }</span></span>`
             : ""
         }
         <span class="spacer"></span>
@@ -98,7 +103,8 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                           </div>`
                        : `<div class="call-overlay">${CALL_LABEL[view.state]}…<br>
                             <span class="target">${esc(displayTarget(view.target))}</span></div>`
-                   }`
+                   }
+                   ${overlayBar({ view, speakerMuted, withFullscreen: true })}`
                 : failed
                   ? `${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
                      ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
@@ -158,45 +164,6 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                      <div class="dropdown" data-ref="modemenu" hidden></div>
                    </div>`
             }
-            <div class="mediabar">
-              <button class="iconbtn ${connected ? (view.micMuted ? "toggled" : "") : "inactive"}"
-                      data-act="muteMic" ${connected ? "" : "disabled"}
-                      title="${view?.micMuted ? "Rétablir le micro" : "Couper le micro"}"
-                      aria-label="Couper le micro" aria-pressed="${view?.micMuted ?? false}">
-                ${ICONS.mic}
-              </button>
-              <button class="iconbtn ${connected && view.media.video ? (view.camMuted ? "toggled" : "") : "inactive"}"
-                      data-act="muteCam" ${connected && view?.media.video ? "" : "disabled"}
-                      title="${view?.camMuted ? "Rétablir la caméra" : "Couper la caméra"}"
-                      aria-label="Couper la caméra" aria-pressed="${view?.camMuted ?? false}">
-                ${ICONS.cam}
-              </button>
-              <button class="iconbtn ${connected && view.media.video ? (view.selfViewHidden ? "toggled" : "") : "inactive"}"
-                      data-act="selfview" ${connected && view?.media.video ? "" : "disabled"}
-                      title="${view?.selfViewHidden ? "Afficher le self-view" : "Masquer le self-view"}"
-                      aria-label="Masquer le self-view" aria-pressed="${view?.selfViewHidden ?? false}">
-                ${ICONS.selfview}
-              </button>
-              <button class="iconbtn ${connected ? (speakerMuted ? "toggled" : "") : "inactive"}"
-                      data-act="speaker" ${connected ? "" : "disabled"}
-                      title="${speakerMuted ? "Rétablir le son" : "Couper le son"}"
-                      aria-label="Haut-parleur" aria-pressed="${speakerMuted}">
-                ${ICONS.speaker}
-              </button>
-              <span class="dtmf-slot">
-                <button class="iconbtn inactive" disabled title="Clavier DTMF (phase 4)" aria-label="Clavier DTMF">
-                  ${ICONS.dtmf}
-                </button><span class="phase-tag">ph. 4</span>
-              </span>
-            </div>
-            <div class="time-row">
-              <span class="chrono" ${connected ? "" : 'style="opacity:.45"'}>
-                ${connected ? ICONS.clock : ""}<span data-ref="chrono">${
-                  connected && view.connectedAt !== null ? fmtChrono(view.connectedAt) : "00:00:00"
-                }</span>
-              </span>
-              ${view?.micMuted ? `<span class="mute-flag">Micro coupé</span>` : ""}
-            </div>
           </div>
           <div class="calllog">
             <div class="calllog-head">
@@ -214,15 +181,12 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           <div class="chat-strip">
             ${ICONS.chat}<span>Tchat — disponible en phase 4</span>
           </div>
-          ${optIn ? `<div class="alert-optin">${optIn}</div>` : ""}
           <div class="sidefoot">
+            <span>Taille du texte</span>
             <span class="fontsize">
               <button data-act="font-down" aria-label="Réduire la taille du texte">A−</button>
               <button data-act="font-up" aria-label="Augmenter la taille du texte">A+</button>
             </span>
-            <button class="switch" data-act="theme" aria-label="Basculer le thème">
-              ${currentTheme() === "dark" ? "Foncé" : "Clair"} <span class="track" aria-hidden="true"></span>
-            </button>
           </div>
         </div>
       </div>

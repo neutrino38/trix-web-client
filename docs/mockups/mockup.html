@@ -3,68 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-</head>
-<body>
-<title>STAURI Communicator</title>
+<title>Trix Communicator — maquettes</title>
+<!-- Ces maquettes chargent la feuille de style réelle de l'application : elles ne
+     peuvent donc pas diverger du rendu de Trix. Seul le balisage est recopié ici
+     (statique), ainsi que le décor de page ci-dessous. -->
+<link rel="stylesheet" href="../../src/ui/theme.css">
 <style>
-  :root {
-    --ground: #F6F4FA;
-    --panel: #FFFFFF;
-    --panel-2: #EFEAF6;
-    --ink: #3E2A56;
-    --ink-soft: #6E5A86;
-    --accent: #7B54A0;
-    --accent-soft: #C9A9E0;
-    --border: #DFD7EA;
-    --video-bg: #0D0A12;
-    --green: #36AD45;
-    --green-ink: #FFFFFF;
-    --red: #E94E3C;
-    --shadow: 0 10px 30px rgba(62, 42, 86, 0.12);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --ground: #17101F;
-      --panel: #241933;
-      --panel-2: #2E2140;
-      --ink: #EDE6F5;
-      --ink-soft: #B4A5C8;
-      --accent: #A97FD1;
-      --accent-soft: #6B4487;
-      --border: #3A2B4E;
-      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-    }
-  }
-  :root[data-theme="dark"] {
-    --ground: #17101F;
-    --panel: #241933;
-    --panel-2: #2E2140;
-    --ink: #EDE6F5;
-    --ink-soft: #B4A5C8;
-    --accent: #A97FD1;
-    --accent-soft: #6B4487;
-    --border: #3A2B4E;
-    --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-  }
-
-  body {
-    background: var(--ground);
-    color: var(--ink);
-    font-family: "Poppins", "Nunito Sans", "Segoe UI", system-ui, sans-serif;
-    line-height: 1.5;
-    padding: 2rem 1rem 4rem;
-  }
+  /* ---- décor de la page de maquettes (n'existe pas dans l'application) ---- */
+  html, body { height: auto; }
+  body { padding: 2rem 1rem 4rem; }
   .wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.2rem; }
 
   .page-head h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: 0.5px; text-wrap: balance; }
-  .page-head p { color: var(--ink-soft); font-size: 0.92rem; max-width: 65ch; }
+  .page-head p { color: var(--ink-soft); font-size: 0.92rem; max-width: 72ch; margin-top: 0.4rem; }
 
-  .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .tabs .group {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--ink-soft); margin-right: 0.1rem;
+  }
+  .tabs button + .group { margin-left: 0.7rem; }
   .tabs button {
-    font: inherit; font-size: 0.88rem; font-weight: 600;
+    font: inherit; font-size: 0.85rem; font-weight: 600;
     color: var(--ink-soft); background: var(--panel);
     border: 1px solid var(--border); border-radius: 999px;
-    padding: 0.45rem 1.1rem; cursor: pointer;
+    padding: 0.4rem 1rem; cursor: pointer;
   }
   .tabs button:hover { color: var(--ink); border-color: var(--accent-soft); }
   .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -74,229 +37,67 @@
   .screen.active { display: block; }
   .frame-scroll { overflow-x: auto; }
   .frame {
-    min-width: 880px; height: 600px;
+    position: relative; min-width: 880px; height: 620px;
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: 14px; box-shadow: var(--shadow);
-    display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 14px; box-shadow: var(--shadow); overflow: hidden;
   }
-  .caption { color: var(--ink-soft); font-size: 0.85rem; margin-top: 0.6rem; max-width: 75ch; }
+  .frame.phone { min-width: 0; width: 390px; height: 720px; }
+  .caption { color: var(--ink-soft); font-size: 0.85rem; margin-top: 0.6rem; max-width: 78ch; }
+  .caption code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.95em; }
 
-  /* ============ composants communs ============ */
-  .btn {
-    font: inherit; font-weight: 600; cursor: pointer;
-    border-radius: 999px; border: 1px solid var(--border);
-    background: var(--panel); color: var(--ink);
-    padding: 0.65rem 1.5rem; min-height: 44px;
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn.call { background: var(--green); border-color: var(--green); color: var(--green-ink); }
-  .btn.hangup { background: var(--red); border-color: var(--red); color: #fff; }
-  .btn.ghost { background: transparent; }
-  .btn:disabled, .inactive { opacity: 0.5; cursor: default; }
+  /* le flash d'appel entrant est `position: fixed` dans l'app : ici il doit
+     rester dans le cadre de la maquette */
+  .frame .callflash { position: absolute; }
 
-  .icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
-  .iconbtn {
-    width: 38px; height: 38px; border-radius: 50%;
-    border: 1px solid var(--border); background: var(--panel);
-    color: var(--ink); display: inline-flex; align-items: center; justify-content: center;
-    cursor: pointer;
-  }
-  .iconbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-  .pill {
-    display: inline-flex; align-items: center; gap: 0.45rem;
-    font-size: 0.8rem; font-weight: 600;
-    border-radius: 999px; padding: 0.3rem 0.85rem;
-    border: 1px solid var(--border); background: var(--panel-2); color: var(--ink);
-  }
-  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .dot.ok { background: var(--green); }
-  .dot.live { background: var(--red); animation: pulse 1.4s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
-
-  /* ============ logo placeholder FSL/LSF ============ */
-  .logo { display: inline-flex; align-items: center; gap: 0.6rem; }
-  .logo svg { display: block; }
-  .logo .name { font-weight: 600; letter-spacing: 1px; }
-
-  /* ============ écran accueil ============ */
-  .home {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 1.1rem; text-align: center;
-  }
-  .home .name-big { font-size: 1.6rem; font-weight: 600; letter-spacing: 1.5px; }
-  .home .tagline { color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 0.8rem; }
-  .home .account-hint { font-size: 0.8rem; color: var(--ink-soft); }
-  .home .actions { display: flex; flex-direction: column; gap: 0.8rem; width: 300px; }
-
-  /* ============ écran configuration ============ */
-  .config {
-    flex: 1; display: flex; align-items: center; justify-content: center;
-  }
-  .config form {
-    width: 400px; display: flex; flex-direction: column; gap: 0.9rem;
-  }
-  .config h2 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.3rem; }
-  .field { display: flex; flex-direction: column; gap: 0.25rem; }
-  .field label {
-    font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.08em; color: var(--ink-soft);
-  }
-  .field input {
-    font: inherit; color: var(--ink); background: var(--ground);
-    border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;
-  }
-  .field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .field .hint { font-size: 0.75rem; color: var(--ink-soft); }
-  .note {
-    font-size: 0.78rem; color: var(--ink-soft);
-    background: var(--panel-2); border-radius: 8px; padding: 0.6rem 0.8rem;
-  }
-  .form-actions { display: flex; gap: 0.7rem; margin-top: 0.4rem; }
-
-  /* ============ écran d'appel ============ */
-  .callscreen { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  .topbar {
-    display: flex; align-items: center; gap: 1rem;
-    padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel);
-  }
-  .topbar .spacer { flex: 1; }
-  .callbody { flex: 1; display: flex; min-height: 0; }
-
-  .stage { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .video {
-    flex: 1; position: relative; background: var(--video-bg);
-    display: flex; align-items: center; justify-content: center;
-  }
-  .video .idle-msg { color: #8f83a3; font-size: 0.95rem; }
-  .video .remote-fake {
+  /* ---- flux média simulés (l'app pose de vrais <video>) ---- */
+  .fake-remote {
     position: absolute; inset: 0;
     background:
       radial-gradient(ellipse 55% 45% at 50% 42%, #4a3663 0%, transparent 70%),
       linear-gradient(180deg, #241933 0%, #0D0A12 100%);
   }
-  .selfview {
-    position: absolute; top: 10px; left: 10px;
-    height: 25%; aspect-ratio: 4/3;
-    background: linear-gradient(160deg, #6B4487, #3E2352);
-    border-radius: 10px; border: 1px solid rgba(255,255,255,0.25);
+  .fake-self {
+    position: absolute; background: linear-gradient(160deg, #6B4487, #3E2352);
+    border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
     display: flex; align-items: flex-end; justify-content: center;
-    color: rgba(255,255,255,0.75); font-size: 0.7rem; padding-bottom: 0.3rem;
+    color: rgba(255, 255, 255, 0.75); font-size: 0.7rem; padding-bottom: 0.3rem;
   }
-  .vumeters {
-    position: absolute; right: 10px; bottom: 12px; display: flex; gap: 5px; height: 90px;
-  }
-  .vumeters .bar {
-    width: 5px; border-radius: 3px;
-    background: linear-gradient(180deg, #ffa84c 0%, #e72d4f 100%);
-    align-self: flex-end;
-  }
-  .bottombar {
-    height: 48px; flex: none; background: var(--panel-2);
-    border-top: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: center; gap: 1.2rem;
-  }
-  .bottombar .iconbtn { background: transparent; border-color: transparent; }
-  .phase-tag {
-    font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-    background: var(--accent-soft); color: var(--ink);
-    border-radius: 4px; padding: 0.1rem 0.35rem; margin-left: -0.6rem; align-self: flex-start; margin-top: 4px;
-  }
-
-  .sidebar {
-    width: 300px; flex: none; border-left: 1px solid var(--border);
-    background: var(--panel); display: flex; flex-direction: column; min-height: 0;
-  }
-  .sidebar .call-controls { padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; }
-  .splitbtn { display: flex; width: 100%; position: relative; }
-  .splitbtn .btn.call { flex: 1; border-radius: 999px 0 0 999px; }
-  .splitbtn .caret {
-    border-radius: 0 999px 999px 0; border-left: 1px solid rgba(255,255,255,0.35);
-    background: var(--green); color: var(--green-ink); border-color: var(--green);
-    width: 44px; padding: 0;
-  }
-  .dropdown {
-    position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: var(--shadow); min-width: 180px; overflow: hidden;
-  }
-  .dropdown button {
-    font: inherit; display: flex; align-items: center; gap: 0.6rem;
-    width: 100%; padding: 0.6rem 0.9rem; border: none; background: none;
-    color: var(--ink); cursor: pointer; font-size: 0.9rem;
-  }
-  .dropdown button:hover { background: var(--panel-2); }
-  .time-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
-  .chrono {
-    font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.05rem;
-    display: inline-flex; align-items: center; gap: 0.45rem; color: var(--ink);
-  }
-  .chat {
-    flex: 1; min-height: 0; border-top: 1px solid var(--border);
-    display: flex; flex-direction: column; position: relative;
-  }
-  .chat .history { flex: 1; background: var(--ground); }
-  .chat textarea {
-    font: inherit; font-size: 0.9rem; height: 84px; resize: none; border: none;
-    border-top: 1px solid var(--border); background: var(--panel);
-    color: var(--ink); padding: 10px;
-  }
-  .chat .lock {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 0.4rem;
-    background: color-mix(in srgb, var(--ground) 78%, transparent);
-    color: var(--ink-soft); font-size: 0.85rem; font-weight: 600; text-align: center;
-  }
-  .sidefoot {
-    flex: none; border-top: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0.5rem 1rem; font-size: 0.8rem; color: var(--ink-soft);
-  }
-  .sidefoot .fontsize { display: flex; gap: 0.4rem; }
-  .sidefoot .fontsize button {
-    font: inherit; font-weight: 700; font-size: 0.75rem;
-    border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
-    color: var(--ink); width: 30px; height: 26px; cursor: pointer;
-  }
-  .switch { display: inline-flex; align-items: center; gap: 0.4rem; }
-  .switch .track {
-    width: 34px; height: 18px; border-radius: 999px; background: var(--accent);
-    position: relative;
-  }
-  .switch .track::after {
-    content: ""; position: absolute; top: 2px; left: 2px;
-    width: 14px; height: 14px; border-radius: 50%; background: #fff;
-  }
+  .video .fake-self { top: 10px; left: 10px; height: 25%; aspect-ratio: 4/3; }
+  .mvideo .fake-self { top: 10px; right: 10px; height: 22%; aspect-ratio: 3/4; }
 </style>
+</head>
+<body>
 
 <div class="wrap">
   <header class="page-head">
-    <h1>STAURI Communicator — maquettes phase 0</h1>
+    <h1>Trix Communicator — maquettes (état du logiciel, phase 3)</h1>
     <p>Webphone SIP conversation totale. Layout hérité d'Elioz Connect, palette FSL,
-       logique FSL + JsSIP. Le tchat et le DTMF sont visibles mais marqués « phase 4 ».</p>
+       logique FSL + JsSIP. Ces maquettes reflètent l'application telle qu'elle est écrite
+       (phases 0 à 3) : elles chargent <code>src/ui/theme.css</code> et recopient le balisage
+       de <code>src/ui/screens/</code>. Seuls le tchat et le DTMF restent marqués « phase 4 ».</p>
   </header>
 
   <nav class="tabs" aria-label="Écrans">
+    <span class="group">Bureau</span>
     <button class="active" data-target="s-home">1 · Accueil</button>
     <button data-target="s-config">2 · Configuration</button>
     <button data-target="s-call-idle">3 · Appel (prêt)</button>
-    <button data-target="s-call-live">3bis · Appel (en communication)</button>
+    <button data-target="s-call-live">4 · En communication</button>
+    <button data-target="s-call-in">5 · Appel entrant</button>
+    <button data-target="s-call-err">6 · Échec d'enregistrement</button>
+    <span class="group">Mobile</span>
+    <button data-target="s-m-dial">7 · Composer</button>
+    <button data-target="s-m-live">8 · En communication</button>
+    <button data-target="s-m-in">9 · Appel entrant</button>
   </nav>
 
-  <!-- ================= ACCUEIL ================= -->
+  <!-- ================= 1 · ACCUEIL ================= -->
   <section id="s-home" class="screen active">
     <div class="frame-scroll"><div class="frame">
-      <div class="home">
-        <svg width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="Logo LSF (placeholder)">
-          <path d="M 92 30 A 42 42 0 1 0 92 90" fill="none" stroke="#7B54A0" stroke-width="4" stroke-linecap="round"/>
-          <path d="M 92 30 A 42 42 0 0 1 92 90" fill="none" stroke="#7B54A0" stroke-width="4" stroke-linecap="round" stroke-dasharray="8 8"/>
-          <text x="60" y="70" text-anchor="middle" font-family="Poppins, system-ui, sans-serif" font-size="26" font-weight="600" fill="var(--ink)">LSF</text>
-        </svg>
+      <div class="screen-home">
         <div>
-          <div class="name-big">STAURI Communicator</div>
+          <img src="../../public/trix-icon.svg" width="200" height="200" alt="" aria-hidden="true">
+          <h1>Trix Communicator</h1>
           <div class="tagline">Webphone conversation totale</div>
         </div>
         <div class="actions">
@@ -304,41 +105,87 @@
           <span class="account-hint">Alice Martin — alice@example.fr</span>
           <button class="btn">Configurer un nouveau compte</button>
         </div>
+        <a class="fsl-badge" href="https://github.com/neutrino38/finite-state-language/"
+           target="_blank" rel="noopener noreferrer"
+           aria-label="Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)">
+          <img src="../../public/fsl-icon.svg" width="36" height="36" alt="" aria-hidden="true">
+          <span>Powered by FSL</span>
+        </a>
       </div>
     </div></div>
     <p class="caption">« Utiliser le compte » (et le rappel du compte) n'apparaît que si une
-       configuration est déjà stockée. Le logo est un placeholder : l'icône LSF définitive sera fournie.</p>
+       configuration est déjà stockée ; sinon « Configurer un nouveau compte » devient le bouton
+       principal. L'icône définitive accompagne un titre en <b>texte</b> : le mot-marque de
+       <code>trix-logo.svg</code> est peint en violet foncé et deviendrait illisible en thème
+       sombre, qu'aucune règle CSS ne peut atteindre à l'intérieur d'une image. Le crédit
+       « Powered by FSL » renvoie au framework d'orchestration. Dans l'application les images
+       viennent de <code>/trix-icon.svg</code> et <code>/fsl-icon.svg</code> ; la maquette les cite
+       en chemin relatif pour rester ouvrable hors serveur.</p>
   </section>
 
-  <!-- ================= CONFIGURATION ================= -->
+  <!-- ================= 2 · CONFIGURATION ================= -->
   <section id="s-config" class="screen">
     <div class="frame-scroll"><div class="frame">
-      <div class="config">
-        <form>
-          <h2>Configuration du compte SIP</h2>
+      <div class="screen-config">
+        <form novalidate>
+          <h2>Paramètres</h2>
+          <div class="config-cols">
+          <h3>Compte SIP</h3>
           <div class="field">
-            <label for="f-proxy">Proxy SIP (WebSocket)</label>
+            <label for="f-proxy">Serveur SIP</label>
             <input id="f-proxy" value="wss://sip.example.fr:8443/ws">
           </div>
           <div class="field">
-            <label for="f-domain">Domaine</label>
-            <input id="f-domain" value="example.fr">
-            <span class="hint">Sert aussi de realm pour l'authentification.</span>
+            <label for="f-uri">Adresse SIP</label>
+            <input id="f-uri" value="alice@example.fr">
+            <span class="hint">Avec ou sans le préfixe « sip: ». Le domaine sert de realm pour l'authentification.</span>
           </div>
           <div class="field">
-            <label for="f-display">Display name</label>
+            <label for="f-display">Votre nom</label>
             <input id="f-display" value="Alice Martin">
           </div>
           <div class="field">
-            <label for="f-user">Username</label>
-            <input id="f-user" value="alice">
+            <label class="checkline" for="f-auth-toggle">
+              <input type="checkbox" id="f-auth-toggle">
+              <span>Identifiant d'authentification (si différent de <b>alice</b>)</span>
+            </label>
+            <input id="f-auth" disabled>
           </div>
           <div class="field">
             <label for="f-pass">Mot de passe</label>
-            <input id="f-pass" type="password" value="secret123">
+            <input id="f-pass" type="password" placeholder="•••••• (déjà défini)">
+            <span class="hint">Laisser vide pour conserver le mot de passe actuel.</span>
           </div>
           <div class="note">Le mot de passe n'est pas conservé : seule une empreinte (HA1)
             est stockée, chiffrée, dans ce navigateur.</div>
+
+          <h3 class="col-break">Alertes et affichage</h3>
+          <p class="section-hint">Ces réglages prennent effet immédiatement, sans attendre
+            l'enregistrement — sauf le flash, qui suit le compte.</p>
+          <div class="field">
+            <label class="checkline" for="f-flash">
+              <input type="checkbox" id="f-flash" checked>
+              <span><b>Flash visuel à l'appel entrant</b> — l'écran clignote pendant
+                la sonnerie, pour être alerté sans le son</span>
+            </label>
+            <span class="hint">Enregistré avec le compte : il vous suit d'un poste à l'autre.</span>
+          </div>
+          <div class="field">
+            <span class="field-title">Notifications système</span>
+            <button class="btn" type="button">Activer les notifications</button>
+            <span class="hint">Sans elles, Trix ne peut pas vous alerter quand la fenêtre est
+              masquée ou réduite.</span>
+          </div>
+          <fieldset class="field">
+            <legend class="field-title">Thème</legend>
+            <div class="radio-row">
+              <label class="radio"><input type="radio" name="theme" value="system" checked><span>Système</span></label>
+              <label class="radio"><input type="radio" name="theme" value="light"><span>Clair</span></label>
+              <label class="radio"><input type="radio" name="theme" value="dark"><span>Sombre</span></label>
+            </div>
+            <span class="hint">« Système » suit le réglage clair/sombre de votre appareil.</span>
+          </fieldset>
+          </div>
           <div class="form-actions">
             <button class="btn primary" type="button">Enregistrer et se connecter</button>
             <button class="btn ghost" type="button">Annuler</button>
@@ -346,22 +193,22 @@
         </form>
       </div>
     </div></div>
-    <p class="caption">Si un compte existe déjà, les champs sont pré-remplis et le mot de passe
-       affiche « déjà défini » (le HA1 n'est recalculé que si l'utilisateur retape un mot de passe).</p>
+    <p class="caption">Le compte est décrit par une <b>adresse SIP</b> unique (utilisateur + domaine)
+       et non par deux champs séparés. L'identifiant d'authentification n'est saisissable qu'une fois
+       coché ; la mention « si différent de … » suit l'adresse en cours de frappe.
+       <b>Deux colonnes</b> — la coupure sépare ce qui appartient au compte (chiffré, appliqué à la
+       validation) de ce qui appartient au navigateur (immédiat) ; le flash visuel fait exception :
+       il est du côté « alertes » mais reste enregistré avec le compte, et l'aide du champ le dit.
+       Une seule colonne en dessous de 800 px. En cas d'échec d'enregistrement, le formulaire revient
+       avec une bannière d'erreur, le code SIP en petit, et le champ fautif surligné.</p>
   </section>
 
-  <!-- ================= APPEL (PRÊT) ================= -->
+  <!-- ================= 3 · APPEL (PRÊT) ================= -->
   <section id="s-call-idle" class="screen">
     <div class="frame-scroll"><div class="frame">
-      <div class="callscreen">
+      <div class="screen-call">
         <div class="topbar">
-          <span class="logo" title="Retour à l'accueil">
-            <svg width="26" height="26" viewBox="0 0 120 120" aria-hidden="true">
-              <path d="M 92 30 A 42 42 0 1 0 92 90" fill="none" stroke="#7B54A0" stroke-width="8" stroke-linecap="round"/>
-              <path d="M 92 30 A 42 42 0 0 1 92 90" fill="none" stroke="#7B54A0" stroke-width="8" stroke-linecap="round" stroke-dasharray="14 14"/>
-            </svg>
-            <span class="name">STAURI</span>
-          </span>
+          <span class="logo"><img src="../../public/trix-icon.svg" width="38" height="38" alt="" aria-hidden="true"><span>Trix</span></span>
           <span class="pill"><span class="dot ok"></span> Enregistré — alice@example.fr</span>
           <span class="spacer"></span>
           <button class="iconbtn" title="Paramètres" aria-label="Paramètres">
@@ -376,114 +223,139 @@
             <div class="video">
               <span class="idle-msg">Aucun appel en cours — saisissez une adresse SIP</span>
             </div>
-            <div class="bottombar">
-              <button class="iconbtn inactive" title="Couper la caméra" aria-label="Couper la caméra">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-              </button>
-              <button class="iconbtn inactive" title="Masquer le self-view" aria-label="Masquer le self-view">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
-              </button>
-              <button class="iconbtn inactive" title="Haut-parleur" aria-label="Haut-parleur">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg>
-              </button>
-              <button class="iconbtn inactive" title="Clavier DTMF (phase 4)" aria-label="Clavier DTMF">
-                <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg>
-              </button><span class="phase-tag">ph. 4</span>
-            </div>
           </div>
           <div class="sidebar">
             <div class="call-controls">
               <div class="field">
                 <label for="f-target">Adresse SIP</label>
                 <input id="f-target" value="bob">
-                <span class="hint">Sans « @ » : appellera bob@example.fr</span>
+                <span class="hint">Sans « @ » : appellera &lt;adresse&gt;@example.fr</span>
               </div>
               <div class="splitbtn">
                 <button class="btn call">
                   <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
-                  Appeler
+                  Appeler en audio
                 </button>
-                <button class="btn caret" aria-label="Autres types d'appel">▾</button>
+                <button class="btn caret" aria-label="Choisir le mode d'appel" aria-expanded="true">▾</button>
                 <div class="dropdown">
-                  <button>
+                  <button role="menuitemradio" aria-checked="true" class="selected">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                    Appel audio<span class="check">✓</span>
+                  </button>
+                  <button role="menuitemradio" aria-checked="false">
                     <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                     Appel vidéo
                   </button>
                 </div>
               </div>
-              <div class="time-row">
-                <span class="chrono" style="opacity:.45">00:00:00</span>
-                <button class="iconbtn inactive" title="Couper le micro" aria-label="Couper le micro">
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg>
-                </button>
+              <div class="calllog">
+              <div class="calllog-head">
+                <span>Historique</span>
+                <button class="linkbtn">Effacer</button>
+              </div>
+              <div class="calllog-list">
+                <div class="calllog-row answered" title="bob@example.fr — Répondu">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">bob@example.fr</span>
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                  <span class="when">14:32</span>
+                  <span class="detail">4 min 37 s — raccroché par vous</span>
+                </div>
+                <div class="calllog-row missed" title="carol@example.fr — Manqué">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
+                  <span class="who">carol@example.fr</span>
+                  <span class="when">12:05</span>
+                  <span class="detail">Manqué</span>
+                </div>
+                <div class="calllog-row answered" title="carol@example.fr — Répondu">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">carol@example.fr</span>
+                  <span class="when">11:58</span>
+                  <span class="detail">1 min 12 s — raccroché par le correspondant</span>
+                </div>
+                <div class="calllog-row dropped" title="dave@example.fr — Interrompu">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">dave@example.fr</span>
+                  <span class="when">15/08 18:20</span>
+                  <span class="detail">2 min 04 s — coupé par le réseau</span>
+                </div>
+                <div class="calllog-row failed" title="erin@example.fr — Échec">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">erin@example.fr</span>
+                  <span class="when">15/08 09:41</span>
+                  <span class="detail">404 Not Found</span>
+                </div>
+                <div class="calllog-row canceled" title="bob@example.fr — Annulé">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">bob@example.fr</span>
+                  <span class="when">14/08 17:03</span>
+                  <span class="detail">Annulé</span>
+                </div>
               </div>
             </div>
-            <div class="chat">
-              <div class="history"></div>
-              <textarea placeholder="Entrez votre message ici" disabled></textarea>
-              <div class="lock">
-                <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-                Tchat<br><span style="font-weight:400">disponible en phase 4</span>
-              </div>
+            <div class="chat-strip">
+              <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+              <span>Tchat — disponible en phase 4</span>
             </div>
             <div class="sidefoot">
-              <span class="fontsize"><button aria-label="Réduire la taille du texte">A−</button><button aria-label="Augmenter la taille du texte">A+</button></span>
-              <span class="switch">Foncé <span class="track" aria-hidden="true"></span></span>
+              <span>Taille du texte</span>
+              <span class="fontsize">
+                <button aria-label="Réduire la taille du texte">A−</button>
+                <button aria-label="Augmenter la taille du texte">A+</button>
+              </span>
             </div>
           </div>
         </div>
       </div>
     </div></div>
-    <p class="caption">Nouveautés vs Elioz Connect : indicateur d'enregistrement, boutons Paramètres
-       et Déconnexion, champ d'adresse SIP, bouton d'appel scindé (audio par défaut, vidéo dans le
-       menu — ouvert ici pour illustration). La sidebar gauche « Vous contactez » est supprimée.</p>
+    <p class="caption">État <code>ready</code>. Le bouton d'appel est scindé : le menu (ouvert ici
+       pour illustration) choisit le <b>mode</b> — le mode retenu est mémorisé et rebaptise le bouton
+       principal (« Appeler en audio » / « Appeler en vidéo ») ; l'appel ne part que par le bouton.
+       Les commandes média n'existent plus ici : elles ne s'affichent qu'en appel, posées sur la
+       scène vidéo (écran 4).
+       L'historique (chiffré, par compte) tient la place du tchat de la maquette phase 0 : un clic
+       sur une ligne rappelle le correspondant. Le pied ne garde que la taille du texte — le seul
+       réglage qu'on ajuste en cours de conversation ; notifications et thème ont rejoint les
+       paramètres. Le chrono a quitté la sidebar pour la barre d'en-tête, où il n'apparaît qu'en
+       communication (écran 4).</p>
   </section>
 
-  <!-- ================= APPEL (EN COMMUNICATION) ================= -->
+  <!-- ================= 4 · EN COMMUNICATION ================= -->
   <section id="s-call-live" class="screen">
     <div class="frame-scroll"><div class="frame">
-      <div class="callscreen">
+      <div class="screen-call">
         <div class="topbar">
-          <span class="logo">
-            <svg width="26" height="26" viewBox="0 0 120 120" aria-hidden="true">
-              <path d="M 92 30 A 42 42 0 1 0 92 90" fill="none" stroke="#7B54A0" stroke-width="8" stroke-linecap="round"/>
-              <path d="M 92 30 A 42 42 0 0 1 92 90" fill="none" stroke="#7B54A0" stroke-width="8" stroke-linecap="round" stroke-dasharray="14 14"/>
-            </svg>
-            <span class="name">STAURI</span>
-          </span>
+          <span class="logo"><img src="../../public/trix-icon.svg" width="38" height="38" alt="" aria-hidden="true"><span>Trix</span></span>
           <span class="pill"><span class="dot ok"></span> Enregistré</span>
           <span class="pill"><span class="dot live"></span> En communication — bob@example.fr</span>
+          <span class="chrono"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg><span>00:04:37</span></span>
           <span class="spacer"></span>
-          <button class="iconbtn inactive" title="Paramètres (indisponible en appel)" aria-label="Paramètres">
+          <button class="iconbtn inactive" disabled title="Paramètres (indisponible en appel)" aria-label="Paramètres">
             <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
           </button>
-          <button class="iconbtn inactive" title="Se déconnecter (indisponible en appel)" aria-label="Se déconnecter">
+          <button class="iconbtn inactive" disabled title="Se déconnecter (indisponible en appel)" aria-label="Se déconnecter">
             <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
           </button>
         </div>
         <div class="callbody">
           <div class="stage">
-            <div class="video">
-              <div class="remote-fake" title="Vidéo distante (double-clic : plein écran)"></div>
-              <div class="selfview">self-view</div>
+            <div class="video" title="Double-clic : plein écran">
+              <div class="fake-remote"></div>
+              <div class="fake-self">self-view</div>
               <div class="vumeters" aria-hidden="true">
                 <span class="bar" style="height:62%"></span>
-                <span class="bar" style="height:34%"></span>
+                <span class="bar" style="height:18%"></span>
               </div>
-            </div>
-            <div class="bottombar">
-              <button class="iconbtn" title="Couper la caméra" aria-label="Couper la caméra">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-              </button>
-              <button class="iconbtn" title="Masquer le self-view" aria-label="Masquer le self-view">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
-              </button>
-              <button class="iconbtn" title="Haut-parleur" aria-label="Haut-parleur">
-                <svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg>
-              </button>
-              <button class="iconbtn inactive" title="Clavier DTMF (phase 4)" aria-label="Clavier DTMF">
-                <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg>
-              </button><span class="phase-tag">ph. 4</span>
+              <div class="overlaybar">
+                <div class="overlay-pill">
+                  <button class="iconbtn off" title="Rétablir le micro" aria-label="Micro" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/><path d="M3.5 3.5l17 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+                  <button class="iconbtn " title="Couper la caméra" aria-label="Caméra" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
+                  <button class="iconbtn " title="Masquer le self-view" aria-label="Self-view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg></button>
+                  <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
+                  <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+                  <button class="iconbtn " title="Plein écran" aria-label="Plein écran"><svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg></button>
+                </div>
+              </div>
             </div>
           </div>
           <div class="sidebar">
@@ -496,35 +368,365 @@
                 <svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
                 Raccrocher
               </button>
-              <div class="time-row">
-                <span class="chrono">
-                  <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>
-                  00:04:37
-                </span>
-                <button class="iconbtn" title="Couper le micro" aria-label="Couper le micro">
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg>
-                </button>
+            </div>
+            <div class="calllog">
+              <div class="calllog-head">
+                <span>Historique</span>
+                <button class="linkbtn">Effacer</button>
+              </div>
+              <div class="calllog-list">
+                <div class="calllog-row missed" title="carol@example.fr — Manqué">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
+                  <span class="who">carol@example.fr</span>
+                  <span class="when">12:05</span>
+                  <span class="detail">Manqué</span>
+                </div>
+                <div class="calllog-row dropped" title="dave@example.fr — Interrompu">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">dave@example.fr</span>
+                  <span class="when">15/08 18:20</span>
+                  <span class="detail">2 min 04 s — coupé par le réseau</span>
+                </div>
               </div>
             </div>
-            <div class="chat">
-              <div class="history"></div>
-              <textarea placeholder="Entrez votre message ici" disabled></textarea>
-              <div class="lock">
-                <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-                Tchat<br><span style="font-weight:400">disponible en phase 4</span>
-              </div>
+            <div class="chat-strip">
+              <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+              <span>Tchat — disponible en phase 4</span>
             </div>
             <div class="sidefoot">
-              <span class="fontsize"><button aria-label="Réduire la taille du texte">A−</button><button aria-label="Augmenter la taille du texte">A+</button></span>
-              <span class="switch">Foncé <span class="track" aria-hidden="true"></span></span>
+              <span>Taille du texte</span>
+              <span class="fontsize">
+                <button aria-label="Réduire la taille du texte">A−</button>
+                <button aria-label="Augmenter la taille du texte">A+</button>
+              </span>
             </div>
           </div>
         </div>
       </div>
     </div></div>
-    <p class="caption">En communication : bouton Appeler remplacé par Raccrocher, chrono actif,
-       self-view incrusté (~25 % de hauteur, comme Elioz Connect), vu-mètres distant/local à droite,
-       Paramètres et Déconnexion désactivés pendant l'appel. Double-clic sur la vidéo : plein écran.</p>
+    <p class="caption">État <code>in_call / connected</code>. Le bouton d'appel devient Raccrocher,
+       l'adresse est figée, le chrono tourne. Les vu-mètres (distant / local, WebAudio) courent sur
+       toute la hauteur de la scène ; quand le correspondant parle, le bouton haut-parleur s'allume
+       en vert — indice visuel de son entrant, utile quand on ne l'entend pas. Les commandes média
+       sont <b>en surimpression sur la scène</b>, dans la même barre que la vue mobile. Règle d'état :
+       <b>rouge + icône barrée</b> quand un flux est coupé (micro, caméra, son) — quelque chose ne
+       passe plus, le correspondant s'en aperçoit ; <b>violet</b> pour une bascule purement locale
+       (self-view masqué). L'icône barrée et <code>aria-pressed</code> portent l'état à eux seuls :
+       la couleur ne fait que le confirmer. Ici le micro est coupé. Le bouton « Plein écran »
+       double le double-clic, qui n'existait pas au clavier. Paramètres et Déconnexion restent désactivés
+       pendant l'appel. Avant décrochage (<code>dialing</code> / <code>ringing</code>), la scène
+       affiche « Appel en cours… » / « Sonnerie… » et l'adresse appelée, à la place des vu-mètres.</p>
+  </section>
+
+  <!-- ================= 5 · APPEL ENTRANT ================= -->
+  <section id="s-call-in" class="screen">
+    <div class="frame-scroll"><div class="frame">
+      <div class="screen-call">
+        <div class="topbar">
+          <span class="logo"><img src="../../public/trix-icon.svg" width="38" height="38" alt="" aria-hidden="true"><span>Trix</span></span>
+          <span class="pill"><span class="dot ok"></span> Enregistré</span>
+          <span class="pill"><span class="dot live"></span> Appel entrant — bob@example.fr</span>
+          <span class="spacer"></span>
+          <button class="iconbtn inactive" disabled title="Paramètres (indisponible en appel)" aria-label="Paramètres">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+          </button>
+          <button class="iconbtn inactive" disabled title="Se déconnecter (indisponible en appel)" aria-label="Se déconnecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+          </button>
+        </div>
+        <div class="callbody">
+          <div class="stage">
+            <div class="video">
+              <div class="incoming-card">
+                <span class="ring-badge">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                </span>
+                <span class="who">Bob Martin</span>
+                <span class="uri">bob@example.fr</span>
+                <span class="offer">Appel vidéo entrant</span>
+              </div>
+            </div>
+          </div>
+          <div class="sidebar">
+            <div class="call-controls">
+              <div class="field">
+                <label for="f-target3">Appelant</label>
+                <input id="f-target3" value="bob@example.fr" disabled>
+              </div>
+              <div class="answer-actions">
+                <button class="btn answer">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                  Répondre en vidéo
+                </button>
+                <button class="btn answer">
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                  Répondre en audio
+                </button>
+                <button class="btn hangup">
+                  <svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                  Refuser
+                </button>
+              </div>
+              <div class="calllog">
+              <div class="calllog-head">
+                <span>Historique</span>
+                <button class="linkbtn">Effacer</button>
+              </div>
+              <div class="calllog-list">
+                <div class="calllog-row missed" title="carol@example.fr — Manqué">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
+                  <span class="who">carol@example.fr</span>
+                  <span class="when">12:05</span>
+                  <span class="detail">Manqué</span>
+                </div>
+              </div>
+            </div>
+            <div class="chat-strip">
+              <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+              <span>Tchat — disponible en phase 4</span>
+            </div>
+            <div class="sidefoot">
+              <span>Taille du texte</span>
+              <span class="fontsize">
+                <button aria-label="Réduire la taille du texte">A−</button>
+                <button aria-label="Augmenter la taille du texte">A+</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="callflash" aria-hidden="true"></div>
+    </div></div>
+    <p class="caption">État <code>in_call / ringing_in</code> (phase 3). Le cadre qui clignote sur
+       tout le pourtour est l'<b>alerte accessible aux personnes sourdes</b> : cadence &lt; 1 Hz,
+       pas de rouge saturé (WCAG 2.3.1), non cliquable — les boutons restent accessibles à travers.
+       Elle s'accompagne du titre d'onglet et du favicon clignotants, d'une notification système,
+       d'une vibration et d'un maintien de l'écran allumé ; seul le flash est débrayable, dans la
+       configuration du compte. Les réponses proposées découlent des seuls médias offerts par
+       l'INVITE : une offre audio pure ne montrerait que « Répondre en audio ». Un second appel
+       pendant celui-ci est refusé automatiquement (486 Busy Here).</p>
+  </section>
+
+  <!-- ================= 6 · ÉCHEC D'ENREGISTREMENT ================= -->
+  <section id="s-call-err" class="screen">
+    <div class="frame-scroll"><div class="frame">
+      <div class="screen-call">
+        <div class="topbar">
+          <span class="logo"><img src="../../public/trix-icon.svg" width="38" height="38" alt="" aria-hidden="true"><span>Trix</span></span>
+          <span class="pill"><span class="dot err"></span> Échec d'enregistrement</span>
+          <span class="spacer"></span>
+          <button class="iconbtn" title="Paramètres" aria-label="Paramètres">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+          </button>
+          <button class="iconbtn" title="Se déconnecter" aria-label="Se déconnecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+          </button>
+        </div>
+        <div class="callbody">
+          <div class="stage">
+            <div class="video">
+              <div class="error-banner">Identifiants refusés par le serveur : vérifiez l'adresse SIP et le mot de passe.</div>
+              <span class="error-code">SIP/2.0 403 Forbidden</span>
+              <div class="error-actions">
+                <button class="btn primary">Corriger les paramètres</button>
+                <button class="btn">Réessayer</button>
+              </div>
+            </div>
+          </div>
+          <div class="sidebar">
+            <div class="call-controls">
+              <div class="field">
+                <label for="f-target4">Adresse SIP</label>
+                <input id="f-target4" value="">
+                <span class="hint">Sans « @ » : appellera &lt;adresse&gt;@example.fr</span>
+              </div>
+              <div class="splitbtn">
+                <button class="btn call" disabled>
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                  Appeler en audio
+                </button>
+                <button class="btn caret" disabled aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
+              </div>
+              <div class="calllog">
+              <div class="calllog-head"><span>Historique</span></div>
+              <div class="calllog-list">
+                <p class="calllog-empty">Aucun appel enregistré</p>
+              </div>
+            </div>
+            <div class="chat-strip">
+              <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+              <span>Tchat — disponible en phase 4</span>
+            </div>
+            <div class="sidefoot">
+              <span>Taille du texte</span>
+              <span class="fontsize">
+                <button aria-label="Réduire la taille du texte">A−</button>
+                <button aria-label="Augmenter la taille du texte">A+</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption">État <code>reg_failed</code>. Le diagnostic est en clair (une phrase par cause :
+       identifiants, serveur injoignable, TLS…) et la cause SIP brute reste lisible et sélectionnable
+       en dessous, pour un rapport de bug. L'état <code>reconnecting</code> reprend la même
+       disposition avec « Nouvelle tentative de connexion dans 10 s… » et « Réessayer maintenant » ;
+       l'état <code>sleeping</code> (veille de la machine) affiche « Veille — l'enregistrement
+       reprendra au réveil ». Historique vide : « Aucun appel enregistré ».</p>
+  </section>
+
+  <!-- ================= 7 · MOBILE — COMPOSER ================= -->
+  <section id="s-m-dial" class="screen">
+    <div class="frame-scroll"><div class="frame phone">
+      <div class="screen-call mobile">
+        <div class="mtopbar">
+          <span class="dot ok" title="Enregistré" role="img" aria-label="Enregistré"></span>
+          <span class="mstatus">Enregistré</span>
+          <span class="spacer"></span>
+          <button class="iconbtn" aria-label="Paramètres">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+          </button>
+          <button class="iconbtn" aria-label="Se déconnecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+          </button>
+        </div>
+        <div class="mdial">
+          <div class="field">
+            <input id="f-mtarget" inputmode="email" placeholder="Adresse SIP" aria-label="Adresse SIP" value="bob">
+          </div>
+          <div class="splitbtn">
+            <button class="btn call">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+              Appeler en audio
+            </button>
+            <button class="btn caret" aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
+          </div>
+          <div class="calllog">
+            <div class="calllog-head">
+              <span>Historique</span>
+              <button class="linkbtn">Effacer</button>
+            </div>
+            <div class="calllog-list">
+              <div class="calllog-row answered" title="bob@example.fr — Répondu">
+                <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                <span class="who">bob@example.fr</span>
+                <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                <span class="when">14:32</span>
+                <span class="detail">4 min 37 s — raccroché par vous</span>
+              </div>
+              <div class="calllog-row missed" title="carol@example.fr — Manqué">
+                <svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
+                <span class="who">carol@example.fr</span>
+                <span class="when">12:05</span>
+                <span class="detail">Manqué</span>
+              </div>
+              <div class="calllog-row dropped" title="dave@example.fr — Interrompu">
+                <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                <span class="who">dave@example.fr</span>
+                <span class="when">15/08 18:20</span>
+                <span class="detail">2 min 04 s — coupé par le réseau</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption">Vue mobile (&lt; 720 px de large, ou <code>?layout=mobile</code>).
+       Le basculement mobile ⇄ bureau est un simple re-rendu : ni l'appel ni l'enregistrement ne
+       sont coupés, et la machine à états reste unique. Hors appel : état en pastille + libellé,
+       champ d'adresse, bouton d'appel scindé, historique. Ni vidéo ni commandes média — elles
+       n'apparaissent qu'en appel. Pas de pied de préférences ici : la taille du texte se règle
+       depuis la vue bureau, le thème et les notifications depuis les paramètres.</p>
+  </section>
+
+  <!-- ================= 8 · MOBILE — EN COMMUNICATION ================= -->
+  <section id="s-m-live" class="screen">
+    <div class="frame-scroll"><div class="frame phone">
+      <div class="screen-call mobile">
+        <div class="mtopbar">
+          <span class="dot ok" title="Enregistré" role="img" aria-label="Enregistré"></span>
+          <span class="mstatus">En communication — bob@example.fr</span>
+          <span class="spacer"></span>
+          <button class="iconbtn inactive" disabled aria-label="Paramètres">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+          </button>
+          <button class="iconbtn inactive" disabled aria-label="Se déconnecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+          </button>
+        </div>
+        <div class="mvideo">
+          <div class="fake-remote"></div>
+          <div class="fake-self">self-view</div>
+          <div class="vumeters" aria-hidden="true">
+            <span class="bar" style="height:48%"></span>
+            <span class="bar" style="height:12%"></span>
+          </div>
+          <div class="mchrono">
+            <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>
+            <span>00:04:37</span>
+          </div>
+          <div class="overlaybar">
+                <div class="overlay-pill">
+                  <button class="iconbtn " title="Couper le micro" aria-label="Micro" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg></button>
+                  <button class="iconbtn " title="Couper la caméra" aria-label="Caméra" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
+                  <button class="iconbtn " title="Masquer le self-view" aria-label="Self-view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg></button>
+                  <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
+                  <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+                </div>
+                <button class="hangup-round" data-act="hangup" aria-label="Raccrocher"><svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></button>
+              </div>
+          </div>
+    </div></div>
+    <p class="caption">En appel, l'adresse et l'historique disparaissent : la vidéo prend tout
+       l'écran, le chrono est incrusté en haut à gauche, le self-view en haut à droite (portrait),
+       les commandes média sont en surimpression au bas de l'image et le raccrochage est le bouton
+       rond rouge à leur droite. Les zones basses et latérales respectent les encoches
+       (<code>env(safe-area-inset-*)</code>). Ici le self-view est masqué (bouton violet) et le
+       correspondant parle (haut-parleur vert).</p>
+  </section>
+
+  <!-- ================= 9 · MOBILE — APPEL ENTRANT ================= -->
+  <section id="s-m-in" class="screen">
+    <div class="frame-scroll"><div class="frame phone">
+      <div class="screen-call mobile">
+        <div class="mtopbar">
+          <span class="dot ok" title="Enregistré" role="img" aria-label="Enregistré"></span>
+          <span class="mstatus">Appel entrant — bob@example.fr</span>
+          <span class="spacer"></span>
+          <button class="iconbtn inactive" disabled aria-label="Paramètres">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+          </button>
+          <button class="iconbtn inactive" disabled aria-label="Se déconnecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+          </button>
+        </div>
+        <div class="mincoming">
+          <span class="ring-badge">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+          </span>
+          <span class="who">Bob Martin</span>
+          <span class="uri">bob@example.fr</span>
+          <span class="offer">Appel vidéo entrant</span>
+          <div class="mincoming-actions">
+            <button class="hangup-round reject" aria-label="Refuser">
+              <svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+            </button>
+            <button class="hangup-round answer" title="Répondre en vidéo" aria-label="Répondre en vidéo">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+            </button>
+            <button class="hangup-round answer" title="Répondre en audio" aria-label="Répondre en audio">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="callflash" aria-hidden="true"></div>
+    </div></div>
+    <p class="caption">Appel entrant sur mobile : identité plein écran, réponses en boutons ronds
+       espacés au bas de l'écran (refus à gauche, réponses à droite), et le même cadre clignotant.
+       Sur mobile s'ajoutent la vibration et le <i>wake lock</i> — un écran éteint ne flashe pas.
+       Comme sur bureau, les réponses offertes suivent l'offre SDP reçue.</p>
   </section>
 </div>
 

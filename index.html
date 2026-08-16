@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- CSP de production à poser côté serveur (voir docs/CONCEPTION.md §8) :
        default-src 'self'; connect-src 'self' wss:; media-src 'self' blob:; img-src 'self' data: -->
-  <title>STAURI Communicator</title>
+  <title>Trix Communicator</title>
+  <!-- Le favicon est aussi un canal d'alerte : ui/alert.ts le remplace par une
+       pastille clignotante à l'appel entrant, puis restaure celui-ci. -->
+  <link rel="icon" href="/trix-favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/trix-favicon-192.png">
 </head>
 <body>
   <div id="app"></div>

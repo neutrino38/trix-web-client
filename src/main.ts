@@ -32,13 +32,13 @@ watchSystemLifecycle({
 });
 
 // Observabilité (docs/CONCEPTION.md §4.4) : depuis la console,
-// stauri.mermaid() exporte les diagrammes, stauri.phone.log les transitions.
+// trix.mermaid() exporte les diagrammes, trix.phone.log les transitions.
 declare global {
   interface Window {
-    stauri: { phone: typeof phone; mermaid: () => string };
+    trix: { phone: typeof phone; mermaid: () => string };
   }
 }
-window.stauri = {
+window.trix = {
   phone,
   mermaid: () => `${PhoneMachine.toMermaid()}\n${CallMachine.toMermaid()}`,
 };

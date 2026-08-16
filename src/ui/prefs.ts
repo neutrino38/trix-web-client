@@ -4,9 +4,9 @@
  * sur <html>, aucune machine impliquée.
  */
 
-const THEME_KEY = "stauri-theme";
-const FONT_KEY = "stauri-font";
-const CALLMODE_KEY = "stauri-callmode";
+const THEME_KEY = "trix-theme";
+const FONT_KEY = "trix-font";
+const CALLMODE_KEY = "trix-callmode";
 const FONT_MIN = 13;
 const FONT_MAX = 20;
 const FONT_DEFAULT = 16;
@@ -22,16 +22,37 @@ export function applyPrefs(): void {
   }
 }
 
+/**
+ * Trois choix, et non deux : « système » n'est pas l'absence de préférence,
+ * c'est une préférence à part entière — celle de suivre le réglage de l'OS,
+ * qui bascule seul au coucher du soleil. L'ancien interrupteur clair/sombre
+ * ne permettait pas d'y **revenir** une fois qu'on y avait touché : le
+ * réglage forcé était définitif.
+ */
+export type ThemeChoice = "light" | "dark" | "system";
+
+/** Le choix enregistré — « système » quand rien n'est forcé. */
+export function themeChoice(): ThemeChoice {
+  const set = localStorage.getItem(THEME_KEY);
+  return set === "light" || set === "dark" ? set : "system";
+}
+
+/** Le thème réellement appliqué, une fois « système » résolu. */
 export function currentTheme(): "light" | "dark" {
-  const set = document.documentElement.dataset.theme;
-  if (set === "light" || set === "dark") return set;
+  const choice = themeChoice();
+  if (choice !== "system") return choice;
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-export function toggleTheme(): void {
-  const next = currentTheme() === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem(THEME_KEY, next);
+/** Applique et retient — effet immédiat, sans passer par le formulaire. */
+export function setTheme(choice: ThemeChoice): void {
+  if (choice === "system") {
+    localStorage.removeItem(THEME_KEY);
+    delete document.documentElement.dataset.theme;
+  } else {
+    localStorage.setItem(THEME_KEY, choice);
+    document.documentElement.dataset.theme = choice;
+  }
 }
 
 /** Mode d'appel retenu (id du registre CALL_MODES de l'écran d'appel). */

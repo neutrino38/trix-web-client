@@ -1,4 +1,4 @@
-# Spécification — STAURI Communicator (Webphone conversation totale)
+# Spécification — Trix Communicator (Webphone conversation totale)
 
 **Statut :** Brouillon
 **Propriétaire :** Emmanuel Buu / IVèS
@@ -7,7 +7,7 @@
 
 ## Vue d'ensemble
 
-STAURI Communicator est un webphone SIP « conversation totale » (audio + vidéo + texte temps réel)
+Trix Communicator est un webphone SIP « conversation totale » (audio + vidéo + texte temps réel)
 fonctionnant dans un navigateur. Il s'inspire du layout de l'écran d'appel d'Elioz Connect,
 rebrandé aux couleurs du projet FSL/LSF (palette violette du logo `fsl-logo.svg`).
 
@@ -231,13 +231,19 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 ## Questions ouvertes
 
 - [x] Icône/logo définitif du projet LSF (le propriétaire dispose d'une icône — à intégrer).
-   oui fsl-icon.svg posé dans le repo
+   Intégré : la marque Trix vit dans `public/` — `trix-icon.svg` (accueil en 120 px et barre
+   d'en-tête en 38 px), `trix-favicon.svg` + `trix-favicon-192.png` (onglet). Le nom du produit
+   reste du **texte** et non une image : le mot-marque de `trix-logo.svg` est peint en violet
+   foncé, illisible sur le fond du thème sombre. Ce fichier reste disponible dans `public/` pour
+   les supports à fond clair. `fsl-icon.svg` sert de crédit « Powered by FSL » en pied d'accueil
+   (lien vers le dépôt du framework). Le placeholder « arcs LSF » de `src/ui/logo.ts` est supprimé.
 - [ ] Faut-il un champ « realm » distinct du domaine dans la configuration ? (défaut : realm = domaine)
    non. domain = realm
 - [ ] Texte temps réel : T.140 sur data channel ou messages complets (décision en phase 4).
    T.140 sur data channedl
-- [ ] Nom produit définitif affiché dans l'UI (« STAURI Communicator » ?).
- pour l'instant non. Si les pb webrtc + tauri persistent on va peut être changer de nom
+- [x] Nom produit définitif affiché dans l'UI.
+ « Trix Communicator » (nom court « Trix ») — l'ancien nom STAURI est abandonné, le dépôt
+ s'appelle `trix-web-client` et le code n'emploie que le nom court `trix`.
 
 ## Références
 

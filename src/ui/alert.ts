@@ -27,6 +27,7 @@
  */
 
 import { startRing, stopRing } from "./ring.js";
+import { setTitleOverride } from "./title.js";
 
 export interface IncomingAlert {
   caller: string;
@@ -49,7 +50,6 @@ let active = false;
 let overlay: HTMLElement | null = null;
 let blinkTimer: ReturnType<typeof setInterval> | null = null;
 let vibrateTimer: ReturnType<typeof setInterval> | null = null;
-let baseTitle = "";
 let baseFavicon: string | null = null;
 let notification: Notification | null = null;
 let wakeLock: { release(): Promise<void> } | null = null;
@@ -96,12 +96,13 @@ function faviconLink(): HTMLLinkElement {
 }
 
 function startBlink(caller: string): void {
-  baseTitle = document.title;
   const link = faviconLink();
   baseFavicon = link.getAttribute("href");
   let on = true;
   const tick = (): void => {
-    document.title = on ? `📞 Appel entrant — ${caller}` : baseTitle;
+    // un battement sur deux rend la main : c'est le titre d'état qui
+    // réapparaît, pas une copie figée prise au début de la sonnerie
+    setTitleOverride(on ? `📞 Appel entrant — ${caller}` : null);
     link.href = faviconUri(on ? "#36AD45" : "#E94E3C");
     on = !on;
   };
@@ -112,7 +113,7 @@ function startBlink(caller: string): void {
 function stopBlink(): void {
   if (blinkTimer !== null) clearInterval(blinkTimer);
   blinkTimer = null;
-  if (baseTitle) document.title = baseTitle;
+  setTitleOverride(null);
   const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (link) {
     if (baseFavicon) link.href = baseFavicon;
@@ -127,7 +128,7 @@ function notify(a: IncomingAlert): void {
     // `silent` : le retour sonore est déjà assuré par la sonnerie de l'app
     notification = new Notification("Appel entrant", {
       body: `${a.caller} — appel ${a.video ? "vidéo" : "audio"}`,
-      tag: "stauri-incoming",
+      tag: "trix-incoming",
       requireInteraction: true,
       silent: true,
     });

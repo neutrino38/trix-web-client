@@ -4,9 +4,45 @@ import { renderConfig } from "./screens/config.js";
 import { renderCall } from "./screens/call/index.js";
 import { layoutMode, type LayoutMode } from "./layout.js";
 import { stopIncomingAlert } from "./alert.js";
+import { announce } from "./announce.js";
+import { setStateTitle } from "./title.js";
+import { CALL_LABEL, STATUS, displayTarget, fmtChrono } from "./screens/call/parts.js";
 
 let lastState: string | null = null;
 let lastLayout: LayoutMode | null = null;
+
+/** Écrans sans état de téléphone à afficher : l'onglet nomme quand même l'écran. */
+const SCREEN_TITLE: Record<string, string> = {
+  configuring: "Paramètres",
+  reconfiguring: "Paramètres",
+  saving: "Enregistrement…",
+};
+
+/**
+ * Titre d'onglet et annonce vocale, dérivés du même état — l'un pour qui
+ * travaille dans un autre onglet pendant un appel, l'autre pour qui n'a pas
+ * l'écran. Pendant la communication, le chrono du titre est ensuite rafraîchi
+ * par le tick de l'écran d'appel (parts.ts), seul à battre la seconde.
+ */
+function syncStatus(phone: PhoneInstance): void {
+  const view = phone.state === "in_call" ? phone.context.call : null;
+  if (view) {
+    const label = CALL_LABEL[view.state];
+    const who = view.displayName ?? displayTarget(view.target);
+    setStateTitle(
+      view.state === "connected" && view.connectedAt !== null
+        ? `${label} — ${fmtChrono(view.connectedAt)}`
+        : `${label} — ${who}`,
+    );
+    announce(`${label} — ${who}`);
+    return;
+  }
+  const label = STATUS[phone.state]?.label;
+  setStateTitle(label ?? SCREEN_TITLE[phone.state] ?? null);
+  // les écrans hors appel se lisent d'eux-mêmes : seul l'état du téléphone,
+  // qui change sans que l'utilisateur agisse, mérite d'être annoncé
+  if (label) announce(label);
+}
 
 /**
  * Re-rend l'écran courant à chaque changement d'état de la machine, et à
@@ -19,6 +55,7 @@ let lastLayout: LayoutMode | null = null;
  */
 export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
   const layout = layoutMode();
+  syncStatus(phone); // avant le filtre : l'état peut changer sans re-rendu
   if (phone.state === lastState && layout === lastLayout && phone.state !== "in_call") return;
   lastState = phone.state;
   lastLayout = layout;

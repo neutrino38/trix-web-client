@@ -1,4 +1,4 @@
-# Conception technique — STAURI Communicator
+# Conception technique — Trix Communicator
 
 **Statut :** Brouillon — Phase 0
 **Dernière mise à jour :** 2026-08-15

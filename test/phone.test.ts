@@ -192,7 +192,7 @@ describe("PhoneMachine — configuration", () => {
     expect(box.saved).toEqual(CFG);
   });
 
-  it("URI SIP invalide : erreur, on reste sur le formulaire", async () => {
+  it("Adresse SIP invalide : erreur, on reste sur le formulaire", async () => {
     const { phone } = await bootTo("home", null);
     phone.send({ type: "ui:configure" });
     phone.send({
@@ -207,7 +207,7 @@ describe("PhoneMachine — configuration", () => {
       },
     });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("URI SIP invalide (attendu : utilisateur@domaine)");
+    expect(phone.context.lastError).toBe("Adresse SIP invalide (attendu : utilisateur@domaine)");
   });
 
   it("identifiant d'authentification distinct : le HA1 est calculé avec lui", async () => {
@@ -355,7 +355,7 @@ describe("PhoneMachine — enregistrement", () => {
     const { phone, sip } = await bootTo("registering", CFG);
     sip.send({ type: "sip:registrationFailed", cause: "Not Found", statusCode: 404 });
     expect(phone.state).toBe("reg_failed");
-    expect(phone.context.lastError).toBe("URI SIP, mot de passe ou identifiant d'authentification incorrect");
+    expect(phone.context.lastError).toBe("Adresse SIP, mot de passe ou identifiant d'authentification incorrect");
     expect(phone.context.lastErrorCode).toBe("SIP 404");
   });
 
@@ -366,7 +366,7 @@ describe("PhoneMachine — enregistrement", () => {
     expect(phone.context.suspectFields).toBe("credentials");
     phone.send({ type: "ui:backToSettings" });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("URI SIP, mot de passe ou identifiant d'authentification incorrect");
+    expect(phone.context.lastError).toBe("Adresse SIP, mot de passe ou identifiant d'authentification incorrect");
     expect(phone.context.lastErrorCode).toBe("SIP 404");
     expect(phone.context.suspectFields).toBe("credentials");
     expect(phone.context.config).toEqual(CFG); // formulaire pré-rempli

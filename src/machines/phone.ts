@@ -174,7 +174,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   const f = ev.form;
   const parsed = parseSipUri(f.uri);
   if (!parsed) {
-    ctx.lastError = "URI SIP invalide (attendu : utilisateur@domaine)";
+    ctx.lastError = "Adresse SIP invalide (attendu : utilisateur@domaine)";
     return stay("URI invalide");
   }
   const { username, domain } = parsed;
@@ -359,7 +359,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           isCredentialsError(ev.statusCode)
             ? fail(
                 ctx,
-                "URI SIP, mot de passe ou identifiant d'authentification incorrect",
+                "Adresse SIP, mot de passe ou identifiant d'authentification incorrect",
                 `SIP ${ev.statusCode}`,
                 "credentials",
               )

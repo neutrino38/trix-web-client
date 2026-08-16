@@ -1,14 +1,14 @@
 import type { PhoneInstance } from "../../machines/phone.js";
 import { el, esc } from "../el.js";
-import { logoSvg } from "../logo.js";
+import { fslBadge, trixIcon } from "../logo.js";
 
 export function renderHome(phone: PhoneInstance): HTMLElement {
   const cfg = phone.context.config;
   const node = el(`
     <div class="screen-home">
-      ${logoSvg(120, true)}
       <div>
-        <div class="name-big">STAURI Communicator</div>
+        ${trixIcon(200)}
+        <h1>Trix Communicator</h1>
         <div class="tagline">Webphone conversation totale</div>
       </div>
       <div class="actions">
@@ -20,6 +20,7 @@ export function renderHome(phone: PhoneInstance): HTMLElement {
         }
         <button class="btn ${cfg ? "" : "primary"}" data-act="new">Configurer un nouveau compte</button>
       </div>
+      ${fslBadge()}
     </div>`);
   node
     .querySelector('[data-act="use"]')

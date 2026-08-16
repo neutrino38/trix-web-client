@@ -56,7 +56,7 @@ export interface SecureStore {
   saveHistory(account: string, entries: CallLogEntry[]): Promise<void>;
 }
 
-const DB_NAME = "stauri-communicator";
+const DB_NAME = "trix";
 const STORE = "vault";
 const KEY_ID = "aes-key";
 const DATA_ID = "account";

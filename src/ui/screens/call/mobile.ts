@@ -15,11 +15,11 @@
 
 import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
+import { overlayBar } from "./overlay.js";
 import {
   CALL_LABEL,
   ICONS,
   STATUS,
-  alertOptIn,
   answerChoices,
   callerName,
   currentMode,
@@ -44,7 +44,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
-  const optIn = alertOptIn();
 
   return el(`
     <div class="screen-call mobile">
@@ -107,31 +106,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                    : `<div class="call-overlay">${CALL_LABEL[view.state]}…<br>
                         <span class="target">${esc(displayTarget(view.target))}</span></div>`
                }
-               <div class="mcontrols">
-                 <button class="iconbtn ${connected ? (view.micMuted ? "toggled" : "") : "inactive"}"
-                         data-act="muteMic" ${connected ? "" : "disabled"}
-                         aria-label="Couper le micro" aria-pressed="${view.micMuted}">
-                   ${ICONS.mic}
-                 </button>
-                 <button class="iconbtn ${connected && view.media.video ? (view.camMuted ? "toggled" : "") : "inactive"}"
-                         data-act="muteCam" ${connected && view.media.video ? "" : "disabled"}
-                         aria-label="Couper la caméra" aria-pressed="${view.camMuted}">
-                   ${ICONS.cam}
-                 </button>
-                 <button class="iconbtn ${connected && view.media.video ? (view.selfViewHidden ? "toggled" : "") : "inactive"}"
-                         data-act="selfview" ${connected && view.media.video ? "" : "disabled"}
-                         aria-label="Masquer le self-view" aria-pressed="${view.selfViewHidden}">
-                   ${ICONS.selfview}
-                 </button>
-                 <button class="iconbtn ${connected ? (speakerMuted ? "toggled" : "") : "inactive"}"
-                         data-act="speaker" ${connected ? "" : "disabled"}
-                         aria-label="Haut-parleur" aria-pressed="${speakerMuted}">
-                   ${ICONS.speaker}
-                 </button>
-                 <button class="hangup-round ${view.state === "hangingup" ? "inactive" : ""}"
-                         data-act="hangup" ${view.state === "hangingup" ? "disabled" : ""}
-                         aria-label="Raccrocher">${ICONS.hangup}</button>
-               </div>
+               ${overlayBar({ view, speakerMuted, withHangup: true })}
              </div>`
           : `<div class="mdial">
                ${
@@ -159,7 +134,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                          aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
                  <div class="dropdown" data-ref="modemenu" hidden></div>
                </div>
-               ${optIn ? `<div class="alert-optin">${optIn}</div>` : ""}
                <div class="calllog">
                  <div class="calllog-head">
                    <span>Historique</span>

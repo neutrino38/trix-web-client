@@ -16,19 +16,10 @@ import type { CallMedia } from "../../../sip/port.js";
 import type { AccountConfig } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
-import {
-  alertPermission,
-  requestAlertPermission,
-  startIncomingAlert,
-  stopIncomingAlert,
-} from "../../alert.js";
-import {
-  bumpFont,
-  currentTheme,
-  getCallModeId,
-  setCallModeId,
-  toggleTheme,
-} from "../../prefs.js";
+import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
+import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
+import { announce } from "../../announce.js";
+import { setStateTitle } from "../../title.js";
 
 export const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" }> = {
   connecting: { label: "Connexion…", cls: "warn" },
@@ -61,7 +52,22 @@ export const ICONS = {
   hangup: `<svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>`,
   mic: `<svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg>`,
   clock: `<svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>`,
+  fullscreen: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>`,
   chat: `<svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`,
+};
+
+/**
+ * Variantes « coupé » : la barre oblique dit l'état sans la couleur, seule
+ * façon de rester lisible en niveaux de gris comme pour un daltonien
+ * (RGAA 3.1). Le fond rouge ne fait que renforcer ce que l'icône dit déjà.
+ */
+const SLASH = `<path d="M3.5 3.5l17 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`;
+
+export const ICONS_OFF = {
+  mic: ICONS.mic.replace("</svg>", `${SLASH}</svg>`),
+  cam: ICONS.cam.replace("</svg>", `${SLASH}</svg>`),
+  speaker: ICONS.speaker.replace("</svg>", `${SLASH}</svg>`),
+  selfview: ICONS.selfview.replace("</svg>", `${SLASH}</svg>`),
 };
 
 /**
@@ -158,23 +164,6 @@ function answerMedia(act: AnswerChoice["act"], offered: CallMedia): CallMedia {
 /** Identité de l'appelant : nom affiché si le From en porte un, URI sinon. */
 export function callerName(view: CallView): string {
   return view.displayName ?? displayTarget(view.target);
-}
-
-/**
- * Invite à autoriser les notifications système — le seul canal d'alerte
- * qui traverse une fenêtre masquée, donc important ici. Rien à afficher
- * une fois accordées ; si l'utilisateur a refusé, on le dit plutôt que
- * de laisser croire à une alerte qui ne viendra pas.
- */
-export function alertOptIn(): string {
-  switch (alertPermission()) {
-    case "default":
-      return `<button class="linkbtn" data-act="enable-alerts">Activer les alertes système</button>`;
-    case "denied":
-      return `<span class="alert-note">Alertes système bloquées par le navigateur</span>`;
-    default:
-      return "";
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -357,15 +346,6 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     stopIncomingAlert();
   }
 
-  // demande de permission : toujours déclenchée par un clic, jamais à l'improviste
-  on('[data-act="enable-alerts"]', (btn) => {
-    void requestAlertPermission().then(() => {
-      const next = alertOptIn();
-      if (next) btn.replaceWith(el(next));
-      else btn.remove();
-    });
-  });
-
   // --- commandes en communication -----------------------------------------
   on('[data-act="hangup"]', () => phone.send({ type: "ui:hangup" }));
   on('[data-act="muteMic"]', () => phone.send({ type: "ui:muteMic" }));
@@ -376,9 +356,11 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     speakerMuted = !speakerMuted;
     const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
     if (remote) remote.muted = speakerMuted;
-    btn.classList.toggle("toggled", speakerMuted);
+    // `off` et non `toggled` : un son coupé est un flux interrompu (voir overlay.ts)
+    btn.classList.toggle("off", speakerMuted);
     btn.setAttribute("aria-pressed", String(speakerMuted));
     btn.title = speakerMuted ? "Rétablir le son" : "Couper le son";
+    btn.innerHTML = speakerMuted ? ICONS_OFF.speaker : ICONS.speaker;
   });
 
   // --- historique ----------------------------------------------------------
@@ -396,13 +378,10 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   }
 
   // --- préférences ---------------------------------------------------------
+  // seule la taille du texte reste ici : c'est le seul réglage qu'on ajuste en
+  // cours de conversation. Thème et notifications vivent dans les paramètres.
   on('[data-act="font-down"]', () => bumpFont(-1));
   on('[data-act="font-up"]', () => bumpFont(1));
-  on('[data-act="theme"]', (btn) => {
-    toggleTheme();
-    const label = btn.childNodes[0];
-    if (label) label.textContent = `${currentTheme() === "dark" ? "Foncé" : "Clair"} `;
-  });
 
   // --- média, chrono, vu-mètres --------------------------------------------
   const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
@@ -411,20 +390,32 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     remote.muted = speakerMuted;
     view.session?.attachMedia(remote, self);
 
+    // plein écran : le double-clic est un raccourci, le bouton est le chemin
+    // praticable au clavier (RGAA 7.3) — les deux mènent au même geste
     const zone = node.querySelector('[data-ref="videozone"]') as HTMLElement | null;
-    zone?.addEventListener("dblclick", () => {
+    const toggleFullscreen = (): void => {
+      if (!zone) return;
       if (document.fullscreenElement) void document.exitFullscreen();
-      else void zone.requestFullscreen();
-    });
+      else void zone.requestFullscreen().catch(() => {});
+    };
+    zone?.addEventListener("dblclick", toggleFullscreen);
+    on('[data-act="fullscreen"]', toggleFullscreen);
 
     if (view.state === "connected" && view.connectedAt !== null) {
       const startedAt = view.connectedAt;
       const label = node.querySelector('[data-ref="chrono"]');
-      if (label) {
-        chronoTimer = setInterval(() => {
-          label.textContent = fmtChrono(startedAt);
-        }, 1000);
-      }
+      chronoTimer = setInterval(() => {
+        const elapsed = fmtChrono(startedAt);
+        if (label) label.textContent = elapsed;
+        // le titre d'onglet suit la seconde ; l'annonce, elle, ne réveille le
+        // lecteur d'écran qu'à la minute — l'entendre battre la seconde
+        // rendrait la conversation impossible à suivre
+        setStateTitle(`${CALL_LABEL.connected} — ${elapsed}`);
+        const minutes = Math.floor((Date.now() - startedAt) / 60_000);
+        if (minutes > 0) {
+          announce(`En communication depuis ${minutes} minute${minutes > 1 ? "s" : ""}`);
+        }
+      }, 1000);
       startVuMeters(node, remote, self);
     }
   }
