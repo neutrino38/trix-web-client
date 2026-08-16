@@ -83,6 +83,7 @@
     <button data-target="s-config">2 · Configuration</button>
     <button data-target="s-call-idle">3 · Appel (prêt)</button>
     <button data-target="s-call-live">4 · En communication</button>
+    <button data-target="s-call-fold">4bis · Panneau replié</button>
     <button data-target="s-call-in">5 · Appel entrant</button>
     <button data-target="s-call-err">6 · Échec d'enregistrement</button>
     <span class="group">Mobile</span>
@@ -354,11 +355,16 @@
                   <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
                   <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
                   <button class="iconbtn " title="Plein écran" aria-label="Plein écran"><svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg></button>
+                  <button class="iconbtn " title="Masquer le panneau latéral" aria-label="Panneau latéral" aria-expanded="true" aria-controls="call-panel"><svg class="icon" viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/></svg></button>
                 </div>
+                <button class="hangup-round" aria-label="Raccrocher"><svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></button>
               </div>
             </div>
           </div>
-          <div class="sidebar">
+          <div class="sidebar" id="call-panel" style="width:340px">
+            <div class="panel-handle" tabindex="0" role="separator" aria-orientation="vertical"
+                 aria-label="Largeur du panneau" aria-valuenow="340" aria-valuemin="300" aria-valuemax="440"
+                 title="Élargir le panneau — 33 % de la largeur au maximum"><span></span></div>
             <div class="call-controls">
               <div class="field">
                 <label for="f-target2">Adresse SIP</label>
@@ -413,9 +419,109 @@
        passe plus, le correspondant s'en aperçoit ; <b>violet</b> pour une bascule purement locale
        (self-view masqué). L'icône barrée et <code>aria-pressed</code> portent l'état à eux seuls :
        la couleur ne fait que le confirmer. Ici le micro est coupé. Le bouton « Plein écran »
-       double le double-clic, qui n'existait pas au clavier. Paramètres et Déconnexion restent désactivés
+       double le double-clic, qui n'existait pas au clavier. En fin de barre, le <b>bouton de repli</b>
+       du panneau (<code>aria-expanded</code>) ; la <b>poignée</b> du bord gauche du panneau le
+       redimensionne à la souris comme aux flèches du clavier, entre 300 px et le tiers de la fenêtre.
+       Paramètres et Déconnexion restent désactivés
        pendant l'appel. Avant décrochage (<code>dialing</code> / <code>ringing</code>), la scène
        affiche « Appel en cours… » / « Sonnerie… » et l'adresse appelée, à la place des vu-mètres.</p>
+  </section>
+
+  <section id="s-call-fold" class="screen">
+    <div class="frame-scroll"><div class="frame">
+      <div class="screen-call panel-collapsed">
+        <div class="topbar">
+          <span class="logo"><img src="../../public/trix-icon.svg" width="38" height="38" alt="" aria-hidden="true"><span>Trix</span></span>
+          <span class="pill"><span class="dot ok"></span> Enregistré</span>
+          <span class="pill"><span class="dot live"></span> En communication — bob@example.fr</span>
+          <span class="chrono"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg><span>00:04:37</span></span>
+          <span class="spacer"></span>
+          <button class="iconbtn inactive" disabled title="Paramètres (indisponible en appel)" aria-label="Paramètres">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+          </button>
+          <button class="iconbtn inactive" disabled title="Se déconnecter (indisponible en appel)" aria-label="Se déconnecter">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+          </button>
+        </div>
+        <div class="callbody">
+          <div class="stage">
+            <div class="video" title="Double-clic : plein écran">
+              <div class="fake-remote"></div>
+              <div class="fake-self">self-view</div>
+              <div class="vumeters" aria-hidden="true">
+                <span class="bar" style="height:62%"></span>
+                <span class="bar" style="height:18%"></span>
+              </div>
+              <div class="overlaybar">
+                <div class="overlay-pill">
+                  <button class="iconbtn off" title="Rétablir le micro" aria-label="Micro" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/><path d="M3.5 3.5l17 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+                  <button class="iconbtn " title="Couper la caméra" aria-label="Caméra" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
+                  <button class="iconbtn " title="Masquer le self-view" aria-label="Self-view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg></button>
+                  <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
+                  <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+                  <button class="iconbtn " title="Plein écran" aria-label="Plein écran"><svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg></button>
+                  <button class="iconbtn toggled" title="Afficher le tchat" aria-label="Panneau latéral" aria-expanded="false" aria-controls="call-panel-b"><svg class="icon" viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/><path d="M12.6 8.6 9.2 12l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                </div>
+                <button class="hangup-round" aria-label="Raccrocher"><svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="sidebar" id="call-panel-b" style="width:340px">
+            <div class="panel-handle" tabindex="0" role="separator" aria-orientation="vertical"
+                 aria-label="Largeur du panneau" aria-valuenow="340" aria-valuemin="300" aria-valuemax="440"
+                 title="Élargir le panneau — 33 % de la largeur au maximum"><span></span></div>
+            <div class="call-controls">
+              <div class="field">
+                <label for="f-target2b">Adresse SIP</label>
+                <input id="f-target2b" value="bob@example.fr" disabled>
+              </div>
+              <button class="btn hangup">
+                <svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+                Raccrocher
+              </button>
+            </div>
+            <div class="calllog">
+              <div class="calllog-head">
+                <span>Historique</span>
+                <button class="linkbtn">Effacer</button>
+              </div>
+              <div class="calllog-list">
+                <div class="calllog-row missed" title="carol@example.fr — Manqué">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
+                  <span class="who">carol@example.fr</span>
+                  <span class="when">12:05</span>
+                  <span class="detail">Manqué</span>
+                </div>
+                <div class="calllog-row dropped" title="dave@example.fr — Interrompu">
+                  <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+                  <span class="who">dave@example.fr</span>
+                  <span class="when">15/08 18:20</span>
+                  <span class="detail">2 min 04 s — coupé par le réseau</span>
+                </div>
+              </div>
+            </div>
+            <div class="chat-strip">
+              <svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+              <span>Tchat — disponible en phase 4</span>
+            </div>
+            <div class="sidefoot">
+              <span>Taille du texte</span>
+              <span class="fontsize">
+                <button aria-label="Réduire la taille du texte">A−</button>
+                <button aria-label="Augmenter la taille du texte">A+</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+    <p class="caption">Même état, <b>panneau replié</b> — la scène occupe toute la largeur. Le bouton de
+       repli passe en violet et son intitulé annonce ce qu'il fera : « Afficher le tchat »
+       (l'historique, lui, reste réservé au hors-appel — la place manque à 300 px). Le panneau replié,
+       <b>Raccrocher</b> reparaît en rond rouge 56 px à droite de la barre : la règle est qu'il doit
+       rester atteignable dans tous les états, et c'est elle qui justifie ce second bouton. Le repli
+       et la largeur sont retenus (<code>localStorage</code>) et survivent au rechargement ; ils ne
+       passent par aucune machine à états — le format d'affichage ne change rien au protocole SIP.</p>
   </section>
 
   <!-- ================= 5 · APPEL ENTRANT ================= -->

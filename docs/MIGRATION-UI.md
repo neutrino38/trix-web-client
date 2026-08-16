@@ -3,7 +3,7 @@
 **Maquette cible :** `docs/mockups/trix-call-screen-mockups.html` (options 1a → 1g)
 **Maquette de départ :** `docs/mockups/mockup.html` (état implémenté, phases 0 à 3)
 **Périmètre :** code des phases 2 et 3 (écran d'appel, appels sortants, appels entrants)
-**Dernière mise à jour :** 2026-08-16
+**Dernière mise à jour :** 2026-08-16 (lot L3)
 
 ---
 
@@ -70,6 +70,7 @@ vibration, wake lock).
 | `src/ui/screens/call/parts.ts` | 500 lignes aujourd'hui, à découper : `icons.ts`, `history.ts`, `overlay.ts` (barre média commune), `incoming.ts` (popup), `chat.ts`, `wire.ts` |
 | `src/ui/screens/config.ts` | Formulaire scindé en deux sections : compte SIP (chiffré) et alertes/affichage (localStorage, effet immédiat) — accueille les notifications et le thème (L1b) |
 | `src/ui/prefs.ts` | Trois réglages de plus : `trix-panel` (replié/déplié), `trix-panel-width` (px, plafonné à 33 %), et le thème qui passe à trois états (clair / sombre / système) — `toggleTheme()` devient `setTheme(mode)` |
+| `src/ui/screens/call/panel.ts` | **Nouveau (L3)** : icône, intitulés, poignée et câblage du panneau repliable — repli, glisser, pilotage clavier |
 | `src/ui/theme.css` | Classes nouvelles (`.overlaybar`, `.panel-handle`, `.chatcol`, `.incoming-dialog`), et `.mediabar`/`.incoming-card`/`.chat-strip` retirées. **Palette étendue** pour la conformité AA : `--green-surface`, `--red-surface`, `--*-signal`, `--field-border` (§7.2) |
 | `index.html` | Déclaration du favicon, `<h1>` et régions ARIA (§6) |
 
@@ -211,9 +212,10 @@ le double-clic offrait.
   n'affecte que soi et l'autre toute la conversation.
 - Le **badge « ph. 4 »** du DTMF disparaît (D1) : l'infobulle porte l'information.
 
-### L3 — Panneau latéral repliable et redimensionnable *(dépend de L2)*
+### L3 — Panneau latéral repliable et redimensionnable ✅ *fait*
 
-1. Bouton de repli en fin de barre de surimpression, `aria-pressed`, infobulle (D3).
+1. Bouton de repli en fin de barre de surimpression, infobulle qui annonce l'action à venir
+   (« Afficher le tchat » replié, « Masquer le panneau latéral » déplié — D3).
 2. État dans `prefs.ts` (`trix-panel`, `trix-panel-width`) — **pas** dans la machine : le format
    d'affichage ne change rien au protocole SIP, comme déjà tranché pour mobile/bureau
    (`docs/CONCEPTION.md` §4.5).
@@ -223,8 +225,43 @@ le double-clic offrait.
 4. Panneau replié : Raccrocher devient un rond rouge 56 px en fin de barre. **Raccrocher doit rester
    atteignable dans tous les états** — c'est la règle qui justifie ce bouton.
 
-*Recette :* replier/déplier survit au rechargement ; à 200 % de zoom, le panneau se replie au lieu de
-tronquer la vidéo (RGAA 10.4) ; tout est atteignable au clavier.
+*Recette (passée) :* repli et largeur survivent au rechargement ; le glisser et les flèches donnent
+la même chose, bornées à `[300 px, 33 %]` (`Origine`/`Fin` vont d'un bout à l'autre) ; l'ordre de
+tabulation en communication est commandes média → repli → poignée → Raccrocher → historique →
+préférences, avec un focus visible sur la poignée ; à 918 px de large (l'équivalent d'un zoom 200 %
+sur un écran de 1845 px) la largeur retenue est ramenée à 306 px, la scène garde 612 px et **rien
+ne déborde**. Recette jouée sur un banc de rendu jetable (faux `PhoneInstance` en communication),
+faute de compte SIP sous la main ; les deux maquettes correspondantes sont dans `mockup.html`
+(écrans 4 et 4bis).
+
+*Écarts par rapport au plan initial :*
+- **`aria-expanded`, et non `aria-pressed`.** Les deux sur le même bouton se contrediraient :
+  « enfoncé » y voudrait dire « replié », donc « non déployé ». §7.4 demandait déjà `aria-expanded`,
+  qui est le bon rôle — le bouton montre et masque une région, il ne bascule pas un réglage.
+  Le violet de l'état actif (maquette 1c) reste porté par la seule classe CSS.
+- **Le repli ne re-rend pas l'écran** : il bascule une classe sur la racine et le CSS fait le reste
+  (sidebar masquée, rond rouge révélé). L'écran d'appel est reconstruit à chaque notification de la
+  machine, mais un clic sur ce bouton n'en est pas une — passer par un rendu aurait demandé un
+  chemin de re-rendu « UI pure » qui n'existe pas, et qui n'aurait servi qu'à ça.
+- **Pas d'annonce vocale au repli.** La région `aria-live` appartient au chrono pendant la
+  communication : y écrire ferait ré-annoncer « en communication depuis N minutes » à la seconde
+  suivante (`announce()` ne filtre que la répétition immédiate). `aria-expanded` sur le bouton
+  qu'on vient d'activer dit déjà l'état.
+- **À 200 % de zoom, le panneau ne se replie pas tout seul** — il se ramène à sa borne basse et la
+  vidéo n'est pas tronquée pour autant (elle est en `object-fit: contain`). Replier d'autorité
+  écraserait une préférence explicite de l'utilisateur ; en dessous de 720 px, c'est de toute façon
+  la vue mobile — sans panneau — qui prend le relais. L'esprit du critère (aucune perte de contenu)
+  est tenu, la lettre du plan non.
+- **Le repli n'est offert qu'en communication.** Hors appel le panneau porte le composeur, et
+  pendant la sonnerie les boutons de réponse : le masquer laisserait un écran sans issue, puisque
+  la barre de surimpression — donc le bouton pour le rouvrir — n'existe pas dans ces deux états.
+
+*Piège rencontré :* le rond rouge fait de **Raccrocher la première action à exister en double** dans
+un même gabarit. Le câblage de `wireCallScreen` prenait le premier `data-act` trouvé
+(`querySelector`) : le rond capturait l'écouteur et le bouton de la sidebar restait inerte, déplié.
+`on()` câble désormais **toutes** les occurrences (`querySelectorAll`) — un seul événement par clic,
+et la règle « Raccrocher atteignable dans tous les états » redevient vraie dans les deux états.
+À retenir pour L4 et L5, qui vont eux aussi doubler des commandes entre popup, sidebar et scène.
 
 ### L4 — Appel entrant en popup modale *(indépendant)*
 

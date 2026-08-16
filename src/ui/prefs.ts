@@ -7,6 +7,8 @@
 const THEME_KEY = "trix-theme";
 const FONT_KEY = "trix-font";
 const CALLMODE_KEY = "trix-callmode";
+const PANEL_KEY = "trix-panel";
+const PANEL_WIDTH_KEY = "trix-panel-width";
 const FONT_MIN = 13;
 const FONT_MAX = 20;
 const FONT_DEFAULT = 16;
@@ -62,6 +64,51 @@ export function getCallModeId(): string {
 
 export function setCallModeId(id: string): void {
   localStorage.setItem(CALLMODE_KEY, id);
+}
+
+// ---------------------------------------------------------------------------
+// Panneau latéral de l'écran d'appel (repli et largeur)
+// ---------------------------------------------------------------------------
+//
+// Réglages d'affichage, donc localStorage et rien d'autre : replier le
+// panneau ou l'élargir ne change rien au protocole SIP, exactement comme le
+// choix mobile/bureau (docs/CONCEPTION.md §4.5). Aucune machine à prévenir.
+
+/**
+ * Bornes de largeur. En dessous de 300 px, l'historique et le tchat se
+ * tronquent au point de ne plus se lire ; au-delà du tiers de la fenêtre, la
+ * vidéo cesse d'être la scène principale. Le plancher l'emporte sur le
+ * plafond quand la fenêtre est trop étroite pour que le tiers atteigne
+ * 300 px — un panneau illisible ne rendrait service à personne.
+ */
+export const PANEL_MIN = 300;
+
+export function panelMax(): number {
+  return Math.max(PANEL_MIN, Math.round(window.innerWidth / 3));
+}
+
+export function clampPanelWidth(px: number): number {
+  return Math.min(panelMax(), Math.max(PANEL_MIN, Math.round(px)));
+}
+
+/** Largeur retenue, toujours ramenée aux bornes de la fenêtre **courante**. */
+export function panelWidth(): number {
+  return clampPanelWidth(Number(localStorage.getItem(PANEL_WIDTH_KEY)) || PANEL_MIN);
+}
+
+/** Retient la largeur bornée et la retourne — l'appelant affiche ce qu'il a écrit. */
+export function setPanelWidth(px: number): number {
+  const width = clampPanelWidth(px);
+  localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+  return width;
+}
+
+export function panelCollapsed(): boolean {
+  return localStorage.getItem(PANEL_KEY) === "collapsed";
+}
+
+export function setPanelCollapsed(collapsed: boolean): void {
+  localStorage.setItem(PANEL_KEY, collapsed ? "collapsed" : "expanded");
 }
 
 export function bumpFont(delta: 1 | -1): void {

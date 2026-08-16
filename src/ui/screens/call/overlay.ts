@@ -18,6 +18,7 @@
 
 import type { CallView } from "../../../machines/events.js";
 import { ICONS, ICONS_OFF } from "./parts.js";
+import { panelIcon, panelToggleLabel } from "./panel.js";
 
 interface Cmd {
   act: string;
@@ -25,14 +26,26 @@ interface Cmd {
   label: string; // ce que fait le bouton **maintenant** — pas son état
   aria: string; // intitulé stable, pour ne pas dérouter la navigation vocale
   pressed?: boolean;
+  /**
+   * Bouton qui montre ou masque une région de l'écran : `aria-expanded`, et
+   * non `aria-pressed`. Les deux sur le même bouton se contrediraient —
+   * « enfoncé » y voudrait dire « replié », donc « non déployé ».
+   */
+  expanded?: boolean;
+  controls?: string; // id de la région, quand il y a `expanded`
   cut?: boolean; // flux coupé → rouge, sinon bascule locale → violet
   disabled?: boolean;
 }
 
 function button(c: Cmd): string {
-  const cls = c.pressed ? (c.cut ? "off" : "toggled") : "";
+  const active = c.expanded !== undefined ? !c.expanded : c.pressed;
+  const cls = active ? (c.cut ? "off" : "toggled") : "";
+  const state =
+    c.expanded !== undefined
+      ? `aria-expanded="${c.expanded}" ${c.controls ? `aria-controls="${c.controls}"` : ""}`
+      : `aria-pressed="${c.pressed ?? false}"`;
   return `<button class="iconbtn ${cls}" data-act="${c.act}" ${c.disabled ? "disabled" : ""}
-                  title="${c.label}" aria-label="${c.aria}" aria-pressed="${c.pressed ?? false}">
+                  title="${c.label}" aria-label="${c.aria}" ${state}>
             ${c.icon}
           </button>`;
 }
@@ -40,10 +53,16 @@ function button(c: Cmd): string {
 export interface OverlayCtx {
   view: CallView;
   speakerMuted: boolean;
-  /** Mobile : Raccrocher rejoint la barre, faute de sidebar pour l'accueillir. */
+  /**
+   * Raccrocher rejoint la barre : toujours sur mobile, faute de sidebar pour
+   * l'accueillir ; sur bureau dès que le panneau peut se replier — c'est le
+   * CSS qui le révèle alors, puisque replier ne re-rend pas l'écran.
+   */
   withHangup?: boolean;
   /** Le plein écran n'a de sens que là où la vidéo n'occupe pas déjà l'écran. */
   withFullscreen?: boolean;
+  /** Bureau : bouton de repli du panneau latéral, en fin de barre. */
+  panel?: { collapsed: boolean; controls: string };
 }
 
 export function overlayBar(ctx: OverlayCtx): string {
@@ -105,6 +124,17 @@ export function overlayBar(ctx: OverlayCtx): string {
       label: "Plein écran",
       aria: "Plein écran",
       disabled: !view.media.video,
+    });
+  }
+
+  if (ctx.panel) {
+    cmds.push({
+      act: "panel",
+      icon: panelIcon(ctx.panel.collapsed),
+      label: panelToggleLabel(ctx.panel.collapsed),
+      aria: "Panneau latéral",
+      expanded: !ctx.panel.collapsed,
+      controls: ctx.panel.controls,
     });
   }
 

@@ -11,6 +11,8 @@ import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
+import { panelHandle } from "./panel.js";
+import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
   CALL_LABEL,
   ICONS,
@@ -41,9 +43,15 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
+  const width = panelWidth();
+  // Le repli ne vaut qu'en communication : hors appel le panneau porte le
+  // composeur, et pendant la sonnerie les boutons de réponse — le masquer
+  // rendrait l'écran inutilisable, sans même un bouton pour le rouvrir
+  // (la barre de surimpression n'existe pas dans ces deux états).
+  const collapsed = !!view && !incoming && panelCollapsed();
 
   return el(`
-    <div class="screen-call">
+    <div class="screen-call ${collapsed ? "panel-collapsed" : ""}">
       <div class="topbar">
         <span class="logo">${trixIcon(38)}<span>Trix</span></span>
         <span class="pill"><span class="dot ${status.cls}"></span>
@@ -104,7 +112,16 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                        : `<div class="call-overlay">${CALL_LABEL[view.state]}…<br>
                             <span class="target">${esc(displayTarget(view.target))}</span></div>`
                    }
-                   ${overlayBar({ view, speakerMuted, withFullscreen: true })}`
+                   ${overlayBar({
+                     view,
+                     speakerMuted,
+                     withFullscreen: true,
+                     // Raccrocher reste atteignable panneau replié : le rond
+                     // rouge est rendu dans les deux cas, le CSS le montre
+                     // quand la sidebar s'efface
+                     withHangup: true,
+                     panel: { collapsed, controls: "call-panel" },
+                   })}`
                 : failed
                   ? `${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
                      ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
@@ -130,7 +147,8 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             }
           </div>
         </div>
-        <div class="sidebar">
+        <div class="sidebar" id="call-panel" style="width:${width}px">
+          ${panelHandle(width)}
           <div class="call-controls">
             <div class="field">
               <label for="f-target">${incoming ? "Appelant" : "Adresse SIP"}</label>

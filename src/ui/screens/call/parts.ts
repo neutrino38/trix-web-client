@@ -20,6 +20,7 @@ import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
 import { setStateTitle } from "../../title.js";
+import { wirePanel } from "./panel.js";
 
 export const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" }> = {
   connecting: { label: "Connexion…", cls: "warn" },
@@ -243,9 +244,15 @@ export interface CallScreenCtx {
 
 export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   const { phone, view, ready, cfg } = ctx;
+  // Tous les éléments qui portent l'action, et pas seulement le premier : une
+  // même commande peut avoir deux boutons dans un même gabarit — Raccrocher
+  // est dans la sidebar **et** en rond rouge dans la barre de surimpression,
+  // selon que le panneau est déplié ou replié (call/panel.ts). Câbler le seul
+  // premier trouvé laissait l'autre inerte.
   const on = (sel: string, fn: (elem: HTMLElement) => void): void => {
-    const elem = node.querySelector(sel) as HTMLElement | null;
-    if (elem) elem.addEventListener("click", () => fn(elem));
+    for (const elem of node.querySelectorAll<HTMLElement>(sel)) {
+      elem.addEventListener("click", () => fn(elem));
+    }
   };
 
   // --- barre d'en-tête ----------------------------------------------------
@@ -376,6 +383,11 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       });
     }
   }
+
+  // --- panneau latéral (repli, largeur) ------------------------------------
+  // absent de la vue mobile : `wirePanel` ne trouve alors ni bouton ni
+  // poignée et ne fait rien, comme tout le reste de ce câblage
+  wirePanel(node);
 
   // --- préférences ---------------------------------------------------------
   // seule la taille du texte reste ici : c'est le seul réglage qu'on ajuste en
