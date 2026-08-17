@@ -413,13 +413,14 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // rafraîchissements périodiques du REGISTER
         "sip:registered": () => stay("re-REGISTER OK"),
         "sip:connected": () => undefined,
-        "sip:registrationFailed": (ev, ctx) =>
-          fail(
-            ctx,
-            `Enregistrement perdu : ${ev.cause}`,
-            ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause,
-            "credentials",
-          ),
+        // sans code de réponse, l'échec vient du transport (REGISTER resté
+        // sans réponse, socket morte) : on reconnecte au lieu d'accuser le compte
+        "sip:registrationFailed": (ev, ctx) => {
+          ctx.lastError = `Enregistrement perdu : ${ev.cause}`;
+          ctx.lastErrorCode = ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause;
+          ctx.suspectFields = ev.statusCode ? "credentials" : "proxy";
+          return ev.statusCode ? goto("reg_failed") : goto("reconnecting", "REGISTER sans réponse");
+        },
         "sip:disconnected": (_ev, ctx) => {
           ctx.lastError = "Connexion au proxy perdue";
           ctx.lastErrorCode = "WSS_LOST";
@@ -434,10 +435,14 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:logout": () => goto("unregistering"),
         "ui:clearHistory": clearHistory,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
-        // réveil détecté (saut d'horloge) : la WSS est probablement morte
+        // réveil détecté : la WSS peut être morte sans que le navigateur le
+        // sache. Un REGISTER sur le transport existant tranche — même Call-ID,
+        // pas de nouveau contact chez le registrar. S'il reste sans réponse,
+        // sip:registrationFailed emmène en reconnecting.
         "sys:wake": (_ev, ctx) => {
+          if (ctx.handle?.refresh()) return stay("réveil : REGISTER rafraîchi");
           stopSip(ctx);
-          return goto("connecting", "réveil : réenregistrement");
+          return goto("connecting", "réveil : transport fermé");
         },
       },
       meta: { screen: "call" },

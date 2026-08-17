@@ -45,14 +45,14 @@ stateDiagram-v2
   registering --> reconnecting: sip:registrationFailed (reconnexion auto), sip:disconnected (reconnexion auto), after 30 s (reconnexion auto)
   registering --> reg_failed: sip:registrationFailed, sip:disconnected, after 30 s
   registering --> sleeping: sys:sleep (mise en veille)
-  ready --> ready: ui:call (cible vide), sip:registered (re-REGISTER OK), ui:clearHistory (historique vidé)
+  ready --> ready: ui:call (cible vide), sip:registered (re-REGISTER OK), ui:clearHistory (historique vidé), sys:wake (réveil : REGISTER rafraîchi)
   ready --> in_call: ui:call, sip:incoming
-  ready --> reconnecting: sip:registrationFailed (reconnexion auto), sip:disconnected (connexion perdue)
   ready --> reg_failed: sip:registrationFailed
+  ready --> reconnecting: sip:registrationFailed (REGISTER sans réponse), sip:disconnected (connexion perdue)
   ready --> reconfiguring: ui:backToSettings (retour paramètres)
   ready --> unregistering: ui:logout
   ready --> sleeping: sys:sleep (mise en veille)
-  ready --> connecting: sys:wake (réveil : réenregistrement)
+  ready --> connecting: sys:wake (réveil : transport fermé)
   in_call --> in_call: child:msg (vue d'appel)
   in_call --> sleeping: child:exit (veille : appel raccroché)
   in_call --> reconnecting: child:exit (proxy perdu pendant l'appel)

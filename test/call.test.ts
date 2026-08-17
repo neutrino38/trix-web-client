@@ -38,6 +38,7 @@ function fakeHandle(opts: { throwOnCall?: string } = {}) {
   };
   const handle: SipHandle = {
     stop: () => {},
+    refresh: () => true,
     call(target, media, send) {
       if (opts.throwOnCall) throw new Error(opts.throwOnCall);
       box.calls.push({ target, media });

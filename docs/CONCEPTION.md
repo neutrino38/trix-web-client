@@ -112,8 +112,12 @@ Décisions :
 - **« Paramètres » et « Déconnexion » désenregistrent et arrêtent l'UA** — pas d'UA vivant
   hors de `ready`/`in_call` : simple, prédictible, re-REGISTER propre à chaque retour.
 - L'UA JsSIP est créé dans `enter` de `connecting` et stocké dans le contexte.
-- En `ready`, une perte d'enregistrement (`sip:registrationFailed`, `sip:disconnected`)
-  renvoie vers `reg_failed` — l'indicateur UI suit l'état de la machine, pas un flag séparé.
+- En `ready`, l'indicateur UI suit l'état de la machine, pas un flag séparé. Une perte de
+  transport (`sip:disconnected`, REGISTER resté sans réponse) part en `reconnecting` ; un refus
+  du registrar (réponse SIP) part en `reg_failed`.
+- Un réveil détecté renvoie un REGISTER sur le transport existant (`handle.refresh()`). Recréer
+  l'UA donnerait un nouveau Call-ID et un nouveau contact : le client se désenregistrerait puis
+  se réenregistrerait à chaque réveil. On ne repart d'un nouvel UA que si le transport est fermé.
 - Timers : `after` de FSL (armé à l'entrée, annulé à la sortie).
 
 ### 4.2 CallMachine — appel sortant (phase 2)

@@ -68,6 +68,9 @@ class FakeCallSession {
 class FakeSip implements SipPort {
   started: AccountConfig[] = [];
   stopped = 0;
+  refreshed = 0;
+  /** Transport encore ouvert : pilote la valeur rendue par refresh(). */
+  connected = true;
   calls: { target: string; media: CallMedia }[] = [];
   session = new FakeCallSession();
   send: (ev: SipEvent) => void = () => {};
@@ -78,6 +81,10 @@ class FakeSip implements SipPort {
     return {
       stop: () => {
         this.stopped++;
+      },
+      refresh: () => {
+        this.refreshed++;
+        return this.connected;
       },
       call: (target: string, media: CallMedia, sendCall: (ev: CallSipEvent) => void) => {
         this.calls.push({ target, media });
@@ -768,6 +775,31 @@ describe("PhoneMachine — perte du proxy et veille", () => {
     phone.send({ type: "sys:wake" });
     expect(phone.state).toBe("connecting");
     expect(sip.started).toHaveLength(2);
+  });
+
+  it("réveil enregistré : REGISTER rafraîchi sur le transport existant", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "sys:wake" });
+    expect(phone.state).toBe("ready");
+    expect(sip.refreshed).toBe(1);
+    expect(sip.stopped).toBe(0);
+    expect(sip.started).toHaveLength(1); // pas de nouvel UA, donc pas de nouveau contact
+  });
+
+  it("réveil avec transport fermé : nouvel UA", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    sip.connected = false;
+    phone.send({ type: "sys:wake" });
+    expect(phone.state).toBe("connecting");
+    expect(sip.stopped).toBe(1);
+    expect(sip.started).toHaveLength(2);
+  });
+
+  it("REGISTER sans réponse : reconnexion, pas d'accusation des identifiants", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    sip.send({ type: "sip:registrationFailed", cause: "Request Timeout" });
+    expect(phone.state).toBe("reconnecting");
+    expect(phone.context.suspectFields).toBe("proxy");
   });
 
   it("veille en appel : l'appel est raccroché puis on dort", async () => {

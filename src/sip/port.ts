@@ -85,6 +85,12 @@ export interface SipHandle {
    * d'arriver jusqu'à `sip:disconnected`, après quoi le port se détache.
    */
   stop(): void;
+  /**
+   * Renvoie un REGISTER sur le transport existant : même Call-ID, CSeq
+   * suivant, aucun nouveau contact chez le registrar. Rend `false` si le
+   * transport est déjà fermé — il faut alors repartir d'un nouvel UA.
+   */
+  refresh(): boolean;
   /** INVITE sortant avec la combinaison de médias demandée. Peut lever si la cible est invalide. */
   call(target: string, media: CallMedia, send: (ev: CallSipEvent) => void): CallSession;
 }
@@ -116,6 +122,9 @@ export function createJsSipPort(): SipPort {
         );
         return {
           stop() {},
+          refresh() {
+            return false;
+          },
           call() {
             // jamais atteint : la machine part en reg_failed avant tout appel
             throw new Error("UA non démarré (proxy invalide)");
@@ -159,6 +168,11 @@ export function createJsSipPort(): SipPort {
         stop() {
           stopped = true;
           ua.stop();
+        },
+        refresh() {
+          if (!ua.isConnected()) return false;
+          ua.register();
+          return true;
         },
         call(target, media, sendCall) {
           const session = ua.call(target, {
