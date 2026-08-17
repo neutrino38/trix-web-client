@@ -59,7 +59,7 @@ npm run diagrams  # regenerates docs/DIAGRAMS.md from the machine sources
 - [x] Phase 0 — specs, technical design, mockups
 - [x] Phase 1 — home screen, configuration (encrypted HA1, password never stored), REGISTER
 - [x] Phase 2 — call screen (desktop and mobile views), outgoing calls (CallMachine),
-      encrypted call history, automatic reconnection, sleep/wake, `toMermaid()` observability
+      encrypted call history, automatic reconnection, sleep/wake, observability
 - [x] Phase 3 — incoming calls: answering in audio or audio+video depending on the SDP offer,
       rejection, one call at a time (486/480), missed calls in the history, and a
       **deaf-accessible alert** (screen flash, blinking tab title and favicon, system

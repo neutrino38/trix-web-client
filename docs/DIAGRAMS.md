@@ -1,7 +1,7 @@
 # Diagrammes des machines — générés, ne pas éditer
 
 Régénérer avec `npm run diagrams`. Source : les `goto()` des machines,
-extraits de `src/machines/` par analyse statique.
+extraits de `src/machines/` par `finite-state-language/diagram`.
 
 Chaque flèche porte les événements qui la déclenchent, et entre parenthèses
 le libellé de la transition. `[*]` est la fin de la machine. Les gardes
@@ -12,19 +12,19 @@ dessinée.
 
 ```mermaid
 stateDiagram-v2
-  state "initial_state" as initial_state
-  state "home" as home
-  state "configuring" as configuring
-  state "reconfiguring" as reconfiguring
-  state "saving" as saving
-  state "connecting" as connecting
-  state "registering" as registering
-  state "ready" as ready
-  state "in_call" as in_call
-  state "reconnecting" as reconnecting
-  state "sleeping" as sleeping
-  state "reg_failed" as reg_failed
-  state "unregistering" as unregistering
+  state initial_state
+  state home
+  state configuring
+  state reconfiguring
+  state saving
+  state connecting
+  state registering
+  state ready
+  state in_call
+  state reconnecting
+  state sleeping
+  state reg_failed
+  state unregistering
   [*] --> initial_state
   initial_state --> home: task:loadConfig
   home --> configuring: ui:configure
@@ -101,32 +101,32 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-  state "initial_state" as initial_state
-  state "dialing" as dialing
-  state "ringing" as ringing
-  state "ringing_in" as ringing_in
-  state "answering" as answering
-  state "connected" as connected
-  state "hangingup" as hangingup
+  state initial_state
+  state dialing
+  state ringing
+  state ringing_in
+  state answering
+  state connected
+  state hangingup
   [*] --> initial_state
-  initial_state --> dialing: entrée (INVITE sortant)
-  initial_state --> ringing_in: entrée (INVITE entrant)
-  dialing --> [*]: entrée (échec), sip:failed (échec), sip:ended (succès)
+  initial_state --> dialing: enter (INVITE sortant)
+  initial_state --> ringing_in: enter (INVITE entrant)
+  dialing --> [*]: enter (failure), sip:failed (failure), sip:ended (success)
   dialing --> ringing: sip:progress (180/183)
   dialing --> connected: sip:accepted (200 OK)
   dialing --> hangingup: ui:hangup (CANCEL)
   ringing --> connected: sip:accepted (200 OK)
-  ringing --> [*]: sip:failed (échec), sip:ended (succès), after 90 s (échec)
+  ringing --> [*]: sip:failed (failure), sip:ended (success), after 90 s (failure)
   ringing --> hangingup: ui:hangup (CANCEL)
   ringing_in --> answering: ui:answer (200 OK)
-  ringing_in --> [*]: ui:reject (succès), ui:hangup (succès), sip:failed (succès), sip:ended (succès), after 60 s (succès)
+  ringing_in --> [*]: ui:reject (success), ui:hangup (success), sip:failed (success), sip:ended (success), after 60 s (success)
   answering --> connected: sip:accepted (200 OK), sip:confirmed (ACK)
-  answering --> [*]: sip:failed (échec), sip:ended (succès), after 30 s (échec)
+  answering --> [*]: sip:failed (failure), sip:ended (success), after 30 s (failure)
   answering --> hangingup: ui:hangup (BYE)
-  connected --> [*]: sip:ended (succès), sip:failed (échec)
+  connected --> [*]: sip:ended (success), sip:failed (failure)
   connected --> hangingup: ui:hangup (BYE)
   connected --> connected: ui:muteMic, ui:muteCam, ui:toggleSelfView (self-view)
-  hangingup --> [*]: sip:ended (succès), sip:failed (succès), after 2 s (succès)
+  hangingup --> [*]: sip:ended (success), sip:failed (success), after 2 s (success)
 ```
 
 Événements consommés sans effet sur cette machine :

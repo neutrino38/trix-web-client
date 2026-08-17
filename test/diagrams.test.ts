@@ -7,11 +7,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { StateEvents } from "./machine-graph.js";
-import { mermaidFromSource } from "./machine-graph.js";
+import { machineGraphs, renderMermaid } from "finite-state-language/diagram";
+import type { MachineGraph, StateEvents } from "finite-state-language/diagram";
 
 const path = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url));
 const target = path("../docs/DIAGRAMS.md");
+
+function graphOf(file: string): MachineGraph {
+  const [graph] = machineGraphs(readFileSync(path(file), "utf8"), file);
+  if (graph === undefined) throw new Error(`${file} ne définit aucune machine`);
+  return graph;
+}
 
 function table(caption: string, rows: StateEvents[]): string {
   if (rows.length === 0) return "";
@@ -26,16 +32,16 @@ ${lines.join("\n")}
 `;
 }
 
-function section(title: string, file: string): string {
-  const { diagram, consumed, forwarded } = mermaidFromSource(path(file));
+function section(file: string): string {
+  const graph = graphOf(file);
   const tables = [
-    table("Événements relayés à la machine enfant :", forwarded),
-    table("Événements consommés sans effet sur cette machine :", consumed),
+    table("Événements relayés à la machine enfant :", graph.forwarded),
+    table("Événements consommés sans effet sur cette machine :", graph.consumed),
   ].filter((t) => t !== "");
-  return `## ${title}
+  return `## ${graph.name}
 
 \`\`\`mermaid
-${diagram}
+${renderMermaid(graph)}
 \`\`\`
 
 ${tables.join("\n")}`;
@@ -45,15 +51,15 @@ function render(): string {
   return `# Diagrammes des machines — générés, ne pas éditer
 
 Régénérer avec \`npm run diagrams\`. Source : les \`goto()\` des machines,
-extraits de \`src/machines/\` par analyse statique.
+extraits de \`src/machines/\` par \`finite-state-language/diagram\`.
 
 Chaque flèche porte les événements qui la déclenchent, et entre parenthèses
 le libellé de la transition. \`[*]\` est la fin de la machine. Les gardes
 sont ignorées : une branche impossible à l'exécution est quand même
 dessinée.
 
-${section("PhoneMachine", "../src/machines/phone.ts")}
-${section("CallMachine", "../src/machines/call.ts")}`;
+${section("../src/machines/phone.ts")}
+${section("../src/machines/call.ts")}`;
 }
 
 describe("observabilité — diagrammes", () => {

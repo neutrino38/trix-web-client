@@ -1,7 +1,7 @@
 /**
  * PhoneMachine — cycle de vie de l'application et de l'enregistrement SIP
  * (docs/CONCEPTION.md §4.1). Le diagramme de référence se régénère avec
- * `PhoneMachine.toMermaid()` (npm run diagrams).
+ * `npm run diagrams`, qui extrait les transitions de ce fichier.
  *
  * Invariant : l'UA SIP ne vit que dans connecting → registering → ready
  * → in_call → unregistering. Toute sortie de ce couloir (reconnecting,

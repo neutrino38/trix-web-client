@@ -8,7 +8,7 @@
 | Couche | Choix | Justification |
 |---|---|---|
 | Bundler / dev server | **Vite** + TypeScript strict | standard, HMR, build ESM |
-| Logique applicative | **finite-state-language** (FSL) v0.1.x | machines à états typées, `toMermaid()`, zéro dépendance, ESM |
+| Logique applicative | **finite-state-language** (FSL) v0.1.x | machines à états typées, diagrammes extraits des sources, zéro dépendance, ESM |
 | Signalisation SIP | **JsSIP** | SIP over WSS, support `ha1`/`realm` natif, RTCSession |
 | UI | **TypeScript vanilla** (DOM direct, rendu piloté par `instance.subscribe()`) | 3 écrans seulement ; évite React ; bundle minimal ; le hook `finite-state-language/react` reste une porte de sortie si l'UI se complexifie |
 | Tests | Vitest + fake timers | même outillage que FSL lui-même |
@@ -224,10 +224,11 @@ l'unique endroit à adapter.
 
 - `npm run diagrams` régénère [DIAGRAMS.md](DIAGRAMS.md) et un test échoue si le fichier
   a divergé du code — la conception et le code ne peuvent pas diverger silencieusement.
-- Les diagrammes viennent d'une analyse statique des sources (`test/machine-graph.ts`),
-  pas de `Machine.toMermaid()`. À l'exécution, les handlers sont des closures opaques :
-  la bibliothèque ne voit que la forme raccourcie `on: { evt: "cible" }`, que ces machines
-  n'utilisent jamais. Le source, lui, écrit chaque cible en clair dans `goto("cible")`.
+- Les diagrammes viennent de `finite-state-language/diagram`, qui analyse les sources
+  des machines — pas de `Machine.toMermaid()`. À l'exécution, les handlers sont des
+  closures opaques : la bibliothèque ne voit que la forme raccourcie
+  `on: { evt: "cible" }`, que ces machines n'utilisent jamais. Le source, lui, écrit
+  chaque cible en clair dans `goto("cible")`.
   L'extraction ignore les gardes : elle sur-approxime, jamais l'inverse.
 - `start({ debug: true, logger })` : chaque transition loggée au format Elixip
   (`sip:accepted: (calling_out) -> (connected) "200 OK"`), ring buffer `instance.log`
