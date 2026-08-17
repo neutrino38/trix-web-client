@@ -222,9 +222,13 @@ l'unique endroit à adapter.
 
 ### 4.4 Observabilité (phase 2)
 
-- `PhoneMachine.toMermaid()` et `CallMachine.toMermaid()` exposés via un écran/console debug
-  et un script npm (`npm run diagrams`) qui régénère les diagrammes de ce document —
-  la conception et le code ne peuvent pas diverger silencieusement.
+- `npm run diagrams` régénère [DIAGRAMS.md](DIAGRAMS.md) et un test échoue si le fichier
+  a divergé du code — la conception et le code ne peuvent pas diverger silencieusement.
+- Les diagrammes viennent d'une analyse statique des sources (`test/machine-graph.ts`),
+  pas de `Machine.toMermaid()`. À l'exécution, les handlers sont des closures opaques :
+  la bibliothèque ne voit que la forme raccourcie `on: { evt: "cible" }`, que ces machines
+  n'utilisent jamais. Le source, lui, écrit chaque cible en clair dans `goto("cible")`.
+  L'extraction ignore les gardes : elle sur-approxime, jamais l'inverse.
 - `start({ debug: true, logger })` : chaque transition loggée au format Elixip
   (`sip:accepted: (calling_out) -> (connected) "200 OK"`), ring buffer `instance.log`
   consultable pour le support.

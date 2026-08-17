@@ -51,7 +51,7 @@ npm install
 npm run dev       # dev server (http://localhost:5173)
 npm test          # unit tests (state machines, HA1, encrypted storage)
 npm run build     # typecheck + production build (dist/)
-npm run diagrams  # regenerates docs/DIAGRAMS.md from toMermaid()
+npm run diagrams  # regenerates docs/DIAGRAMS.md from the machine sources
 ```
 
 ## Progress
