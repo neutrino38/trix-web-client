@@ -55,6 +55,27 @@ npm run build     # typecheck + production build (dist/)
 npm run diagrams  # regenerates docs/DIAGRAMS.md from the machine sources
 ```
 
+## Deployment
+
+The build is a set of static files. Serve `dist/` over HTTPS — WebRTC needs a secure
+context, or the browser denies camera and microphone access. No backend ships with the
+client: the user types the `wss://` URL of their SIP proxy in the configuration screen.
+
+Ready-to-use vhosts for `trix.example.com`, with security headers, the production CSP and
+asset caching:
+
+- Apache 2.4: [config/apache/trix.example.com.conf](config/apache/trix.example.com.conf)
+- nginx: [config/nginx/trix.example.com.conf](config/nginx/trix.example.com.conf)
+
+```sh
+npm ci && npm run build
+sudo cp -r dist/. /var/www/trix/
+sudo cp config/apache/trix.example.com.conf /etc/httpd/conf.d/   # or config/nginx/… in /etc/nginx/conf.d/
+```
+
+Full steps, required modules and per-distribution paths:
+[docs/utilisation/deploiement.md](docs/utilisation/deploiement.md).
+
 ## Progress
 
 - [x] Phase 0 — specs, technical design, mockups
