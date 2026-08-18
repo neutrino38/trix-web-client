@@ -42,7 +42,8 @@ Realtime text transport is the WebRTC data channel.
 
 Documentation: [docs/SPECS.md](docs/SPECS.md) (spécifications),
 [docs/CONCEPTION.md](docs/CONCEPTION.md) (conception technique),
-[docs/mockups/mockup.html](docs/mockups/mockup.html) (maquettes).
+[docs/mockups/mockup.html](docs/mockups/mockup.html) (maquettes),
+[docs/utilisation/deploiement.md](docs/utilisation/deploiement.md) (déploiement).
 
 ## Useful commands
 
