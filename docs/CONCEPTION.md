@@ -288,6 +288,34 @@ l'unique endroit à adapter.
 - `start({ debug: true, logger })` : chaque transition loggée au format Elixip
   (`sip:accepted: (calling_out) -> (connected) "200 OK"`), ring buffer `instance.log`
   consultable pour le support.
+- `ui/diagnostics.ts` porte à la console ce que les automates savent d'un incident et
+  que l'écran résume en une phrase. Les machines n'en savent rien : le module observe
+  ce qu'elles publient déjà. Quatre traces, toutes préfixées `[trix]` :
+  - **erreurs métier** — une ligne par nouvelle valeur de `lastError` / `callError`,
+    avec l'état (bloc compris) et l'événement déclencheur ;
+  - **défauts du moteur** — exception dans un état, `goto` inconnu, transition rendue
+    après `fx.sbb`. `finite-state-language` les émet par le `logger` avec le préfixe
+    `[NomDeMachine]`, que les lignes de transition n'ont pas : `machineLogger` s'en
+    sert pour les faire ressortir en `console.error`, journal joint ;
+  - **mort de la machine** — une finalisation en `failure` fige l'application sans
+    que rien ne l'annonce ; `instance.done` la signale, journal joint ;
+  - **événements non consommés** — restés en file d'attente, c'est-à-dire un état sans
+    clause pour eux (invariant 7 des SBB, §4.3).
+  L'inspection est différée d'une microtask, comme le rendu (§4.5) et pour la même
+  raison. `window.trix.dump()` rend le journal des transitions en clair, à joindre à
+  un rapport de bug.
+
+### 4.5 Rendu : une microtask après la transition
+
+`main.ts` ne rend pas dans le callback d'abonnement, mais dans une microtask
+coalescée. La notification d'une transition part **avant** le `enter()` de l'état
+d'arrivée : rendre sur place afficherait ce que l'état *précédent* avait publié —
+`CallBlock` écrit `ctx.call` dans son `enter()`, et l'écran serait resté sur
+« Sonnerie » pendant toute la communication, faute d'une autre notification à
+venir. La microtask s'exécute après la chaîne de transitions synchrones, `enter()`
+compris, et n'en rend que le résultat ; les rendus intermédiaires d'une même chaîne
+sont fondus en un seul. `ui/diagnostics.ts` inspecte le contexte de la même façon,
+pour la même raison.
 
 ## 5. Intégration JsSIP
 
