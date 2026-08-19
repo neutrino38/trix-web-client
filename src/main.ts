@@ -1,6 +1,6 @@
 import "./ui/theme.css";
 import { PhoneMachine } from "./machines/phone.js";
-import { CallMachine } from "./machines/call.js";
+import { CallBlock } from "./machines/call.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
 import { renderApp } from "./ui/app.js";
@@ -40,5 +40,5 @@ declare global {
 }
 window.trix = {
   phone,
-  mermaid: () => `${PhoneMachine.toMermaid()}\n${CallMachine.toMermaid()}`,
+  mermaid: () => `${PhoneMachine.toMermaid()}\n${CallBlock.toMermaid()}`,
 };

@@ -50,9 +50,9 @@ function syncStatus(phone: PhoneInstance): void {
  * chaque changement de format (mobile ⇄ bureau) — le format ne touche
  * pas à la machine, seulement au gabarit rendu.
  *
- * En `in_call`, on re-rend aussi sur les stay() (miroir de la CallMachine
- * mis à jour par child:msg) ; ailleurs on s'en abstient pour ne pas
- * écraser les champs en cours de saisie.
+ * En `in_call`, on re-rend aussi sur les stay() : le bloc d'appel écrit
+ * `ctx.call` dans ce même contexte et notifie sans changer l'état hôte.
+ * Ailleurs on s'en abstient pour ne pas écraser les champs en saisie.
  */
 export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
   const layout = layoutMode();

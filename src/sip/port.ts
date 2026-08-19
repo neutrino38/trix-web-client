@@ -33,7 +33,7 @@ export interface CallMedia {
 /** Qui est à l'origine de la fin de session, tel que vu par JsSIP. */
 export type SipOriginator = "local" | "remote" | "system";
 
-/** Événements d'une session d'appel, envoyés à la CallMachine. */
+/** Événements d'une session d'appel, envoyés au bloc CallBlock. */
 export type CallSipEvent =
   | { type: "sip:progress" }
   | { type: "sip:accepted" }

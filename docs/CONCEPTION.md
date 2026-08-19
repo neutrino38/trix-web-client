@@ -8,7 +8,7 @@
 | Couche | Choix | Justification |
 |---|---|---|
 | Bundler / dev server | **Vite** + TypeScript strict | standard, HMR, build ESM |
-| Logique applicative | **finite-state-language** (FSL) v0.1.x | machines à états typées, diagrammes extraits des sources, zéro dépendance, ESM |
+| Logique applicative | **finite-state-language** (FSL) v0.2.x | machines à états typées, blocs de service (SBB), diagrammes extraits des sources, zéro dépendance, ESM |
 | Signalisation SIP | **JsSIP** | SIP over WSS, support `ha1`/`realm` natif, RTCSession |
 | UI | **TypeScript vanilla** (DOM direct, rendu piloté par `instance.subscribe()`) | 3 écrans seulement ; évite React ; bundle minimal ; le hook `finite-state-language/react` reste une porte de sortie si l'UI se complexifie |
 | Tests | Vitest + fake timers | même outillage que FSL lui-même |
@@ -30,7 +30,7 @@ connected / call_failed`), à transposer sur JsSIP.
 │        ▼                          │subscribe  │
 ├───────────────────────────────────────────────┤
 │ Machines FSL                                  │
-│  PhoneMachine ──fx.spawn──► CallMachine (1/appel)
+│  PhoneMachine ──fx.sbb──► CallBlock (l'appel) │
 ├───────────────┬───────────────────────────────┤
 │ sip/binding.ts│ storage/SecureStore           │
 │ (JsSIP⇄events)│  browserStore (WebCrypto)     │
@@ -56,7 +56,7 @@ src/
   main.ts                 # bootstrap, détection config, start(PhoneMachine)
   machines/
     phone.ts              # PhoneMachine (cycle de vie app + REGISTER)
-    call.ts               # CallMachine (une instance par appel)
+    call.ts               # CallBlock (bloc de service : l'appel)
     events.ts             # types d'événements ui:* / sip:*
   sip/
     binding.ts            # JsSIP → phone.send({type:"sip:..."})
@@ -97,11 +97,11 @@ stateDiagram-v2
   connecting --> reg_failed : sip.disconnected / after 10s
   registering --> ready : sip.registered
   registering --> reg_failed : sip.registrationFailed / after 30s
-  ready --> in_call : ui.call → spawn CallMachine
-  ready --> in_call : sip.incoming (INVITE entrant) → spawn CallMachine
+  ready --> in_call : ui.call → fx.sbb(CallBlock)
+  ready --> in_call : sip.incoming (INVITE entrant) → fx.sbb(CallBlock)
   ready --> configuring : ui.backToSettings (unregister + UA.stop)
   ready --> unregistering : ui.logout
-  in_call --> ready : child.exit
+  in_call --> ready : call:answered / call:missed / call:canceled
   reg_failed --> connecting : ui.retry
   reg_failed --> configuring : ui.backToSettings
   unregistering --> home : sip.unregistered / after 5s
@@ -120,27 +120,67 @@ Décisions :
   se réenregistrerait à chaque réveil. On ne repart d'un nouvel UA que si le transport est fermé.
 - Timers : `after` de FSL (armé à l'entrée, annulé à la sortie).
 
-### 4.2 CallMachine — appel sortant (phase 2)
+### 4.2 CallBlock — appel sortant (phase 2)
 
-Une instance par appel, `fx.spawn(CallMachine, { as: "call", args: { session | target, video } })`.
-Terminaison par `success()/failure()` → le parent reçoit `child:exit` et revient en `ready`.
+L'appel est un **bloc de service** (FSL §8.4), pas une seconde machine :
+`in_call` fait `fx.sbb(CallBlock, { args: { target, media, direction, incoming } })`
+et se suspend là. Une seule instance, un seul contexte, une seule boîte aux
+lettres.
+
+Ce choix a été retourné en 0.2 : la version précédente spawnait une
+`CallMachine`, et le prix en était visible — un miroir `CallView` chez le
+parent tenu à jour par `notifyParent` après chaque changement, les commandes
+UI relayées puis rejouées, et une ligne d'historique reconstituée chez le
+parent à partir de `endedBy`, d'un timestamp et d'un code de sortie. Deux
+contextes tenus en phase à la main, ce qui est la forme que prend une
+sous-routine écrite comme un acteur. La discriminante n'est pas de savoir
+qui détient la `RTCSession` mais si les deux machines ont des **vies
+séparées** : le téléphone n'a rien d'autre à faire pendant l'appel.
+
+Ce que le bloc y gagne :
+
+- **le contexte est partagé.** Le bloc écrit `ctx.call` — la vue que l'UI
+  rend déjà — directement dans le contexte du téléphone. Plus de miroir,
+  plus de `child:msg`, plus de relais de commandes : les événements `ui:*`
+  lui arrivent parce que c'est la même boîte aux lettres.
+- **la sandbox reste privée.** Session JsSIP, sourdines, `endingAs` vivent
+  dans `fx.data` : rien qui puisse entrer en collision avec une clé du
+  téléphone.
+- **l'issue est nommée par qui l'a vue.** Le bloc rend
+  `{ type: "call:<outcome>", data }` — `answered`, `dropped`, `rejected`,
+  `canceled`, `missed` —, et cet outcome *est* la colonne de l'historique.
+  `recordCall` ne redérive plus rien.
+- **le bloc consomme tout ce qui arrive pendant l'appel**, y compris ce dont
+  la politique appartient au téléphone (perte du proxy, veille,
+  enregistrement perdu, second INVITE) : un événement qu'il laisserait
+  passer attendrait dans la file un hôte suspendu. Ce qui relève de l'hôte,
+  il l'écrit dans le contexte partagé — `lastError`, `sleepRequested` —, et
+  `in_call` n'a plus qu'à choisir où revenir.
+
+Vu de l'extérieur, `instance.state` reste `in_call` pendant tout l'appel :
+un appel de sous-routine n'est pas un état que la machine a déclaré. Où l'on
+est *dans* le bloc se lit dans `instance.sbb` (`{ block, state, depth }`), et
+le journal de transitions qualifie : `CallBlock/ringing`.
 
 ```mermaid
 stateDiagram-v2
   [*] --> dialing
   dialing --> ringing : sip.progress (180/183)
   dialing --> connected : sip.accepted (200 OK)
-  dialing --> failed : sip.failed
-  dialing --> hangingup : ui.hangup
+  dialing --> [*] : sip.failed → call:rejected
+  dialing --> hangingup : ui.hangup / sip.disconnected / sys.sleep
   ringing --> connected : sip.accepted
-  ringing --> failed : sip.failed / after 90s (no answer)
-  ringing --> hangingup : ui.hangup
-  connected --> ended : sip.ended (BYE distant)
-  connected --> hangingup : ui.hangup
-  hangingup --> [*] : success
-  ended --> [*] : success
-  failed --> [*] : failure(cause)
+  ringing --> [*] : sip.failed / after 90s → call:rejected
+  ringing --> hangingup : ui.hangup / sip.disconnected / sys.sleep
+  connected --> [*] : sip.ended → call:answered (ou call:dropped si réseau)
+  connected --> hangingup : ui.hangup / sip.disconnected / sys.sleep
+  hangingup --> [*] : l'issue décidée au raccrochage (endingAs)
 ```
+
+Le bloc n'a **pas** de borne globale (`timeout: { delay: "infinity" }`) : un
+appel finit quand le dialogue finit. Les délais sont portés par les états —
+90 s de sonnerie, 60 s d'appel entrant, 30 s d'établissement, 2 s de
+raccrochage.
 
 - `enter(dialing)` : `ua.call(uri, { mediaConstraints: { audio: true, video } , pcConfig })`.
 - En `connected` : `ui:muteMic` / `ui:muteCam` / `ui:muteSelfView` = `stay()` + mutation du
@@ -148,10 +188,10 @@ stateDiagram-v2
 - Chrono : timestamp de `sip:accepted` en contexte, la UI dérive l'affichage.
 - Flux média : `session.connection` (RTCPeerConnection) → attach `remoteVideo`/`localVideo`.
 
-### 4.3 CallMachine — appel entrant (phase 3)
+### 4.3 CallBlock — appel entrant (phase 3)
 
-Même machine : `initial_state` est un aiguillage traversé sans attendre d'événement,
-vers `dialing` (sortant) ou `ringing_in` (entrant, `args.incoming` injecté par le parent).
+Même bloc : `initial_state` est un aiguillage traversé sans attendre d'événement,
+vers `dialing` (sortant) ou `ringing_in` (entrant, `args.incoming` passé au site d'appel).
 Une fois l'appel établi, les deux sens partagent le même état `connected` — mutes,
 chrono, vu-mètres et raccrochage sont écrits une seule fois.
 
@@ -160,18 +200,20 @@ stateDiagram-v2
   [*] --> initial_state
   initial_state --> ringing_in : args.incoming présent
   ringing_in --> answering : ui.answer (médias choisis dans l'offre)
-  ringing_in --> [*] : ui.reject → 603, success("Appel refusé")
-  ringing_in --> [*] : sip.failed (CANCEL) → success("Appel manqué")
-  ringing_in --> [*] : after 60s → 480, success("Appel manqué (sans réponse)")
+  ringing_in --> [*] : ui.reject → 603, call:missed("Appel refusé")
+  ringing_in --> [*] : sip.failed (CANCEL) → call:missed("Appel manqué")
+  ringing_in --> [*] : after 60s → 480, call:missed("Appel manqué (sans réponse)")
   answering --> connected : sip.accepted / sip.confirmed
-  answering --> [*] : sip.failed → failure(cause)
+  answering --> [*] : sip.failed → call:missed(cause)
   answering --> hangingup : ui.hangup
 ```
 
-Un appel entrant non décroché n'est **pas** un échec : la machine sort en `success` avec
-le motif exact, que `PhoneMachine` consigne en `missed` dans l'historique (« Appel refusé »
-vs « Appel manqué »). Seul un échec après décrochage (média refusé par l'OS, réponse
-finale d'erreur) sort en `failure` et s'affiche comme erreur.
+Un appel entrant non décroché n'est **pas** un échec, et il n'y a plus rien à
+redériver pour le dire : le bloc rend `call:missed` avec le motif exact, que
+`PhoneMachine` consigne tel quel (« Appel refusé » vs « Appel manqué »). Un
+échec après décrochage (média refusé par l'OS, réponse finale d'erreur) sort
+par le même outcome — la ligne d'historique est la même — avec la cause en
+motif.
 
 Règles de réponse, dérivées de l'offre SDP de l'INVITE (`sip/sdp.ts` : un flux compte
 s'il a un port non nul et n'est pas `inactive`) :
@@ -228,6 +270,15 @@ l'unique endroit à adapter.
 
 - `npm run diagrams` régénère [DIAGRAMS.md](DIAGRAMS.md) et un test échoue si le fichier
   a divergé du code — la conception et le code ne peuvent pas diverger silencieusement.
+- `DIAGRAMS.md` couvre la machine **et** le bloc : un bloc est extrait comme une
+  machine, ses sorties `fx.sbbReturn` sont les arêtes vers `[*]` étiquetées par
+  l'événement rendu, et l'état hôte qui l'entre porte `sbb CallBlock` — il n'a pas
+  d'arête sortante tant que le bloc n'a pas rendu la main, ce qui est exactement
+  ce qui s'y passe.
+- Les clauses que tous les états d'un bloc partagent sont écrites une fois
+  (`on: { ...interruptions(…), … }`) et l'extracteur résout ce fragment : sans
+  cela, le diagramme n'aurait montré aucune arête pour la perte de proxy ni pour
+  la veille, qui sont pourtant traitées partout.
 - Les diagrammes viennent de `finite-state-language/diagram`, qui analyse les sources
   des machines — pas de `Machine.toMermaid()`. À l'exécution, les handlers sont des
   closures opaques : la bibliothèque ne voit que la forme raccourcie

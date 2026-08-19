@@ -34,11 +34,12 @@ ${lines.join("\n")}
 
 function section(file: string): string {
   const graph = graphOf(file);
+  const kind = graph.kind === "block" ? "bloc de service (SBB)" : "machine";
   const tables = [
-    table("Événements relayés à la machine enfant :", graph.forwarded),
+    table("Blocs entrés depuis cet état (`fx.sbb`) :", graph.blocks),
     table("Événements consommés sans effet sur cette machine :", graph.consumed),
   ].filter((t) => t !== "");
-  return `## ${graph.name}
+  return `## ${graph.name} — ${kind}
 
 \`\`\`mermaid
 ${renderMermaid(graph)}
@@ -54,9 +55,14 @@ Régénérer avec \`npm run diagrams\`. Source : les \`goto()\` des machines,
 extraits de \`src/machines/\` par \`finite-state-language/diagram\`.
 
 Chaque flèche porte les événements qui la déclenchent, et entre parenthèses
-le libellé de la transition. \`[*]\` est la fin de la machine. Les gardes
-sont ignorées : une branche impossible à l'exécution est quand même
+le libellé de la transition. \`[*]\` est la fin de la machine — pour un bloc
+de service, la sortie vers son hôte, étiquetée par l'événement rendu. Les
+gardes sont ignorées : une branche impossible à l'exécution est quand même
 dessinée.
+
+Un état qui entre un bloc n'a pas d'arête sortante tant que le bloc n'a pas
+rendu la main : il est suspendu là, et c'est le tableau qui dit dans quel
+bloc.
 
 ${section("../src/machines/phone.ts")}
 ${section("../src/machines/call.ts")}`;

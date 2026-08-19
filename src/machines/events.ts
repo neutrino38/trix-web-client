@@ -1,4 +1,4 @@
-import type { ChildExit, ChildMsg, ParentMsg, TaskResult } from "finite-state-language";
+import type { SbbReturn, TaskResult } from "finite-state-language";
 import type { AccountConfig, CallDirection, CallLogEntry } from "../storage/store.js";
 import type { CallMedia, CallSession, CallSipEvent, SipEvent } from "../sip/port.js";
 
@@ -15,7 +15,7 @@ export interface ConfigForm {
   flashAlert: boolean;
 }
 
-/** Commandes UI valables pendant un appel — relayées par PhoneMachine à la CallMachine. */
+/** Commandes UI valables pendant un appel — consommées par le bloc CallBlock. */
 export type CallControlEvent =
   | { type: "ui:hangup" }
   | { type: "ui:muteMic" }
@@ -25,13 +25,10 @@ export type CallControlEvent =
   | { type: "ui:answer"; media: CallMedia }
   | { type: "ui:reject" };
 
-/** Événements de la CallMachine (une instance par appel). */
-export type CallEvent = CallControlEvent | CallSipEvent | ParentMsg;
-
 /**
- * Vue de l'appel publiée au parent via notifyParent après chaque
- * changement significatif — c'est ce que l'UI lit dans le contexte
- * de PhoneMachine pour rendre l'écran d'appel.
+ * Vue de l'appel, écrite par CallBlock **directement dans le contexte de
+ * PhoneMachine** — le bloc partage ce contexte, il n'a pas de miroir à
+ * tenir à jour. C'est ce que l'UI lit pour rendre l'écran d'appel.
  */
 export interface CallView {
   state: "dialing" | "ringing" | "ringing_in" | "answering" | "connected" | "hangingup";
@@ -53,6 +50,32 @@ export interface CallView {
   session: CallSession | null;
 }
 
+/**
+ * Ce que CallBlock rapporte à son hôte (`finite-state-language` §8.4).
+ * Un outcome par ligne d'historique possible : le bloc a suivi l'appel,
+ * c'est lui qui sait comment il s'est terminé — PhoneMachine n'a plus à
+ * le redériver de `endedBy`, d'un timestamp et d'un code de sortie.
+ *
+ * `data` porte de quoi écrire la ligne, et rien d'autre : ce que l'UI
+ * doit voir pendant l'appel passe par le contexte partagé (`ctx.call`).
+ */
+export type CallReturn =
+  /** Établi puis raccroché normalement, d'un côté ou de l'autre. */
+  | SbbReturn<"call", "answered", { connectedAt: number; media: CallMedia; endedBy: "local" | "remote" }>
+  /** Établi puis coupé : perte du transport, ou fin de session imputée au réseau. */
+  | SbbReturn<"call", "dropped", { connectedAt: number | null; media: CallMedia; reason: string }>
+  /** Sortant refusé par le distant, ou impossible à placer. */
+  | SbbReturn<"call", "rejected", { reason: string }>
+  /** Sortant abandonné par l'utilisateur avant toute réponse. */
+  | SbbReturn<"call", "canceled", { reason: string }>
+  /**
+   * Entrant jamais décroché. `failed` sépare les deux cas que l'historique
+   * consigne pareil mais que l'écran ne doit pas montrer pareil : refusé ou
+   * manqué (rien à signaler), contre échoué techniquement — média refusé par
+   * l'OS, réponse finale d'erreur après le décrochage — où la cause s'affiche.
+   */
+  | SbbReturn<"call", "missed", { reason: string; failed: boolean }>;
+
 export type PhoneEvent =
   | { type: "ui:configure" }
   | { type: "ui:cancelConfig" }
@@ -67,8 +90,8 @@ export type PhoneEvent =
   | { type: "sys:sleep" }
   | { type: "sys:wake" }
   | CallControlEvent
-  | ChildMsg
-  | ChildExit
+  | CallSipEvent
+  | CallReturn
   | SipEvent
   // boot : configuration + historique du compte, chargés d'un seul tenant
   | TaskResult<"loadConfig", { config: AccountConfig | null; history: CallLogEntry[] }>

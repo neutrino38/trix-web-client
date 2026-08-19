@@ -1,6 +1,6 @@
 /**
  * Sonnerie d'appel entrant — UI pure, aucune machine impliquée : la
- * CallMachine décrit l'état (`ringing_in`), l'écran d'appel démarre et
+ * CallBlock décrit l'état (`ringing_in`), l'écran d'appel démarre et
  * arrête la sonnerie en conséquence.
  *
  * Timbre synthétisé (WebAudio) plutôt qu'un fichier : rien à empaqueter,

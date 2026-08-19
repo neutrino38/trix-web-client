@@ -14,7 +14,6 @@
  */
 
 import { defineMachine, goto, stay } from "finite-state-language";
-import type { ChildExit, Fx } from "finite-state-language";
 import type {
   AccountConfig,
   CallDirection,
@@ -24,8 +23,8 @@ import type {
 import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
 import { computeHa1 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
-import { CallMachine } from "./call.js";
-import type { CallControlEvent, CallView, PhoneEvent } from "./events.js";
+import { CallBlock } from "./call.js";
+import type { CallReturn, CallView, PhoneEvent } from "./events.js";
 
 export interface PhoneCtx {
   /** Injectés via start({ args }) — jamais recréés par la machine. */
@@ -38,16 +37,20 @@ export interface PhoneCtx {
   lastErrorCode: string | null;
   /** Champs du formulaire à surligner après un échec : le proxy (connexion) ou les identifiants SIP. */
   suspectFields: "proxy" | "credentials" | null;
-  /** Appel en cours de lancement/déroulement, gardé jusqu'au child:exit pour l'historique. */
+  /** Appel en cours de lancement/déroulement, gardé jusqu'au retour du bloc pour l'historique. */
   pendingCall: {
     target: string;
     media: CallMedia;
     direction: CallDirection;
     startedAt: number;
   } | null;
-  /** INVITE entrant accepté par `ready`, transmis à la CallMachine au spawn. */
+  /** INVITE entrant accepté par `ready`, passé au CallBlock dans ses `args`. */
   incoming: IncomingCall | null;
-  /** Miroir de la CallMachine (child:msg) — ce que l'UI rend pendant in_call. */
+  /**
+   * Vue de l'appel, **écrite par CallBlock dans ce contexte** — il le
+   * partage, il n'a pas de miroir à tenir. C'est ce que l'UI rend
+   * pendant `in_call`.
+   */
   call: CallView | null;
   /** Issue du dernier appel raté (486, pas de réponse…), affichée près du champ d'adresse. */
   callError: string | null;
@@ -55,9 +58,7 @@ export interface PhoneCtx {
   history: CallLogEntry[];
   /** Boucle de reconnexion active : les échecs de connexion repartent en reconnecting. */
   autoReconnect: boolean;
-  /** L'appel en cours a été sacrifié à une perte de proxy (erreur spécifique au child:exit). */
-  callDropped: boolean;
-  /** Mise en veille demandée pendant un appel : raccrocher puis dormir. */
+  /** Mise en veille demandée pendant un appel : posée par le bloc, lue à son retour. */
   sleepRequested: boolean;
 }
 
@@ -100,54 +101,41 @@ function clearHistory(_ev: PhoneEvent, ctx: PhoneCtx) {
   return stay("historique vidé");
 }
 
-/** in_call : relaie les commandes UI à la CallMachine (reçues chez elle en parent:msg). */
-function forwardToCall(ev: CallControlEvent, _ctx: PhoneCtx, fx: Fx<PhoneEvent>): void {
-  fx.notify("call", ev);
-}
-
 /**
  * Consigne l'appel terminé dans l'historique et le persiste (fire-and-forget :
  * un échec d'écriture ne doit pas perturber la machine — l'historique en
  * mémoire reste juste).
  *
- * Un entrant jamais décroché (refusé, annulé par l'appelant, sans réponse)
- * est `missed` : ce n'est pas un échec, et la CallMachine en donne le motif
- * exact dans la raison du `child:exit`.
+ * Il n'y a plus rien à redériver : le bloc a suivi l'appel du début à la
+ * fin, et son outcome *est* la colonne de l'historique. Ce qui reste ici
+ * est ce que le bloc ne pouvait pas savoir — l'instant où l'utilisateur a
+ * demandé l'appel, et quel compte le consigne.
  */
-function recordCall(ctx: PhoneCtx, ev: ChildExit): void {
+const LOG_OUTCOME: Record<CallReturn["type"], CallLogEntry["outcome"]> = {
+  "call:answered": "answered",
+  "call:dropped": "dropped",
+  "call:rejected": "failed",
+  "call:canceled": "canceled",
+  "call:missed": "missed",
+};
+
+function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
   const info = ctx.pendingCall;
   if (!info || !ctx.config) return;
-  const incoming = info.direction === "incoming";
-  const connectedAt = ctx.call?.connectedAt ?? null;
-  const answered = connectedAt !== null;
-  // le proxy perdu pendant l'appel prime sur ce que rapporte la session
-  const endedBy = ctx.callDropped ? "network" : (ctx.call?.endedBy ?? null);
-  const outcome: CallLogEntry["outcome"] = ctx.callDropped
-    ? "dropped"
-    : answered
-      ? endedBy === "network"
-        ? "dropped"
-        : "answered"
-      : incoming
-        ? "missed"
-        : ev.outcome === "failure"
-          ? "failed"
-          : "canceled";
+  const d = ev.data;
+  const connectedAt = "connectedAt" in d ? d.connectedAt : null;
   const entry: CallLogEntry = {
     target: info.target.replace(/^sips?:/i, ""),
     direction: info.direction,
-    outcome,
+    outcome: LOG_OUTCOME[ev.type],
     // entrant : les médias réellement acceptés, pas ceux proposés
-    media: ctx.call?.media ?? info.media,
+    media: "media" in d ? d.media : info.media,
     startedAt: info.startedAt,
     connectedAt,
     endedAt: Date.now(),
-    endedBy: answered ? endedBy : null,
-    reason: ctx.callDropped
-      ? "Connexion au proxy perdue pendant l'appel"
-      : outcome === "missed" || ev.outcome === "failure"
-        ? (ev.reason ?? null)
-        : null,
+    endedBy:
+      ev.type === "call:answered" ? ev.data.endedBy : ev.type === "call:dropped" ? "network" : null,
+    reason: "reason" in d ? d.reason : null,
   };
   ctx.history = [entry, ...ctx.history].slice(0, HISTORY_MAX);
   void ctx.store.saveHistory(accountKey(ctx.config), ctx.history).catch(() => {});
@@ -204,6 +192,30 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   return goto("saving");
 }
 
+/**
+ * Retour du bloc d'appel : consigner, ranger, et choisir où revenir.
+ * L'ordre des trois sorties est une priorité — la veille a été demandée
+ * explicitement, une coupure de proxy doit être reconnectée, et un
+ * enregistrement perdu pendant l'appel prime sur un retour en `ready`.
+ */
+function back(ctx: PhoneCtx, ev: CallReturn, callError: string | null) {
+  recordCall(ctx, ev);
+  const sleep = ctx.sleepRequested;
+  ctx.sleepRequested = false;
+  ctx.pendingCall = null;
+  ctx.incoming = null;
+  ctx.call = null;
+  ctx.callError = callError;
+  if (sleep) return goto("sleeping", "veille : appel raccroché");
+  if (ev.type === "call:dropped") {
+    ctx.callError = "Appel interrompu — connexion au proxy perdue";
+    return goto("reconnecting", "proxy perdu pendant l'appel");
+  }
+  return ctx.lastError
+    ? goto("reg_failed", "enregistrement perdu pendant l'appel")
+    : goto("ready", "appel terminé");
+}
+
 export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
   name: "PhoneMachine",
 
@@ -221,7 +233,6 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     callError: null,
     history: [],
     autoReconnect: false,
-    callDropped: false,
     sleepRequested: false,
   }),
 
@@ -398,7 +409,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           };
           return goto("in_call", `appel vers ${target}`);
         },
-        // INVITE entrant : même écran d'appel, la CallMachine démarre en sonnerie
+        // INVITE entrant : même écran d'appel, le bloc démarre en sonnerie
         "sip:incoming": (ev, ctx) => {
           ctx.callError = null;
           ctx.incoming = ev.call;
@@ -448,13 +459,19 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       meta: { screen: "call" },
     },
 
+    /**
+     * L'appel, entier, tenu par un bloc : `in_call` l'entre et se suspend
+     * là jusqu'à son retour. Le bloc écrit `ctx.call` — c'est ce que l'UI
+     * rend — et consomme tout ce qui arrive pendant ce temps, y compris ce
+     * dont la politique est ici : il laisse alors dans le contexte de quoi
+     * décider (`lastError`, `sleepRequested`), et cet état ne fait plus que
+     * choisir où revenir.
+     */
     in_call: {
       enter(ctx, fx) {
         const req = ctx.pendingCall!;
-        fx.spawn(CallMachine, {
-          as: "call",
+        fx.sbb(CallBlock, {
           args: {
-            handle: ctx.handle!,
             target: req.target,
             media: req.media,
             direction: req.direction,
@@ -463,67 +480,11 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         });
       },
       on: {
-        "child:msg": (ev, ctx) => {
-          ctx.call = ev.payload as CallView;
-          return stay("vue d'appel");
-        },
-        "child:exit": (ev, ctx) => {
-          recordCall(ctx, ev);
-          const dropped = ctx.callDropped;
-          const sleep = ctx.sleepRequested;
-          ctx.callDropped = false;
-          ctx.sleepRequested = false;
-          ctx.pendingCall = null;
-          ctx.incoming = null;
-          ctx.call = null;
-          if (sleep) return goto("sleeping", "veille : appel raccroché");
-          if (dropped) {
-            ctx.callError = "Appel interrompu — connexion au proxy perdue";
-            return goto("reconnecting", "proxy perdu pendant l'appel");
-          }
-          ctx.callError = ev.outcome === "failure" ? (ev.reason ?? "Échec de l'appel") : null;
-          // si l'enregistrement est tombé pendant l'appel, l'échec prime
-          return ctx.lastError
-            ? goto("reg_failed", "enregistrement perdu pendant l'appel")
-            : goto("ready", ev.reason ?? "appel terminé");
-        },
-        "ui:hangup": forwardToCall,
-        "ui:muteMic": forwardToCall,
-        "ui:muteCam": forwardToCall,
-        "ui:toggleSelfView": forwardToCall,
-        "ui:answer": forwardToCall,
-        "ui:reject": forwardToCall,
-        // deuxième INVITE pendant un appel : occupé (pas de double appel)
-        "sip:incoming": refuseIncoming("busy"),
-        // Paramètres/Déconnexion sont désactivés pendant l'appel : on consomme
-        // pour éviter qu'un clic ne reste en attente et s'exécute après coup
-        "ui:backToSettings": () => undefined,
-        "ui:logout": () => undefined,
-        "ui:call": () => undefined,
-        "sip:registered": () => undefined,
-        "sip:connected": () => undefined,
-        "sip:registrationFailed": (ev, ctx) => {
-          ctx.lastError = `Enregistrement perdu : ${ev.cause}`;
-          ctx.lastErrorCode = ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause;
-          ctx.suspectFields = "credentials";
-          return undefined;
-        },
-        // proxy perdu en appel : on raccroche avec une erreur spécifique,
-        // le child:exit nous emmènera dans la boucle de reconnexion
-        "sip:disconnected": (_ev, ctx, fx) => {
-          ctx.lastError = "Connexion au proxy perdue pendant l'appel";
-          ctx.lastErrorCode = "WSS_LOST";
-          ctx.suspectFields = "proxy";
-          ctx.callDropped = true;
-          fx.notify("call", { type: "ui:hangup" });
-          return undefined;
-        },
-        "sys:sleep": (_ev, ctx, fx) => {
-          ctx.sleepRequested = true;
-          fx.notify("call", { type: "ui:hangup" });
-          return undefined;
-        },
-        "sys:wake": () => undefined,
+        "call:answered": (ev, ctx) => back(ctx, ev, null),
+        "call:missed": (ev, ctx) => back(ctx, ev, ev.data.failed ? ev.data.reason : null),
+        "call:canceled": (ev, ctx) => back(ctx, ev, null),
+        "call:rejected": (ev, ctx) => back(ctx, ev, ev.data.reason),
+        "call:dropped": (ev, ctx) => back(ctx, ev, null),
       },
       meta: { screen: "call" },
     },

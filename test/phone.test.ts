@@ -445,8 +445,8 @@ describe("PhoneMachine — enregistrement", () => {
   });
 });
 
-describe("PhoneMachine — appel sortant (in_call + CallMachine)", () => {
-  it("ui:call : spawn de la CallMachine, vue miroir en contexte", async () => {
+describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
+  it("ui:call : entrée dans CallBlock, vue publiée dans le contexte partagé", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
     phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
     expect(phone.state).toBe("in_call");
@@ -474,7 +474,7 @@ describe("PhoneMachine — appel sortant (in_call + CallMachine)", () => {
     expect(phone.context.callError).toBe("Busy (SIP 486)");
   });
 
-  it("raccrocher : relayé à la CallMachine, session terminée, retour ready", async () => {
+  it("raccrocher : consommé par le bloc, session terminée, retour ready", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
     phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
     sip.sendCall({ type: "sip:accepted" });
@@ -521,7 +521,7 @@ describe("PhoneMachine — appel sortant (in_call + CallMachine)", () => {
 });
 
 describe("PhoneMachine — appel entrant", () => {
-  it("sip:incoming en ready : in_call, CallMachine en sonnerie entrante", async () => {
+  it("sip:incoming en ready : in_call, le bloc en sonnerie entrante", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
     const { call } = fakeIncoming({ audio: true, video: true });
     sip.send({ type: "sip:incoming", call });
@@ -755,7 +755,7 @@ describe("PhoneMachine — perte du proxy et veille", () => {
     phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.send({ type: "sip:disconnected" });
-    expect(sip.session.terminated).toBe(1); // raccrochage demandé à la CallMachine
+    expect(sip.session.terminated).toBe(1); // raccrochage fait par le bloc
     sip.sendCall({ type: "sip:ended", cause: "Connection Error", originator: "system" });
 
     expect(phone.state).toBe("reconnecting");
@@ -808,7 +808,7 @@ describe("PhoneMachine — perte du proxy et veille", () => {
     sip.sendCall({ type: "sip:accepted" });
     phone.send({ type: "sys:sleep" });
     expect(sip.session.terminated).toBe(1);
-    expect(phone.state).toBe("in_call"); // on attend la fin de la CallMachine
+    expect(phone.state).toBe("in_call"); // on attend le retour du bloc
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "local" });
     expect(phone.state).toBe("sleeping");
     expect(phone.context.history[0]).toMatchObject({ outcome: "answered", endedBy: "local" });

@@ -11,7 +11,7 @@
     "diagrams": "UPDATE_DIAGRAMS=1 vitest run test/diagrams.test.ts"
   },
   "dependencies": {
-    "finite-state-language": "^0.1.2",
+    "finite-state-language": "^0.2.0",
     "jssip": "^3.13.8"
   },
   "devDependencies": {

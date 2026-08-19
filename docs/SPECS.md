@@ -181,7 +181,7 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 
 ### Phase 2 : Écran d'appel, sortant uniquement
 - [x] Écran d'appel complet (tchat désactivé), vues bureau et mobile
-- [x] `CallMachine` sortante (audio + vidéo), spawn depuis `PhoneMachine`
+- [x] `CallBlock` sortant (audio + vidéo), entré depuis `PhoneMachine` (`fx.sbb`)
 - [x] Observabilité : export `toMermaid()` des machines + log des transitions
 
 ### Phase 3 : Appels entrants
