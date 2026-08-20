@@ -3,7 +3,7 @@
 **Statut :** Brouillon
 **Propriétaire :** Emmanuel Buu / IVèS
 **Créée le :** 2026-08-15
-**Dernière mise à jour :** 2026-08-16
+**Dernière mise à jour :** 2026-08-20
 
 ## Vue d'ensemble
 
@@ -99,7 +99,7 @@ sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est v
 
 Mockup interactif : `docs/mockups/mockup.html` (les 3 écrans + variante en communication).
 
-### Palette (dérivée de `fsl-logo.svg`, remplace la palette Elioz)
+### Palette 
 
 | Rôle | Elioz (avant) | FSL (après) |
 |---|---|---|
@@ -144,9 +144,9 @@ découvertes depuis la pastille « En communication » (CONCEPTION §5.4).
 Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
 Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
 
-### Écran 3 — Appel (layout hérité d'Elioz Connect, simplifié)
+### Écran 3 — Appel 
 
-Structure 2 zones (la sidebar gauche « Vous contactez » d'Elioz est supprimée) :
+Structure 2 zones 
 
 - **Barre d'en-tête** : logo (retour accueil), **indicateur d'enregistrement** (pastille + libellé),
   bouton « Paramètres » (engrenage → écran 2), bouton « Se déconnecter » (→ écran 1).
@@ -233,7 +233,6 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 | Risque | Impact | Probabilité | Mitigation |
 |------|--------|------------|------------|
 | Realm du serveur ≠ domaine configuré → HA1 invalide | Élevé | Moyenne | Champ realm optionnel ; en cas de 401 avec realm différent, redemander le mot de passe une fois et recalculer le HA1 |
-| WebRTC absent de WebKitGTK (webview Tauri Linux) | Élevé (phase 5) | Élevée | Intégration Tauri **reportée** ; options documentées en `CONCEPTION.md` §8 |
 | FSL v0.1.0, API « encore molle » | Moyen | Moyenne | Ce projet est le premier consommateur réel ; épingler la version, remonter les besoins au framework |
 | Stockage navigateur non inviolable (XSS) | Moyen | Faible | Clé WebCrypto non-extractible + CSP stricte ; voir `CONCEPTION.md` §6 |
 
@@ -246,12 +245,11 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
    foncé, illisible sur le fond du thème sombre. Ce fichier reste disponible dans `public/` pour
    les supports à fond clair. `fsl-icon.svg` sert de crédit « Powered by FSL » en pied d'accueil
    (lien vers le dépôt du framework). Le placeholder « arcs LSF » de `src/ui/logo.ts` est supprimé.
-- [ ] Faut-il un champ « realm » distinct du domaine dans la configuration ? (défaut : realm = domaine)
+- [x] Faut-il un champ « realm » distinct du domaine dans la configuration ? (défaut : realm = domaine)
    non. domain = realm
-- [ ] Texte temps réel : T.140 sur data channel ou messages complets (décision en phase 4).
-   T.140 sur data channedl
+- [x] Texte temps réel : T.140 sur data channel 
 - [x] Nom produit définitif affiché dans l'UI.
- « Trix Communicator » (nom court « Trix ») — l'ancien nom STAURI est abandonné, le dépôt
+ « Trix Communicator » (nom court « Trix ») 
  s'appelle `trix-web-client` et le code n'emploie que le nom court `trix`.
 
 ## Références
