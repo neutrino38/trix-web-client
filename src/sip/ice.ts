@@ -10,6 +10,8 @@
  * pas contredire la case.
  */
 
+import { msg, type Msg } from "../i18n/types.js";
+
 /** Serveur TURN du compte. Le relais exige une authentification. */
 export interface TurnServer {
   /** `hôte` ou `hôte:port` (sans port : 3478 en clair, 5349 en TLS — RFC 5766/7065). */
@@ -90,7 +92,7 @@ export interface IceForm {
 
 export type IceParse =
   | { ok: true; ice: IceConfig }
-  | { ok: false; error: string; field: "stun" | "turn" };
+  | { ok: false; error: Msg; field: "stun" | "turn" };
 
 /**
  * Validation de la section ICE du formulaire. Un champ serveur vide
@@ -102,18 +104,18 @@ export function parseIceForm(f: IceForm, previous: IceConfig | null): IceParse {
   const stunRaw = f.stun.trim();
   const stun = stunRaw === "" ? null : parseIceHost(stunRaw);
   if (stunRaw !== "" && !stun) {
-    return { ok: false, error: "Serveur STUN invalide (attendu : hôte ou hôte:port)", field: "stun" };
+    return { ok: false, error: msg("error.stunInvalid"), field: "stun" };
   }
 
   const turnRaw = f.turn.trim();
   if (turnRaw === "") return { ok: true, ice: { stun, turn: null } };
   const host = parseIceHost(turnRaw);
   if (!host) {
-    return { ok: false, error: "Serveur TURN invalide (attendu : hôte ou hôte:port)", field: "turn" };
+    return { ok: false, error: msg("error.turnInvalid"), field: "turn" };
   }
   const username = f.turnUsername.trim();
   if (!username) {
-    return { ok: false, error: "Identifiant TURN requis (le relais est toujours authentifié)", field: "turn" };
+    return { ok: false, error: msg("error.turnUserRequired"), field: "turn" };
   }
   // mot de passe laissé vide : on ne peut le reprendre que s'il vise le
   // même serveur et le même identifiant — sinon il ne vaudrait rien
@@ -122,7 +124,7 @@ export function parseIceForm(f: IceForm, previous: IceConfig | null): IceParse {
       ? previous.turn.password
       : null;
   const password = f.turnPassword !== null && f.turnPassword !== "" ? f.turnPassword : kept;
-  if (!password) return { ok: false, error: "Mot de passe TURN requis", field: "turn" };
+  if (!password) return { ok: false, error: msg("error.turnPasswordRequired"), field: "turn" };
 
   return { ok: true, ice: { stun, turn: { host, username, password, tls: f.turnTls } } };
 }

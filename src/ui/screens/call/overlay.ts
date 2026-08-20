@@ -19,6 +19,8 @@
 import type { CallView } from "../../../machines/events.js";
 import { ICONS, ICONS_OFF } from "./parts.js";
 import { panelIcon, panelToggleLabel } from "./panel.js";
+import { t } from "../../../i18n/index.js";
+import { esc } from "../../el.js";
 
 interface Cmd {
   act: string;
@@ -45,7 +47,7 @@ function button(c: Cmd): string {
       ? `aria-expanded="${c.expanded}" ${c.controls ? `aria-controls="${c.controls}"` : ""}`
       : `aria-pressed="${c.pressed ?? false}"`;
   return `<button class="iconbtn ${cls}" data-act="${c.act}" ${c.disabled ? "disabled" : ""}
-                  title="${c.label}" aria-label="${c.aria}" ${state}>
+                  title="${esc(c.label)}" aria-label="${esc(c.aria)}" ${state}>
             ${c.icon}
           </button>`;
 }
@@ -74,8 +76,8 @@ export function overlayBar(ctx: OverlayCtx): string {
     {
       act: "muteMic",
       icon: view.micMuted ? ICONS_OFF.mic : ICONS.mic,
-      label: view.micMuted ? "Rétablir le micro" : "Couper le micro",
-      aria: "Micro",
+      label: t(view.micMuted ? "ctrl.mic.unmute" : "ctrl.mic.mute"),
+      aria: t("ctrl.mic.aria"),
       pressed: view.micMuted,
       cut: true,
       disabled: !connected,
@@ -83,8 +85,8 @@ export function overlayBar(ctx: OverlayCtx): string {
     {
       act: "muteCam",
       icon: view.camMuted ? ICONS_OFF.cam : ICONS.cam,
-      label: view.camMuted ? "Rétablir la caméra" : "Couper la caméra",
-      aria: "Caméra",
+      label: t(view.camMuted ? "ctrl.cam.unmute" : "ctrl.cam.mute"),
+      aria: t("ctrl.cam.aria"),
       pressed: view.camMuted,
       cut: true,
       disabled: !video,
@@ -92,16 +94,16 @@ export function overlayBar(ctx: OverlayCtx): string {
     {
       act: "selfview",
       icon: view.selfViewHidden ? ICONS_OFF.selfview : ICONS.selfview,
-      label: view.selfViewHidden ? "Afficher le self-view" : "Masquer le self-view",
-      aria: "Self-view",
+      label: t(view.selfViewHidden ? "ctrl.selfview.show" : "ctrl.selfview.hide"),
+      aria: t("ctrl.selfview.aria"),
       pressed: view.selfViewHidden,
       disabled: !video,
     },
     {
       act: "speaker",
       icon: speakerMuted ? ICONS_OFF.speaker : ICONS.speaker,
-      label: speakerMuted ? "Rétablir le son" : "Couper le son",
-      aria: "Haut-parleur",
+      label: t(speakerMuted ? "ctrl.speaker.unmute" : "ctrl.speaker.mute"),
+      aria: t("ctrl.speaker.aria"),
       pressed: speakerMuted,
       cut: true,
       disabled: !connected,
@@ -109,8 +111,8 @@ export function overlayBar(ctx: OverlayCtx): string {
     {
       act: "dtmf",
       icon: ICONS.dtmf,
-      label: "Clavier DTMF — disponible en phase 4",
-      aria: "Clavier DTMF",
+      label: t("ctrl.dtmf.label"),
+      aria: t("ctrl.dtmf.aria"),
       disabled: true,
     },
   ];
@@ -121,8 +123,8 @@ export function overlayBar(ctx: OverlayCtx): string {
     cmds.push({
       act: "fullscreen",
       icon: ICONS.fullscreen,
-      label: "Plein écran",
-      aria: "Plein écran",
+      label: t("ctrl.fullscreen"),
+      aria: t("ctrl.fullscreen"),
       disabled: !view.media.video,
     });
   }
@@ -132,7 +134,7 @@ export function overlayBar(ctx: OverlayCtx): string {
       act: "panel",
       icon: panelIcon(ctx.panel.collapsed),
       label: panelToggleLabel(ctx.panel.collapsed),
-      aria: "Panneau latéral",
+      aria: t("panel.aria"),
       expanded: !ctx.panel.collapsed,
       controls: ctx.panel.controls,
     });
@@ -141,7 +143,7 @@ export function overlayBar(ctx: OverlayCtx): string {
   const hangup = ctx.withHangup
     ? `<button class="hangup-round ${view.state === "hangingup" ? "inactive" : ""}"
                data-act="hangup" ${view.state === "hangingup" ? "disabled" : ""}
-               aria-label="Raccrocher">${ICONS.hangup}</button>`
+               aria-label="${esc(t("ctrl.hangup"))}">${ICONS.hangup}</button>`
     : "";
 
   return `<div class="overlaybar">

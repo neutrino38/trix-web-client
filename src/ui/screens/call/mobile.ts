@@ -18,21 +18,22 @@ import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import {
-  CALL_LABEL,
   ICONS,
-  STATUS,
+  callLabel,
   currentMode,
   displayTarget,
   draft,
   fmtChrono,
   historyRow,
   isSpeakerMuted,
+  statusOf,
 } from "./parts.js";
+import { t } from "../../../i18n/index.js";
 
 export function renderMobile(phone: PhoneInstance): HTMLElement {
   const cfg = phone.context.config;
   const view = phone.state === "in_call" ? phone.context.call : null;
-  const status = STATUS[phone.state] ?? { label: phone.state, cls: "warn" as const };
+  const status = statusOf(phone.state);
   const failed = phone.state === "reg_failed";
   const ready = phone.state === "ready";
   const reconnecting = phone.state === "reconnecting";
@@ -51,13 +52,15 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
         <span class="dot ${status.cls}" title="${esc(status.label)}"
               role="img" aria-label="${esc(status.label)}"></span>
         <span class="mstatus">${
-          view ? `${CALL_LABEL[view.state]} — ${esc(displayTarget(view.target))}` : status.label
+          view
+            ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
+            : esc(status.label)
         }</span>
         <span class="spacer"></span>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
-                aria-label="Paramètres">${ICONS.settings}</button>
+                aria-label="${esc(t("action.settings"))}">${ICONS.settings}</button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="logout" ${view ? "disabled" : ""}
-                aria-label="Se déconnecter">${ICONS.logout}</button>
+                aria-label="${esc(t("action.logout"))}">${ICONS.logout}</button>
       </div>
 
       ${
@@ -65,7 +68,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
         // l'on répond ou refuse (voir incoming.ts)
         incoming
           ? `<div class="mvideo" inert>
-               <div class="call-overlay">${CALL_LABEL.ringing_in}…<br>
+               <div class="call-overlay">${esc(callLabel("ringing_in"))}…<br>
                  <span class="target">${esc(displayTarget(view.target))}</span></div>
              </div>`
           : view
@@ -85,7 +88,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                       <div class="mchrono">${ICONS.clock}<span data-ref="chrono">${fmtChrono(
                         view.connectedAt ?? Date.now(),
                       )}</span></div>`
-                   : `<div class="call-overlay">${CALL_LABEL[view.state]}…<br>
+                   : `<div class="call-overlay">${esc(callLabel(view.state))}…<br>
                         <span class="target">${esc(displayTarget(view.target))}</span></div>`
                }
                ${overlayBar({ view, speakerMuted, withHangup: true })}
@@ -93,39 +96,43 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
           : `<div class="mdial">
                ${
                  failed || reconnecting
-                   ? `${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
+                   ? `${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
                       ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
                       <div class="error-actions">
-                        <button class="btn primary" data-act="retry">Réessayer</button>
-                        <button class="btn" data-act="fix-settings">Paramètres</button>
+                        <button class="btn primary" data-act="retry">${esc(t("action.retry"))}</button>
+                        <button class="btn" data-act="fix-settings">${esc(t("action.settings"))}</button>
                       </div>`
                    : ""
                }
-               ${sleeping ? `<span class="idle-msg">Veille — reprise au réveil</span>` : ""}
+               ${sleeping ? `<span class="idle-msg">${esc(t("call.sleepingShort"))}</span>` : ""}
                <div class="field">
                  <input id="f-target" data-ref="target" inputmode="email"
-                        placeholder="Adresse SIP" aria-label="Adresse SIP"
+                        placeholder="${esc(t("call.targetLabel"))}" aria-label="${esc(t("call.targetLabel"))}"
                         value="${esc(draft())}">
-                 ${callError ? `<span class="call-error">${esc(callError)}</span>` : ""}
+                 ${callError ? `<span class="call-error">${esc(t(callError))}</span>` : ""}
                </div>
                <div class="splitbtn" data-ref="splitbtn">
                  <button class="btn call" data-act="call" ${ready ? "" : "disabled"}>
                    ${currentMode().icon} ${currentMode().buttonLabel}
                  </button>
                  <button class="btn caret" data-act="call-menu" ${ready ? "" : "disabled"}
-                         aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
+                         aria-label="${esc(t("call.chooseMode"))}" aria-expanded="false">▾</button>
                  <div class="dropdown" data-ref="modemenu" hidden></div>
                </div>
                <div class="calllog">
                  <div class="calllog-head">
-                   <span>Historique</span>
-                   ${history.length ? `<button class="linkbtn" data-act="clear-history">Effacer</button>` : ""}
+                   <span>${esc(t("history.title"))}</span>
+                   ${
+                     history.length
+                       ? `<button class="linkbtn" data-act="clear-history">${esc(t("history.clear"))}</button>`
+                       : ""
+                   }
                  </div>
                  <div class="calllog-list">
                    ${
                      history.length
                        ? history.map(historyRow).join("")
-                       : `<p class="calllog-empty">Aucun appel enregistré</p>`
+                       : `<p class="calllog-empty">${esc(t("history.empty"))}</p>`
                    }
                  </div>
                </div>

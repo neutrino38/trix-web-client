@@ -66,7 +66,12 @@ src/
     ha1.ts                # MD5(username:realm:password)
   ui/
     screens/{home,config,call}.ts
+    langpicker.ts         # sélecteur de langue (accueil + paramètres)
     theme.ts              # tokens FSL clair/sombre
+  i18n/
+    index.ts              # registre Vite, détection, t()/tn(), formats Intl
+    types.ts              # Dictionary, Msg — sans dépendance à l'exécution
+    locales/{fr,en}.ts    # un fichier par langue, le français fait référence
   debug/
     observability.ts      # export toMermaid(), logger de transitions
 ```
@@ -316,6 +321,48 @@ venir. La microtask s'exécute après la chaîne de transitions synchrones, `ent
 compris, et n'en rend que le résultat ; les rendus intermédiaires d'une même chaîne
 sont fondus en un seul. `ui/diagnostics.ts` inspecte le contexte de la même façon,
 pour la même raison.
+
+### 4.6 Internationalisation
+
+Un fichier par langue dans `src/i18n/locales/`, découvert par
+`import.meta.glob` : ajouter une langue, c'est déposer `xx.ts`, sans registre
+à tenir ni sélecteur à compléter. Trois décisions structurent le reste.
+
+**Le français fait référence.** `Dictionary` est le type du dictionnaire
+français ; toute autre langue doit le satisfaire. Une clé ajoutée d'un côté
+et oubliée de l'autre fait échouer `npm run build` — c'est le seul filet qui
+empêche une langue de partir en lambeaux au fil des évolutions. Ce que le
+compilateur ne peut pas voir (valeur vide, variable `{cause}` perdue en
+traduction) est couvert par `test/i18n.test.ts`, qui balaie le même glob.
+
+**Le nom du fichier est la balise BCP-47.** `fr`, `en`, `pt-BR` : la même
+chaîne sert au chargement, à `<html lang>`, aux formateurs `Intl` et à
+`Intl.DisplayNames`, qui donne le nom de la langue *dans cette langue* pour
+le sélecteur. Aucun catalogue de métadonnées à maintenir en parallèle, donc
+aucun à oublier.
+
+**Les automates ne parlent aucune langue.** `ctx.lastError`, `ctx.callError`
+et le motif de chaque ligne d'historique sont des `Msg` — une clé et ses
+variables, traduites au rendu seulement. Trois conséquences : les machines
+restent testables sur des identifiants stables plutôt que sur des phrases,
+l'historique persisté se relit dans la langue courante même pour des appels
+passés dans une autre, et changer de langue met à jour l'erreur affichée au
+lieu de la laisser figée. Ce qui n'a pas de traduction — causes JsSIP, codes
+SIP — passe par `rawMsg()` et ressort tel quel : un code d'erreur traduit
+n'est plus cherchable.
+
+Le choix de l'utilisateur (`localStorage`, clé `trix-lang`) admet une valeur
+« auto », qui n'est pas l'absence de choix mais celui de suivre le
+navigateur — même raisonnement que le thème « système ». Le chargement est
+asynchrone (un chunk par langue), `t()` est synchrone : `main.ts` attend
+`initI18n()` avant le premier rendu, et `setLocaleChoice()` ne notifie
+qu'une fois le dictionnaire en place. Aucun écran ne peut donc se rendre à
+moitié traduit.
+
+Ne sont pas traduits, et c'est délibéré : le nom du produit, le crédit
+« Powered by FSL », les descriptions de transitions FSL (`goto(..., "REGISTER
+OK")`, versionnées dans `DIAGRAMS.md`) et les traces console, qui s'adressent
+au développeur.
 
 ## 5. Intégration JsSIP
 

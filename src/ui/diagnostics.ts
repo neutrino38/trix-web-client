@@ -28,6 +28,8 @@
  */
 
 import type { LogEntry } from "finite-state-language";
+import { t } from "../i18n/index.js";
+import type { Msg } from "../i18n/types.js";
 
 /** Où partent les traces. Injectable pour les tests. */
 export interface Sink {
@@ -46,9 +48,14 @@ export const consoleSink: Sink = {
 export interface Diagnosable {
   readonly state: string;
   readonly context: {
-    lastError: string | null;
+    /**
+     * Messages différés (clé + variables) : la console les traduit dans la
+     * langue courante, comme l'écran. Un rapport de bug reste ainsi lisible
+     * par qui l'a produit — le code technique, lui, ne bouge pas.
+     */
+    lastError: Msg | null;
     lastErrorCode: string | null;
-    callError: string | null;
+    callError: Msg | null;
   };
   readonly pending: readonly { type: string }[];
   readonly log: readonly LogEntry[];
@@ -73,8 +80,8 @@ function where(m: Diagnosable): string {
  * Branche les traces sur une instance. Rend une fonction qui les débranche.
  */
 export function watchMachine(m: Diagnosable, sink: Sink = consoleSink): () => void {
-  let lastError: string | null = m.context.lastError;
-  let callError: string | null = m.context.callError;
+  let lastError: Msg | null = m.context.lastError;
+  let callError: Msg | null = m.context.callError;
   let pending = new Set<string>(m.pending.map((e) => e.type));
   let queued = false;
   let lastEvent: string | undefined;
@@ -88,12 +95,12 @@ export function watchMachine(m: Diagnosable, sink: Sink = consoleSink): () => vo
       lastError = ctx.lastError;
       if (lastError) {
         const code = ctx.lastErrorCode ? ` [${ctx.lastErrorCode}]` : "";
-        sink.error(`${TAG} ${where(m)} : ${lastError}${code}${from}`);
+        sink.error(`${TAG} ${where(m)} : ${t(lastError)}${code}${from}`);
       }
     }
     if (ctx.callError !== callError) {
       callError = ctx.callError;
-      if (callError) sink.error(`${TAG} appel échoué : ${callError}${from}`);
+      if (callError) sink.error(`${TAG} appel échoué : ${t(callError)}${from}`);
     }
 
     // un événement qui entre dans la file et n'en ressort pas attend un état

@@ -57,7 +57,7 @@ export function setTheme(choice: ThemeChoice): void {
   }
 }
 
-/** Mode d'appel retenu (id du registre CALL_MODES de l'écran d'appel). */
+/** Mode d'appel retenu (id du registre des modes de l'écran d'appel). */
 export function getCallModeId(): string {
   return localStorage.getItem(CALLMODE_KEY) ?? "audio";
 }

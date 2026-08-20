@@ -127,8 +127,10 @@ export function createJsSipPort(): SipPort {
             return false;
           },
           call() {
-            // jamais atteint : la machine part en reg_failed avant tout appel
-            throw new Error("UA non démarré (proxy invalide)");
+            // jamais atteint : la machine part en reg_failed avant tout appel.
+            // Message technique, non traduit : il rejoint les causes JsSIP
+            // comme détail de `reason.callFailed`.
+            throw new Error("SIP UA not started (invalid proxy)");
           },
         };
       }

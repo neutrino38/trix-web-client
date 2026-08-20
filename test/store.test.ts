@@ -3,7 +3,7 @@
  */
 import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
-import { createBrowserStore, type AccountConfig } from "../src/storage/store.js";
+import { createBrowserStore, type AccountConfig, type CallLogEntry } from "../src/storage/store.js";
 import { NO_ICE } from "../src/sip/ice.js";
 
 const CFG: AccountConfig = {
@@ -94,6 +94,42 @@ describe("browserStore", () => {
     await store.save(CFG);
     await store.clear();
     expect(await store.load()).toBeNull();
+  });
+
+  it("historique : round-trip du motif traduisible", async () => {
+    const store = createBrowserStore();
+    const entry: CallLogEntry = {
+      target: "bob@example.fr",
+      direction: "outgoing",
+      outcome: "failed",
+      media: { audio: true, video: false },
+      startedAt: 1_700_000_000_000,
+      connectedAt: null,
+      endedAt: 1_700_000_010_000,
+      endedBy: null,
+      reason: { key: "reason.sip", vars: { cause: "Busy", code: 486 } },
+    };
+    await store.saveHistory("alice@example.fr", [entry]);
+    expect(await store.loadHistory("alice@example.fr")).toEqual([entry]);
+  });
+
+  it("historique enregistré avant l'i18n : le motif figé n'est pas perdu", async () => {
+    const store = createBrowserStore();
+    // ce que la version précédente écrivait : une phrase, pas une clé
+    const legacy = {
+      target: "bob@example.fr",
+      direction: "outgoing",
+      outcome: "failed",
+      media: { audio: true, video: false },
+      startedAt: 1_700_000_000_000,
+      connectedAt: null,
+      endedAt: 1_700_000_010_000,
+      endedBy: null,
+      reason: "Busy (SIP 486)",
+    };
+    await store.saveHistory("alice@example.fr", [legacy as unknown as CallLogEntry]);
+    const [loaded] = await store.loadHistory("alice@example.fr");
+    expect(loaded!.reason).toEqual({ key: "misc.raw", vars: { text: "Busy (SIP 486)" } });
   });
 
   it("le HA1 n'apparaît pas en clair dans la base", async () => {

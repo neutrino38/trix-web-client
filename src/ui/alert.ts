@@ -28,6 +28,7 @@
 
 import { startRing, stopRing } from "./ring.js";
 import { setTitleOverride } from "./title.js";
+import { t } from "../i18n/index.js";
 
 export interface IncomingAlert {
   caller: string;
@@ -102,7 +103,7 @@ function startBlink(caller: string): void {
   const tick = (): void => {
     // un battement sur deux rend la main : c'est le titre d'état qui
     // réapparaît, pas une copie figée prise au début de la sonnerie
-    setTitleOverride(on ? `📞 Appel entrant — ${caller}` : null);
+    setTitleOverride(on ? t("alert.title", { caller }) : null);
     link.href = faviconUri(on ? "#36AD45" : "#E94E3C");
     on = !on;
   };
@@ -126,8 +127,8 @@ function notify(a: IncomingAlert): void {
   if (alertPermission() !== "granted") return;
   try {
     // `silent` : le retour sonore est déjà assuré par la sonnerie de l'app
-    notification = new Notification("Appel entrant", {
-      body: `${a.caller} — appel ${a.video ? "vidéo" : "audio"}`,
+    notification = new Notification(t("alert.notifTitle"), {
+      body: t(a.video ? "alert.notifVideo" : "alert.notifAudio", { caller: a.caller }),
       tag: "trix-incoming",
       requireInteraction: true,
       silent: true,

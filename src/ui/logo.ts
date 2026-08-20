@@ -25,6 +25,9 @@ export function trixIcon(size: number, alt = ""): string {
  * reste dans `public/` pour les supports à fond clair — README, partage.
  */
 
+import { t } from "../i18n/index.js";
+import { esc } from "./el.js";
+
 /** Dépôt du framework d'orchestration — la cible du crédit ci-dessous. */
 const FSL_URL = "https://github.com/neutrino38/finite-state-language/";
 
@@ -38,7 +41,7 @@ const FSL_URL = "https://github.com/neutrino38/finite-state-language/";
 export function fslBadge(): string {
   return `
     <a class="fsl-badge" href="${FSL_URL}" target="_blank" rel="noopener noreferrer"
-       aria-label="Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)">
+       aria-label="${esc(t("fsl.aria"))}">
       <img src="/fsl-icon.svg" width="36" height="36" alt="" aria-hidden="true">
       <span>Powered by FSL</span>
     </a>`;

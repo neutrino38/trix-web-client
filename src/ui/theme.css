@@ -211,6 +211,20 @@ fieldset.field { border: none; }
 .field .checkline input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 .field .checkline b { font-weight: 600; color: var(--ink); }
 .field input:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Sélecteur de langue — même gabarit que les champs de saisie, à ceci près
+   que la flèche du menu appartient au navigateur : on ne repeint pas le
+   contrôle natif, dont le comportement au clavier et sur mobile est
+   irremplaçable. */
+.field select {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;
+  cursor: pointer;
+}
+.field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* à l'accueil, le sélecteur suit la largeur de la colonne de boutons, et
+   son intitulé se centre comme le reste de l'écran */
+.screen-home .lang-picker { margin-top: 0.4rem; text-align: center; }
+.screen-home .lang-picker label { text-align: center; }
 .note {
   font-size: 0.78rem; color: var(--ink-soft);
   background: var(--panel-2); border-radius: 8px; padding: 0.6rem 0.8rem;

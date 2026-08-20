@@ -37,6 +37,7 @@ import type {
   SipOriginator,
 } from "../sip/port.js";
 import type { CallDirection } from "../storage/store.js";
+import { msg, rawMsg, type Msg } from "../i18n/types.js";
 import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 
 /**
@@ -49,7 +50,7 @@ export interface CallHost {
   handle: SipHandle | null;
   /** La vue de l'appel : c'est le bloc qui l'écrit, l'UI qui la lit. */
   call: CallView | null;
-  lastError: string | null;
+  lastError: Msg | null;
   lastErrorCode: string | null;
   suspectFields: SuspectField | null;
   /** Veille demandée pendant l'appel : l'hôte ira dormir au retour. */
@@ -79,7 +80,7 @@ export interface CallData {
    * l'originator ensuite.
    */
   endingAs: Ending;
-  endReason: string;
+  endReason: Msg;
 }
 
 /**
@@ -118,8 +119,12 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
   };
 }
 
-function failReason(ev: { cause: string; statusCode?: number }): string {
-  return ev.statusCode ? `${ev.cause} (SIP ${ev.statusCode})` : ev.cause;
+function failReason(ev: { cause: string; statusCode?: number }): Msg {
+  // la cause vient de JsSIP et le code du protocole : ni l'une ni l'autre
+  // ne se traduit — seul leur assemblage est une phrase
+  return ev.statusCode
+    ? msg("reason.sip", { cause: ev.cause, code: ev.statusCode })
+    : rawMsg(ev.cause);
 }
 
 /** Traduit l'originator JsSIP en responsable de la fin d'appel (`system` = incident réseau). */
@@ -147,7 +152,7 @@ function sealed(
  * Raccrochage de notre fait : on envoie le CANCEL/BYE et on attend la
  * confirmation dans `hangingup`, qui rapportera `ending`.
  */
-function hangUp(fx: CallFx, ending: Ending, reason: string, desc: string) {
+function hangUp(fx: CallFx, ending: Ending, reason: Msg, desc: string) {
   fx.data.session?.terminate();
   fx.data.endingAs = ending;
   fx.data.endReason = reason;
@@ -158,7 +163,7 @@ function hangUp(fx: CallFx, ending: Ending, reason: string, desc: string) {
  * Fin d'un appel entrant jamais décroché. `reason` devient le motif de
  * la ligne d'historique (« manqué » vs « refusé »).
  */
-function refuse(ctx: CallHost, fx: CallFx, how: RejectReason, reason: string): void {
+function refuse(ctx: CallHost, fx: CallFx, how: RejectReason, reason: Msg): void {
   fx.data.incoming?.reject(how);
   fx.data.endedBy = "local";
   publish("ringing_in", ctx, fx.data);
@@ -207,20 +212,20 @@ function interruptions(ending: Ending): CallOn {
     // proxy perdu : l'appel ne survivra pas, on raccroche et on rapporte
     // `dropped` — l'hôte lit l'erreur qu'on lui laisse pour reconnecter.
     "sip:disconnected": (_ev, ctx, fx) => {
-      ctx.lastError = "Connexion au proxy perdue pendant l'appel";
+      ctx.lastError = msg("error.proxyLostDuringCall");
       ctx.lastErrorCode = "WSS_LOST";
       ctx.suspectFields = "proxy";
-      return hangUp(fx, "dropped", "Connexion au proxy perdue pendant l'appel", "proxy perdu");
+      return hangUp(fx, "dropped", msg("error.proxyLostDuringCall"), "proxy perdu");
     },
     // veille : on raccroche, et l'hôte saura au retour qu'il doit dormir
     "sys:sleep": (_ev, ctx, fx) => {
       ctx.sleepRequested = true;
-      return hangUp(fx, ending, "Mise en veille", "veille");
+      return hangUp(fx, ending, msg("reason.sleep"), "veille");
     },
     // l'enregistrement tombe pendant l'appel : l'appel continue, mais
     // l'hôte doit le savoir pour choisir où revenir
     "sip:registrationFailed": (ev, ctx) => {
-      ctx.lastError = `Enregistrement perdu : ${ev.cause}`;
+      ctx.lastError = msg("error.regLost", { cause: ev.cause });
       ctx.lastErrorCode = ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause;
       ctx.suspectFields = "credentials";
       return undefined;
@@ -271,7 +276,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
     camMuted: false,
     selfViewHidden: false,
     endingAs: "canceled",
-    endReason: "raccroché",
+    endReason: msg("reason.hungUp"),
   }),
 
   /**
@@ -313,7 +318,9 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           d.session = ctx.handle!.call(d.target, d.media, (ev) => fx.send(ev));
         } catch (e) {
           fx.sbbReturn("rejected", {
-            reason: e instanceof Error ? e.message : String(e),
+            reason: msg("reason.callFailed", {
+              detail: e instanceof Error ? e.message : String(e),
+            }),
           });
           return;
         }
@@ -330,9 +337,9 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         },
         "sip:ended": (ev, ctx, fx) => {
           sealed("dialing", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("canceled", { reason: ev.cause });
+          fx.sbbReturn("canceled", { reason: rawMsg(ev.cause) });
         },
-        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", "raccroché", "CANCEL"),
+        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", msg("reason.hungUp"), "CANCEL"),
       },
       meta: { callState: "dialing" },
     },
@@ -351,16 +358,16 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         },
         "sip:ended": (ev, ctx, fx) => {
           sealed("ringing", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("canceled", { reason: ev.cause });
+          fx.sbbReturn("canceled", { reason: rawMsg(ev.cause) });
         },
-        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", "raccroché", "CANCEL"),
+        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", msg("reason.hungUp"), "CANCEL"),
       },
       after: {
         delay: 90_000,
         then: (ctx, fx) => {
           fx.data.session?.terminate();
           sealed("ringing", "local", ctx, fx);
-          fx.sbbReturn("rejected", { reason: "Pas de réponse" });
+          fx.sbbReturn("rejected", { reason: msg("reason.noAnswer") });
         },
       },
       meta: { callState: "ringing" },
@@ -383,22 +390,22 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           fx.data.incoming!.answer(ev.media);
           return goto("answering", "200 OK");
         },
-        "ui:reject": (_ev, ctx, fx) => refuse(ctx, fx, "declined", "Appel refusé"),
+        "ui:reject": (_ev, ctx, fx) => refuse(ctx, fx, "declined", msg("reason.declined")),
         // le bouton rouge de la vue mobile pendant la sonnerie = refuser
-        "ui:hangup": (_ev, ctx, fx) => refuse(ctx, fx, "declined", "Appel refusé"),
+        "ui:hangup": (_ev, ctx, fx) => refuse(ctx, fx, "declined", msg("reason.declined")),
         // l'appelant a renoncé (CANCEL) : appel manqué, pas un échec
         "sip:failed": (ev, ctx, fx) => {
           sealed("ringing_in", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("missed", { reason: "Appel manqué", failed: false });
+          fx.sbbReturn("missed", { reason: msg("reason.missed"), failed: false });
         },
         "sip:ended": (ev, ctx, fx) => {
           sealed("ringing_in", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("missed", { reason: "Appel manqué", failed: false });
+          fx.sbbReturn("missed", { reason: msg("reason.missed"), failed: false });
         },
       },
       after: {
         delay: 60_000,
-        then: (ctx, fx) => refuse(ctx, fx, "timeout", "Appel manqué (sans réponse)"),
+        then: (ctx, fx) => refuse(ctx, fx, "timeout", msg("reason.missedNoAnswer")),
       },
       meta: { callState: "ringing_in" },
     },
@@ -419,9 +426,9 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         },
         "sip:ended": (ev, ctx, fx) => {
           sealed("answering", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("missed", { reason: ev.cause, failed: true });
+          fx.sbbReturn("missed", { reason: rawMsg(ev.cause), failed: true });
         },
-        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "missed", "Appel refusé", "BYE"),
+        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "missed", msg("reason.declined"), "BYE"),
       },
       after: {
         // média refusé par l'OS, ACK jamais reçu… : ne pas rester bloqué
@@ -430,7 +437,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           fx.data.session?.terminate();
           sealed("answering", "local", ctx, fx);
           fx.sbbReturn("missed", {
-            reason: "Établissement de l'appel impossible",
+            reason: msg("reason.setupFailed"),
             failed: true,
           });
         },
@@ -457,7 +464,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
             fx.sbbReturn("dropped", {
               connectedAt: fx.data.connectedAt,
               media: fx.data.media,
-              reason: ev.cause,
+              reason: rawMsg(ev.cause),
             });
             return;
           }
@@ -475,7 +482,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
             reason: failReason(ev),
           });
         },
-        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "answered", "raccroché", "BYE"),
+        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "answered", msg("reason.hungUp"), "BYE"),
         "ui:muteMic": (_ev, ctx, fx) => {
           fx.data.micMuted = !fx.data.micMuted;
           fx.data.session?.setMicMuted(fx.data.micMuted);
@@ -516,11 +523,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         "sip:confirmed": () => undefined,
         // le transport est mort : aucune confirmation n'arrivera
         "sip:disconnected": (_ev, ctx, fx) => {
-          ctx.lastError = "Connexion au proxy perdue pendant l'appel";
+          ctx.lastError = msg("error.proxyLostDuringCall");
           ctx.lastErrorCode = "WSS_LOST";
           ctx.suspectFields = "proxy";
           fx.data.endingAs = "dropped";
-          fx.data.endReason = "Connexion au proxy perdue pendant l'appel";
+          fx.data.endReason = msg("error.proxyLostDuringCall");
           report(fx);
         },
         // on raccroche déjà : la veille n'a plus qu'à être notée

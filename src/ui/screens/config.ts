@@ -4,6 +4,9 @@ import { el, esc } from "../el.js";
 import { alertPermission, requestAlertPermission } from "../alert.js";
 import { setTheme, themeChoice, type ThemeChoice } from "../prefs.js";
 import type { SuspectField } from "../../machines/events.js";
+import { langPicker, wireLangPicker } from "../langpicker.js";
+import { t } from "../../i18n/index.js";
+import type { MsgKey } from "../../i18n/types.js";
 
 /**
  * État de la permission de notification — le seul canal d'alerte qui traverse
@@ -13,24 +16,29 @@ import type { SuspectField } from "../../machines/events.js";
 function notificationRow(): string {
   switch (alertPermission()) {
     case "default":
-      return `<button class="btn" type="button" data-act="enable-alerts">Activer les notifications</button>
-              <span class="hint">Sans elles, Trix ne peut pas vous alerter quand la fenêtre est
-                masquée ou réduite.</span>`;
+      return `<button class="btn" type="button" data-act="enable-alerts">${esc(
+        t("config.notifEnable"),
+      )}</button>
+              <span class="hint">${esc(t("config.notifHint"))}</span>`;
     case "granted":
-      return `<span class="setting-state ok">Notifications activées</span>`;
+      return `<span class="setting-state ok">${esc(t("config.notifOn"))}</span>`;
     case "denied":
-      return `<span class="setting-state ko">Notifications bloquées par le navigateur</span>
-              <span class="hint">À rétablir dans les réglages de site du navigateur : Trix ne peut
-                pas redemander l'autorisation lui-même.</span>`;
+      return `<span class="setting-state ko">${esc(t("config.notifBlocked"))}</span>
+              <span class="hint">${esc(t("config.notifBlockedHint"))}</span>`;
     default:
       return ""; // navigateur sans Notification : rien à proposer
   }
 }
 
-const THEMES: { id: ThemeChoice; label: string }[] = [
-  { id: "system", label: "Système" },
-  { id: "light", label: "Clair" },
-  { id: "dark", label: "Sombre" },
+/** Le bloc « Notifications système » en entier — réécrit sur place après la demande. */
+function notificationField(): string {
+  return `<span class="field-title">${esc(t("config.notifications"))}</span>${notificationRow()}`;
+}
+
+const THEMES: { id: ThemeChoice; label: MsgKey }[] = [
+  { id: "system", label: "theme.system" },
+  { id: "light", label: "theme.light" },
+  { id: "dark", label: "theme.dark" },
 ];
 
 export function renderConfig(phone: PhoneInstance): HTMLElement {
@@ -46,127 +54,129 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const node = el(`
     <div class="screen-config">
       <form novalidate>
-        <h2>Paramètres</h2>
-        ${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
+        <h2>${esc(t("config.title"))}</h2>
+        ${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
         ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
         <div class="config-cols">
         <section class="config-col">
-        <h3>Compte SIP</h3>
+        <h3>${esc(t("config.section.account"))}</h3>
         <div class="field">
-          <label for="f-proxy">Serveur SIP</label>
-          <input id="f-proxy" name="proxy" required placeholder="wss://sip.example.fr:8443/ws"
+          <label for="f-proxy">${esc(t("config.proxy"))}</label>
+          <input id="f-proxy" name="proxy" required placeholder="${esc(t("config.proxyPlaceholder"))}"
                  value="${cfg ? esc(cfg.proxy) : ""}"${inv("proxy")}>
         </div>
         <div class="field">
-          <label for="f-uri">Adresse SIP</label>
-          <input id="f-uri" name="uri" required autocomplete="username" placeholder="sip:alice@example.fr"
+          <label for="f-uri">${esc(t("config.uri"))}</label>
+          <input id="f-uri" name="uri" required autocomplete="username"
+                 placeholder="${esc(t("config.uriPlaceholder"))}"
                  value="${cfg ? esc(`${cfg.username}@${cfg.domain}`) : ""}"${inv("credentials")}>
-          <span class="hint">Avec ou sans le préfixe « sip: ». Le domaine sert de realm pour l'authentification.</span>
+          <span class="hint">${esc(t("config.uriHint"))}</span>
         </div>
         <div class="field">
-          <label for="f-display">Votre nom</label>
+          <label for="f-display">${esc(t("config.displayName"))}</label>
           <input id="f-display" name="displayName" value="${cfg ? esc(cfg.displayName) : ""}">
         </div>
         <div class="field">
           <label class="checkline" for="f-auth-toggle">
             <input type="checkbox" id="f-auth-toggle" ${cfg?.authUsername ? "checked" : ""}>
-            <span>Identifiant d'authentification (si différent de
-              <b data-ref="userpart">${esc(cfg?.username ?? "l'utilisateur de l'adresse")}</b>)</span>
+            <span>${t("config.authToggle", {
+              // le userpart est un fragment HTML : il se met à jour tout seul
+              // à la saisie de l'adresse, sans réécrire la phrase autour
+              user: `<b data-ref="userpart">${esc(cfg?.username ?? t("config.authUserDefault"))}</b>`,
+            })}</span>
           </label>
           <input id="f-auth" name="authUsername" autocomplete="off"
                  value="${cfg?.authUsername ? esc(cfg.authUsername) : ""}"
                  ${cfg?.authUsername ? "" : "disabled"}${inv("credentials")}>
         </div>
         <div class="field">
-          <label for="f-pass">Mot de passe</label>
+          <label for="f-pass">${esc(t("config.password"))}</label>
           <input id="f-pass" name="password" type="password" autocomplete="current-password"
-                 placeholder="${cfg ? "•••••• (déjà défini)" : ""}" ${cfg ? "" : "required"}${inv("credentials")}>
-          ${cfg ? `<span class="hint">Laisser vide pour conserver le mot de passe actuel.</span>` : ""}
+                 placeholder="${cfg ? esc(t("config.passwordSet")) : ""}" ${cfg ? "" : "required"}${inv("credentials")}>
+          ${cfg ? `<span class="hint">${esc(t("config.passwordKeep"))}</span>` : ""}
         </div>
-        <div class="note">Le mot de passe n'est pas conservé : seule une empreinte (HA1)
-          est stockée, chiffrée, dans ce navigateur.</div>
+        <div class="note">${esc(t("config.ha1Note"))}</div>
 
         </section>
 
         <section class="config-col">
-        <h3>Traversée de NAT</h3>
-        <p class="section-hint">Serveurs fournis par votre opérateur SIP. Sans eux, un appel
-          entre deux réseaux privés peut aboutir sans qu'aucun son ne passe.</p>
+        <h3>${esc(t("config.section.nat"))}</h3>
+        <p class="section-hint">${esc(t("config.natHint"))}</p>
         <div class="field">
-          <label for="f-stun">Serveur STUN</label>
-          <input id="f-stun" name="stun" autocomplete="off" placeholder="stun.example.fr:3478"
+          <label for="f-stun">${esc(t("config.stun"))}</label>
+          <input id="f-stun" name="stun" autocomplete="off" placeholder="${esc(t("config.stunPlaceholder"))}"
                  value="${cfg?.ice.stun ? esc(cfg.ice.stun) : ""}"${inv("stun")}>
-          <span class="hint">Facultatif. Hôte seul ou hôte:port — sans port, 3478 est utilisé.</span>
+          <span class="hint">${esc(t("config.stunHint"))}</span>
         </div>
         <div class="field">
-          <label for="f-turn">Serveur TURN</label>
-          <input id="f-turn" name="turn" autocomplete="off" placeholder="turn.example.fr:3478"
+          <label for="f-turn">${esc(t("config.turn"))}</label>
+          <input id="f-turn" name="turn" autocomplete="off" placeholder="${esc(t("config.turnPlaceholder"))}"
                  value="${turn ? esc(turn.host) : ""}"${inv("turn")}>
-          <span class="hint">Facultatif — relais des flux média quand la connexion directe
-            échoue. Laisser vide pour ne pas en utiliser.</span>
+          <span class="hint">${esc(t("config.turnHint"))}</span>
         </div>
         <div class="field">
-          <label for="f-turn-user">Identifiant TURN</label>
+          <label for="f-turn-user">${esc(t("config.turnUser"))}</label>
           <input id="f-turn-user" name="turnUsername" autocomplete="off"
                  value="${turn ? esc(turn.username) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
         </div>
         <div class="field">
-          <label for="f-turn-pass">Mot de passe TURN</label>
+          <label for="f-turn-pass">${esc(t("config.turnPass"))}</label>
           <input id="f-turn-pass" name="turnPassword" type="password" autocomplete="off"
-                 placeholder="${turn ? "•••••• (déjà défini)" : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
-          ${turn ? `<span class="hint">Laisser vide pour conserver le mot de passe actuel.</span>` : ""}
+                 placeholder="${turn ? esc(t("config.passwordSet")) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
+          ${turn ? `<span class="hint">${esc(t("config.turnPassKeep"))}</span>` : ""}
         </div>
         <div class="field">
           <label class="checkline" for="f-turn-tls">
             <input type="checkbox" id="f-turn-tls" name="turnTls"
                    ${turn?.tls ? "checked" : ""} ${turn ? "" : "disabled"}>
-            <span><b>TURN sur TLS</b> — relais chiffré (« turns: »), qui passe là où seul
-              le trafic TLS est autorisé</span>
+            <span><b>${esc(t("config.turnTlsLabel"))}</b>${esc(t("config.turnTlsDesc"))}</span>
           </label>
-          <span class="hint">Sans port explicite, 5349 est alors utilisé au lieu de 3478.</span>
+          <span class="hint">${esc(t("config.turnTlsHint"))}</span>
         </div>
-        <div class="note">Le mot de passe TURN, lui, est conservé (chiffré) : le relais réclame
-          le secret lui-même à chaque appel, une empreinte n'y suffirait pas.</div>
+        <div class="note">${esc(t("config.turnNote"))}</div>
 
         </section>
 
         <section class="config-col">
-        <h3>Alertes et affichage</h3>
-        <p class="section-hint">Ces réglages prennent effet immédiatement, sans attendre
-          l'enregistrement — sauf le flash, qui suit le compte.</p>
+        <h3>${esc(t("config.section.alerts"))}</h3>
+        <p class="section-hint">${esc(t("config.alertsHint"))}</p>
         <div class="field">
           <label class="checkline" for="f-flash">
             <input type="checkbox" id="f-flash" name="flashAlert"
                    ${cfg?.flashAlert === false ? "" : "checked"}>
-            <span><b>Flash visuel à l'appel entrant</b> — l'écran clignote pendant
-              la sonnerie, pour être alerté sans le son</span>
+            <span><b>${esc(t("config.flashLabel"))}</b>${esc(t("config.flashDesc"))}</span>
           </label>
-          <span class="hint">Enregistré avec le compte : il vous suit d'un poste à l'autre.</span>
+          <span class="hint">${esc(t("config.flashHint"))}</span>
         </div>
         <div class="field">
-          <span class="field-title">Notifications système</span>
-          ${notificationRow()}
+          ${notificationField()}
         </div>
         <fieldset class="field">
-          <legend class="field-title">Thème</legend>
+          <legend class="field-title">${esc(t("config.theme"))}</legend>
           <div class="radio-row">
             ${THEMES.map(
-              (t) => `<label class="radio">
-                        <input type="radio" name="theme" value="${t.id}"
-                               ${themeChoice() === t.id ? "checked" : ""}>
-                        <span>${t.label}</span>
+              (theme) => `<label class="radio">
+                        <input type="radio" name="theme" value="${theme.id}"
+                               ${themeChoice() === theme.id ? "checked" : ""}>
+                        <span>${esc(t(theme.label))}</span>
                       </label>`,
             ).join("")}
           </div>
-          <span class="hint">« Système » suit le réglage clair/sombre de votre appareil.</span>
+          <span class="hint">${esc(t("config.themeHint"))}</span>
         </fieldset>
+        <!-- La langue est aussi offerte à l'accueil, qu'on ne revoit plus
+             une fois le compte enregistré : c'est ici qu'on la retrouve. -->
+        ${langPicker()}
+        <span class="hint">${esc(t("lang.hint"))}</span>
         </section>
         </div>
         <div class="form-actions">
           <button class="btn primary" type="submit" ${saving ? "disabled" : ""}>
-            ${saving ? "Enregistrement…" : "Enregistrer et se connecter"}
+            ${esc(t(saving ? "config.saving" : "config.save"))}
           </button>
-          <button class="btn ghost" type="button" data-act="cancel" ${saving ? "disabled" : ""}>Annuler</button>
+          <button class="btn ghost" type="button" data-act="cancel" ${saving ? "disabled" : ""}>${esc(
+            t("config.cancel"),
+          )}</button>
         </div>
       </form>
     </div>`);
@@ -226,7 +236,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   node.querySelector('[data-act="enable-alerts"]')?.addEventListener("click", (e) => {
     const row = (e.currentTarget as HTMLElement).parentElement!;
     void requestAlertPermission().then(() => {
-      row.innerHTML = `<span class="field-title">Notifications système</span>${notificationRow()}`;
+      row.innerHTML = notificationField();
     });
   });
 
@@ -239,11 +249,12 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const userpartRef = form.querySelector('[data-ref="userpart"]')!;
   uriInput.addEventListener("input", () => {
     const parsed = parseSipUri(uriInput.value);
-    userpartRef.textContent = parsed?.username ?? "l'utilisateur de l'adresse";
+    userpartRef.textContent = parsed?.username ?? t("config.authUserDefault");
   });
   node
     .querySelector('[data-act="cancel"]')!
     .addEventListener("click", () => phone.send({ type: "ui:cancelConfig" }));
+  wireLangPicker(node);
   // le surlignage s'efface dès que l'utilisateur corrige le champ
   for (const input of node.querySelectorAll("input.invalid")) {
     input.addEventListener("input", () => input.classList.remove("invalid"), { once: true });

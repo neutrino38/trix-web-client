@@ -7,16 +7,18 @@ import { stopIncomingAlert } from "./alert.js";
 import { closeIncoming } from "./screens/call/incoming.js";
 import { announce } from "./announce.js";
 import { setStateTitle } from "./title.js";
-import { CALL_LABEL, STATUS, displayTarget, fmtChrono } from "./screens/call/parts.js";
+import { STATUS, callLabel, displayTarget, fmtChrono, statusOf } from "./screens/call/parts.js";
+import { t } from "../i18n/index.js";
+import type { MsgKey } from "../i18n/types.js";
 
 let lastState: string | null = null;
 let lastLayout: LayoutMode | null = null;
 
 /** Écrans sans état de téléphone à afficher : l'onglet nomme quand même l'écran. */
-const SCREEN_TITLE: Record<string, string> = {
-  configuring: "Paramètres",
-  reconfiguring: "Paramètres",
-  saving: "Enregistrement…",
+const SCREEN_TITLE: Record<string, MsgKey> = {
+  configuring: "screen.settings",
+  reconfiguring: "screen.settings",
+  saving: "screen.saving",
 };
 
 /**
@@ -28,7 +30,7 @@ const SCREEN_TITLE: Record<string, string> = {
 function syncStatus(phone: PhoneInstance): void {
   const view = phone.state === "in_call" ? phone.context.call : null;
   if (view) {
-    const label = CALL_LABEL[view.state];
+    const label = callLabel(view.state);
     const who = view.displayName ?? displayTarget(view.target);
     setStateTitle(
       view.state === "connected" && view.connectedAt !== null
@@ -38,11 +40,24 @@ function syncStatus(phone: PhoneInstance): void {
     announce(`${label} — ${who}`);
     return;
   }
-  const label = STATUS[phone.state]?.label;
-  setStateTitle(label ?? SCREEN_TITLE[phone.state] ?? null);
+  // `STATUS` dit si cet état a un libellé d'état de téléphone ; `statusOf`
+  // le traduit. Un écran hors téléphone (paramètres) n'y figure pas.
+  const label = STATUS[phone.state] ? statusOf(phone.state).label : null;
+  const screen = SCREEN_TITLE[phone.state];
+  setStateTitle(label ?? (screen ? t(screen) : null));
   // les écrans hors appel se lisent d'eux-mêmes : seul l'état du téléphone,
   // qui change sans que l'utilisateur agisse, mérite d'être annoncé
   if (label) announce(label);
+}
+
+/**
+ * Oublie l'écran rendu : le prochain `renderApp` reconstruira tout, même
+ * à état et format inchangés. C'est ce qu'exige un changement de langue —
+ * la machine n'a pas bougé, mais chaque mot de l'écran doit être réécrit.
+ */
+export function invalidateScreen(): void {
+  lastState = null;
+  lastLayout = null;
 }
 
 /**

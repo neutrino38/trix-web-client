@@ -21,26 +21,45 @@ import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
 import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
+import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
+import type { MsgKey } from "../../../i18n/types.js";
 
-export const STATUS: Record<string, { label: string; cls: "ok" | "warn" | "err" }> = {
-  connecting: { label: "Connexion…", cls: "warn" },
-  registering: { label: "Enregistrement…", cls: "warn" },
-  ready: { label: "Enregistré", cls: "ok" },
-  in_call: { label: "Enregistré", cls: "ok" },
-  reconnecting: { label: "Reconnexion…", cls: "err" },
-  sleeping: { label: "En veille", cls: "warn" },
-  reg_failed: { label: "Échec d'enregistrement", cls: "err" },
-  unregistering: { label: "Déconnexion…", cls: "warn" },
+/**
+ * État du téléphone : la **clé** du libellé, pas le libellé. Ces tables
+ * sont des constantes de module, évaluées une fois à l'import — y figer
+ * une traduction la rendrait sourde au changement de langue, qui ne
+ * recharge que les écrans. Les deux accesseurs ci-dessous résolvent au
+ * moment du rendu.
+ */
+export const STATUS: Record<string, { key: MsgKey; cls: "ok" | "warn" | "err" }> = {
+  connecting: { key: "status.connecting", cls: "warn" },
+  registering: { key: "status.registering", cls: "warn" },
+  ready: { key: "status.ready", cls: "ok" },
+  in_call: { key: "status.ready", cls: "ok" },
+  reconnecting: { key: "status.reconnecting", cls: "err" },
+  sleeping: { key: "status.sleeping", cls: "warn" },
+  reg_failed: { key: "status.regFailed", cls: "err" },
+  unregistering: { key: "status.unregistering", cls: "warn" },
 };
 
-export const CALL_LABEL: Record<CallView["state"], string> = {
-  dialing: "Appel en cours",
-  ringing: "Sonnerie",
-  ringing_in: "Appel entrant",
-  answering: "Connexion…",
-  connected: "En communication",
-  hangingup: "Fin d'appel",
+/** L'état du téléphone tel qu'il s'affiche : libellé traduit + couleur. */
+export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "err" } {
+  const entry = STATUS[state];
+  return entry ? { label: t(entry.key), cls: entry.cls } : { label: state, cls: "warn" };
+}
+
+const CALL_LABEL_KEY: Record<CallView["state"], MsgKey> = {
+  dialing: "call.dialing",
+  ringing: "call.ringing",
+  ringing_in: "call.ringingIn",
+  answering: "call.answering",
+  connected: "call.connected",
+  hangingup: "call.hangingup",
 };
+
+export function callLabel(state: CallView["state"]): string {
+  return t(CALL_LABEL_KEY[state]);
+}
 
 export const ICONS = {
   settings: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>`,
@@ -79,31 +98,44 @@ export const ICONS_OFF = {
  */
 interface CallModeDef {
   id: string;
-  label: string; // entrée du menu : « Appel audio »
-  buttonLabel: string; // bouton principal : « Appeler en audio »
+  /** Entrée du menu (« Appel audio ») et bouton principal (« Appeler en audio »). */
+  label: string;
+  buttonLabel: string;
   icon: string;
   media: CallMedia;
 }
 
-const CALL_MODES: CallModeDef[] = [
+const CALL_MODE_KEYS = [
   {
     id: "audio",
-    label: "Appel audio",
-    buttonLabel: "Appeler en audio",
+    label: "mode.audio.label",
+    buttonLabel: "mode.audio.button",
     icon: ICONS.phone,
     media: { audio: true, video: false },
   },
   {
     id: "video",
-    label: "Appel vidéo",
-    buttonLabel: "Appeler en vidéo",
+    label: "mode.video.label",
+    buttonLabel: "mode.video.button",
     icon: ICONS.cam,
     media: { audio: true, video: true },
   },
-];
+] as const satisfies readonly { id: string; label: MsgKey; buttonLabel: MsgKey; icon: string; media: CallMedia }[];
+
+/** Les modes proposés, libellés dans la langue courante. */
+export function callModes(): CallModeDef[] {
+  return CALL_MODE_KEYS.map((m) => ({
+    id: m.id,
+    label: t(m.label),
+    buttonLabel: t(m.buttonLabel),
+    icon: m.icon,
+    media: m.media,
+  }));
+}
 
 export function currentMode(): CallModeDef {
-  return CALL_MODES.find((m) => m.id === getCallModeId()) ?? CALL_MODES[0]!;
+  const modes = callModes();
+  return modes.find((m) => m.id === getCallModeId()) ?? modes[0]!;
 }
 
 // État UI pur, survivant aux re-rendus (l'écran est reconstruit à chaque
@@ -149,9 +181,10 @@ export interface AnswerChoice {
 
 export function answerChoices(offered: CallMedia): AnswerChoice[] {
   const choices: AnswerChoice[] = [];
-  if (offered.video) choices.push({ act: "answer-av", label: "Répondre en vidéo", icon: ICONS.cam });
+  if (offered.video)
+    choices.push({ act: "answer-av", label: t("incoming.answerVideo"), icon: ICONS.cam });
   if (offered.audio)
-    choices.push({ act: "answer-audio", label: "Répondre en audio", icon: ICONS.phone });
+    choices.push({ act: "answer-audio", label: t("incoming.answerAudio"), icon: ICONS.phone });
   return choices;
 }
 
@@ -171,18 +204,18 @@ export function callerName(view: CallView): string {
 // Historique d'appels
 // ---------------------------------------------------------------------------
 
-const OUTCOME_LABEL: Record<CallLogEntry["outcome"], string> = {
-  answered: "Répondu",
-  missed: "Manqué",
-  failed: "Échec",
-  canceled: "Annulé",
-  dropped: "Interrompu",
+const OUTCOME_KEY: Record<CallLogEntry["outcome"], MsgKey> = {
+  answered: "outcome.answered",
+  missed: "outcome.missed",
+  failed: "outcome.failed",
+  canceled: "outcome.canceled",
+  dropped: "outcome.dropped",
 };
 
-const ENDED_BY_LABEL: Record<NonNullable<CallLogEntry["endedBy"]>, string> = {
-  local: "raccroché par vous",
-  remote: "raccroché par le correspondant",
-  network: "coupé par le réseau",
+const ENDED_BY_KEY: Record<NonNullable<CallLogEntry["endedBy"]>, MsgKey> = {
+  local: "endedBy.local",
+  remote: "endedBy.remote",
+  network: "endedBy.network",
 };
 
 const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
@@ -194,29 +227,32 @@ const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
   missed: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>`,
 };
 
+/** Heure seule pour aujourd'hui, date + heure au-delà — au format de la langue. */
 function fmtWhen(ts: number): string {
-  const d = new Date(ts);
-  const sameDay = d.toDateString() === new Date().toDateString();
-  const time = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  return sameDay
-    ? time
-    : `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${time}`;
+  const sameDay = new Date(ts).toDateString() === new Date().toDateString();
+  const time = formatTime(ts);
+  return sameDay ? time : `${formatDayMonth(ts)} ${time}`;
 }
 
 function fmtDuration(entry: CallLogEntry): string {
   if (entry.connectedAt === null) return "";
   const s = Math.max(0, Math.round((entry.endedAt - entry.connectedAt) / 1000));
   const m = Math.floor(s / 60);
-  return m > 0 ? `${m} min ${String(s % 60).padStart(2, "0")} s` : `${s} s`;
+  return m > 0
+    ? t("duration.minSec", { m, s: String(s % 60).padStart(2, "0") })
+    : t("duration.sec", { s });
 }
 
 export function historyRow(entry: CallLogEntry): string {
+  const outcome = t(OUTCOME_KEY[entry.outcome]);
   const detail =
     entry.connectedAt !== null
-      ? `${fmtDuration(entry)}${entry.endedBy ? ` — ${ENDED_BY_LABEL[entry.endedBy]}` : ""}`
-      : (entry.reason ?? OUTCOME_LABEL[entry.outcome]);
+      ? `${fmtDuration(entry)}${entry.endedBy ? ` — ${t(ENDED_BY_KEY[entry.endedBy])}` : ""}`
+      : entry.reason
+        ? t(entry.reason)
+        : outcome;
   return `<div class="calllog-row ${entry.outcome}"
-       title="${esc(`${entry.target} — ${OUTCOME_LABEL[entry.outcome]}`)}">
+       title="${esc(t("history.entryTitle", { target: entry.target, outcome }))}">
     ${HISTORY_ICONS[entry.outcome]}
     <span class="who">${esc(entry.target)}</span>
     ${entry.media.video ? ICONS.cam : ""}
@@ -294,7 +330,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   const fillMenu = (): void => {
     if (!modeMenu) return;
     modeMenu.replaceChildren(
-      ...CALL_MODES.map((m) => {
+      ...callModes().map((m) => {
         const selected = m.id === currentMode().id;
         const item = el(
           `<button role="menuitemradio" aria-checked="${selected}"
@@ -366,7 +402,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     // `off` et non `toggled` : un son coupé est un flux interrompu (voir overlay.ts)
     btn.classList.toggle("off", speakerMuted);
     btn.setAttribute("aria-pressed", String(speakerMuted));
-    btn.title = speakerMuted ? "Rétablir le son" : "Couper le son";
+    btn.title = t(speakerMuted ? "ctrl.speaker.unmute" : "ctrl.speaker.mute");
     btn.innerHTML = speakerMuted ? ICONS_OFF.speaker : ICONS.speaker;
   });
 
@@ -422,11 +458,9 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
         // le titre d'onglet suit la seconde ; l'annonce, elle, ne réveille le
         // lecteur d'écran qu'à la minute — l'entendre battre la seconde
         // rendrait la conversation impossible à suivre
-        setStateTitle(`${CALL_LABEL.connected} — ${elapsed}`);
+        setStateTitle(`${callLabel("connected")} — ${elapsed}`);
         const minutes = Math.floor((Date.now() - startedAt) / 60_000);
-        if (minutes > 0) {
-          announce(`En communication depuis ${minutes} minute${minutes > 1 ? "s" : ""}`);
-        }
+        if (minutes > 0) announce(tn("announce.inCall", minutes));
       }, 1000);
       startVuMeters(node, remote, self);
     }

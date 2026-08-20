@@ -7,6 +7,7 @@
 
 import type { CallMedia } from "../sip/port.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
+import { rawMsg, type Msg } from "../i18n/types.js";
 
 export interface AccountConfig {
   proxy: string; // wss://…
@@ -52,7 +53,13 @@ export interface CallLogEntry {
   endedAt: number;
   /** Renseigné pour les appels établis : qui a raccroché. */
   endedBy: CallEndedBy | null;
-  reason: string | null; // cause SIP en cas d'échec
+  /**
+   * Motif de fin, gardé sous forme de **message différé** (clé + variables)
+   * et non de phrase : l'historique se relit dans la langue courante, même
+   * pour des appels passés dans une autre. Les causes SIP brutes y entrent
+   * par `misc.raw`, qui les rend telles quelles.
+   */
+  reason: Msg | null;
 }
 
 export interface SecureStore {
@@ -150,6 +157,17 @@ async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
 
 const historyId = (account: string): string => `history:${account}`;
 
+/**
+ * Lignes écrites avant l'internationalisation : leur motif est une phrase
+ * française figée. On l'enveloppe pour qu'elle traverse la même chaîne de
+ * rendu que les messages traduisibles — elle ne changera pas de langue,
+ * mais elle ne disparaîtra pas non plus de l'historique.
+ */
+function migrateReason(entry: CallLogEntry): CallLogEntry {
+  const reason = entry.reason as Msg | string | null;
+  return typeof reason === "string" ? { ...entry, reason: rawMsg(reason) } : entry;
+}
+
 export function createBrowserStore(): SecureStore {
   return {
     async save(cfg: AccountConfig): Promise<void> {
@@ -193,7 +211,7 @@ export function createBrowserStore(): SecureStore {
       const db = await openDb();
       try {
         const entries = (await decryptGet(db, historyId(account))) as CallLogEntry[] | null;
-        return Array.isArray(entries) ? entries : [];
+        return Array.isArray(entries) ? entries.map(migrateReason) : [];
       } finally {
         db.close();
       }

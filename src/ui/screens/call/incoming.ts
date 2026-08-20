@@ -19,6 +19,7 @@
 import type { CallView } from "../../../machines/events.js";
 import { esc } from "../../el.js";
 import { ICONS, answerChoices, callerName, displayTarget } from "./parts.js";
+import { t } from "../../../i18n/index.js";
 
 /**
  * Sur-titre : le média offert, avant même le nom de l'appelant. C'est lui, et
@@ -28,7 +29,7 @@ import { ICONS, answerChoices, callerName, displayTarget } from "./parts.js";
  * au-dessus des 10,5 px de la maquette.
  */
 function kicker(view: CallView): string {
-  return view.offered.video ? "APPEL VIDÉO ENTRANT" : "APPEL AUDIO ENTRANT";
+  return t(view.offered.video ? "incoming.kicker.video" : "incoming.kicker.audio");
 }
 
 /**
@@ -45,7 +46,7 @@ export function incomingDialog(view: CallView): string {
     <div class="incoming-dialog" data-ref="incoming" role="dialog" aria-modal="true"
          aria-labelledby="incoming-who">
       <span class="ring-badge" aria-hidden="true">${ICONS.phone}</span>
-      <span class="kicker">${kicker(view)}</span>
+      <span class="kicker">${esc(kicker(view))}</span>
       <h2 class="who" id="incoming-who">${esc(callerName(view))}</h2>
       ${
         // l'URI ne s'affiche que si le nom ne la répète pas déjà
@@ -60,7 +61,7 @@ export function incomingDialog(view: CallView): string {
                </button>`,
           )
           .join("")}
-        <button class="btn hangup" data-act="reject">${ICONS.hangup} Refuser</button>
+        <button class="btn hangup" data-act="reject">${ICONS.hangup} ${esc(t("incoming.reject"))}</button>
       </div>
     </div>
   </div>`;

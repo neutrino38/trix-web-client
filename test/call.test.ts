@@ -185,7 +185,7 @@ describe("CallBlock — appel sortant", () => {
     box.sendCall({ type: "sip:failed", cause: "Rejected", statusCode: 603 });
     expect(outcome(call)).toEqual({
       type: "call:rejected",
-      data: { reason: "Rejected (SIP 603)" },
+      data: { reason: { key: "reason.sip", vars: { cause: "Rejected", code: 603 } } },
     });
   });
 
@@ -194,7 +194,7 @@ describe("CallBlock — appel sortant", () => {
     const call = startCall(handle);
     expect(outcome(call)).toEqual({
       type: "call:rejected",
-      data: { reason: "INVALID_TARGET" },
+      data: { reason: { key: "reason.callFailed", vars: { detail: "INVALID_TARGET" } } },
     });
   });
 
@@ -208,7 +208,7 @@ describe("CallBlock — appel sortant", () => {
       expect(box.session.terminated).toBeGreaterThanOrEqual(1);
       expect(outcome(call)).toEqual({
         type: "call:rejected",
-        data: { reason: "Pas de réponse" },
+        data: { reason: { key: "reason.noAnswer" } },
       });
     } finally {
       vi.useRealTimers();
@@ -256,7 +256,10 @@ describe("CallBlock — appel sortant", () => {
     expect(call.sbb?.state).toBe("hangingup");
     expect(box.session.terminated).toBe(1);
     box.sendCall({ type: "sip:failed", cause: "Canceled" });
-    expect(outcome(call)).toEqual({ type: "call:canceled", data: { reason: "raccroché" } });
+    expect(outcome(call)).toEqual({
+      type: "call:canceled",
+      data: { reason: { key: "reason.hungUp" } },
+    });
   });
 });
 
@@ -306,7 +309,7 @@ describe("CallBlock — appel entrant", () => {
     expect(box.rejected).toEqual(["declined"]);
     expect(outcome(call)).toEqual({
       type: "call:missed",
-      data: { reason: "Appel refusé", failed: false },
+      data: { reason: { key: "reason.declined" }, failed: false },
     });
   });
 
@@ -317,7 +320,7 @@ describe("CallBlock — appel entrant", () => {
     expect(box.rejected).toEqual([]);
     expect(outcome(call)).toEqual({
       type: "call:missed",
-      data: { reason: "Appel manqué", failed: false },
+      data: { reason: { key: "reason.missed" }, failed: false },
     });
   });
 
@@ -330,7 +333,7 @@ describe("CallBlock — appel entrant", () => {
       expect(box.rejected).toEqual(["timeout"]);
       expect(outcome(call)).toEqual({
         type: "call:missed",
-        data: { reason: "Appel manqué (sans réponse)", failed: false },
+        data: { reason: { key: "reason.missedNoAnswer" }, failed: false },
       });
     } finally {
       vi.useRealTimers();
@@ -346,7 +349,10 @@ describe("CallBlock — appel entrant", () => {
     // qu'un manqué, mais l'écran doit en montrer la cause
     expect(outcome(call)).toEqual({
       type: "call:missed",
-      data: { reason: "User Denied Media Access", failed: true },
+      data: {
+        reason: { key: "misc.raw", vars: { text: "User Denied Media Access" } },
+        failed: true,
+      },
     });
   });
 
@@ -371,7 +377,7 @@ describe("CallBlock — ce que le bloc consomme pour son hôte", () => {
     call.send({ type: "sip:disconnected" });
     expect(box.session.terminated).toBe(1);
     // l'hôte est suspendu : c'est le bloc qui a écrit dans son contexte
-    expect(call.context.lastError).toBe("Connexion au proxy perdue pendant l'appel");
+    expect(call.context.lastError).toEqual({ key: "error.proxyLostDuringCall" });
     expect(call.context.suspectFields).toBe("proxy");
     box.sendCall({ type: "sip:ended", cause: "BYE" });
     expect(outcome(call)).toMatchObject({ type: "call:dropped" });
@@ -392,7 +398,10 @@ describe("CallBlock — ce que le bloc consomme pour son hôte", () => {
     const call = startCall(handle);
     box.sendCall({ type: "sip:accepted" });
     call.send({ type: "sip:registrationFailed", cause: "Timeout", statusCode: 408 });
-    expect(call.context.lastError).toBe("Enregistrement perdu : Timeout");
+    expect(call.context.lastError).toEqual({
+      key: "error.regLost",
+      vars: { cause: "Timeout" },
+    });
     expect(call.sbb?.state).toBe("connected");
     expect(call.pending).toEqual([]); // rien n'est resté en attente
   });

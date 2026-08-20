@@ -1,6 +1,7 @@
 import type { SbbReturn, TaskResult } from "finite-state-language";
 import type { AccountConfig, CallDirection, CallLogEntry } from "../storage/store.js";
 import type { CallMedia, CallSession, CallSipEvent, SipEvent } from "../sip/port.js";
+import type { Msg } from "../i18n/types.js";
 
 /** Contenu du formulaire de configuration. `password: null` = inchangé (conserver le HA1 existant). */
 export interface ConfigForm {
@@ -79,18 +80,18 @@ export type CallReturn =
   /** Établi puis raccroché normalement, d'un côté ou de l'autre. */
   | SbbReturn<"call", "answered", { connectedAt: number; media: CallMedia; endedBy: "local" | "remote" }>
   /** Établi puis coupé : perte du transport, ou fin de session imputée au réseau. */
-  | SbbReturn<"call", "dropped", { connectedAt: number | null; media: CallMedia; reason: string }>
+  | SbbReturn<"call", "dropped", { connectedAt: number | null; media: CallMedia; reason: Msg }>
   /** Sortant refusé par le distant, ou impossible à placer. */
-  | SbbReturn<"call", "rejected", { reason: string }>
+  | SbbReturn<"call", "rejected", { reason: Msg }>
   /** Sortant abandonné par l'utilisateur avant toute réponse. */
-  | SbbReturn<"call", "canceled", { reason: string }>
+  | SbbReturn<"call", "canceled", { reason: Msg }>
   /**
    * Entrant jamais décroché. `failed` sépare les deux cas que l'historique
    * consigne pareil mais que l'écran ne doit pas montrer pareil : refusé ou
    * manqué (rien à signaler), contre échoué techniquement — média refusé par
    * l'OS, réponse finale d'erreur après le décrochage — où la cause s'affiche.
    */
-  | SbbReturn<"call", "missed", { reason: string; failed: boolean }>;
+  | SbbReturn<"call", "missed", { reason: Msg; failed: boolean }>;
 
 export type PhoneEvent =
   | { type: "ui:configure" }

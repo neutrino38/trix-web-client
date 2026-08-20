@@ -6,6 +6,12 @@
 import { describe, expect, it } from "vitest";
 import { defineMachine, goto, stay } from "finite-state-language";
 import { machineLogger, watchMachine, type Diagnosable, type Sink } from "../src/ui/diagnostics.js";
+import { useLocale } from "../src/i18n/index.js";
+import { msg, type Msg } from "../src/i18n/types.js";
+
+// les traces sortent traduites, comme l'écran : un rapport de bug reste
+// lisible par celui qui l'a produit
+await useLocale("fr");
 
 function fakeSink() {
   const lines = { error: [] as string[], warn: [] as string[], debug: [] as string[] };
@@ -18,9 +24,9 @@ function fakeSink() {
 }
 
 interface Ctx {
-  lastError: string | null;
+  lastError: Msg | null;
   lastErrorCode: string | null;
-  callError: string | null;
+  callError: Msg | null;
 }
 
 type Ev =
@@ -38,7 +44,7 @@ const Machine = defineMachine<Ctx, Ev>()({
     initial_state: {
       on: {
         fail: (_ev, ctx) => {
-          ctx.lastError = "Connexion au proxy perdue";
+          ctx.lastError = msg("error.proxyLost");
           ctx.lastErrorCode = "WSS_LOST";
           return goto("down");
         },
@@ -47,7 +53,7 @@ const Machine = defineMachine<Ctx, Ev>()({
         },
         ok: () => stay("rien à signaler"),
         clear: (_ev, ctx) => {
-          ctx.callError = "486 Busy Here";
+          ctx.callError = msg("reason.sip", { cause: "Busy Here", code: 486 });
           return stay("appel refusé");
         },
       },
@@ -90,7 +96,7 @@ describe("traces d'erreur des automates", () => {
 
     m.send({ type: "clear" });
     await tick();
-    expect(lines.error[0]).toContain("appel échoué : 486 Busy Here");
+    expect(lines.error[0]).toContain("appel échoué : Busy Here (SIP 486)");
   });
 
   it("signale un événement resté en file d'attente", async () => {

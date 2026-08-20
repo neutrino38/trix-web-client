@@ -25,6 +25,7 @@ import {
   setPanelWidth,
 } from "../../prefs.js";
 import { esc } from "../../el.js";
+import { t } from "../../../i18n/index.js";
 
 /** Rectangle avec une colonne à droite : le panneau lui-même (maquette 1b/1c). */
 const PANEL_GLYPH = `<path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/>`;
@@ -44,7 +45,7 @@ export function panelIcon(collapsed: boolean): string {
  * au hors-appel, faute de place à 300 px).
  */
 export function panelToggleLabel(collapsed: boolean): string {
-  return collapsed ? "Afficher le tchat" : "Masquer le panneau latéral";
+  return t(collapsed ? "panel.showChat" : "panel.hide");
 }
 
 /**
@@ -55,9 +56,9 @@ export function panelToggleLabel(collapsed: boolean): string {
  */
 export function panelHandle(width: number): string {
   return `<div class="panel-handle" data-ref="panel-handle" tabindex="0"
-       role="separator" aria-orientation="vertical" aria-label="Largeur du panneau"
+       role="separator" aria-orientation="vertical" aria-label="${esc(t("panel.handleAria"))}"
        aria-valuenow="${width}" aria-valuemin="${PANEL_MIN}" aria-valuemax="${panelMax()}"
-       title="${esc("Élargir le panneau — 33 % de la largeur au maximum")}"><span></span></div>`;
+       title="${esc(t("panel.handleTitle"))}"><span></span></div>`;
 }
 
 /** Pas du pilotage clavier : fin par défaut, large avec Maj. */

@@ -26,6 +26,7 @@ import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
 import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { parseIceForm } from "../sip/ice.js";
+import { msg, type Msg } from "../i18n/types.js";
 
 export interface PhoneCtx {
   /** Injectés via start({ args }) — jamais recréés par la machine. */
@@ -33,7 +34,11 @@ export interface PhoneCtx {
   sip: SipPort;
   config: AccountConfig | null;
   handle: SipHandle | null;
-  lastError: string | null;
+  /**
+   * Erreur métier en cours, gardée sous forme de message différé : la
+   * machine dit **quoi**, l'écran dit dans quelle langue (`i18n/types.ts`).
+   */
+  lastError: Msg | null;
   /** Code technique affiché discrètement sous l'erreur (ex. "SIP 404", "WSS_CONNECT"). */
   lastErrorCode: string | null;
   /** Champ du formulaire à surligner après un échec (proxy, identifiants, serveur ICE…). */
@@ -54,7 +59,7 @@ export interface PhoneCtx {
    */
   call: CallView | null;
   /** Issue du dernier appel raté (486, pas de réponse…), affichée près du champ d'adresse. */
-  callError: string | null;
+  callError: Msg | null;
   /** Historique d'appels du compte courant, persisté chiffré. */
   history: CallLogEntry[];
   /** Boucle de reconnexion active : les échecs de connexion repartent en reconnecting. */
@@ -80,7 +85,7 @@ function stopSip(ctx: PhoneCtx): void {
  * problème est côté transport (un refus de credentials ne se réglera pas
  * en réessayant).
  */
-function fail(ctx: PhoneCtx, message: string, code: string, fields: SuspectField) {
+function fail(ctx: PhoneCtx, message: Msg, code: string, fields: SuspectField) {
   ctx.lastError = message;
   ctx.lastErrorCode = code;
   ctx.suspectFields = fields;
@@ -163,7 +168,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   const f = ev.form;
   const parsed = parseSipUri(f.uri);
   if (!parsed) {
-    ctx.lastError = "Adresse SIP invalide (attendu : utilisateur@domaine)";
+    ctx.lastError = msg("error.invalidUri");
     ctx.suspectFields = "credentials";
     return stay("URI invalide");
   }
@@ -179,7 +184,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
         ? ctx.config.ha1
         : null;
   if (!ha1) {
-    ctx.lastError = "Mot de passe requis";
+    ctx.lastError = msg("error.passwordRequired");
     ctx.suspectFields = "credentials";
     return stay("mot de passe manquant");
   }
@@ -210,7 +215,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
  * explicitement, une coupure de proxy doit être reconnectée, et un
  * enregistrement perdu pendant l'appel prime sur un retour en `ready`.
  */
-function back(ctx: PhoneCtx, ev: CallReturn, callError: string | null) {
+function back(ctx: PhoneCtx, ev: CallReturn, callError: Msg | null) {
   recordCall(ctx, ev);
   const sleep = ctx.sleepRequested;
   ctx.sleepRequested = false;
@@ -220,7 +225,7 @@ function back(ctx: PhoneCtx, ev: CallReturn, callError: string | null) {
   ctx.callError = callError;
   if (sleep) return goto("sleeping", "veille : appel raccroché");
   if (ev.type === "call:dropped") {
-    ctx.callError = "Appel interrompu — connexion au proxy perdue";
+    ctx.callError = msg("error.callDropped");
     return goto("reconnecting", "proxy perdu pendant l'appel");
   }
   return ctx.lastError
@@ -334,7 +339,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           // même si la persistance échoue, la session en mémoire reste utilisable
           if (ev.ok) ctx.history = ev.value;
           else {
-            ctx.lastError = `Sauvegarde impossible : ${ev.error}`;
+            ctx.lastError = msg("error.saveFailed", { detail: String(ev.error) });
             ctx.history = [];
           }
           return goto("connecting");
@@ -355,21 +360,16 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // pas encore enregistré : un INVITE qui traînerait est décliné
         "sip:incoming": refuseIncoming("timeout"),
         "sip:invalidProxy": (ev, ctx) =>
-          fail(ctx, "Nom du proxy invalide — vérifiez l'adresse WSS", `URL: ${ev.detail}`, "proxy"),
+          fail(ctx, msg("error.invalidProxy"), `URL: ${ev.detail}`, "proxy"),
         "sip:disconnected": (_ev, ctx) =>
-          fail(
-            ctx,
-            "Impossible de se connecter au proxy (connexion WSS refusée)",
-            "WSS_CONNECT",
-            "proxy",
-          ),
+          fail(ctx, msg("error.wssRefused"), "WSS_CONNECT", "proxy"),
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         "sys:wake": () => undefined,
       },
       after: {
         delay: 10_000,
         then: (ctx) =>
-          fail(ctx, "Le proxy ne répond pas (timeout WebSocket)", "WSS_TIMEOUT", "proxy"),
+          fail(ctx, msg("error.wssTimeout"), "WSS_TIMEOUT", "proxy"),
       },
       meta: { screen: "call" },
     },
@@ -380,26 +380,21 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": (ev, ctx) =>
           isCredentialsError(ev.statusCode)
-            ? fail(
-                ctx,
-                "Adresse SIP, mot de passe ou identifiant d'authentification incorrect",
-                `SIP ${ev.statusCode}`,
-                "credentials",
-              )
+            ? fail(ctx, msg("error.badCredentials"), `SIP ${ev.statusCode}`, "credentials")
             : fail(
                 ctx,
-                `Enregistrement refusé : ${ev.cause}`,
+                msg("error.regRefused", { cause: ev.cause }),
                 ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause,
                 "credentials",
               ),
         "sip:disconnected": (_ev, ctx) =>
-          fail(ctx, "Connexion perdue pendant l'enregistrement", "WSS_LOST", "proxy"),
+          fail(ctx, msg("error.wssLostDuringReg"), "WSS_LOST", "proxy"),
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         "sys:wake": () => undefined,
       },
       after: {
         delay: 30_000,
-        then: (ctx) => fail(ctx, "Le registrar ne répond pas", "SIP_TIMEOUT", "credentials"),
+        then: (ctx) => fail(ctx, msg("error.registrarTimeout"), "SIP_TIMEOUT", "credentials"),
       },
       meta: { screen: "call" },
     },
@@ -439,13 +434,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // sans code de réponse, l'échec vient du transport (REGISTER resté
         // sans réponse, socket morte) : on reconnecte au lieu d'accuser le compte
         "sip:registrationFailed": (ev, ctx) => {
-          ctx.lastError = `Enregistrement perdu : ${ev.cause}`;
+          ctx.lastError = msg("error.regLost", { cause: ev.cause });
           ctx.lastErrorCode = ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause;
           ctx.suspectFields = ev.statusCode ? "credentials" : "proxy";
           return ev.statusCode ? goto("reg_failed") : goto("reconnecting", "REGISTER sans réponse");
         },
         "sip:disconnected": (_ev, ctx) => {
-          ctx.lastError = "Connexion au proxy perdue";
+          ctx.lastError = msg("error.proxyLost");
           ctx.lastErrorCode = "WSS_LOST";
           ctx.suspectFields = "proxy";
           return goto("reconnecting", "connexion perdue");

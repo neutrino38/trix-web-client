@@ -231,7 +231,7 @@ describe("PhoneMachine — configuration", () => {
       },
     });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("Adresse SIP invalide (attendu : utilisateur@domaine)");
+    expect(phone.context.lastError).toEqual({ key: "error.invalidUri" });
   });
 
   it("identifiant d'authentification distinct : le HA1 est calculé avec lui", async () => {
@@ -279,7 +279,7 @@ describe("PhoneMachine — configuration", () => {
       },
     });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("Mot de passe requis");
+    expect(phone.context.lastError).toEqual({ key: "error.passwordRequired" });
   });
 
   it("mot de passe vide avec compte existant : conserve le HA1 (même identité/domaine)", async () => {
@@ -326,7 +326,7 @@ describe("PhoneMachine — configuration", () => {
       },
     });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("Mot de passe requis");
+    expect(phone.context.lastError).toEqual({ key: "error.passwordRequired" });
   });
 
   it("ajout d'un identifiant d'authentification sans mot de passe : refusé", async () => {
@@ -349,7 +349,7 @@ describe("PhoneMachine — configuration", () => {
       },
     });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("Mot de passe requis");
+    expect(phone.context.lastError).toEqual({ key: "error.passwordRequired" });
   });
 
   it("serveurs STUN/TURN : persistés avec le compte et passés au port SIP", async () => {
@@ -399,7 +399,7 @@ describe("PhoneMachine — configuration", () => {
       },
     });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toContain("Serveur STUN invalide");
+    expect(phone.context.lastError).toEqual({ key: "error.stunInvalid" });
     expect(phone.context.suspectFields).toBe("stun");
     expect(box.saved).toEqual(CFG); // rien n'a été enregistré
   });
@@ -439,7 +439,10 @@ describe("PhoneMachine — enregistrement", () => {
     const { phone, sip } = await bootTo("registering", CFG);
     sip.send({ type: "sip:registrationFailed", cause: "403 Forbidden" });
     expect(phone.state).toBe("reg_failed");
-    expect(phone.context.lastError).toContain("403 Forbidden");
+    expect(phone.context.lastError).toEqual({
+      key: "error.regRefused",
+      vars: { cause: "403 Forbidden" },
+    });
     expect(sip.stopped).toBe(1);
 
     phone.send({ type: "ui:retry" });
@@ -452,7 +455,7 @@ describe("PhoneMachine — enregistrement", () => {
     const sip2 = phone.context.sip as FakeSip;
     sip2.send({ type: "sip:invalidProxy", detail: "Invalid JsSIP.UA configuration: sockets" });
     expect(phone.state).toBe("reg_failed");
-    expect(phone.context.lastError).toBe("Nom du proxy invalide — vérifiez l'adresse WSS");
+    expect(phone.context.lastError).toEqual({ key: "error.invalidProxy" });
     expect(phone.context.lastErrorCode).toContain("Invalid JsSIP.UA configuration");
   });
 
@@ -460,7 +463,7 @@ describe("PhoneMachine — enregistrement", () => {
     const { phone, sip } = await bootTo("connecting", CFG);
     sip.send({ type: "sip:disconnected" });
     expect(phone.state).toBe("reg_failed");
-    expect(phone.context.lastError).toContain("Impossible de se connecter au proxy");
+    expect(phone.context.lastError).toEqual({ key: "error.wssRefused" });
     expect(phone.context.lastErrorCode).toBe("WSS_CONNECT");
   });
 
@@ -468,7 +471,7 @@ describe("PhoneMachine — enregistrement", () => {
     const { phone, sip } = await bootTo("registering", CFG);
     sip.send({ type: "sip:registrationFailed", cause: "Not Found", statusCode: 404 });
     expect(phone.state).toBe("reg_failed");
-    expect(phone.context.lastError).toBe("Adresse SIP, mot de passe ou identifiant d'authentification incorrect");
+    expect(phone.context.lastError).toEqual({ key: "error.badCredentials" });
     expect(phone.context.lastErrorCode).toBe("SIP 404");
   });
 
@@ -479,7 +482,7 @@ describe("PhoneMachine — enregistrement", () => {
     expect(phone.context.suspectFields).toBe("credentials");
     phone.send({ type: "ui:backToSettings" });
     expect(phone.state).toBe("configuring");
-    expect(phone.context.lastError).toBe("Adresse SIP, mot de passe ou identifiant d'authentification incorrect");
+    expect(phone.context.lastError).toEqual({ key: "error.badCredentials" });
     expect(phone.context.lastErrorCode).toBe("SIP 404");
     expect(phone.context.suspectFields).toBe("credentials");
     expect(phone.context.config).toEqual(CFG); // formulaire pré-rempli
@@ -544,7 +547,7 @@ describe("PhoneMachine — enregistrement", () => {
       sip.send({ type: "sip:connected" });
       await vi.advanceTimersByTimeAsync(30_000);
       expect(phone.state).toBe("reg_failed");
-      expect(phone.context.lastError).toBe("Le registrar ne répond pas");
+      expect(phone.context.lastError).toEqual({ key: "error.registrarTimeout" });
     } finally {
       vi.useRealTimers();
     }
@@ -577,7 +580,10 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
     expect(sip.calls[0]!.media.video).toBe(true);
     sip.sendCall({ type: "sip:failed", cause: "Busy", statusCode: 486 });
     expect(phone.state).toBe("ready");
-    expect(phone.context.callError).toBe("Busy (SIP 486)");
+    expect(phone.context.callError).toEqual({
+      key: "reason.sip",
+      vars: { cause: "Busy", code: 486 },
+    });
   });
 
   it("raccrocher : consommé par le bloc, session terminée, retour ready", async () => {
@@ -713,7 +719,7 @@ describe("PhoneMachine — appel entrant", () => {
       outcome: "missed",
       connectedAt: null,
       endedBy: null,
-      reason: "Appel refusé",
+      reason: { key: "reason.declined" },
     });
 
     const missed = fakeIncoming();
@@ -721,7 +727,7 @@ describe("PhoneMachine — appel entrant", () => {
     missed.box.sendCall({ type: "sip:failed", cause: "Canceled", originator: "remote" });
     expect(phone.context.history[0]).toMatchObject({
       outcome: "missed",
-      reason: "Appel manqué",
+      reason: { key: "reason.missed" },
     });
     expect(phone.context.history).toHaveLength(2);
   });
@@ -765,7 +771,7 @@ describe("PhoneMachine — historique d'appels", () => {
     expect(phone.context.history[0]).toMatchObject({
       outcome: "failed",
       endedBy: null,
-      reason: "Busy (SIP 486)",
+      reason: { key: "reason.sip", vars: { cause: "Busy", code: 486 } },
       connectedAt: null,
     });
   });
@@ -865,11 +871,11 @@ describe("PhoneMachine — perte du proxy et veille", () => {
     sip.sendCall({ type: "sip:ended", cause: "Connection Error", originator: "system" });
 
     expect(phone.state).toBe("reconnecting");
-    expect(phone.context.callError).toBe("Appel interrompu — connexion au proxy perdue");
+    expect(phone.context.callError).toEqual({ key: "error.callDropped" });
     expect(phone.context.history[0]).toMatchObject({
       outcome: "dropped",
       endedBy: "network",
-      reason: "Connexion au proxy perdue pendant l'appel",
+      reason: { key: "error.proxyLostDuringCall" },
     });
   });
 
