@@ -24,7 +24,8 @@ import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "
 import { computeHa1 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
-import type { CallReturn, CallView, PhoneEvent } from "./events.js";
+import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
+import { parseIceForm } from "../sip/ice.js";
 
 export interface PhoneCtx {
   /** Injectés via start({ args }) — jamais recréés par la machine. */
@@ -35,8 +36,8 @@ export interface PhoneCtx {
   lastError: string | null;
   /** Code technique affiché discrètement sous l'erreur (ex. "SIP 404", "WSS_CONNECT"). */
   lastErrorCode: string | null;
-  /** Champs du formulaire à surligner après un échec : le proxy (connexion) ou les identifiants SIP. */
-  suspectFields: "proxy" | "credentials" | null;
+  /** Champ du formulaire à surligner après un échec (proxy, identifiants, serveur ICE…). */
+  suspectFields: SuspectField | null;
   /** Appel en cours de lancement/déroulement, gardé jusqu'au retour du bloc pour l'historique. */
   pendingCall: {
     target: string;
@@ -79,7 +80,7 @@ function stopSip(ctx: PhoneCtx): void {
  * problème est côté transport (un refus de credentials ne se réglera pas
  * en réessayant).
  */
-function fail(ctx: PhoneCtx, message: string, code: string, fields: "proxy" | "credentials") {
+function fail(ctx: PhoneCtx, message: string, code: string, fields: SuspectField) {
   ctx.lastError = message;
   ctx.lastErrorCode = code;
   ctx.suspectFields = fields;
@@ -163,6 +164,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   const parsed = parseSipUri(f.uri);
   if (!parsed) {
     ctx.lastError = "Adresse SIP invalide (attendu : utilisateur@domaine)";
+    ctx.suspectFields = "credentials";
     return stay("URI invalide");
   }
   const { username, domain } = parsed;
@@ -178,7 +180,16 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
         : null;
   if (!ha1) {
     ctx.lastError = "Mot de passe requis";
+    ctx.suspectFields = "credentials";
     return stay("mot de passe manquant");
+  }
+  // serveurs ICE : optionnels, mais une saisie fautive ne doit pas être
+  // enregistrée en silence — l'appel échouerait plus tard, sans explication
+  const ice = parseIceForm(f, ctx.config?.ice ?? null);
+  if (!ice.ok) {
+    ctx.lastError = ice.error;
+    ctx.suspectFields = ice.field;
+    return stay("serveur ICE invalide");
   }
   ctx.config = {
     proxy: f.proxy,
@@ -188,6 +199,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     authUsername,
     ha1,
     flashAlert: f.flashAlert,
+    ice: ice.ice,
   };
   return goto("saving");
 }

@@ -3,6 +3,7 @@ import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
 import { alertPermission, requestAlertPermission } from "../alert.js";
 import { setTheme, themeChoice, type ThemeChoice } from "../prefs.js";
+import type { SuspectField } from "../../machines/events.js";
 
 /**
  * État de la permission de notification — le seul canal d'alerte qui traverse
@@ -39,7 +40,8 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const suspect = phone.context.suspectFields;
   // "Mot de passe requis" (validation locale) ne vise que le mot de passe
-  const inv = (f: "proxy" | "credentials"): string => (suspect === f ? " class=\"invalid\"" : "");
+  const inv = (f: SuspectField): string => (suspect === f ? " class=\"invalid\"" : "");
+  const turn = cfg?.ice.turn ?? null;
 
   const node = el(`
     <div class="screen-config">
@@ -48,6 +50,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         ${err ? `<div class="error-banner">${esc(err)}</div>` : ""}
         ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
         <div class="config-cols">
+        <section class="config-col">
         <h3>Compte SIP</h3>
         <div class="field">
           <label for="f-proxy">Serveur SIP</label>
@@ -83,7 +86,52 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         <div class="note">Le mot de passe n'est pas conservé : seule une empreinte (HA1)
           est stockée, chiffrée, dans ce navigateur.</div>
 
-        <h3 class="col-break">Alertes et affichage</h3>
+        </section>
+
+        <section class="config-col">
+        <h3>Traversée de NAT</h3>
+        <p class="section-hint">Serveurs fournis par votre opérateur SIP. Sans eux, un appel
+          entre deux réseaux privés peut aboutir sans qu'aucun son ne passe.</p>
+        <div class="field">
+          <label for="f-stun">Serveur STUN</label>
+          <input id="f-stun" name="stun" autocomplete="off" placeholder="stun.example.fr:3478"
+                 value="${cfg?.ice.stun ? esc(cfg.ice.stun) : ""}"${inv("stun")}>
+          <span class="hint">Facultatif. Hôte seul ou hôte:port — sans port, 3478 est utilisé.</span>
+        </div>
+        <div class="field">
+          <label for="f-turn">Serveur TURN</label>
+          <input id="f-turn" name="turn" autocomplete="off" placeholder="turn.example.fr:3478"
+                 value="${turn ? esc(turn.host) : ""}"${inv("turn")}>
+          <span class="hint">Facultatif — relais des flux média quand la connexion directe
+            échoue. Laisser vide pour ne pas en utiliser.</span>
+        </div>
+        <div class="field">
+          <label for="f-turn-user">Identifiant TURN</label>
+          <input id="f-turn-user" name="turnUsername" autocomplete="off"
+                 value="${turn ? esc(turn.username) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
+        </div>
+        <div class="field">
+          <label for="f-turn-pass">Mot de passe TURN</label>
+          <input id="f-turn-pass" name="turnPassword" type="password" autocomplete="off"
+                 placeholder="${turn ? "•••••• (déjà défini)" : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
+          ${turn ? `<span class="hint">Laisser vide pour conserver le mot de passe actuel.</span>` : ""}
+        </div>
+        <div class="field">
+          <label class="checkline" for="f-turn-tls">
+            <input type="checkbox" id="f-turn-tls" name="turnTls"
+                   ${turn?.tls ? "checked" : ""} ${turn ? "" : "disabled"}>
+            <span><b>TURN sur TLS</b> — relais chiffré (« turns: »), qui passe là où seul
+              le trafic TLS est autorisé</span>
+          </label>
+          <span class="hint">Sans port explicite, 5349 est alors utilisé au lieu de 3478.</span>
+        </div>
+        <div class="note">Le mot de passe TURN, lui, est conservé (chiffré) : le relais réclame
+          le secret lui-même à chaque appel, une empreinte n'y suffirait pas.</div>
+
+        </section>
+
+        <section class="config-col">
+        <h3>Alertes et affichage</h3>
         <p class="section-hint">Ces réglages prennent effet immédiatement, sans attendre
           l'enregistrement — sauf le flash, qui suit le compte.</p>
         <div class="field">
@@ -112,6 +160,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
           </div>
           <span class="hint">« Système » suit le réglage clair/sombre de votre appareil.</span>
         </fieldset>
+        </section>
         </div>
         <div class="form-actions">
           <button class="btn primary" type="submit" ${saving ? "disabled" : ""}>
@@ -126,12 +175,21 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const authToggle = form.querySelector("#f-auth-toggle") as HTMLInputElement;
   const authInput = form.querySelector("#f-auth") as HTMLInputElement;
   const flashToggle = form.querySelector("#f-flash") as HTMLInputElement;
+  const turnInput = form.querySelector("#f-turn") as HTMLInputElement;
+  // identifiants et TLS n'ont de sens qu'avec un serveur TURN : ils suivent le champ
+  const turnDeps = [
+    form.querySelector("#f-turn-user") as HTMLInputElement,
+    form.querySelector("#f-turn-pass") as HTMLInputElement,
+    form.querySelector("#f-turn-tls") as HTMLInputElement,
+  ];
+  const turnTls = turnDeps[2]!;
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const v = (name: string): string =>
       (form.querySelector(`[name="${name}"]`) as HTMLInputElement).value.trim();
     const password = v("password");
+    const turnPass = v("turnPassword");
     const authUsername = authToggle.checked ? v("authUsername") : "";
     phone.send({
       type: "ui:saveConfig",
@@ -142,8 +200,18 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         authUsername: authUsername === "" ? null : authUsername,
         password: password === "" ? null : password,
         flashAlert: flashToggle.checked,
+        stun: v("stun"),
+        turn: v("turn"),
+        turnUsername: v("turnUsername"),
+        turnPassword: turnPass === "" ? null : turnPass,
+        turnTls: turnTls.checked,
       },
     });
+  });
+
+  turnInput.addEventListener("input", () => {
+    const off = turnInput.value.trim() === "";
+    for (const dep of turnDeps) dep.disabled = off;
   });
 
   authToggle.addEventListener("change", () => {

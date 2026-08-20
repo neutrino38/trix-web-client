@@ -59,7 +59,8 @@ npm run diagrams  # regenerates docs/DIAGRAMS.md from the machine sources
 
 The build is a set of static files. Serve `dist/` over HTTPS — WebRTC needs a secure
 context, or the browser denies camera and microphone access. No backend ships with the
-client: the user types the `wss://` URL of their SIP proxy in the configuration screen.
+client: the user types the `wss://` URL of their SIP proxy in the configuration screen,
+along with the optional STUN/TURN servers used for NAT traversal (TURN over TLS included).
 
 Ready-to-use vhosts for `trix.example.com`, with security headers, the production CSP and
 asset caching:

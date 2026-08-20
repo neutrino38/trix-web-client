@@ -6,6 +6,7 @@
  */
 
 import type { CallMedia } from "../sip/port.js";
+import { NO_ICE, type IceConfig } from "../sip/ice.js";
 
 export interface AccountConfig {
   proxy: string; // wss://…
@@ -21,6 +22,13 @@ export interface AccountConfig {
    * enregistrés avant son introduction.
    */
   flashAlert: boolean;
+  /**
+   * Serveurs STUN/TURN pour la traversée de NAT (`sip/ice.ts`). Réglage
+   * du compte : ces serveurs sont fournis par l'opérateur SIP, au même
+   * titre que le proxy. Aucun serveur pour les comptes enregistrés avant
+   * son introduction — l'appel se comporte comme avant.
+   */
+  ice: IceConfig;
 }
 
 export type CallDirection = "outgoing" | "incoming";
@@ -159,8 +167,14 @@ export function createBrowserStore(): SecureStore {
         const cfg = (await decryptGet(db, DATA_ID)) as AccountConfig | null;
         if (!cfg) return null;
         // comptes enregistrés avant l'ajout de ces champs : identifiant séparé
-        // absent, et flash actif (le désactiver ne peut être qu'un choix explicite)
-        return { ...cfg, authUsername: cfg.authUsername ?? null, flashAlert: cfg.flashAlert ?? true };
+        // absent, flash actif (le désactiver ne peut être qu'un choix explicite)
+        // et aucun serveur ICE
+        return {
+          ...cfg,
+          authUsername: cfg.authUsername ?? null,
+          flashAlert: cfg.flashAlert ?? true,
+          ice: cfg.ice ?? { ...NO_ICE },
+        };
       } finally {
         db.close();
       }

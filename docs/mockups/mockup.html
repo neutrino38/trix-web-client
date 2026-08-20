@@ -132,6 +132,7 @@
         <form novalidate>
           <h2>Paramètres</h2>
           <div class="config-cols">
+          <section class="config-col">
           <h3>Compte SIP</h3>
           <div class="field">
             <label for="f-proxy">Serveur SIP</label>
@@ -160,8 +161,46 @@
           </div>
           <div class="note">Le mot de passe n'est pas conservé : seule une empreinte (HA1)
             est stockée, chiffrée, dans ce navigateur.</div>
+          </section>
 
-          <h3 class="col-break">Alertes et affichage</h3>
+          <section class="config-col">
+          <h3>Traversée de NAT</h3>
+          <p class="section-hint">Serveurs fournis par votre opérateur SIP. Sans eux, un appel
+            entre deux réseaux privés peut aboutir sans qu'aucun son ne passe.</p>
+          <div class="field">
+            <label for="f-stun">Serveur STUN</label>
+            <input id="f-stun" value="stun.example.fr:3478">
+            <span class="hint">Facultatif. Hôte seul ou hôte:port — sans port, 3478 est utilisé.</span>
+          </div>
+          <div class="field">
+            <label for="f-turn">Serveur TURN</label>
+            <input id="f-turn" value="turn.example.fr">
+            <span class="hint">Facultatif — relais des flux média quand la connexion directe
+              échoue. Laisser vide pour ne pas en utiliser.</span>
+          </div>
+          <div class="field">
+            <label for="f-turn-user">Identifiant TURN</label>
+            <input id="f-turn-user" value="alice">
+          </div>
+          <div class="field">
+            <label for="f-turn-pass">Mot de passe TURN</label>
+            <input id="f-turn-pass" type="password" placeholder="•••••• (déjà défini)">
+            <span class="hint">Laisser vide pour conserver le mot de passe actuel.</span>
+          </div>
+          <div class="field">
+            <label class="checkline" for="f-turn-tls">
+              <input type="checkbox" id="f-turn-tls" checked>
+              <span><b>TURN sur TLS</b> — relais chiffré (« turns: »), qui passe là où seul
+                le trafic TLS est autorisé</span>
+            </label>
+            <span class="hint">Sans port explicite, 5349 est alors utilisé au lieu de 3478.</span>
+          </div>
+          <div class="note">Le mot de passe TURN, lui, est conservé (chiffré) : le relais réclame
+            le secret lui-même à chaque appel, une empreinte n'y suffirait pas.</div>
+          </section>
+
+          <section class="config-col">
+          <h3>Alertes et affichage</h3>
           <p class="section-hint">Ces réglages prennent effet immédiatement, sans attendre
             l'enregistrement — sauf le flash, qui suit le compte.</p>
           <div class="field">
@@ -187,6 +226,7 @@
             </div>
             <span class="hint">« Système » suit le réglage clair/sombre de votre appareil.</span>
           </fieldset>
+          </section>
           </div>
           <div class="form-actions">
             <button class="btn primary" type="button">Enregistrer et se connecter</button>

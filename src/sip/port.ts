@@ -7,6 +7,7 @@
 
 import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
+import { iceServers } from "./ice.js";
 import { offeredMedia } from "./sdp.js";
 
 export type SipEvent =
@@ -132,6 +133,11 @@ export function createJsSipPort(): SipPort {
         };
       }
 
+      // Serveurs ICE du compte : JsSIP les attend par session (`pcConfig`),
+      // pas sur l'UA — même configuration pour l'appel sortant et la
+      // réponse à un entrant.
+      const pcConfig: RTCConfiguration = { iceServers: iceServers(cfg.ice) };
+
       let stopped = false;
       ua.on("connected", () => send({ type: "sip:connected" }));
       ua.on("disconnected", () => {
@@ -159,7 +165,10 @@ export function createJsSipPort(): SipPort {
         "newRTCSession",
         (e: { originator: string; session: Session; request: { body?: string | null } }) => {
           if (e.originator !== "remote") return;
-          send({ type: "sip:incoming", call: wrapIncoming(e.session, e.request.body ?? null) });
+          send({
+            type: "sip:incoming",
+            call: wrapIncoming(e.session, e.request.body ?? null, pcConfig),
+          });
         },
       );
       ua.start();
@@ -177,6 +186,7 @@ export function createJsSipPort(): SipPort {
         call(target, media, sendCall) {
           const session = ua.call(target, {
             mediaConstraints: { audio: media.audio, video: media.video },
+            pcConfig,
           });
           bindSession(session, sendCall);
           return wrapSession(session);
@@ -213,7 +223,11 @@ const REJECT: Record<RejectReason, { status_code: number; reason_phrase: string 
   timeout: { status_code: 480, reason_phrase: "Temporarily Unavailable" },
 };
 
-function wrapIncoming(session: Session, sdp: string | null): IncomingCall {
+function wrapIncoming(
+  session: Session,
+  sdp: string | null,
+  pcConfig: RTCConfiguration,
+): IncomingCall {
   const from = session.remote_identity;
   return {
     from: from.uri.toString(),
@@ -224,7 +238,7 @@ function wrapIncoming(session: Session, sdp: string | null): IncomingCall {
       return wrapSession(session);
     },
     answer(media) {
-      session.answer({ mediaConstraints: { audio: media.audio, video: media.video } });
+      session.answer({ mediaConstraints: { audio: media.audio, video: media.video }, pcConfig });
     },
     reject(reason) {
       if (!session.isEnded()) session.terminate(REJECT[reason]);

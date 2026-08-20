@@ -131,24 +131,28 @@ body {
 .fsl-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
 /* ---------- écran configuration ---------- */
-.screen-config { height: 100%; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
-.screen-config form { width: min(860px, 92vw); display: flex; flex-direction: column; gap: 0.9rem; padding: 2rem 0; }
+/* `safe center` : centré tant que ça tient, aligné en haut sinon — un
+   centrage strict tronque le début du formulaire, hors d'atteinte du
+   défilement, dès qu'il dépasse la hauteur du cadre */
+.screen-config { height: 100%; display: flex; align-items: safe center; justify-content: center; overflow-y: auto; }
+.screen-config form { width: min(1180px, 94vw); display: flex; flex-direction: column; gap: 0.9rem; padding: 2rem 0; }
 
-/* Deux colonnes en flux continu plutôt que deux conteneurs : l'ordre de
-   lecture, la tabulation et le lien titre → réglages restent ceux du DOM,
-   seule la mise en page se scinde. La coupure est explicite (`.col-break`)
-   et non laissée à l'équilibrage : elle tombe entre ce qui appartient au
-   compte et ce qui appartient au navigateur. */
-.config-cols { columns: 2; column-gap: 2.4rem; }
-.config-cols > * { break-inside: avoid; margin-bottom: 0.9rem; }
-.col-break { break-before: column; }
-/* une colonne dès que la place manque : deux colonnes de 300 px seraient
-   pires qu'un formulaire long */
+/* Trois colonnes, une par domaine : le compte, la traversée de NAT, les
+   réglages du navigateur. Chaque colonne est un conteneur explicite plutôt
+   qu'une coupure dans un flux multi-colonnes : ce flux répartissait sur la
+   hauteur disponible et poussait hors écran, sans défilement possible, tout
+   ce qui n'y tenait pas. */
+.config-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6rem 2.4rem; align-items: start; }
+/* min-width: 0 — sans quoi un placeholder large élargit sa colonne */
+.config-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+/* deux colonnes quand trois seraient étriquées, puis une seule : des
+   colonnes de 300 px seraient pires qu'un formulaire long */
+@media (max-width: 1100px) {
+  .config-cols { grid-template-columns: repeat(2, 1fr); }
+  .screen-config form { width: min(800px, 92vw); }
+}
 @media (max-width: 800px) {
-  .config-cols { columns: 1; }
-  /* les sections se suivent : il leur faut de l'air, faute de colonne pour
-     les séparer */
-  .col-break { break-before: auto; margin-top: 1.6rem; }
+  .config-cols { grid-template-columns: 1fr; }
   .screen-config form { width: min(400px, 90vw); }
 }
 .screen-config h2 { font-size: 1.15rem; font-weight: 600; }

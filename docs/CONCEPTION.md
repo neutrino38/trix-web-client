@@ -339,6 +339,33 @@ const ua = new JsSIP.UA({
 - Tchat (phase 4) : data channel via `session.connection.createDataChannel("t140")` —
   à concevoir après analyse de `../generique/composants/tchat3`.
 
+### 5.1 Serveurs ICE (STUN / TURN)
+
+Réglage **du compte** (`AccountConfig.ice`), au même titre que le proxy : c'est
+l'opérateur SIP qui fournit ces serveurs, et le paramétrage doit suivre l'utilisateur
+d'un poste à l'autre. `sip/ice.ts` en est le seul juge — saisie, validation, dérivation
+du schéma — et rend un `RTCIceServer[]` ; le port SIP le passe en `pcConfig`, que JsSIP
+attend **par session** (`ua.call()` et `session.answer()`), jamais sur l'UA.
+
+```
+champ « Serveur STUN » : hôte[:port]           → stun:hôte[:port]
+champ « Serveur TURN » : hôte[:port]           → turn:hôte[:port]
+       + case « TURN sur TLS »                 → turns:hôte[:port]?transport=tcp
+```
+
+- L'utilisateur saisit un **hôte**, pas une URL : un schéma collé depuis une
+  documentation (`stun:`, `turns:`) et un `?transport=…` sont retirés à la saisie. La case
+  TLS est donc la seule source de vérité du schéma TURN — rien ne peut la contredire.
+- Sans port : 3478 (`turn:`) ou 5349 (`turns:`) par défaut, selon RFC 5766/7065 — la pile
+  WebRTC s'en charge, on ne complète pas la saisie.
+- Les deux champs sont **facultatifs** : vides, aucun serveur n'est déclaré et l'appel
+  reste possible en direct (même réseau, IP publique).
+- TURN exige des identifiants (« long-term credential » : le relais est toujours
+  authentifié). Contrairement au mot de passe SIP, le mot de passe TURN est **conservé en
+  clair dans le coffre chiffré** (§6) : le mécanisme réclame le secret lui-même à chaque
+  allocation, aucune empreinte ne peut s'y substituer. Il n'est ressaisi que s'il change —
+  le formulaire le reprend tant que serveur et identifiant sont inchangés.
+
 ## 6. Stockage sécurisé du compte
 
 **Réponse à la question de goals.md (« JS offre-t-il une possibilité de stockage sûr ? ») :**
@@ -367,6 +394,7 @@ interface AccountConfig {
   authUsername: string | null; // identifiant d'authentification, si distinct
   ha1: string;          // jamais le mot de passe
   flashAlert: boolean;  // réglage d'accessibilité (§4.3) — suit le compte, pas le navigateur
+  ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
 }
 interface SecureStore {
   load(): Promise<AccountConfig | null>;

@@ -16,6 +16,7 @@ import type {
   SipPort,
 } from "../src/sip/port.js";
 import { computeHa1 } from "../src/storage/ha1.js";
+import { NO_ICE } from "../src/sip/ice.js";
 
 const CFG: AccountConfig = {
   proxy: "wss://sip.example.fr:8443/ws",
@@ -25,6 +26,7 @@ const CFG: AccountConfig = {
   authUsername: null,
   ha1: computeHa1("alice", "example.fr", "secret123"),
   flashAlert: true,
+  ice: NO_ICE,
 };
 
 function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[] = []) {
@@ -173,6 +175,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: null,
         password: "secret123",
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -193,6 +200,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: null,
         password: "secret123",
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -211,6 +223,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: null,
         password: "secret123",
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     expect(phone.state).toBe("configuring");
@@ -229,6 +246,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: "alice-auth",
         password: "secret123",
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -242,7 +264,19 @@ describe("PhoneMachine — configuration", () => {
     phone.send({ type: "ui:configure" });
     phone.send({
       type: "ui:saveConfig",
-      form: { proxy: "wss://x", uri: "u@x.fr", displayName: "", authUsername: null, password: null, flashAlert: true },
+      form: {
+        proxy: "wss://x",
+        uri: "u@x.fr",
+        displayName: "",
+        authUsername: null,
+        password: null,
+        flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
+      },
     });
     expect(phone.state).toBe("configuring");
     expect(phone.context.lastError).toBe("Mot de passe requis");
@@ -260,6 +294,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: null,
         password: null,
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -279,6 +318,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: null,
         password: null,
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     expect(phone.state).toBe("configuring");
@@ -297,10 +341,67 @@ describe("PhoneMachine — configuration", () => {
         authUsername: "alice-auth",
         password: null,
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     expect(phone.state).toBe("configuring");
     expect(phone.context.lastError).toBe("Mot de passe requis");
+  });
+
+  it("serveurs STUN/TURN : persistés avec le compte et passés au port SIP", async () => {
+    const { phone, sip, box } = await bootTo("home", CFG);
+    phone.send({ type: "ui:configure" });
+    phone.send({
+      type: "ui:saveConfig",
+      form: {
+        proxy: CFG.proxy,
+        uri: `${CFG.username}@${CFG.domain}`,
+        displayName: CFG.displayName,
+        authUsername: null,
+        password: null,
+        flashAlert: true,
+        stun: "stun.example.fr:3478",
+        turn: "turn.example.fr:5349",
+        turnUsername: "alice",
+        turnPassword: "relais",
+        turnTls: true,
+      },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(box.saved!.ice).toEqual({
+      stun: "stun.example.fr:3478",
+      turn: { host: "turn.example.fr:5349", username: "alice", password: "relais", tls: true },
+    });
+    expect(sip.started[0]!.ice.turn!.tls).toBe(true);
+  });
+
+  it("serveur STUN invalide : erreur, champ désigné, on reste sur le formulaire", async () => {
+    const { phone, box } = await bootTo("home", CFG);
+    phone.send({ type: "ui:configure" });
+    phone.send({
+      type: "ui:saveConfig",
+      form: {
+        proxy: CFG.proxy,
+        uri: `${CFG.username}@${CFG.domain}`,
+        displayName: CFG.displayName,
+        authUsername: null,
+        password: null,
+        flashAlert: true,
+        stun: "stun.example.fr/ws",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
+      },
+    });
+    expect(phone.state).toBe("configuring");
+    expect(phone.context.lastError).toContain("Serveur STUN invalide");
+    expect(phone.context.suspectFields).toBe("stun");
+    expect(box.saved).toEqual(CFG); // rien n'a été enregistré
   });
 
   it("flash d'appel entrant désactivé : réglage persisté avec le compte", async () => {
@@ -315,6 +416,11 @@ describe("PhoneMachine — configuration", () => {
         authUsername: null,
         password: null,
         flashAlert: false,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -876,6 +982,11 @@ describe("PhoneMachine — sorties", () => {
         authUsername: null,
         password: null,
         flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));

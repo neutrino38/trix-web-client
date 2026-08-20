@@ -35,10 +35,10 @@ stateDiagram-v2
   home --> configuring: ui:configure
   home --> connecting: ui:useAccount
   home --> home: ui:useAccount (aucun compte configuré)
-  configuring --> configuring: ui:saveConfig (URI invalide), ui:saveConfig (mot de passe manquant)
+  configuring --> configuring: ui:saveConfig (URI invalide), ui:saveConfig (mot de passe manquant), ui:saveConfig (serveur ICE invalide)
   configuring --> saving: ui:saveConfig
   configuring --> home: ui:cancelConfig
-  reconfiguring --> reconfiguring: ui:saveConfig (URI invalide), ui:saveConfig (mot de passe manquant)
+  reconfiguring --> reconfiguring: ui:saveConfig (URI invalide), ui:saveConfig (mot de passe manquant), ui:saveConfig (serveur ICE invalide)
   reconfiguring --> saving: ui:saveConfig
   reconfiguring --> connecting: ui:cancelConfig (retour à l'appel)
   saving --> connecting: task:saveConfig

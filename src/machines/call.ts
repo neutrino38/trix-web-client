@@ -37,7 +37,7 @@ import type {
   SipOriginator,
 } from "../sip/port.js";
 import type { CallDirection } from "../storage/store.js";
-import type { CallReturn, CallView, PhoneEvent } from "./events.js";
+import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 
 /**
  * Ce que le bloc exige de trouver chez son hôte — la plus petite forme
@@ -51,7 +51,7 @@ export interface CallHost {
   call: CallView | null;
   lastError: string | null;
   lastErrorCode: string | null;
-  suspectFields: "proxy" | "credentials" | null;
+  suspectFields: SuspectField | null;
   /** Veille demandée pendant l'appel : l'hôte ira dormir au retour. */
   sleepRequested: boolean;
 }

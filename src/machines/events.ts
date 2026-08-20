@@ -13,7 +13,23 @@ export interface ConfigForm {
   password: string | null;
   /** Flash visuel à l'appel entrant (accessibilité sourds), réglage du compte. */
   flashAlert: boolean;
+  /** Serveur STUN (`hôte[:port]`) ; vide = aucun. */
+  stun: string;
+  /** Serveur TURN (`hôte[:port]`) ; vide = aucun, les trois champs suivants sont alors ignorés. */
+  turn: string;
+  turnUsername: string;
+  /** null = inchangé (conserver le mot de passe TURN enregistré). */
+  turnPassword: string | null;
+  /** TURN sur TLS (`turns:`). */
+  turnTls: boolean;
 }
+
+/**
+ * Champ du formulaire mis en cause par le dernier échec — surligné au
+ * retour sur les paramètres, pour dire où chercher plutôt que d'annoncer
+ * une erreur en l'air.
+ */
+export type SuspectField = "proxy" | "credentials" | "stun" | "turn";
 
 /** Commandes UI valables pendant un appel — consommées par le bloc CallBlock. */
 export type CallControlEvent =
