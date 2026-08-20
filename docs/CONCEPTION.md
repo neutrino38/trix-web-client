@@ -63,6 +63,7 @@ src/
     uri.ts                # normalisation adresse (ajout @domaine, sip:)
     trace.ts              # trace des paquets SIP et des états d'appel (§5.2)
     record.ts             # carnet d'un appel, attaché à son historique (§5.3)
+    stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
   storage/
     store.ts              # interface SecureStore + implé navigateur
     ha1.ts                # MD5(username:realm:password)
@@ -70,6 +71,7 @@ src/
     screens/{home,config,call}.ts
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
     tracedialog.ts        # relecture du carnet d'un appel, en popup (§5.3)
+    screens/call/stats.ts # encart des statistiques média, en direct et après coup (§5.4)
     theme.ts              # tokens FSL clair/sombre
   i18n/
     index.ts              # registre Vite, détection, t()/tn(), formats Intl
@@ -531,6 +533,91 @@ relus depuis un parchemin posé sur la ligne.
   maison réimplémenterait de travers. Le corps d'un paquet se déplie d'un
   `<details>`, comme un groupe de la console, et le contenu reste en LTR même en
   interface arabe — c'est du protocole, pas de la prose.
+
+### 5.4 Statistiques média en cours d'appel
+
+Un appel qui hache ne se diagnostique pas avec des paquets SIP : la signalisation
+est passée depuis longtemps, c'est le média qui souffre. La pastille
+« En communication » découvre donc un encart — au survol, au focus clavier ou au
+clic, qui le fixe — portant ce que la pile WebRTC sait du flux réel.
+
+```
+Statistiques média  moyenne sur 10 s
+                Reçu          Émis
+AUDIO
+Codec           opus 48 kHz   opus 48 kHz
+Débit           32,4 kbit/s   31,8 kbit/s
+Perte           0,4 %         6 %
+VIDÉO
+Codec           VP8           VP8
+Débit           560 kbit/s    480 kbit/s
+Perte           1,1 %         0,3 %
+Aller-retour 42 ms
+Perte à l'émission d'après les rapports de réception du correspondant.
+```
+
+- **Fenêtre glissante de 10 s**, jamais la moyenne de l'appel. `getStats()` ne rend
+  que des compteurs cumulés depuis le décrochage : lus tels quels, ils affichent
+  0,1 % de perte sur une conversation inaudible depuis dix secondes. `sip/stats.ts`
+  échantillonne à 1 Hz, ne garde que les échantillons de la fenêtre et n'expose que
+  la différence entre ses deux bornes. Les deux derniers échantillons survivent
+  toujours à la purge : un onglet en arrière-plan espace les mesures, et il vaut
+  mieux une fenêtre trop large que plus de chiffre du tout.
+- **Deux compteurs de perte, deux calculs.** En réception, `inbound-rtp` compte les
+  paquets reçus et les manquants de la numérotation : le total attendu est leur
+  somme. En émission, rien ici ne peut savoir ce qui s'est perdu en route — le
+  chiffre vient du distant, par les rapports de réception RTCP (RR) agrégés dans
+  `remote-inbound-rtp`, rapportés aux paquets envoyés, qui comptent déjà les perdus.
+  L'encart le dit en toutes lettres : ce n'est pas une mesure locale.
+- Les flux multiples d'un même média (simulcast, plusieurs SSRC) s'additionnent :
+  ce qu'on lit est le débit de la vidéo, pas celui de chacune de ses couches.
+- **Sous la même case que la trace SIP** (§5.2) : c'est le même outillage de
+  diagnostic. Décochée, la pastille reste une pastille, et aucun `getStats()` n'est
+  demandé sur la connexion pair-à-pair d'un appel ordinaire. Le réglage est consulté
+  à **chaque** relevé, comme pour les paquets : cocher la case en pleine
+  communication fait démarrer la mesure.
+- **L'échantillonnage est dans le port** (`sip/port.ts`, une fois par seconde et
+  pour toute la durée de la session), et non dans l'UI. Une seule série de relevés
+  alimente les deux lectures — la fenêtre de 10 s pendant l'appel, le bilan gardé
+  après —, et la connexion pair-à-pair n'est de toute façon plus interrogeable une
+  fois la session terminée. L'UI ne fait que lire (`CallSession.mediaStats()`) et
+  dessiner ; elle n'a pas d'état de mesure à protéger des re-rendus, qui arrivent à
+  chaque notification de la machine (couper le micro suffit). Les rapports bruts ne
+  sont pas conservés : chacun est réduit à quelques compteurs à la prise.
+- Rien ne traverse les machines pendant l'appel — un débit n'est pas un état du
+  protocole, et le faire passer par le contexte redéclencherait un rendu complet de
+  l'écran à chaque seconde.
+- Découverte, et non info-bulle : survol, focus et clic l'ouvrent, Échap et un clic
+  ailleurs la ferment. Une donnée qui ne s'obtiendrait qu'à la souris n'existerait
+  pas pour une partie des utilisateurs (RGAA 13.10), et il n'y a pas de survol au
+  doigt. Encart fermé, la boucle de rafraîchissement s'arrête : il n'y a rien à
+  redessiner, et la mesure, elle, continue dans le port.
+
+#### Le bilan de l'appel, dans l'historique
+
+L'appel raccroché, son bilan média rejoint sa ligne d'historique, à côté du carnet
+de trace : une **loupe** posée sur la ligne rouvre le même tableau, mesuré cette
+fois sur l'appel entier.
+
+- Le chemin est exactement celui du carnet (§5.3) : `CallSession.callStats()` rend
+  le bilan, `recordCall` l'attache à l'entrée (`stats`), le coffre le chiffre avec
+  le reste de l'historique. C'est quelques dizaines d'octets par appel, sans
+  commune mesure avec les paquets SIP qui l'accompagnent.
+- Le bilan compare le **premier** relevé au **dernier**, et non zéro au dernier : la
+  case peut se cocher en cours d'appel, et `spanMs` dit alors exactement ce qui a
+  été observé — l'encart affiche « moyenne sur 2 min 13 s mesurées », jamais une
+  durée d'appel qu'il n'aurait pas mesurée. Le dernier relevé date d'au plus une
+  seconde avant le raccrochage : la connexion pair-à-pair ne survit pas à la fin de
+  session, il n'y a pas de mesure finale à prendre après coup.
+- Rien de mesuré, pas de loupe : c'est la même règle que le parchemin, et elle se
+  lit à l'absence du champ dans la ligne.
+- Le tableau est le même code (`statsCardHtml`), avec la portée pour seule
+  différence, et un bouton **Copier** qui rend les mêmes chiffres en texte tabulé —
+  ce qui se colle dans un ticket sans être ressaisi. Les valeurs affichées et
+  copiées passent par les mêmes fonctions : un rapport de support ne doit pas porter
+  deux arrondis d'une même mesure.
+- L'affichage est un `<dialog>` natif, comme le carnet : un appel terminé ne bouge
+  plus, il n'a pas à suivre la souris.
 
 ## 6. Stockage sécurisé du compte
 

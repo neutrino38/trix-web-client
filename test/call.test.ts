@@ -22,6 +22,7 @@ import type {
   SipHandle,
 } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
+import type { MediaStats } from "../src/sip/stats.js";
 
 class FakeSession implements CallSession {
   terminated = 0;
@@ -37,6 +38,14 @@ class FakeSession implements CallSession {
     this.cam.push(m);
   }
   attachMedia(): void {}
+  /** Le bilan média que le port aurait mesuré si la trace était active. */
+  statsSummary: MediaStats | null = null;
+  mediaStats(): MediaStats | null {
+    return this.statsSummary;
+  }
+  callStats(): MediaStats | null {
+    return this.statsSummary;
+  }
   /** Le carnet de l'appel : ce que le port aurait collecté si la trace était active. */
   traceLines: TraceLine[] = [];
   trace(): TraceLine[] {

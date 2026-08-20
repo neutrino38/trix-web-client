@@ -22,6 +22,7 @@ import { announce } from "../../announce.js";
 import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
 import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
+import { LENS_ICON, showStatsDialog, startMediaStats } from "./stats.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
 
@@ -279,6 +280,14 @@ export function historyRow(entry: CallLogEntry, index: number): string {
              title="${esc(t("trace.open"))}" aria-label="${esc(t("trace.open"))}">${SCROLL_ICON}</button>`
         : ""
     }
+    ${
+      // et la loupe si le média a été mesuré pendant ce temps-là (§5.4) :
+      // même case, mais un appel sans flux n'a rien à montrer
+      entry.stats
+        ? `<button class="statsbtn" data-act="stats" data-i="${index}"
+             title="${esc(t("stats.open"))}" aria-label="${esc(t("stats.open"))}">${LENS_ICON}</button>`
+        : ""
+    }
   </div>`;
 }
 
@@ -434,6 +443,11 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     const entry = phone.context.history[Number(elem.dataset.i)];
     if (entry) showTraceDialog(entry);
   });
+  // loupe : le bilan média du même appel, sur toute sa durée mesurée
+  on('[data-act="stats"]', (elem) => {
+    const entry = phone.context.history[Number(elem.dataset.i)];
+    if (entry) showStatsDialog(entry);
+  });
   if (targetInput && !view) {
     // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler
     for (const row of node.querySelectorAll(".calllog-row")) {
@@ -489,6 +503,8 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
         if (minutes > 0) announce(tn("announce.inCall", minutes));
       }, 1000);
       startVuMeters(node, remote, self);
+      // mesure du média sur fenêtre glissante, découverte depuis la pastille
+      if (view.session) startMediaStats(node, view.session, startedAt);
     }
   }
 }

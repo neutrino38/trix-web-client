@@ -309,3 +309,13 @@ export function formatTime(ts: number): string {
 export function formatDayMonth(ts: number): string {
   return new Date(ts).toLocaleDateString(localeTag(), { day: "2-digit", month: "2-digit" });
 }
+
+/**
+ * Un nombre dans la langue courante : séparateur décimal, groupement des
+ * milliers, et chiffres arabes orientaux là où ils ont cours. `digits` est
+ * un **plafond** de décimales — « 0,2 % » reste « 0 % » quand la perte
+ * s'annule, sans zéro de garniture.
+ */
+export function formatNumber(n: number, digits = 0): string {
+  return new Intl.NumberFormat(localeTag(), { maximumFractionDigits: digits }).format(n);
+}

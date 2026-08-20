@@ -12,9 +12,11 @@ import { renderDesktop } from "./desktop.js";
 import { renderMobile } from "./mobile.js";
 import { closeIncoming, wireIncoming } from "./incoming.js";
 import { stopChrono, wireCallScreen } from "./parts.js";
+import { stopMediaStats } from "./stats.js";
 
 export function renderCall(phone: PhoneInstance): HTMLElement {
-  stopChrono(); // le nœud précédent disparaît avec son timer
+  stopChrono(); // le nœud précédent disparaît avec ses timers
+  stopMediaStats();
   const view = phone.state === "in_call" ? phone.context.call : null;
   const node = layoutMode() === "mobile" ? renderMobile(phone) : renderDesktop(phone);
   wireCallScreen(node, {

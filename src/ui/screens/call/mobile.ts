@@ -17,6 +17,7 @@ import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
+import { statsPill } from "./stats.js";
 import {
   ICONS,
   callLabel,
@@ -51,11 +52,16 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
       <div class="mtopbar">
         <span class="dot ${status.cls}" title="${esc(status.label)}"
               role="img" aria-label="${esc(status.label)}"></span>
-        <span class="mstatus">${
-          view
-            ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
-            : esc(status.label)
-        }</span>
+        ${
+          // en communication, l'état devient un bouton : les statistiques
+          // média se découvrent au doigt, faute de survol (call/stats.ts)
+          statsPill(
+            view
+              ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
+              : esc(status.label),
+            { cls: "mstatus", connected },
+          )
+        }
         <span class="spacer"></span>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
                 aria-label="${esc(t("action.settings"))}">${ICONS.settings}</button>

@@ -140,7 +140,8 @@ Formulaire vertical centré, 5 champs :
 Réglages **locaux**, à effet immédiat et hors du compte : thème, langue, notifications
 système, et « Tracer les échanges SIP » (section Diagnostic) — les paquets envoyés et
 reçus s'affichent dans la console du navigateur, y compris en pleine communication
-(CONCEPTION §5.2).
+(CONCEPTION §5.2). La même case ouvre les **statistiques média** de l'appel en cours,
+découvertes depuis la pastille « En communication » (CONCEPTION §5.4).
 
 Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
 Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
@@ -151,6 +152,11 @@ Structure 2 zones (la sidebar gauche « Vous contactez » d'Elioz est supprimée
 
 - **Barre d'en-tête** : logo (retour accueil), **indicateur d'enregistrement** (pastille + libellé),
   bouton « Paramètres » (engrenage → écran 2), bouton « Se déconnecter » (→ écran 1).
+  En communication s'y ajoute la pastille d'appel ; trace SIP cochée, elle découvre au
+  survol (ou au focus, ou au clic qui la fixe) les **statistiques média** — codec, débit
+  et perte de chaque sens, sur une fenêtre glissante de 10 s (CONCEPTION §5.4).
+  L'appel terminé, le même bilan — mesuré sur toute sa durée — reste accessible depuis
+  la **loupe** de sa ligne d'historique, avec un bouton « Copier ».
 - **Zone centrale (flexible)** : vidéo distante plein cadre sur fond noir ; self-view incrusté
   en haut-gauche (~25 % de hauteur, coins arrondis 10px) ; vu-mètres verticaux discrets ;
   overlay « Connexion… » pendant l'établissement. Double-clic = plein écran.

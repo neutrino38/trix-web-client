@@ -13,6 +13,7 @@ import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { panelHandle } from "./panel.js";
+import { statsPill } from "./stats.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
   ICONS,
@@ -57,9 +58,14 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         <span class="pill"><span class="dot ${status.cls}"></span>
           ${status.label}${ready ? identity : ""}</span>
         ${
+          // en communication, la pastille découvre les statistiques média
+          // (survol, focus ou clic — voir call/stats.ts)
           view
-            ? `<span class="pill"><span class="dot live"></span>
-                 ${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}</span>`
+            ? statsPill(
+                `<span class="dot live"></span>
+                 ${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`,
+                { cls: "pill", connected },
+              )
             : ""
         }
         ${

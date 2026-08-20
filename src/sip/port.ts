@@ -11,6 +11,8 @@ import { iceServers } from "./ice.js";
 import { offeredMedia } from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
+import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
+import { sipTraceEnabled } from "./trace.js";
 
 export type SipEvent =
   | { type: "sip:connected" }
@@ -60,6 +62,19 @@ export interface CallSession {
   setMicMuted(muted: boolean): void;
   setCamMuted(muted: boolean): void;
   attachMedia(remote: HTMLVideoElement, local: HTMLVideoElement | null): void;
+  /**
+   * L'état du média sur les dix dernières secondes — ce que l'UI affiche
+   * pendant la conversation. `null` tant que rien n'a été mesuré, et quand
+   * la trace est décochée : c'est la même case qui commande (§5.4).
+   */
+  mediaStats(): MediaStats | null;
+  /**
+   * Le bilan de tout ce qui a été mesuré de l'appel, pour l'historique. À
+   * prendre une fois la session finie, comme `trace()` — le dernier
+   * échantillon date d'au plus une seconde avant le raccrochage, la
+   * connexion pair-à-pair ne survivant pas à la fin de session.
+   */
+  callStats(): MediaStats | null;
 }
 
 /**
@@ -293,12 +308,44 @@ interface RtcSessionLike {
   unmute(opts: { audio?: boolean; video?: boolean }): void;
 }
 
+/**
+ * Échantillonne les compteurs média de la session, une fois par seconde,
+ * tant qu'elle dure. C'est ici et nulle part ailleurs : la fenêtre de 10 s
+ * affichée pendant l'appel et le bilan gardé par l'historique sortent des
+ * **mêmes** relevés, et la connexion pair-à-pair n'est plus interrogeable
+ * une fois la session terminée.
+ *
+ * Le réglage est consulté à chaque relevé, comme pour les paquets (§5.2) :
+ * cocher la case en pleine communication fait démarrer la mesure, sans que
+ * l'appel s'en aperçoive. Décochée, aucun `getStats()` n'est demandé.
+ */
+function collectStats(session: RtcSessionLike) {
+  const media = createCallStats();
+  const timer = setInterval(() => {
+    if (session.isEnded()) return clearInterval(timer);
+    if (!sipTraceEnabled()) return;
+    // getStats() sans sélecteur : le rapport entier, celui que sip/stats.ts
+    // sait réduire aux quatre sens qui nous intéressent
+    void session.connection?.getStats().then(
+      (report) => media.push(report),
+      () => {
+        // connexion fermée entre deux relevés : le suivant s'arrêtera sur
+        // `isEnded()`, il n'y a rien à rattraper
+      },
+    );
+  }, STATS_SAMPLE_MS);
+  return media;
+}
+
 function wrapSession(session: RtcSessionLike, book: CallTraceHandle): CallSession {
+  const media = collectStats(session);
   return {
     terminate() {
       if (!session.isEnded()) session.terminate();
     },
     trace: () => book.take(),
+    mediaStats: () => media.live(),
+    callStats: () => media.summary(),
     setMicMuted(muted) {
       if (session.isEnded()) return;
       if (muted) session.mute({ audio: true });

@@ -7,6 +7,7 @@
 
 import type { CallMedia } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
+import type { MediaStats } from "../sip/stats.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
 import { rawMsg, type Msg } from "../i18n/types.js";
 
@@ -69,6 +70,14 @@ export interface CallLogEntry {
    * et la description de leurs médias.
    */
   trace?: TraceLine[];
+  /**
+   * Le bilan média de l'appel — codecs, débits et pertes des deux sens —
+   * mesuré tant qu'il durait, sous la même condition que le carnet (§5.4) :
+   * la trace était cochée. Quelques dizaines d'octets, relus depuis la
+   * loupe de l'historique ; absent des lignes écrites sans mesure, et de
+   * celles des versions précédentes.
+   */
+  stats?: MediaStats;
 }
 
 export interface SecureStore {

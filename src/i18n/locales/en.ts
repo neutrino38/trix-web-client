@@ -253,6 +253,35 @@ const messages: Translation = {
   "duration.sec": "{s} s",
 
   // ---------------------------------------------------------------------
+  // Media statistics (hovering the "In call" pill)
+  // ---------------------------------------------------------------------
+  "stats.hint": "Media statistics for this call",
+  "stats.title": "Media statistics",
+  "stats.window": "{s} s average",
+  "stats.recv": "Received",
+  "stats.sent": "Sent",
+  "stats.audio": "Audio",
+  "stats.video": "Video",
+  "stats.codec": "Codec",
+  "stats.bitrate": "Bitrate",
+  "stats.loss": "Loss",
+  "stats.rtt": "Round trip",
+  "stats.lossNote": "Send-side loss as reported by the other party's receiver reports.",
+  "stats.pending": "Measuring…",
+  "stats.none": "No media stream measured",
+  "stats.kbps": "{n} kbit/s",
+  "stats.percent": "{n} %",
+  "stats.ms": "{n} ms",
+  "stats.khz": "{n} kHz",
+  "stats.spanCall": "{d} measured average",
+  "stats.open": "Media statistics for this call",
+  "stats.callTitle": "Media statistics — {target}",
+  "stats.close": "Close",
+  "stats.copy": "Copy",
+  "stats.copied": "Copied",
+  "stats.copyFailed": "Copy refused",
+
+  // ---------------------------------------------------------------------
   // State machine errors
   // ---------------------------------------------------------------------
   "error.invalidUri": "Invalid SIP address (expected user@domain)",

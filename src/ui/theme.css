@@ -247,6 +247,47 @@ fieldset.field { border: none; }
 .topbar .spacer { flex: 1; }
 .dot.live { background: var(--red); animation: pulse 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+
+/* Statistiques média (ui/screens/call/stats.ts) : la pastille « En
+   communication » devient un bouton qui découvre un encart, quand la trace
+   SIP est cochée. L'encart se pose sous la pastille, au-dessus de la scène
+   vidéo (z-index 1) mais sous la modale d'appel entrant (50). */
+.livewrap { position: relative; display: inline-flex; min-width: 0; }
+.livepill { font: inherit; cursor: pointer; text-align: start; }
+.livepill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pill.livepill:hover { border-color: var(--accent); }
+.mediastats {
+  position: absolute; z-index: 40; top: calc(100% + 8px); inset-inline-start: 0;
+  width: max-content; max-width: min(340px, 88vw);
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+  padding: 0.6rem 0.75rem 0.5rem;
+}
+.mediastats[hidden] { display: none; }
+.mediastats-msg { font-size: 0.78rem; color: var(--ink-soft); margin: 0; }
+.mediastats-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.76rem; font-variant-numeric: tabular-nums;
+}
+.mediastats-table caption {
+  text-align: start; font-weight: 600; padding-bottom: 0.35rem; white-space: nowrap;
+}
+.mediastats .unit { font-weight: 400; color: var(--ink-soft); }
+.mediastats-table th { font-weight: 600; text-align: start; }
+.mediastats-table thead th { color: var(--ink-soft); }
+.mediastats-table td, .mediastats-table th { padding: 0.12rem 0 0.12rem 0.6rem; }
+.mediastats-table td:first-child, .mediastats-table th:first-child { padding-inline-start: 0; }
+.mediastats-table tr.kind th {
+  padding-top: 0.4rem; color: var(--ink-soft);
+  text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.08em;
+}
+/* la couleur ne fait que redire ce que le chiffre dit déjà (RGAA 3.1) */
+.mediastats .hot { color: var(--red); }
+.mediastats-foot {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  margin: 0.45rem 0 0; padding-top: 0.35rem; border-top: 1px solid var(--border);
+  font-size: 0.68rem; color: var(--ink-soft);
+}
 .iconbtn.toggled { background: var(--accent); border-color: var(--accent); color: #fff; }
 .inactive { opacity: 0.5; cursor: default; }
 
@@ -516,9 +557,10 @@ fieldset.field { border: none; }
 .calllog-row .detail {
   grid-column: 2 / -1; grid-row: 2; font-size: 0.72rem; color: var(--ink-soft);
 }
-/* une ligne qui porte un parchemin lui cède la colonne de la caméra et ce
-   qui suit ; les autres gardent toute la largeur pour leur motif */
-.calllog-row:has(.tracebtn) .detail { grid-column: 2 / 3; }
+/* une ligne qui porte un parchemin ou une loupe leur cède la colonne de la
+   caméra et ce qui suit ; les autres gardent toute la largeur pour leur motif */
+.calllog-row:has(.tracebtn) .detail,
+.calllog-row:has(.statsbtn) .detail { grid-column: 2 / 3; }
 .calllog-row .icon { width: 16px; height: 16px; }
 .calllog-row .icon.dir { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .calllog-row.answered .icon.dir { color: var(--green); }
@@ -527,16 +569,43 @@ fieldset.field { border: none; }
 .calllog-row.missed .icon.dir { color: var(--red); }
 .calllog-row.dropped .icon.dir { color: var(--orange); }
 
-/* parchemin : cet appel a gardé sa trace SIP (ui/tracedialog.ts). Sous la
-   caméra, sur la rangée du motif — la ligne garde exactement la hauteur
-   qu'elle avait sans lui. */
-.calllog-row .tracebtn {
-  grid-column: 3; grid-row: 2; justify-self: center; align-self: center;
+/* parchemin (la trace SIP, ui/tracedialog.ts) et loupe (le bilan média,
+   call/stats.ts) : sous la caméra et sous l'heure, sur la rangée du motif —
+   la ligne garde exactement la hauteur qu'elle avait sans eux. */
+.calllog-row .tracebtn,
+.calllog-row .statsbtn {
+  grid-row: 2; justify-self: center; align-self: center;
   border: none; background: none; padding: 0; cursor: pointer;
   display: inline-flex; line-height: 0; color: var(--ink-soft);
 }
-.calllog-row .tracebtn:hover { color: var(--accent); }
-.calllog-row .icon.scroll { width: 14px; height: 14px; fill: currentColor; }
+.calllog-row .tracebtn { grid-column: 3; }
+.calllog-row .statsbtn { grid-column: 4; }
+.calllog-row .tracebtn:hover,
+.calllog-row .statsbtn:hover { color: var(--accent); }
+.calllog-row .icon.scroll,
+.calllog-row .icon.lens { width: 14px; height: 14px; fill: currentColor; }
+
+/* le bilan média d'un appel terminé, relu depuis la loupe de l'historique.
+   Même tableau que l'encart de la pastille, dans un dialogue plutôt que
+   dans une surimpression : un appel terminé ne bouge plus. */
+.stats-dialog {
+  width: min(420px, 92vw); padding: 0;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
+}
+.stats-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
+.stats-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
+}
+.stats-head h2 { font-size: 0.95rem; overflow-wrap: anywhere; }
+.stats-sub { font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
+.stats-actions { flex: none; display: flex; gap: 0.9rem; }
+/* le corps réemploie l'encart : mêmes classes, sans le cadre flottant */
+.stats-body.mediastats {
+  position: static; width: auto; max-width: none;
+  border: none; border-radius: 0; box-shadow: none; padding: 0.7rem 1rem 0.85rem;
+}
 
 /* relecture du carnet d'un appel — la console, mais après coup */
 .trace-dialog {
@@ -626,6 +695,10 @@ fieldset.field { border: none; }
   font-size: 0.8rem; font-weight: 600; color: var(--ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* en communication, l'état est un bouton (statistiques média) : il en garde
+   le comportement, pas l'apparence — la barre haute mobile est déjà chargée */
+.mtopbar .mstatus.livepill { border: none; background: none; padding: 0; }
+.mtopbar .livewrap { overflow: hidden; }
 
 /* --- hors appel : composer + historique --- */
 .mdial {

@@ -261,6 +261,35 @@ const messages = {
   "duration.sec": "{s} s",
 
   // ---------------------------------------------------------------------
+  // Statistiques média (survol de la pastille « En communication »)
+  // ---------------------------------------------------------------------
+  "stats.hint": "Statistiques média de l'appel",
+  "stats.title": "Statistiques média",
+  "stats.window": "moyenne sur {s} s",
+  "stats.recv": "Reçu",
+  "stats.sent": "Émis",
+  "stats.audio": "Audio",
+  "stats.video": "Vidéo",
+  "stats.codec": "Codec",
+  "stats.bitrate": "Débit",
+  "stats.loss": "Perte",
+  "stats.rtt": "Aller-retour",
+  "stats.lossNote": "Perte à l'émission d'après les rapports de réception du correspondant.",
+  "stats.pending": "Mesure en cours…",
+  "stats.none": "Aucun flux média mesuré",
+  "stats.kbps": "{n} kbit/s",
+  "stats.percent": "{n} %",
+  "stats.ms": "{n} ms",
+  "stats.khz": "{n} kHz",
+  "stats.spanCall": "moyenne sur {d} mesurées",
+  "stats.open": "Statistiques média de cet appel",
+  "stats.callTitle": "Statistiques média — {target}",
+  "stats.close": "Fermer",
+  "stats.copy": "Copier",
+  "stats.copied": "Copié",
+  "stats.copyFailed": "Copie refusée",
+
+  // ---------------------------------------------------------------------
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
   // ---------------------------------------------------------------------
   "error.invalidUri": "Adresse SIP invalide (attendu : utilisateur@domaine)",

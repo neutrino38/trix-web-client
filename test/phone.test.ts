@@ -16,6 +16,7 @@ import type {
   SipPort,
 } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
+import type { MediaStats } from "../src/sip/stats.js";
 import { computeHa1 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 
@@ -66,6 +67,14 @@ class FakeCallSession {
     this.cam.push(m);
   }
   attachMedia(): void {}
+  /** Le bilan média que le port aurait mesuré si la trace était active. */
+  statsSummary: MediaStats | null = null;
+  mediaStats(): MediaStats | null {
+    return this.statsSummary;
+  }
+  callStats(): MediaStats | null {
+    return this.statsSummary;
+  }
   /** Le carnet de l'appel : ce que le port aurait collecté si la trace était active. */
   traceLines: TraceLine[] = [];
   trace(): TraceLine[] {
@@ -800,6 +809,31 @@ describe("PhoneMachine — historique d'appels", () => {
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.context.history[0]!.trace).toBeUndefined();
+  });
+
+  it("le bilan média suit le même chemin que le carnet — et manque avec lui", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    sip.session.statsSummary = {
+      audio: {
+        recv: { codec: "opus", clockRate: 48000, kbps: 32, loss: 0.01 },
+        sent: { codec: "opus", clockRate: 48000, kbps: 31, loss: 0.02 },
+      },
+      video: null,
+      rttMs: 42,
+      spanMs: 133_000,
+    };
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history[0]!.stats).toMatchObject({ rttMs: 42, spanMs: 133_000 });
+
+    // rien mesuré (trace éteinte, ou appel sans média) : la ligne ne porte
+    // rien — c'est ce qui décide de l'icône loupe dans l'historique
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    sip.session.statsSummary = null;
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history[0]!.stats).toBeUndefined();
   });
 
   it("ui:clearHistory vide la liste et la persistance", async () => {

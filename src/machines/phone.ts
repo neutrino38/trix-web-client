@@ -22,6 +22,7 @@ import type {
 } from "../storage/store.js";
 import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
+import type { MediaStats } from "../sip/stats.js";
 import { computeHa1 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
@@ -148,6 +149,16 @@ function traceOf(ctx: PhoneCtx): { trace?: TraceLine[] } {
   return lines.length > 0 ? { trace: lines } : {};
 }
 
+/**
+ * Le bilan média du même appel, pris à la même session au même moment.
+ * Rien à consigner quand rien n'a été mesuré — la trace était éteinte, ou
+ * l'appel n'a jamais eu de média : la loupe n'apparaît alors pas.
+ */
+function statsOf(ctx: PhoneCtx): { stats?: MediaStats } {
+  const stats = ctx.call?.session?.callStats() ?? null;
+  return stats ? { stats } : {};
+}
+
 function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
   const info = ctx.pendingCall;
   if (!info || !ctx.config) return;
@@ -168,6 +179,8 @@ function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
     // le carnet du dialogue, si la trace était active : le bloc a publié une
     // dernière vue avant de rendre la main, session comprise (§5.3)
     ...traceOf(ctx),
+    // et ce que le média a donné pendant ce temps-là (§5.4)
+    ...statsOf(ctx),
   };
   ctx.history = recent([entry, ...ctx.history]);
   void ctx.store.saveHistory(accountKey(ctx.config), ctx.history).catch(() => {});

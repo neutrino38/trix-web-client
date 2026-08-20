@@ -287,6 +287,35 @@ const messages: Translation = {
   "duration.sec": "{s} ث",
 
   // ---------------------------------------------------------------------
+  // Statistiques média (survol de la pastille « En communication »)
+  // ---------------------------------------------------------------------
+  "stats.hint": "إحصاءات الوسائط لهذه المكالمة",
+  "stats.title": "إحصاءات الوسائط",
+  "stats.window": "متوسّط على {s} ث",
+  "stats.recv": "المستلَم",
+  "stats.sent": "المُرسَل",
+  "stats.audio": "الصوت",
+  "stats.video": "الفيديو",
+  "stats.codec": "الترميز",
+  "stats.bitrate": "معدّل البتّ",
+  "stats.loss": "الفقد",
+  "stats.rtt": "زمن الذهاب والإياب",
+  "stats.lossNote": "فقد الإرسال وفق تقارير الاستقبال الواردة من الطرف الآخر.",
+  "stats.pending": "جارٍ القياس…",
+  "stats.none": "لا يوجد تدفّق وسائط مقيس",
+  "stats.kbps": "{n} كبت/ث",
+  "stats.percent": "{n} ٪",
+  "stats.ms": "{n} م.ث",
+  "stats.khz": "{n} كھرتز",
+  "stats.spanCall": "متوسّط على {d} مقيسة",
+  "stats.open": "إحصاءات الوسائط لهذه المكالمة",
+  "stats.callTitle": "إحصاءات الوسائط — {target}",
+  "stats.close": "إغلاق",
+  "stats.copy": "نسخ",
+  "stats.copied": "تمّ النسخ",
+  "stats.copyFailed": "تعذّر النسخ",
+
+  // ---------------------------------------------------------------------
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
   // ---------------------------------------------------------------------
   "error.invalidUri": "عنوان SIP غير صالح (المتوقَّع: user@domain)",
