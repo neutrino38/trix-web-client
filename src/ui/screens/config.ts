@@ -3,6 +3,7 @@ import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
 import { alertPermission, requestAlertPermission } from "../alert.js";
 import { setTheme, themeChoice, type ThemeChoice } from "../prefs.js";
+import { setSipTrace, sipTraceEnabled } from "../../sip/trace.js";
 import type { SuspectField } from "../../machines/events.js";
 import { langPicker, wireLangPicker } from "../langpicker.js";
 import { t } from "../../i18n/index.js";
@@ -168,6 +169,18 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
              une fois le compte enregistré : c'est ici qu'on la retrouve. -->
         ${langPicker()}
         <span class="hint">${esc(t("lang.hint"))}</span>
+
+        <!-- Le diagnostic ferme la colonne des réglages locaux : il n'a rien
+             à voir avec le compte, ne s'enregistre pas, et n'intéresse qu'un
+             dépannage en cours. -->
+        <h3>${esc(t("config.section.diag"))}</h3>
+        <div class="field">
+          <label class="checkline" for="f-siptrace">
+            <input type="checkbox" id="f-siptrace" ${sipTraceEnabled() ? "checked" : ""}>
+            <span><b>${esc(t("config.traceLabel"))}</b>${esc(t("config.traceDesc"))}</span>
+          </label>
+          <span class="hint">${esc(t("config.traceHint"))}</span>
+        </div>
         </section>
         </div>
         <div class="form-actions">
@@ -243,6 +256,12 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   for (const radio of node.querySelectorAll<HTMLInputElement>('input[name="theme"]')) {
     radio.addEventListener("change", () => setTheme(radio.value as ThemeChoice));
   }
+
+  // la trace n'est pas un champ du formulaire : elle ne part pas chez le
+  // registrar et ne doit pas attendre l'enregistrement pour s'allumer —
+  // le socket relit ce réglage à chaque paquet
+  const traceToggle = node.querySelector("#f-siptrace") as HTMLInputElement;
+  traceToggle.addEventListener("change", () => setSipTrace(traceToggle.checked));
 
   // la mention « si différent de … » suit le userpart de l'URI en cours de saisie
   const uriInput = form.querySelector("#f-uri") as HTMLInputElement;

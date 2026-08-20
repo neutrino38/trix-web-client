@@ -101,6 +101,13 @@ const messages: Translation = {
   "theme.system": "System",
   "theme.light": "Light",
   "theme.dark": "Dark",
+
+  // Diagnostics — local settings, never saved with the account
+  "config.section.diag": "Diagnostics",
+  "config.traceLabel": "Trace SIP messages",
+  "config.traceDesc": " — every packet sent and received is printed to the browser console",
+  "config.traceHint":
+    "Takes effect at once, even mid-call: open the console (F12) to read the packets. They carry your SIP address and your correspondents' — strip them from a public bug report.",
   "config.save": "Save and connect",
   "config.saving": "Saving…",
   "config.cancel": "Cancel",

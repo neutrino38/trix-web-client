@@ -137,6 +137,11 @@ Formulaire vertical centré, 5 champs :
 | Mot de passe | masqué ; converti en HA1 à l'enregistrement, jamais stocké |
 | Flash visuel à l'appel entrant | case à cocher, **activée par défaut** ; réglage du compte (accessibilité) |
 
+Réglages **locaux**, à effet immédiat et hors du compte : thème, langue, notifications
+système, et « Tracer les échanges SIP » (section Diagnostic) — les paquets envoyés et
+reçus s'affichent dans la console du navigateur, y compris en pleine communication
+(CONCEPTION §5.2).
+
 Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
 Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
 

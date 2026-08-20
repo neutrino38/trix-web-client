@@ -9,6 +9,7 @@ import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
 import { iceServers } from "./ice.js";
 import { offeredMedia } from "./sdp.js";
+import { traceSocket } from "./trace.js";
 
 export type SipEvent =
   | { type: "sip:connected" }
@@ -105,7 +106,10 @@ export function createJsSipPort(): SipPort {
     start(cfg, send) {
       let ua: JsSIP.UA;
       try {
-        const socket = new JsSIP.WebSocketInterface(cfg.proxy);
+        // enveloppé sans condition : la trace se décide paquet par paquet
+        // (src/sip/trace.ts), pour que cocher la case en cours de
+        // communication n'oblige pas à rouvrir le transport
+        const socket = traceSocket(new JsSIP.WebSocketInterface(cfg.proxy));
         ua = new JsSIP.UA({
           sockets: [socket],
           uri: `sip:${cfg.username}@${cfg.domain}`,

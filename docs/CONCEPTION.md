@@ -61,6 +61,7 @@ src/
   sip/
     binding.ts            # JsSIP → phone.send({type:"sip:..."})
     uri.ts                # normalisation adresse (ajout @domaine, sip:)
+    trace.ts              # trace des paquets SIP sur la console (§5.2)
   storage/
     store.ts              # interface SecureStore + implé navigateur
     ha1.ts                # MD5(username:realm:password)
@@ -432,6 +433,34 @@ champ « Serveur TURN » : hôte[:port]           → turn:hôte[:port]
   clair dans le coffre chiffré** (§6) : le mécanisme réclame le secret lui-même à chaque
   allocation, aucune empreinte ne peut s'y substituer. Il n'est ressaisi que s'il change —
   le formulaire le reprend tant que serveur et identifiant sont inchangés.
+
+### 5.2 Trace des paquets SIP
+
+Case « Tracer les échanges SIP » de l'écran de configuration (section Diagnostic) :
+chaque paquet émis et reçu paraît dans la console, entête visible et corps déplié
+sur demande.
+
+```
+[trix] SIP → REGISTER sip:example.fr SIP/2.0     ▸ (groupe replié : le paquet entier)
+[trix] SIP ← SIP/2.0 401 Unauthorized
+```
+
+- La trace est prise **au niveau du socket** (`sip/trace.ts` enveloppe `send()` et
+  intercepte la pose de `ondata` par le Transport), et non par
+  `JsSIP.debug.enable("JsSIP:Transport")`. Deux raisons : le format et le réglage nous
+  appartiennent — `debug` écrit dans un `localStorage.debug` global qui n'est pas celui
+  de Trix — et surtout `JsSIP.UA` accepte **n'importe quel** objet conforme à
+  l'interface `Socket`. Le jour où le texte passera par un WebSocket propriétaire, le
+  point de passage sera le même et la trace suivra sans être réécrite.
+- Le socket est enveloppé sans condition ; c'est la trace qui consulte le réglage à
+  **chaque** paquet. Cocher la case en pleine communication trace donc la suite de
+  l'échange, sans redémarrer l'UA ni rouvrir le transport.
+- Réglage local (`localStorage`, clé `trix-siptrace`), jamais enregistré avec le compte :
+  il décrit une séance de dépannage, pas un utilisateur.
+- Les keep-alive (CRLF) tiennent sur une ligne, sans groupe à déplier ; les paquets
+  binaires sont décodés en UTF-8 — certains proxys n'envoient que cela.
+- `JsSIP.debug.enable("JsSIP:*")` reste disponible depuis la console pour fouiller les
+  entrailles de JsSIP quand le besoin dépasse les paquets.
 
 ## 6. Stockage sécurisé du compte
 

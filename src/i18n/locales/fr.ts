@@ -108,6 +108,14 @@ const messages = {
   "theme.system": "Système",
   "theme.light": "Clair",
   "theme.dark": "Sombre",
+
+  // Diagnostic — réglages locaux, jamais enregistrés avec le compte
+  "config.section.diag": "Diagnostic",
+  "config.traceLabel": "Tracer les échanges SIP",
+  "config.traceDesc":
+    " — chaque paquet envoyé et reçu s'affiche dans la console du navigateur",
+  "config.traceHint":
+    "Effet immédiat, même en pleine communication : ouvrez la console (F12) pour lire les paquets. Ils portent votre adresse SIP et celle de vos correspondants — à retirer d'un rapport de bogue public.",
   "config.save": "Enregistrer et se connecter",
   "config.saving": "Enregistrement…",
   "config.cancel": "Annuler",

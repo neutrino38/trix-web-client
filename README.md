@@ -115,6 +115,12 @@ trix.phone.log   // ring buffer of transitions
 trix.phone.state // current state
 ```
 
+The **Trace SIP messages** checkbox (settings, Diagnostics section) prints every packet
+sent and received to the console — header on one line, full packet in a collapsed group.
+It is taken at the socket level, so it takes effect immediately, even mid-call, and will
+keep working when the transport is not JsSIP's own WebSocket. For JsSIP's own internals,
+`JsSIP.debug.enable("JsSIP:*")` is still there.
+
 Transitions are also logged continuously (Elixip format) to the console.
 [docs/DIAGRAMS.md](docs/DIAGRAMS.md) is the versioned copy of those diagrams: a test fails if the
 code and the document diverge (`npm run diagrams` to regenerate it).
