@@ -10,6 +10,7 @@ import type { AccountConfig } from "../storage/store.js";
 import { iceServers } from "./ice.js";
 import { offeredMedia } from "./sdp.js";
 import { traceSocket } from "./trace.js";
+import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 
 export type SipEvent =
   | { type: "sip:connected" }
@@ -50,6 +51,12 @@ export type CallSipEvent =
 export interface CallSession {
   /** CANCEL / BYE selon l'état ; sans effet si la session est déjà terminée. */
   terminate(): void;
+  /**
+   * Les paquets SIP de cet appel et les états traversés, quand la trace
+   * était active (`sip/record.ts`) — vide sinon. À prendre une fois, la
+   * session finie : le carnet se referme en rendant ses lignes.
+   */
+  trace(): TraceLine[];
   setMicMuted(muted: boolean): void;
   setCamMuted(muted: boolean): void;
   attachMedia(remote: HTMLVideoElement, local: HTMLVideoElement | null): void;
@@ -169,11 +176,15 @@ export function createJsSipPort(): SipPort {
       // on décrit la partie commune dont on a besoin
       ua.on(
         "newRTCSession",
-        (e: { originator: string; session: Session; request: { body?: string | null } }) => {
+        (e: {
+          originator: string;
+          session: Session;
+          request: { body?: string | null; call_id?: string };
+        }) => {
           if (e.originator !== "remote") return;
           send({
             type: "sip:incoming",
-            call: wrapIncoming(e.session, e.request.body ?? null, pcConfig),
+            call: wrapIncoming(e.session, e.request, pcConfig),
           });
         },
       );
@@ -190,12 +201,14 @@ export function createJsSipPort(): SipPort {
           return true;
         },
         call(target, media, sendCall) {
+          // avant l'INVITE : le carnet adopte le dialogue du premier qui part
+          const book = openCallTrace(null);
           const session = ua.call(target, {
             mediaConstraints: { audio: media.audio, video: media.video },
             pcConfig,
           });
           bindSession(session, sendCall);
-          return wrapSession(session);
+          return wrapSession(session, book);
         },
       };
     },
@@ -231,17 +244,21 @@ const REJECT: Record<RejectReason, { status_code: number; reason_phrase: string 
 
 function wrapIncoming(
   session: Session,
-  sdp: string | null,
+  request: { body?: string | null; call_id?: string },
   pcConfig: RTCConfiguration,
 ): IncomingCall {
   const from = session.remote_identity;
   return {
     from: from.uri.toString(),
     displayName: from.display_name || null,
-    offered: offeredMedia(sdp),
+    offered: offeredMedia(request.body ?? null),
     listen(send) {
       bindSession(session, send);
-      return wrapSession(session);
+      // le carnet ne s'ouvre qu'ici, jamais à l'arrivée de l'INVITE : un
+      // second appel refusé « occupé » n'est pas écouté, et n'a donc pas de
+      // carnet à voler à la communication en cours. L'INVITE, lui, est déjà
+      // passé — le Call-ID sert à le rattraper.
+      return wrapSession(session, openCallTrace(request.call_id ?? null));
     },
     answer(media) {
       session.answer({ mediaConstraints: { audio: media.audio, video: media.video }, pcConfig });
@@ -276,11 +293,12 @@ interface RtcSessionLike {
   unmute(opts: { audio?: boolean; video?: boolean }): void;
 }
 
-function wrapSession(session: RtcSessionLike): CallSession {
+function wrapSession(session: RtcSessionLike, book: CallTraceHandle): CallSession {
   return {
     terminate() {
       if (!session.isEnded()) session.terminate();
     },
+    trace: () => book.take(),
     setMicMuted(muted) {
       if (session.isEnded()) return;
       if (muted) session.mute({ audio: true });

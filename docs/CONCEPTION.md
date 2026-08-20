@@ -61,13 +61,15 @@ src/
   sip/
     binding.ts            # JsSIP → phone.send({type:"sip:..."})
     uri.ts                # normalisation adresse (ajout @domaine, sip:)
-    trace.ts              # trace des paquets SIP sur la console (§5.2)
+    trace.ts              # trace des paquets SIP et des états d'appel (§5.2)
+    record.ts             # carnet d'un appel, attaché à son historique (§5.3)
   storage/
     store.ts              # interface SecureStore + implé navigateur
     ha1.ts                # MD5(username:realm:password)
   ui/
     screens/{home,config,call}.ts
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
+    tracedialog.ts        # relecture du carnet d'un appel, en popup (§5.3)
     theme.ts              # tokens FSL clair/sombre
   i18n/
     index.ts              # registre Vite, détection, t()/tn(), formats Intl
@@ -445,6 +447,21 @@ sur demande.
 [trix] SIP ← SIP/2.0 401 Unauthorized
 ```
 
+La même case allume la trace des **états de l'appel**, dans le même flux et sous
+le même réglage — c'est de la juxtaposition des deux que se lit un échange : un
+180 reçu sans passage en `ringing` ne se voit pas dans une trace de paquets
+seule.
+
+```
+[trix] SIP → INVITE sip:bob@example.fr SIP/2.0
+[trix] FSM (ready) → (CallBlock/initial_state) "sbb CallBlock"
+[trix] FSM (CallBlock/initial_state) → (CallBlock/dialing) "INVITE sortant"
+[trix] SIP ← SIP/2.0 180 Ringing
+[trix] FSM sip:progress: (CallBlock/dialing) → (CallBlock/ringing) "180/183"
+[trix] SIP ← SIP/2.0 200 OK
+[trix] FSM sip:accepted: (CallBlock/ringing) → (CallBlock/connected) "200 OK"
+```
+
 - La trace est prise **au niveau du socket** (`sip/trace.ts` enveloppe `send()` et
   intercepte la pose de `ondata` par le Transport), et non par
   `JsSIP.debug.enable("JsSIP:Transport")`. Deux raisons : le format et le réglage nous
@@ -459,8 +476,61 @@ sur demande.
   il décrit une séance de dépannage, pas un utilisateur.
 - Les keep-alive (CRLF) tiennent sur une ligne, sans groupe à déplier ; les paquets
   binaires sont décodés en UTF-8 — certains proxys n'envoient que cela.
+- La trace de la FSM (`traceCallStates`, branchée dans `main.ts`) s'abonne à la machine
+  et ne rapporte que le **bloc** en cours — son entrée, ses transitions internes, son
+  retour à l'hôte : l'appel, aujourd'hui le seul bloc (§4.3). Les transitions du
+  téléphone lui-même n'y sont pas ; elles ne racontent pas un échange SIP, et le
+  `logger` de la machine les porte déjà en `console.debug` (§4.4). Le format est celui
+  du journal (`window.trix.dump()`), pour que les deux se relisent ensemble.
+- Comme pour les paquets, le réglage est consulté à **chaque** transition : cocher la
+  case pendant la sonnerie trace la suite de l'appel.
 - `JsSIP.debug.enable("JsSIP:*")` reste disponible depuis la console pour fouiller les
   entrailles de JsSIP quand le besoin dépasse les paquets.
+- Ce qui passe par là est aussi gardé, appel par appel, pour être relu depuis
+  l'historique : voir §5.3.
+
+### 5.3 Le carnet d'un appel
+
+La console dit l'échange pendant qu'il a lieu ; encore faut-il l'avoir ouverte au
+bon moment. Le carnet répond à l'autre besoin, celui du support : *« l'appel de
+14 h 32 a été coupé, que s'est-il passé ? »*. Chaque appel terminé emporte donc
+dans sa ligne d'historique les paquets de **son** dialogue et les états traversés,
+relus depuis un parchemin posé sur la ligne.
+
+```
+14:32:07.118 → INVITE sip:bob@example.fr SIP/2.0     ▸ (le paquet entier, dépliable)
+14:32:07.121    (CallBlock/initial_state) → (CallBlock/dialing) "INVITE sortant"
+14:32:07.340 ← SIP/2.0 180 Ringing
+```
+
+- Le découpage se fait sur le **Call-ID**, jamais sur le temps : c'est ce qui
+  sépare les paquets de l'appel de ceux du REGISTER périodique, et d'un second
+  INVITE refusé « occupé » pendant la communication. Les REGISTER sont écartés
+  d'emblée — requête reconnue à sa ligne de départ, réponse à la méthode de son
+  CSeq —, ils portent l'empreinte du compte et n'apprennent rien d'un appel.
+- Un carnet peut s'ouvrir **après** le premier paquet de son dialogue : l'INVITE
+  entrant est justement ce qui déclenche l'appel. `sip/record.ts` garde donc de
+  quoi rattraper les derniers dialogues vus, et le carnet les récupère à son
+  ouverture.
+- Le carnet d'un entrant n'est ouvert que dans `IncomingCall.listen()`, pas à
+  l'arrivée de l'INVITE : un second appel refusé « occupé » n'est jamais écouté,
+  et n'a donc pas de carnet à voler à la communication en cours.
+- Rien n'est collecté quand la case est décochée — la décision se prend une fois,
+  en tête de chaque trace (`sip/trace.ts`), et la cocher en pleine communication
+  fait démarrer le carnet en cours de route.
+- Le chemin est celui des autres données de l'appel : `CallSession.trace()` rend
+  les lignes, le bloc les a publiées avec sa dernière vue, `recordCall` les
+  attache à l'entrée (§4.2). Rien de neuf ne traverse les machines.
+- Plafonds par appel — 200 lignes, 64 Ko, 4 Ko par corps — au-delà desquels la
+  trace s'arrête sur une marque visible. Un dialogue pathologique (ré-INVITE en
+  boucle, SDP géant) ne doit pas faire gonfler le coffre, où les carnets vivent
+  chiffrés aux côtés des 50 dernières lignes d'historique (§6). Ils s'effacent
+  avec elles.
+- L'affichage (`ui/tracedialog.ts`) est un `<dialog>` natif : Échap, piège à
+  focus, inertie du fond et retour du focus sont acquis, là qu'une surimpression
+  maison réimplémenterait de travers. Le corps d'un paquet se déplie d'un
+  `<details>`, comme un groupe de la console, et le contenu reste en LTR même en
+  interface arabe — c'est du protocole, pas de la prose.
 
 ## 6. Stockage sécurisé du compte
 

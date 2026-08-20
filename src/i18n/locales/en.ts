@@ -105,9 +105,10 @@ const messages: Translation = {
   // Diagnostics — local settings, never saved with the account
   "config.section.diag": "Diagnostics",
   "config.traceLabel": "Trace SIP messages",
-  "config.traceDesc": " — every packet sent and received is printed to the browser console",
+  "config.traceDesc":
+    " — every packet sent and received, and the states a call goes through, are printed to the browser console",
   "config.traceHint":
-    "Takes effect at once, even mid-call: open the console (F12) to read the packets. They carry your SIP address and your correspondents' — strip them from a public bug report.",
+    "Takes effect at once, even mid-call: open the console (F12) to read the packets. Each call also keeps its own with its history entry, encrypted, until you clear it. They carry your SIP address and your correspondents' — strip them from a public bug report.",
   "config.save": "Save and connect",
   "config.saving": "Saving…",
   "config.cancel": "Cancel",
@@ -226,6 +227,20 @@ const messages: Translation = {
   "history.clear": "Clear",
   "history.empty": "No calls yet",
   "history.entryTitle": "{target} — {outcome}",
+
+  // A call's notebook: the SIP packets kept while tracing was on
+  "trace.open": "View this call's SIP trace",
+  "trace.title": "SIP trace — {target}",
+  "trace.count.one": "{n} packet",
+  "trace.count.other": "{n} packets",
+  "trace.sent": "sent",
+  "trace.received": "received",
+  "trace.copy": "Copy",
+  "trace.copied": "Copied",
+  "trace.copyFailed": "Copy refused",
+  "trace.close": "Close",
+  "trace.clipped": "… (packet truncated)",
+  "trace.truncated": "Trace cut short: the call went past what is kept per call.",
   "outcome.answered": "Answered",
   "outcome.missed": "Missed",
   "outcome.failed": "Failed",

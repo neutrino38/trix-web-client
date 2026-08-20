@@ -125,9 +125,10 @@ const messages: Translation = {
   // التشخيص — إعدادات محلّية لا تُحفَظ مع الحساب
   "config.section.diag": "التشخيص",
   "config.traceLabel": "تتبّع رسائل SIP",
-  "config.traceDesc": " — تُعرَض كلّ حزمة مُرسَلة ومُستقبَلة في طرفية المتصفّح",
+  "config.traceDesc":
+    " — تُعرَض في طرفية المتصفّح كلّ حزمة مُرسَلة ومُستقبَلة، وكذلك الحالات الّتي تمرّ بها المكالمة",
   "config.traceHint":
-    "يسري المفعول فورًا، حتّى أثناء مكالمة جارية: افتح الطرفية (F12) لقراءة الحزم. تحمل هذه الحزم عنوان SIP الخاصّ بك وبمُراسليك، فاحذفها من أيّ تقرير علّة عموميّ.",
+    "يسري المفعول فورًا، حتّى أثناء مكالمة جارية: افتح الطرفية (F12) لقراءة الحزم. تحتفظ كلّ مكالمة أيضًا بحزمها في سجلّها، مُعمّاةً، إلى أن تمسحه. تحمل هذه الحزم عنوان SIP الخاصّ بك وبمُراسليك، فاحذفها من أيّ تقرير علّة عموميّ.",
   "config.save": "الحفظ والاتصال",
   "config.saving": "جارٍ الحفظ…",
   "config.cancel": "إلغاء",
@@ -256,6 +257,24 @@ const messages: Translation = {
   "history.clear": "مسح",
   "history.empty": "لا مكالمات مسجَّلة",
   "history.entryTitle": "{target} — {outcome}",
+
+  // دفتر المكالمة: حزم SIP المحفوظة عندما كان التتبّع مُفعَّلًا
+  "trace.open": "عرض تتبّع SIP لهذه المكالمة",
+  "trace.title": "تتبّع SIP — {target}",
+  "trace.count.zero": "لا حزم",
+  "trace.count.one": "حزمة واحدة",
+  "trace.count.two": "حزمتان",
+  "trace.count.few": "{n} حزم",
+  "trace.count.many": "{n} حزمة",
+  "trace.count.other": "{n} حزمة",
+  "trace.sent": "مُرسَلة",
+  "trace.received": "مُستقبَلة",
+  "trace.copy": "نسخ",
+  "trace.copied": "تمّ النسخ",
+  "trace.copyFailed": "تعذّر النسخ",
+  "trace.close": "إغلاق",
+  "trace.clipped": "… (حزمة مقطوعة)",
+  "trace.truncated": "توقّف التتبّع: تجاوزت المكالمة الحدّ المحفوظ لكلّ مكالمة.",
   "outcome.answered": "تمّ الردّ",
   "outcome.missed": "فائتة",
   "outcome.failed": "فشلت",

@@ -21,6 +21,7 @@ import type {
   SecureStore,
 } from "../storage/store.js";
 import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
+import type { TraceLine } from "../sip/record.js";
 import { computeHa1 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
@@ -68,7 +69,19 @@ export interface PhoneCtx {
   sleepRequested: boolean;
 }
 
-const HISTORY_MAX = 100;
+/**
+ * Longueur de l'historique : les 50 derniers appels, du plus récent au plus
+ * ancien. La liste est relue en entier à chaque rendu et réécrite chiffrée à
+ * chaque appel — la borne est là pour cela, pas pour la place occupée.
+ * Un historique plus long déjà persisté (borne précédente) est ramené à
+ * cette taille dès sa relecture, par `recent()`.
+ */
+const HISTORY_MAX = 50;
+
+/** Les entrées à garder d'un historique relu — les plus récentes sont en tête. */
+function recent(entries: CallLogEntry[]): CallLogEntry[] {
+  return entries.slice(0, HISTORY_MAX);
+}
 
 function accountKey(cfg: AccountConfig): string {
   return `${cfg.username}@${cfg.domain}`;
@@ -125,6 +138,16 @@ const LOG_OUTCOME: Record<CallReturn["type"], CallLogEntry["outcome"]> = {
   "call:missed": "missed",
 };
 
+/**
+ * Le carnet de l'appel qui se termine, pris à la session avant que la vue
+ * ne soit rangée. Rien à consigner quand la trace était éteinte : c'est ce
+ * qui décide de l'icône dans l'historique, et une ligne vide n'en porte pas.
+ */
+function traceOf(ctx: PhoneCtx): { trace?: TraceLine[] } {
+  const lines = ctx.call?.session?.trace() ?? [];
+  return lines.length > 0 ? { trace: lines } : {};
+}
+
 function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
   const info = ctx.pendingCall;
   if (!info || !ctx.config) return;
@@ -142,8 +165,11 @@ function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
     endedBy:
       ev.type === "call:answered" ? ev.data.endedBy : ev.type === "call:dropped" ? "network" : null,
     reason: "reason" in d ? d.reason : null,
+    // le carnet du dialogue, si la trace était active : le bloc a publié une
+    // dernière vue avant de rendre la main, session comprise (§5.3)
+    ...traceOf(ctx),
   };
-  ctx.history = [entry, ...ctx.history].slice(0, HISTORY_MAX);
+  ctx.history = recent([entry, ...ctx.history]);
   void ctx.store.saveHistory(accountKey(ctx.config), ctx.history).catch(() => {});
 }
 
@@ -268,7 +294,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "task:loadConfig": (ev, ctx) => {
           ctx.config = ev.ok ? ev.value.config : null;
-          ctx.history = ev.ok ? ev.value.history : [];
+          ctx.history = ev.ok ? recent(ev.value.history) : [];
           return goto("home", ctx.config ? "compte trouvé" : "aucun compte");
         },
       },
@@ -337,7 +363,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "task:saveConfig": (ev, ctx) => {
           // même si la persistance échoue, la session en mémoire reste utilisable
-          if (ev.ok) ctx.history = ev.value;
+          if (ev.ok) ctx.history = recent(ev.value);
           else {
             ctx.lastError = msg("error.saveFailed", { detail: String(ev.error) });
             ctx.history = [];

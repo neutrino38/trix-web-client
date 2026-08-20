@@ -15,6 +15,7 @@ import type {
   SipEvent,
   SipPort,
 } from "../src/sip/port.js";
+import type { TraceLine } from "../src/sip/record.js";
 import { computeHa1 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 
@@ -65,6 +66,11 @@ class FakeCallSession {
     this.cam.push(m);
   }
   attachMedia(): void {}
+  /** Le carnet de l'appel : ce que le port aurait collecté si la trace était active. */
+  traceLines: TraceLine[] = [];
+  trace(): TraceLine[] {
+    return this.traceLines;
+  }
 }
 
 class FakeSip implements SipPort {
@@ -128,12 +134,13 @@ function fakeIncoming(offered: CallMedia = { audio: true, video: false }) {
 async function bootTo(
   state: string,
   initial: AccountConfig | null,
+  history: CallLogEntry[] = [],
 ): Promise<{
   phone: PhoneInstance;
   sip: FakeSip;
   box: { saved: AccountConfig | null; history: Map<string, CallLogEntry[]> };
 }> {
-  const { store, box } = fakeStore(initial);
+  const { store, box } = fakeStore(initial, history);
   const sip = new FakeSip();
   const phone = PhoneMachine.start({ args: { store, sip } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
@@ -776,6 +783,25 @@ describe("PhoneMachine — historique d'appels", () => {
     });
   });
 
+  it("le carnet de l'appel est consigné avec la ligne — et absent s'il est vide", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    // le port ouvre le carnet en plaçant l'appel : la session en cours est la sienne
+    sip.session.traceLines = [
+      { at: 1, kind: "sip", way: "out", head: "INVITE sip:bob@example.fr SIP/2.0", body: "…" },
+    ];
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history[0]!.trace).toHaveLength(1);
+
+    // trace éteinte : le carnet est vide, et la ligne ne porte rien — c'est
+    // ce qui décide de l'icône parchemin dans l'historique
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history[0]!.trace).toBeUndefined();
+  });
+
   it("ui:clearHistory vide la liste et la persistance", async () => {
     const { phone, sip, box } = await bootTo("ready", CFG);
     phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
@@ -803,6 +829,50 @@ describe("PhoneMachine — historique d'appels", () => {
     const phone = PhoneMachine.start({ args: { store, sip: new FakeSip() } });
     await vi.waitFor(() => expect(phone.state).toBe("home"));
     expect(phone.context.history).toEqual([past]);
+  });
+
+  it("garde les 50 derniers appels, même relu plus long qu'aujourd'hui", async () => {
+    // un historique persisté sous une borne plus généreuse : il est ramené
+    // à la borne courante dès la relecture, les plus récents en tête
+    const long: CallLogEntry[] = Array.from({ length: 60 }, (_, i) => ({
+      target: `bob${i}@example.fr`,
+      direction: "outgoing",
+      outcome: "answered",
+      media: { audio: true, video: false },
+      startedAt: 60 - i,
+      connectedAt: 60 - i,
+      endedAt: 60 - i,
+      endedBy: "local",
+      reason: null,
+    }));
+    const { store } = fakeStore(CFG, long);
+    const phone = PhoneMachine.start({ args: { store, sip: new FakeSip() } });
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(phone.context.history).toHaveLength(50);
+    expect(phone.context.history[0]!.target).toBe("bob0@example.fr");
+    expect(phone.context.history[49]!.target).toBe("bob49@example.fr");
+  });
+
+  it("un nouvel appel chasse le plus ancien une fois la liste pleine", async () => {
+    const full: CallLogEntry[] = Array.from({ length: 50 }, (_, i) => ({
+      target: `bob${i}@example.fr`,
+      direction: "outgoing",
+      outcome: "answered",
+      media: { audio: true, video: false },
+      startedAt: 50 - i,
+      connectedAt: 50 - i,
+      endedAt: 50 - i,
+      endedBy: "local",
+      reason: null,
+    }));
+    const { phone, sip } = await bootTo("ready", CFG, full);
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+
+    expect(phone.context.history).toHaveLength(50);
+    expect(phone.context.history[0]!.target).toBe("carol@example.fr");
+    expect(phone.context.history.some((e) => e.target === "bob49@example.fr")).toBe(false);
   });
 });
 

@@ -21,6 +21,7 @@ import type {
   RejectReason,
   SipHandle,
 } from "../src/sip/port.js";
+import type { TraceLine } from "../src/sip/record.js";
 
 class FakeSession implements CallSession {
   terminated = 0;
@@ -36,6 +37,11 @@ class FakeSession implements CallSession {
     this.cam.push(m);
   }
   attachMedia(): void {}
+  /** Le carnet de l'appel : ce que le port aurait collecté si la trace était active. */
+  traceLines: TraceLine[] = [];
+  trace(): TraceLine[] {
+    return this.traceLines;
+  }
 }
 
 function fakeHandle(opts: { throwOnCall?: string } = {}) {

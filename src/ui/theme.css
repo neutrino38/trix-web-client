@@ -498,15 +498,27 @@ fieldset.field { border: none; }
   border-bottom: 1px solid var(--border); font-size: 0.82rem;
 }
 .calllog-row:hover { background: var(--panel-2); }
+/* Placement explicite : sans lui, la colonne de l'heure dépend de la présence
+   de la caméra, et le parchemin — deuxième rangée, sous cette même caméra —
+   n'y retomberait pas d'une ligne à l'autre. */
+.calllog-row .icon.dir { grid-column: 1; grid-row: 1; }
+.calllog-row .icon.cam { grid-column: 3; grid-row: 1; }
 /* l'adresse est tronquée plutôt que coupée en plein mot (valeur complète en infobulle) */
 .calllog-row .who {
+  grid-column: 2; grid-row: 1;
   font-weight: 600; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.calllog-row .when { font-size: 0.72rem; color: var(--ink-soft); white-space: nowrap; }
-.calllog-row .detail {
-  grid-column: 2 / -1; font-size: 0.72rem; color: var(--ink-soft);
+.calllog-row .when {
+  grid-column: 4; grid-row: 1;
+  font-size: 0.72rem; color: var(--ink-soft); white-space: nowrap;
 }
+.calllog-row .detail {
+  grid-column: 2 / -1; grid-row: 2; font-size: 0.72rem; color: var(--ink-soft);
+}
+/* une ligne qui porte un parchemin lui cède la colonne de la caméra et ce
+   qui suit ; les autres gardent toute la largeur pour leur motif */
+.calllog-row:has(.tracebtn) .detail { grid-column: 2 / 3; }
 .calllog-row .icon { width: 16px; height: 16px; }
 .calllog-row .icon.dir { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .calllog-row.answered .icon.dir { color: var(--green); }
@@ -514,6 +526,60 @@ fieldset.field { border: none; }
 .calllog-row.failed .icon.dir,
 .calllog-row.missed .icon.dir { color: var(--red); }
 .calllog-row.dropped .icon.dir { color: var(--orange); }
+
+/* parchemin : cet appel a gardé sa trace SIP (ui/tracedialog.ts). Sous la
+   caméra, sur la rangée du motif — la ligne garde exactement la hauteur
+   qu'elle avait sans lui. */
+.calllog-row .tracebtn {
+  grid-column: 3; grid-row: 2; justify-self: center; align-self: center;
+  border: none; background: none; padding: 0; cursor: pointer;
+  display: inline-flex; line-height: 0; color: var(--ink-soft);
+}
+.calllog-row .tracebtn:hover { color: var(--accent); }
+.calllog-row .icon.scroll { width: 14px; height: 14px; fill: currentColor; }
+
+/* relecture du carnet d'un appel — la console, mais après coup */
+.trace-dialog {
+  width: min(780px, 92vw); max-height: 82vh; padding: 0;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.trace-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
+.trace-head {
+  flex: none; display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
+}
+.trace-head h2 { font-size: 0.95rem; }
+.trace-sub { font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
+.trace-actions { flex: none; display: flex; gap: 0.9rem; }
+/* le contenu est du protocole : latin, aligné à gauche, même en interface RTL */
+.trace-body {
+  flex: 1; min-height: 0; overflow: auto; padding: 0.25rem 0;
+  direction: ltr; text-align: left;
+}
+.trace-line { border-bottom: 1px solid var(--border); }
+.trace-line > summary,
+.trace-line.fsm {
+  display: flex; gap: 0.5rem; align-items: baseline; padding: 0.32rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem;
+}
+.trace-line > summary { cursor: pointer; }
+.trace-line > summary:hover { background: var(--panel-2); }
+.trace-line .at {
+  flex: none; font-size: 0.7rem; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+}
+.trace-line .way { flex: none; font-weight: 700; }
+.trace-line.out .way { color: var(--accent); }
+.trace-line.in .way { color: var(--green); }
+.trace-line .head { min-width: 0; overflow-wrap: anywhere; }
+.trace-line.fsm { color: var(--ink-soft); background: var(--ground); }
+.trace-line pre {
+  margin: 0; padding: 0.5rem 1rem 0.7rem 2.4rem; background: var(--ground);
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem;
+}
+.trace-cut { padding: 0.55rem 1rem; font-size: 0.72rem; color: var(--orange); }
 
 .chat-strip {
   flex: none; border-top: 1px solid var(--border);

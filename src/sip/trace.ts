@@ -1,5 +1,6 @@
 /**
- * Trace des paquets SIP sur la console.
+ * Trace des paquets SIP sur la console, et des états de l'appel qui vont
+ * avec.
  *
  * JsSIP sait déjà se raconter : `JsSIP.debug.enable("JsSIP:*")` allume le
  * module `debug` et l'espace `JsSIP:Transport` recrache les paquets émis
@@ -20,7 +21,19 @@
  * Le réglage est consulté à **chaque** paquet, jamais figé à l'ouverture du
  * socket : cocher la case en pleine communication trace la suite de
  * l'échange, sans redémarrer l'UA ni rouvrir le transport.
+ *
+ * À la trace des paquets s'ajoute celle de la FSM d'appel
+ * (`traceCallStates`, plus bas) : les mêmes lignes, le même réglage, et
+ * entre deux paquets ce que la machine en a fait.
+ *
+ * Tout ce qui est tracé est aussi proposé au carnet de l'appel en cours
+ * (`sip/record.ts`), qui n'en garde que ce qui relève de son dialogue —
+ * c'est ce carnet que l'historique attache à sa ligne. Rien n'y va quand
+ * la case est décochée : la décision se prend ici, une fois, en tête de
+ * chaque trace.
  */
+
+import { recordFsm, recordPacket } from "./record.js";
 
 const KEY = "trix-siptrace";
 
@@ -111,7 +124,9 @@ function trace(way: Way, data: unknown, sink: TraceSink): void {
     sink.line(`${TAG} SIP ${way} keep-alive`);
     return;
   }
-  sink.group(`${TAG} SIP ${way} ${firstLine(text)}`);
+  const head = firstLine(text);
+  recordPacket(way === "→" ? "out" : "in", head, text);
+  sink.group(`${TAG} SIP ${way} ${head}`);
   sink.line(text);
   sink.groupEnd();
 }
@@ -140,4 +155,71 @@ function asText(data: unknown): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Le peu qu'il faut d'une machine pour la suivre : où elle est, et de quoi
+ * être prévenu quand elle bouge. Forme structurelle, comme `Wire` plus
+ * haut — ce module ne connaît ni `finite-state-language` ni les machines de
+ * Trix, et les tests lui donnent un objet de trois lignes.
+ */
+interface Position {
+  readonly state: string;
+  /** Renseigné tant qu'un service building block tourne : où l'on est dedans. */
+  readonly sbb?: { readonly block: string; readonly state: string } | undefined;
+}
+
+interface Traceable extends Position {
+  subscribe(fn: (n: Position & { event?: { type: string }; desc?: string }) => void): () => void;
+}
+
+/**
+ * Trace les états et les transitions de la FSM d'appel, dans le même flux
+ * que les paquets et sous le même réglage.
+ *
+ * L'intérêt n'est pas de voir la machine bouger — le `logger` de la machine
+ * le dit déjà en `console.debug` — mais de le voir **entre les paquets** :
+ * un 180 sans passage en `ringing` et une trace de paquets seule ne montre
+ * rien d'anormal. C'est la juxtaposition qui rend la ligne utile, d'où le
+ * même puits et le même réglage, consulté à chaque transition comme il
+ * l'est à chaque paquet.
+ *
+ * ```
+ * [trix] SIP ← SIP/2.0 180 Ringing
+ * [trix] FSM sip:progress: (CallBlock/dialing) → (CallBlock/ringing) "180/183"
+ * ```
+ *
+ * Ce qui est tracé, c'est le **bloc** en cours — son entrée, ses
+ * transitions internes, son retour à l'hôte : l'appel, aujourd'hui le seul
+ * bloc de Trix. Les transitions du téléphone lui-même n'y sont pas ; elles
+ * relèvent du diagnostic général (`ui/diagnostics.ts`), pas d'un échange
+ * SIP. Rend une fonction qui débranche la trace.
+ */
+export function traceCallStates(m: Traceable, sink: TraceSink = consoleTraceSink): () => void {
+  let from = where(m);
+  let inside = inBlock(m);
+  return m.subscribe((n) => {
+    const to = where(n);
+    const enters = inBlock(n);
+    // l'entrée dans le bloc et son retour sont des transitions dont un seul
+    // bout est dedans : les garder, ce sont les bornes de l'appel
+    if ((inside || enters) && sipTraceEnabled()) {
+      const ev = n.event ? `${n.event.type}: ` : "";
+      const desc = n.desc ? ` "${n.desc}"` : "";
+      const head = `${ev}(${from}) → (${to})${desc}`;
+      recordFsm(head);
+      sink.line(`${TAG} FSM ${head}`);
+    }
+    from = to;
+    inside = enters;
+  });
+}
+
+/** L'état courant, qualifié du bloc quand on est dedans — comme le journal de la machine. */
+function where(p: Position): string {
+  return p.sbb ? `${p.sbb.block}/${p.sbb.state}` : p.state;
+}
+
+function inBlock(p: Position): boolean {
+  return p.sbb !== undefined;
 }

@@ -19,6 +19,7 @@ import { el, esc } from "../../el.js";
 import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
+import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
 import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
@@ -227,6 +228,13 @@ const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
   missed: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>`,
 };
 
+/**
+ * La caméra d'une ligne d'historique porte sa propre classe : la grille place
+ * chaque élément par colonne (theme.css), et le parchemin vient se glisser
+ * juste dessous, sur la rangée du motif.
+ */
+const HISTORY_CAM = ICONS.cam.replace('class="icon"', 'class="icon cam"');
+
 /** Heure seule pour aujourd'hui, date + heure au-delà — au format de la langue. */
 function fmtWhen(ts: number): string {
   const sameDay = new Date(ts).toDateString() === new Date().toDateString();
@@ -243,7 +251,12 @@ function fmtDuration(entry: CallLogEntry): string {
     : t("duration.sec", { s });
 }
 
-export function historyRow(entry: CallLogEntry): string {
+/**
+ * `index` : la place de la ligne dans `ctx.history`, portée par le bouton de
+ * trace — c'est par là que le câblage retrouve l'entrée à ouvrir, sans que
+ * le gabarit ait à transporter le carnet lui-même.
+ */
+export function historyRow(entry: CallLogEntry, index: number): string {
   const outcome = t(OUTCOME_KEY[entry.outcome]);
   const detail =
     entry.connectedAt !== null
@@ -255,9 +268,17 @@ export function historyRow(entry: CallLogEntry): string {
        title="${esc(t("history.entryTitle", { target: entry.target, outcome }))}">
     ${HISTORY_ICONS[entry.outcome]}
     <span class="who">${esc(entry.target)}</span>
-    ${entry.media.video ? ICONS.cam : ""}
+    ${entry.media.video ? HISTORY_CAM : ""}
     <span class="when">${esc(fmtWhen(entry.startedAt))}</span>
     <span class="detail">${esc(detail)}</span>
+    ${
+      // le parchemin n'apparaît que si l'appel a gardé sa trace : la case
+      // était cochée pendant qu'il avait lieu (§5.3)
+      entry.trace?.length
+        ? `<button class="tracebtn" data-act="trace" data-i="${index}"
+             title="${esc(t("trace.open"))}" aria-label="${esc(t("trace.open"))}">${SCROLL_ICON}</button>`
+        : ""
+    }
   </div>`;
 }
 
@@ -408,6 +429,11 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 
   // --- historique ----------------------------------------------------------
   on('[data-act="clear-history"]', () => phone.send({ type: "ui:clearHistory" }));
+  // parchemin : le carnet de l'appel, relu tel qu'il a été enregistré
+  on('[data-act="trace"]', (elem) => {
+    const entry = phone.context.history[Number(elem.dataset.i)];
+    if (entry) showTraceDialog(entry);
+  });
   if (targetInput && !view) {
     // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler
     for (const row of node.querySelectorAll(".calllog-row")) {

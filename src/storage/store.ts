@@ -6,6 +6,7 @@
  */
 
 import type { CallMedia } from "../sip/port.js";
+import type { TraceLine } from "../sip/record.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
 import { rawMsg, type Msg } from "../i18n/types.js";
 
@@ -60,6 +61,14 @@ export interface CallLogEntry {
    * par `misc.raw`, qui les rend telles quelles.
    */
   reason: Msg | null;
+  /**
+   * Les paquets SIP de l'appel et les états traversés, quand la trace était
+   * active au moment où il a eu lieu (§5.3) — absent sinon, et absent des
+   * lignes écrites par les versions précédentes. Chiffré comme le reste de
+   * l'historique : un paquet SIP porte les adresses des deux correspondants
+   * et la description de leurs médias.
+   */
+  trace?: TraceLine[];
 }
 
 export interface SecureStore {

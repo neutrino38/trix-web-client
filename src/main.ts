@@ -8,6 +8,7 @@ import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
 import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
+import { traceCallStates } from "./sip/trace.js";
 import { initI18n, onLocaleChange } from "./i18n/index.js";
 
 applyPrefs();
@@ -39,6 +40,10 @@ const phone = PhoneMachine.start({
 // non consommés) : l'écran en montre une phrase, la console en garde la trace
 started = phone;
 watchMachine(phone);
+
+// états et transitions de l'appel, dans le même flux que les paquets SIP et
+// sous le même réglage : c'est de leur juxtaposition qu'on lit un échange
+traceCallStates(phone);
 
 const root = document.getElementById("app")!;
 

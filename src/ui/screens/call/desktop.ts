@@ -185,7 +185,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             <div class="calllog-list">
               ${
                 history.length
-                  ? history.map(historyRow).join("")
+                  ? history.map((e, i) => historyRow(e, i)).join("")
                   : `<p class="calllog-empty">${esc(t("history.empty"))}</p>`
               }
             </div>

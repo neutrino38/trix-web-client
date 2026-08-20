@@ -113,9 +113,9 @@ const messages = {
   "config.section.diag": "Diagnostic",
   "config.traceLabel": "Tracer les échanges SIP",
   "config.traceDesc":
-    " — chaque paquet envoyé et reçu s'affiche dans la console du navigateur",
+    " — chaque paquet envoyé et reçu, et les états par lesquels l'appel passe, s'affichent dans la console du navigateur",
   "config.traceHint":
-    "Effet immédiat, même en pleine communication : ouvrez la console (F12) pour lire les paquets. Ils portent votre adresse SIP et celle de vos correspondants — à retirer d'un rapport de bogue public.",
+    "Effet immédiat, même en pleine communication : ouvrez la console (F12) pour lire les paquets. Chaque appel garde aussi les siens dans son historique, chiffrés, jusqu'à ce que vous l'effaciez. Ils portent votre adresse SIP et celle de vos correspondants — à retirer d'un rapport de bogue public.",
   "config.save": "Enregistrer et se connecter",
   "config.saving": "Enregistrement…",
   "config.cancel": "Annuler",
@@ -235,6 +235,20 @@ const messages = {
   "history.clear": "Effacer",
   "history.empty": "Aucun appel enregistré",
   "history.entryTitle": "{target} — {outcome}",
+
+  // Carnet d'un appel : les paquets SIP gardés quand la trace était active
+  "trace.open": "Voir les traces SIP de cet appel",
+  "trace.title": "Traces SIP — {target}",
+  "trace.count.one": "{n} paquet",
+  "trace.count.other": "{n} paquets",
+  "trace.sent": "envoyé",
+  "trace.received": "reçu",
+  "trace.copy": "Copier",
+  "trace.copied": "Copié",
+  "trace.copyFailed": "Copie refusée",
+  "trace.close": "Fermer",
+  "trace.clipped": "… (paquet tronqué)",
+  "trace.truncated": "Trace interrompue : l'appel a dépassé ce qui est gardé par appel.",
   "outcome.answered": "Répondu",
   "outcome.missed": "Manqué",
   "outcome.failed": "Échec",
