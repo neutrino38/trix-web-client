@@ -15,13 +15,11 @@ La logique applicative est structurée en machines à états avec le framework
 [finite-state-language](https://github.com/neutrino38/finite-state-language/) (FSL),
 la signalisation SIP repose sur JsSIP (SIP sur WebSocket sécurisé).
 
-**L'empaquetage en application Tauri est une perspective future** (voir Non-objectifs et
-`CONCEPTION.md` §8) : les choix d'architecture doivent rester compatibles, mais aucune
-intégration Tauri n'est réalisée dans les phases 0 à 4.
 
 ## Public visé et contrainte majeure
 
-L'application s'adresse **d'abord à des personnes sourdes et malentendantes**. Conséquence
+L'application s'adresse **a des développeurs de service**. Elle sert de bac à sable pour tester
+des service télécom en conception universelle. Conséquence
 directe sur la conception : **aucune information ne peut reposer sur le son seul**. La
 sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est visuelle
 (et haptique sur mobile). Voir « Alerte d'appel entrant » ci-dessous.
@@ -119,7 +117,7 @@ Thèmes clair et sombre (interrupteur, comme Elioz Connect).
 
 ### Écran 1 — Accueil
 
-- Logo du projet LSF centré (icône fournie par le propriétaire, placeholder FSL en attendant).
+- Logo du projet centré placeholder FSL en attendant).
 - Bouton primaire « Utiliser le compte » (affiché seulement si un compte est stocké, avec le
   display name / username en rappel).
 - Bouton secondaire « Configurer un nouveau compte ».
@@ -258,9 +256,7 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 
 ## Références
 
-- `goals.md` (objectifs projet — non versionné)
 - `docs/CONCEPTION.md` (conception technique)
 - `docs/mockups/mockup.html` (maquettes) - validé !
 - Framework FSL : https://github.com/neutrino38/finite-state-language/
 - JsSIP : https://jssip.net/
-- Layout de référence : `connect/Elioz Connect.html` (non versionné)
