@@ -1,44 +1,58 @@
 # Spécification — Trix Communicator (Webphone conversation totale)
 
-**Statut :** Brouillon
+**Statut :** phases 0 à 3 livrées, phase 4 à faire
 **Propriétaire :** Emmanuel Buu / IVèS
 **Créée le :** 2026-08-15
-**Dernière mise à jour :** 2026-08-20
+**Dernière mise à jour :** 2026-08-21 (relecture ligne à ligne contre le code)
 
 ## Vue d'ensemble
 
 Trix Communicator est un webphone SIP « conversation totale » (audio + vidéo + texte temps réel)
-fonctionnant dans un navigateur. Il s'inspire du layout de l'écran d'appel d'Elioz Connect,
-rebrandé aux couleurs du projet FSL/LSF (palette violette du logo `fsl-logo.svg`).
+fonctionnant dans un navigateur, aux couleurs du projet FSL/LSF (palette violette).
 
 La logique applicative est structurée en machines à états avec le framework
 [finite-state-language](https://github.com/neutrino38/finite-state-language/) (FSL),
-la signalisation SIP repose sur JsSIP (SIP sur WebSocket sécurisé).
+la signalisation SIP repose sur JsSIP (SIP sur WebSocket sécurisé). L'appel est un
+**bloc de service** (SBB) autonome, entré et rendu par la machine hôte.
 
+Documentation associée : `docs/CONCEPTION.md` (conception technique),
+`docs/DIAGRAMS.md` (diagrammes générés depuis le code), `docs/mockups/mockup.html`
+(maquettes vivantes, qui chargent la feuille de style de l'application),
+`USERGUIDE.md` (guide utilisateur, en anglais).
 
 ## Public visé et contrainte majeure
 
-L'application s'adresse **a des développeurs de service**. Elle sert de bac à sable pour tester
-des service télécom en conception universelle. Conséquence
-directe sur la conception : **aucune information ne peut reposer sur le son seul**. La
-sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est visuelle
-(et haptique sur mobile). Voir « Alerte d'appel entrant » ci-dessous.
+L'application s'adresse **à des développeurs de services**. Elle sert de bac à sable pour
+tester des services télécom en conception universelle. Conséquence directe sur la
+conception : **aucune information ne peut reposer sur le son seul**. La sonnerie d'appel
+entrant n'est qu'un canal d'appoint ; l'alerte véritable est visuelle (et haptique sur
+mobile). Voir « Alerte d'appel entrant » ci-dessous.
+
+La même règle vaut pour la couleur : tout état signalé par une couleur l'est aussi par
+une forme (icône barrée) ou par un mot (RGAA 3.1).
 
 ## Objectifs
 
-- Webphone SIP complet : enregistrement, appels sortants puis entrants, audio et vidéo.
+- Webphone SIP complet : enregistrement, appels sortants et entrants, audio et vidéo.
 - **Alerte d'appel entrant perceptible sans le son**, y compris application en arrière-plan.
-- Trois écrans : accueil, configuration, appel.
-- Stockage local du compte SIP **sans stocker le mot de passe** (HA1 uniquement), chiffré.
-- Logique 100 % pilotée par machines à états FSL, observables (`toMermaid()`, logs de transitions).
-- UI aux couleurs FSL, sans aucune référence visuelle ou textuelle à Elioz.
+- Trois écrans : accueil, configuration, appel — ce dernier en deux gabarits (bureau, mobile).
+- Stockage local du compte SIP **sans stocker le mot de passe** (HA1 uniquement), chiffré,
+  ainsi que de l'historique d'appels.
+- Traversée de NAT configurable : STUN et TURN (TURN sur TLS compris).
+- Interface multilingue (anglais, français, arabe moderne standard) avec écriture
+  droite-à-gauche.
+- Logique 100 % pilotée par machines à états FSL, observables (`toMermaid()`, journal
+  de transitions, trace SIP).
+- Outillage de diagnostic intégré : trace des paquets SIP, carnet de l'appel dans
+  l'historique, statistiques média en direct et bilan de l'appel terminé.
 
 ## Non-objectifs
 
-- Intégration / packaging Tauri : **reportée** (perspective future, contraintes documentées dans `CONCEPTION.md`).
-- Tchat en phases 1–3 (désactivé/grisé ; ajouté en phase 4 via data channel).
+- Intégration / packaging Tauri : **reportée** (perspective future, contraintes documentées dans `CONCEPTION.md` §8).
+- Tchat en phases 1–3 (bandeau grisé ; ajouté en phase 4 via data channel).
 - Annuaire, transfert d'appel, enregistrement de conversation.
-- Multi-comptes (un seul compte SIP configuré à la fois).
+- Multi-comptes (un seul compte SIP configuré à la fois) et multi-appels
+  (un seul appel à la fois, les autres sont refusés en 486 / 480).
 - Support de navigateurs sans WebRTC.
 
 ## User Stories
@@ -46,33 +60,64 @@ sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est v
 ### En tant qu'utilisateur, je veux configurer mon compte SIP afin de m'enregistrer sur mon proxy
 
 **Critères d'acceptation :**
-- [ ] Formulaire : proxy SIP (URL WSS), domaine, display name, username, mot de passe.
-- [ ] À l'enregistrement du formulaire, le HA1 (`MD5(username:realm:password)`) est calculé et stocké ; le mot de passe n'est **jamais** persisté.
-- [ ] Le stockage local est chiffré (voir `CONCEPTION.md` §6).
-- [ ] Les champs sont pré-remplis si un compte existe déjà (mot de passe affiché comme « déjà défini »).
+- [x] Formulaire : serveur SIP (URL WSS), **adresse SIP** (`user@domaine`, en un seul champ),
+      nom affiché, identifiant d'authentification optionnel, mot de passe.
+- [x] Le domaine est déduit de l'adresse SIP et sert de realm ; pas de champ séparé.
+- [x] L'identifiant d'authentification ne se saisit qu'une fois la case cochée ; la mention
+      « si différent de … » suit le userpart en cours de frappe.
+- [x] À l'enregistrement, le HA1 (`MD5(identifiant:realm:mot de passe)`) est calculé et
+      stocké ; le mot de passe n'est **jamais** persisté.
+- [x] Le stockage local est chiffré (voir `CONCEPTION.md` §6).
+- [x] Les champs sont pré-remplis si un compte existe déjà (mot de passe affiché comme
+      « déjà défini » ; le laisser vide conserve le HA1 en place).
+- [x] Le champ fautif est surligné et la cause affichée en clair au retour d'erreur.
+
+### En tant qu'utilisateur, je veux traverser les NAT afin que le son passe entre deux réseaux privés
+
+**Critères d'acceptation :**
+- [x] Champs STUN et TURN (hôte ou hôte:port), identifiant et mot de passe TURN, case
+      « TURN sur TLS » (`turns:`, port 5349 par défaut au lieu de 3478).
+- [x] Les trois champs dépendants de TURN sont désactivés tant qu'aucun serveur n'est saisi.
+- [x] Le mot de passe TURN, lui, est **conservé** chiffré : le relais réclame le secret
+      lui-même à chaque appel, une empreinte n'y suffirait pas.
+- [x] Réglage du compte (fourni par l'opérateur SIP au même titre que le proxy), donc
+      persisté chiffré avec lui.
 
 ### En tant qu'utilisateur, je veux voir l'état d'enregistrement SIP afin de savoir si je peux appeler
 
 **Critères d'acceptation :**
-- [ ] Indicateur permanent sur l'écran d'appel : Enregistré (vert) / Enregistrement… (orange) / Échec (rouge).
-- [ ] En cas d'échec : cause affichée + bouton « Réessayer ».
+- [x] Indicateur permanent sur l'écran d'appel : pastille + libellé — Connexion…,
+      Enregistrement…, Enregistré (vert), Reconnexion…, En veille, Échec (rouge),
+      Déconnexion…
+- [x] En cas d'échec : cause en clair, code SIP en petit, boutons « Réessayer » et
+      « Corriger les réglages ».
+- [x] Perte de connexion : reconnexion automatique périodique, sans action de l'utilisateur.
+- [x] Veille / réveil de la machine : détectés par saut d'horloge, l'enregistrement est
+      relâché puis repris (`ui/lifecycle.ts`).
 
 ### En tant qu'utilisateur, je veux appeler une adresse SIP en audio ou en vidéo
 
 **Critères d'acceptation :**
-- [ ] Champ de saisie d'adresse SIP sur l'écran d'appel.
-- [ ] Une saisie sans `@` est complétée implicitement : `adresse` → `adresse@<domaine configuré>`.
-- [ ] Bouton principal « Appeler » = appel **audio** ; menu déroulant accolé proposant « Appel vidéo ».
-- [ ] Pendant l'appel : chrono, mute micro, coupure caméra, masquage self-view, raccrocher.
+- [x] Champ de saisie d'adresse SIP sur l'écran d'appel ; `Entrée` lance l'appel.
+- [x] Une saisie sans `@` est complétée implicitement : `adresse` → `adresse@<domaine configuré>`.
+- [x] Bouton principal scindé : le menu accolé choisit le **mode** (audio / vidéo) ; le
+      mode retenu est mémorisé et rebaptise le bouton principal. L'appel ne part que par
+      le bouton principal.
+- [x] Pendant l'appel : chrono, mute micro, coupure caméra, masquage self-view,
+      coupure du haut-parleur, plein écran, raccrocher.
+- [ ] DTMF — bouton présent mais désactivé (phase 4).
 
-### En tant qu'utilisateur, je veux recevoir un appel (phase 3)
+### En tant qu'utilisateur, je veux recevoir un appel
 
 **Critères d'acceptation :**
-- [x] Notification d'appel entrant avec identité de l'appelant.
-- [x] Refuser.
+- [x] Popup **modale** d'appel entrant avec identité de l'appelant (nom affiché du `From`,
+      URI sinon) et sur-titre disant le média offert.
+- [x] Refuser (bouton, ou Échap).
 - [x] Répondre en audio + vidéo (uniquement si la vidéo est proposée par l'appelant).
 - [x] Répondre en audio seul (sauf si l'appelant ne propose **que** la vidéo).
-- [x] Alerte perceptible sans le son (voir « Alerte d'appel entrant »).
+- [x] Les réponses proposées sont dérivées de la seule offre SDP de l'INVITE (`sip/sdp.ts`).
+- [x] Le reste de l'écran est `inert` pendant la sonnerie ; le focus est piégé dans la popup.
+- [x] Alerte perceptible sans le son (voir ci-dessous).
 
 ### Alerte d'appel entrant (accessibilité sourds et malentendants)
 
@@ -85,113 +130,204 @@ sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est v
       l'appelant, permission demandée explicitement par l'utilisateur (jamais à l'improviste).
 - [x] Mobile : vibration rythmée pendant la sonnerie.
 - [x] L'écran ne s'éteint pas pendant la sonnerie (wake lock) — un flash sur écran éteint n'alerte personne.
+- [x] Sonnerie audio de complément, synthétisée (WebAudio), à la cadence française.
 - [x] Le flash est désactivable dans la configuration du compte (activé par défaut) ; le réglage
       est stocké chiffré **avec le compte**, il suit donc l'utilisateur et non le navigateur.
       Les autres canaux restent actifs — ils ne perturbent pas l'écran.
 
+### En tant qu'utilisateur, je veux retrouver mes appels passés
+
+**Critères d'acceptation :**
+- [x] Historique par compte, chiffré, 50 entrées au plus, dans le panneau latéral.
+- [x] Chaque ligne : sens (flèche), correspondant, caméra si vidéo, date/heure, durée et
+      motif de fin (raccroché par vous / par le correspondant / coupé par le réseau) ou
+      cause d'échec.
+- [x] Issues distinguées : répondu, manqué, échec, annulé, interrompu.
+- [x] Un clic sur une ligne pré-remplit le champ d'adresse pour rappeler.
+- [x] Bouton « Effacer » de l'historique.
+- [x] Les motifs sont stockés comme **messages différés** (clé + variables) : l'historique
+      se relit dans la langue courante, même pour des appels passés dans une autre.
+
+### En tant que développeur, je veux diagnostiquer un appel
+
+**Critères d'acceptation :**
+- [x] Case « Tracer les échanges SIP » (section Diagnostic des paramètres) : réglage
+      **local**, à effet immédiat, y compris en pleine communication.
+- [x] Cochée, chaque paquet envoyé et reçu est imprimé dans la console — entête sur une
+      ligne, corps dans un groupe replié — et les transitions de machines avec.
+- [x] Le **carnet** de l'appel (paquets + états traversés) est gardé avec sa ligne
+      d'historique et se relit dans un dialogue modal, avec un bouton « Copier ».
+- [x] Les **statistiques média** se découvrent depuis la pastille « En communication »
+      (survol, focus **ou** clic, qui les fixe) : codec, débit et perte de chaque sens,
+      sur une fenêtre glissante de 10 s.
+- [x] L'appel terminé, le même bilan — mesuré sur toute sa durée — reste accessible depuis
+      la **loupe** de sa ligne d'historique, avec un bouton « Copier ».
+- [x] Trace et statistiques sont sous la même case : décochée, rien n'est prélevé et
+      rien n'est conservé.
+
+### En tant qu'utilisateur, je veux l'interface dans ma langue
+
+**Critères d'acceptation :**
+- [x] Anglais, français, arabe moderne standard ; « Automatique » suit la langue du
+      navigateur et nomme la langue détectée.
+- [x] Le sélecteur est présent à l'accueil (avant tout le reste) et dans les paramètres.
+- [x] L'arabe retourne toute la mise en page (`dir="rtl"`), panneau latéral et poignée de
+      redimensionnement compris.
+- [x] Ajouter une langue = déposer un fichier dans `src/i18n/locales/` nommé d'après son
+      tag BCP-47 ; la compilation échoue si un message de la référence française manque.
+
 ### En tant qu'utilisateur, je veux me déconnecter proprement
 
 **Critères d'acceptation :**
-- [ ] Bouton de déconnexion sur l'écran d'appel : unREGISTER + fermeture WS → retour à l'écran d'accueil.
-- [ ] Bouton « Paramètres » sur l'écran d'appel : retour à l'écran de configuration (désenregistrement préalable).
+- [x] Bouton de déconnexion sur l'écran d'appel : unREGISTER + fermeture WS → retour à l'écran d'accueil.
+- [x] Bouton « Paramètres » sur l'écran d'appel : retour à l'écran de configuration (désenregistrement préalable).
+- [x] Les deux sont désactivés pendant un appel.
 
 ## Conception UI/UX
 
-Mockup interactif : `docs/mockups/mockup.html` (les 3 écrans + variante en communication).
+Maquettes vivantes : `docs/mockups/mockup.html` — elles chargent `src/ui/theme.css` et
+recopient le balisage de `src/ui/screens/`, elles ne peuvent donc pas diverger du rendu.
 
-### Palette 
+### Palette
 
-| Rôle | Elioz (avant) | FSL (après) |
-|---|---|---|
-| Accent principal / texte fort | `#422D4C` | `#3E2A56` |
-| Accent secondaire (icônes, liens) | — | `#7B54A0` |
-| Fond panneaux | `#F3F5FB` | `#F6F4FA` |
-| Bordures, touches | `#D8DBE7` | `#DFD7EA` |
-| Surbrillance | — | `#C9A9E0` |
-| Bouton Appeler | `#36AD45` | conservé |
-| Bouton Raccrocher | `#E94E3C` | conservé |
-| Fond vidéo | `#000` | conservé |
+Définie en variables CSS dans `src/ui/theme.css`, en deux jeux (clair et sombre).
 
-Polices : Poppins / Nunito Sans / Segoe UI / system-ui (comme le wordmark FSL).
-Thèmes clair et sombre (interrupteur, comme Elioz Connect).
+| Rôle | Variable | Clair | Sombre |
+|---|---|---|---|
+| Fond général | `--ground` | `#F6F4FA` | `#17101F` |
+| Panneaux | `--panel` / `--panel-2` | `#FFFFFF` / `#EFEAF6` | `#241933` / `#2E2140` |
+| Texte fort / atténué | `--ink` / `--ink-soft` | `#3E2A56` / `#6E5A86` | `#EDE6F5` / `#B4A5C8` |
+| Accent (icônes, liens) | `--accent` | `#7B54A0` | `#A97FD1` |
+| Surbrillance | `--accent-soft` | `#C9A9E0` | `#6B4487` |
+| Bordures | `--border` | `#DFD7EA` | `#3A2B4E` |
+| Fond vidéo | `--video-bg` | `#0D0A12` | identique |
+| Bouton Appeler | `--green` | `#36AD45` | identique |
+| Avertissement | `--orange` | `#D98324` | identique |
+| Bouton Raccrocher | `--red` | `#E94E3C` | identique |
+
+Polices : Poppins / Nunito Sans / Segoe UI / system-ui.
+Thème : trois choix — **Système** (défaut, suit le réglage de l'appareil), Clair, Sombre.
+« Système » est une préférence à part entière, à laquelle on peut revenir.
+
+États des boutons inactifs : opacité 0,5.
 
 ### Écran 1 — Accueil
 
-- Logo du projet centré placeholder FSL en attendant).
-- Bouton primaire « Utiliser le compte » (affiché seulement si un compte est stocké, avec le
-  display name / username en rappel).
-- Bouton secondaire « Configurer un nouveau compte ».
+- Icône Trix (200 px) et nom du produit en **texte** (et non en image : le mot-marque de
+  `trix-logo.svg` est peint en violet foncé, illisible en thème sombre).
+- Accroche et **numéro de version** (issu de `package.json` via `src/version.ts`) — la
+  première chose qu'on demande à qui signale une anomalie.
+- Bouton primaire « Utiliser ce compte » (affiché seulement si un compte est stocké, avec
+  le nom affiché et `user@domaine` en rappel).
+- Bouton « Configurer un nouveau compte » (primaire si aucun compte n'est stocké).
+- Sélecteur de **langue**.
+- Crédit « Powered by FSL » en pied, vers le dépôt du framework (nouvelle fenêtre).
 
 ### Écran 2 — Configuration
 
-Formulaire vertical centré, 5 champs :
+Formulaire en **trois colonnes** (une seule en dessous de 800 px). La coupure sépare ce
+qui appartient au compte (chiffré, appliqué à la validation) de ce qui appartient au
+navigateur (immédiat).
+
+**Colonne 1 — Compte SIP**
 
 | Champ | Format / validation |
 |---|---|
-| Proxy SIP | URL WebSocket sécurisée, ex. `wss://sip.example.fr:8443/ws` |
-| Domaine | nom de domaine SIP, ex. `example.fr` (sert aussi de realm pour le HA1) |
-| Display name | texte libre |
-| Username | user SIP (sans domaine) |
+| Serveur SIP | URL WebSocket sécurisée, ex. `wss://sip.example.com:8443/ws` |
+| Adresse SIP | `user@domaine`, avec ou sans préfixe `sip:` ; le domaine sert de realm |
+| Votre nom | texte libre (nom affiché) |
+| Identifiant d'authentification | facultatif, activé par une case ; par défaut le userpart de l'adresse |
 | Mot de passe | masqué ; converti en HA1 à l'enregistrement, jamais stocké |
-| Flash visuel à l'appel entrant | case à cocher, **activée par défaut** ; réglage du compte (accessibilité) |
 
-Réglages **locaux**, à effet immédiat et hors du compte : thème, langue, notifications
-système, et « Tracer les échanges SIP » (section Diagnostic) — les paquets envoyés et
-reçus s'affichent dans la console du navigateur, y compris en pleine communication
-(CONCEPTION §5.2). La même case ouvre les **statistiques média** de l'appel en cours,
-découvertes depuis la pastille « En communication » (CONCEPTION §5.4).
+**Colonne 2 — Traversée de NAT**
+
+| Champ | Format / validation |
+|---|---|
+| Serveur STUN | facultatif ; hôte ou hôte:port (3478 par défaut) |
+| Serveur TURN | facultatif ; hôte ou hôte:port |
+| Identifiant TURN | requis dès qu'un TURN est saisi |
+| Mot de passe TURN | requis dès qu'un TURN est saisi ; **conservé** chiffré |
+| TURN sur TLS | case à cocher ; `turns:` et port 5349 par défaut |
+
+**Colonne 3 — Alertes, affichage et diagnostic**
+
+| Réglage | Portée |
+|---|---|
+| Flash visuel à l'appel entrant | **compte** (chiffré), activé par défaut |
+| Notifications système | navigateur ; bouton de demande de permission, état affiché |
+| Thème (Système / Clair / Sombre) | navigateur, effet immédiat |
+| Langue de l'interface | navigateur, effet immédiat |
+| Tracer les échanges SIP | navigateur, effet immédiat, y compris en appel |
 
 Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
-Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
+Note visible : « Le mot de passe n'est pas conservé : seule une empreinte (HA1) est
+stockée, chiffrée, dans ce navigateur. »
 
-### Écran 3 — Appel 
+### Écran 3 — Appel (vue bureau)
 
-Structure 2 zones 
+- **Barre d'en-tête** : icône + nom, **indicateur d'enregistrement** (pastille + libellé,
+  `user@domaine` quand enregistré), et en communication la **pastille d'appel** puis le
+  **chrono** ; à droite, boutons « Paramètres » et « Se déconnecter », désactivés en appel.
+  Trace SIP cochée, la pastille d'appel devient un bouton qui découvre les **statistiques
+  média** au survol, au focus ou au clic (qui les fixe) — CONCEPTION §5.4.
+- **Scène vidéo (flexible)** : vidéo distante plein cadre sur fond noir ; self-view incrusté
+  en haut-gauche (~25 % de hauteur, coins arrondis) ; vu-mètres verticaux (distant et local,
+  WebAudio) courant sur toute la hauteur ; overlay « Appel en cours… » / « Sonnerie… »
+  pendant l'établissement. Double-clic = plein écran.
+  Hors appel, la scène porte le message de repos, ou le diagnostic d'échec
+  d'enregistrement et ses boutons d'action.
+- **Barre de commandes en surimpression** (sur la scène, la même que la vue mobile) :
+  micro, caméra, self-view, haut-parleur, DTMF (désactivé — phase 4), plein écran, repli
+  du panneau ; le rond rouge « Raccrocher » à sa droite.
+  Règle d'état : **rouge + icône barrée** quand un flux est coupé (micro, caméra, son) ;
+  **violet** pour une bascule purement locale (self-view masqué). Le haut-parleur s'allume
+  en vert quand le correspondant parle — indice visuel de son entrant.
+- **Panneau latéral droit**, repliable et redimensionnable (300 px au minimum, un tiers de
+  la fenêtre au maximum ; poignée pilotable à la souris **et** aux flèches du clavier) :
+  - champ « Adresse SIP » (complétion `@domaine` implicite), figé pendant l'appel,
+  - bouton scindé **« Appeler » + menu de mode (audio / vidéo)**,
+  - bouton « Raccrocher » (rouge, en communication seulement),
+  - **historique d'appels** (parchemin = carnet de trace, loupe = bilan média),
+  - bandeau tchat **grisé** portant la mention « disponible en phase 4 »,
+  - pied : taille du texte (A− / A+) — le seul réglage qu'on ajuste en cours de conversation.
 
-- **Barre d'en-tête** : logo (retour accueil), **indicateur d'enregistrement** (pastille + libellé),
-  bouton « Paramètres » (engrenage → écran 2), bouton « Se déconnecter » (→ écran 1).
-  En communication s'y ajoute la pastille d'appel ; trace SIP cochée, elle découvre au
-  survol (ou au focus, ou au clic qui la fixe) les **statistiques média** — codec, débit
-  et perte de chaque sens, sur une fenêtre glissante de 10 s (CONCEPTION §5.4).
-  L'appel terminé, le même bilan — mesuré sur toute sa durée — reste accessible depuis
-  la **loupe** de sa ligne d'historique, avec un bouton « Copier ».
-- **Zone centrale (flexible)** : vidéo distante plein cadre sur fond noir ; self-view incrusté
-  en haut-gauche (~25 % de hauteur, coins arrondis 10px) ; vu-mètres verticaux discrets ;
-  overlay « Connexion… » pendant l'établissement. Double-clic = plein écran.
-- **Barre inférieure (48px)** : couper caméra, masquer self-view, haut-parleur, (DTMF — phase 4).
-- **Sidebar droite (300px)** :
-  - champ « Adresse SIP » (complétion `@domaine` implicite),
-  - bouton **« Appeler » (vert, audio) + menu déroulant « Appel vidéo »**,
-  - bouton « Raccrocher » (rouge, visible uniquement en communication),
-  - chrono HH:MM:SS + mute micro,
-  - zone tchat **grisée** avec mention « disponible en phase 4 »,
-  - pied : A-/A+ et interrupteur thème clair/foncé.
+Panneau replié, la scène occupe toute la largeur et « Raccrocher » reste atteignable par le
+rond rouge de la barre de surimpression.
 
-États des boutons inactifs : opacité 0,5 (convention Elioz conservée).
+### Écran 3 — Appel (vue mobile)
 
-### Suppression du branding Elioz
+Sous 720 px de large (ou `?layout=mobile`), et sans couper l'appel au basculement :
 
-Aucune reprise de : titre « Elioz Connect », logos/icônes Elioz, liens elioz.fr /
-eliozconnect-eu.dev.ives.fr, textes « Vous contactez », « Annuaire Connect »,
-« Contacter Elioz », popup qualité de traduction, realm `visioassistance.net`.
-Seul le **layout** (structure, dimensions, ergonomie) est repris.
+- barre haute réduite : pastille d'état, libellé, Paramètres, Déconnexion ;
+- hors appel : champ d'adresse, bouton scindé, historique — ni vidéo ni contrôles média ;
+- en appel : la vidéo prend l'écran, chrono incrusté, contrôles média en surimpression,
+  raccrochage en rond rouge.
+
+### Appel entrant (les deux vues)
+
+Une **seule** popup modale, partagée bureau et mobile : sur-titre du média offert, nom de
+l'appelant, URI si le nom ne la répète pas, boutons de réponse dérivés de l'offre, bouton
+« Refuser ». Empilement : la popup passe au-dessus du voile et **en dessous** du cadre
+clignotant de l'alerte, qui reste le signal principal.
 
 ## Plan d'implémentation
 
-### Phase 0 : Specs & conception (ce document)
-- [x] Spécifications fonctionnelles + mockups
+### Phase 0 : Specs & conception
+- [x] Spécifications fonctionnelles + maquettes
 - [x] Conception technique (`CONCEPTION.md`)
 - [x] Contraintes de compatibilité Tauri documentées (intégration reportée)
 
 ### Phase 1 : Accueil + Configuration + REGISTER
 - [x] Bootstrap Vite + TypeScript + FSL + JsSIP
 - [x] Écrans accueil et configuration
-- [x] Stockage chiffré (HA1), machine `PhoneMachine`, REGISTER OK avec indicateur d'état
+- [x] Stockage chiffré (HA1), machine `PhoneMachine`, REGISTER avec indicateur d'état
+- [x] Diagnostic d'erreurs d'enregistrement en clair + code SIP
 
 ### Phase 2 : Écran d'appel, sortant uniquement
 - [x] Écran d'appel complet (tchat désactivé), vues bureau et mobile
 - [x] `CallBlock` sortant (audio + vidéo), entré depuis `PhoneMachine` (`fx.sbb`)
-- [x] Observabilité : export `toMermaid()` des machines + log des transitions
+- [x] Historique d'appels chiffré, reconnexion automatique, veille / réveil
+- [x] Observabilité : export `toMermaid()` des machines + journal des transitions
 
 ### Phase 3 : Appels entrants
 - [x] Refus / réponse audio+vidéo (si vidéo proposée) / réponse audio seul (sauf vidéo pure)
@@ -201,60 +337,81 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 - [x] Alerte multi-canal accessible : flash, onglet, notification système, vibration, wake lock
 - [x] Flash désactivable depuis la configuration du compte, réglage persisté avec lui
 
+### Hors phase — livré en cours de route
+- [x] Internationalisation : anglais / français / arabe, détection automatique, RTL
+- [x] Traversée de NAT : STUN, TURN, TURN sur TLS
+- [x] Panneau latéral repliable et redimensionnable (souris et clavier)
+- [x] Trace SIP en console, carnet de l'appel dans l'historique
+- [x] Statistiques média en direct et bilan de l'appel terminé
+- [x] Journalisation des défauts de machines sur la console (`ui/diagnostics.ts`)
+
 ### Phase 4 : DTMF + Tchat data channel
 - [ ] DTMF (RFC 4733)
-- [ ] Analyse `../generique/composants/tchat3`, composant équivalent sur data channel WebRTC
+- [ ] Texte temps réel (T.140) sur data channel WebRTC
 
 ### Phase 5 (future) : Tauri
 - [ ] Option d'embarquement Tauri + paquet Ubuntu — **reportée**, contraintes en `CONCEPTION.md` §8
 
 ## Stratégie de tests
 
-- Tests unitaires Vitest des machines FSL avec pile SIP factice
-  (modèle : `fsl-typescript/typescript/test/webphone.test.ts`).
-- Tests unitaires du stockage chiffré et du calcul HA1.
-- Tests manuels E2E contre un proxy SIP réel (Kamailio/Elixip) : register, appels A/V, DTMF.
+Vitest, exécution par `npm test`. Couverture actuelle (`test/`) :
+
+| Fichier | Objet |
+|---|---|
+| `phone.test.ts`, `call.test.ts`, `answer.test.ts` | machines FSL, avec pile SIP factice |
+| `store.test.ts`, `ha1.test.ts` | stockage chiffré (fake-indexeddb) et calcul du HA1 |
+| `sdp.test.ts`, `ice.test.ts` | analyse de l'offre SDP, normalisation STUN/TURN |
+| `trace.test.ts`, `record.test.ts`, `tracedialog.test.ts` | trace SIP, carnet d'appel, dialogue de relecture |
+| `stats.test.ts` | fenêtre glissante et bilan média |
+| `i18n.test.ts`, `langpicker.test.ts` | complétude des dictionnaires, sélecteur de langue |
+| `diagnostics.test.ts` | remontée des défauts de machines en console |
+| `diagrams.test.ts` | `docs/DIAGRAMS.md` conforme au code (échoue s'il diverge) |
+
+Tests manuels E2E contre un proxy SIP réel : register, appels A/V entrants et sortants,
+traversée de NAT via TURN.
 
 ## Métriques & critères de succès
 
 - REGISTER réussi en < 3 s sur réseau nominal ; état toujours reflété à l'écran.
 - Établissement d'appel sortant < 5 s après décroché.
-- Diagrammes Mermaid générés depuis le code (`toMermaid()`) conformes aux diagrammes de conception.
+- Diagrammes Mermaid générés depuis le code (`toMermaid()`) conformes aux diagrammes de
+  conception — vérifié par `diagrams.test.ts`.
 
 ## Dépendances
 
-- `finite-state-language` (npm, v0.1.x, ESM only, zéro dépendance runtime)
-- `jssip` (SIP over WebSocket)
-- Vite + TypeScript
+- `finite-state-language` (npm, ^0.2.0, ESM only, zéro dépendance runtime)
+- `jssip` (^3.13.8, SIP over WebSocket)
+- Vite ^7 + TypeScript ^5.5, Vitest ^3, `fake-indexeddb` pour les tests
 - Un proxy SIP WSS de test
 
 ## Risques & mitigations
 
 | Risque | Impact | Probabilité | Mitigation |
 |------|--------|------------|------------|
-| Realm du serveur ≠ domaine configuré → HA1 invalide | Élevé | Moyenne | Champ realm optionnel ; en cas de 401 avec realm différent, redemander le mot de passe une fois et recalculer le HA1 |
-| FSL v0.1.0, API « encore molle » | Moyen | Moyenne | Ce projet est le premier consommateur réel ; épingler la version, remonter les besoins au framework |
+| Realm du serveur ≠ domaine configuré → HA1 invalide | Élevé | Moyenne | Le domaine de l'adresse SIP sert de realm ; en cas de 401, le diagnostic nomme la cause et le champ fautif est surligné |
+| API FSL encore jeune | Moyen | Moyenne | Ce projet est le premier consommateur réel ; épingler la version, remonter les besoins au framework |
 | Stockage navigateur non inviolable (XSS) | Moyen | Faible | Clé WebCrypto non-extractible + CSP stricte ; voir `CONCEPTION.md` §6 |
+| Trace et historique portent des adresses SIP | Moyen | Moyenne | Chiffrés au repos, effaçables ; l'aide du champ prévient de les retirer d'un rapport public |
 
 ## Questions ouvertes
 
-- [x] Icône/logo définitif du projet LSF (le propriétaire dispose d'une icône — à intégrer).
-   Intégré : la marque Trix vit dans `public/` — `trix-icon.svg` (accueil en 120 px et barre
-   d'en-tête en 38 px), `trix-favicon.svg` + `trix-favicon-192.png` (onglet). Le nom du produit
-   reste du **texte** et non une image : le mot-marque de `trix-logo.svg` est peint en violet
-   foncé, illisible sur le fond du thème sombre. Ce fichier reste disponible dans `public/` pour
-   les supports à fond clair. `fsl-icon.svg` sert de crédit « Powered by FSL » en pied d'accueil
-   (lien vers le dépôt du framework). Le placeholder « arcs LSF » de `src/ui/logo.ts` est supprimé.
-- [x] Faut-il un champ « realm » distinct du domaine dans la configuration ? (défaut : realm = domaine)
-   non. domain = realm
-- [x] Texte temps réel : T.140 sur data channel 
-- [x] Nom produit définitif affiché dans l'UI.
- « Trix Communicator » (nom court « Trix ») 
- s'appelle `trix-web-client` et le code n'emploie que le nom court `trix`.
+- [x] Icône/logo définitif du projet. Intégré : la marque Trix vit dans `public/` —
+   `trix-icon.svg` (accueil en 200 px et barre d'en-tête en 38 px), `trix-favicon.svg` +
+   `trix-favicon-192.png` (onglet). Le nom du produit reste du **texte** et non une image :
+   le mot-marque de `trix-logo.svg` est peint en violet foncé, illisible sur le fond du
+   thème sombre. Ce fichier reste disponible dans `public/` pour les supports à fond clair.
+   `fsl-icon.svg` sert de crédit « Powered by FSL » en pied d'accueil.
+- [x] Faut-il un champ « realm » distinct du domaine dans la configuration ? Non :
+   domaine = realm. Un identifiant d'authentification distinct est en revanche prévu.
+- [x] Texte temps réel : T.140 sur data channel.
+- [x] Nom produit définitif affiché dans l'UI : « Trix Communicator » (nom court « Trix »).
+   Le dépôt s'appelle `trix-web-client` et le code n'emploie que le nom court `trix`.
 
 ## Références
 
 - `docs/CONCEPTION.md` (conception technique)
-- `docs/mockups/mockup.html` (maquettes) - validé !
+- `docs/DIAGRAMS.md` (diagrammes générés depuis le code)
+- `docs/mockups/mockup.html` (maquettes)
+- `USERGUIDE.md` (guide utilisateur, en anglais)
 - Framework FSL : https://github.com/neutrino38/finite-state-language/
 - JsSIP : https://jssip.net/

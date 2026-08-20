@@ -51,10 +51,16 @@ writing direction comes from the tag, and the build fails if any message from th
 reference is missing. Nothing else to register. See
 [docs/CONCEPTION.md §4.6](docs/CONCEPTION.md).
 
-## Doc (in French)
+## Documentation
 
-Documentation: [docs/SPECS.md](docs/SPECS.md) (spécifications),
+**[USERGUIDE.md](USERGUIDE.md) — the user guide (in English).** Setting up a SIP account,
+placing and receiving calls, the deaf-accessible alert, call history, the built-in
+diagnostics, what is stored and where, and a troubleshooting table. Start here if you want
+to *use* Trix rather than build on it.
+
+The rest is in French: [docs/SPECS.md](docs/SPECS.md) (spécifications),
 [docs/CONCEPTION.md](docs/CONCEPTION.md) (conception technique),
+[docs/DIAGRAMS.md](docs/DIAGRAMS.md) (diagrammes générés depuis le code),
 [docs/mockups/mockup.html](docs/mockups/mockup.html) (maquettes),
 [docs/utilisation/deploiement.md](docs/utilisation/deploiement.md) (déploiement).
 
@@ -102,6 +108,9 @@ Full steps, required modules and per-distribution paths:
       notification, vibration, screen kept awake)
 - [x] Internationalisation — English/French/Arabic UI, one file per language, automatic
       detection, right-to-left layout, translated call history and error messages
+- [x] NAT traversal — STUN and TURN (TURN over TLS), configured per account
+- [x] Diagnostics — SIP trace, per-call packet log kept with its history entry, live media
+      statistics and end-of-call summary
 - [ ] Phase 4 — DTMF, chat over data channel
 - [ ] Phase 5 (future) — Tauri packaging
 
@@ -110,7 +119,8 @@ Full steps, required modules and per-distribution paths:
 From the browser console:
 
 ```js
-trix.mermaid()   // Mermaid diagrams of PhoneMachine + CallMachine, generated from the code
+trix.mermaid()   // Mermaid diagrams of PhoneMachine + CallBlock, generated from the code
+trix.dump()      // the last transitions in plain text, to paste into a bug report
 trix.phone.log   // ring buffer of transitions
 trix.phone.state // current state
 ```
@@ -120,6 +130,12 @@ sent and received to the console — header on one line, full packet in a collap
 It is taken at the socket level, so it takes effect immediately, even mid-call, and will
 keep working when the transport is not JsSIP's own WebSocket. For JsSIP's own internals,
 `JsSIP.debug.enable("JsSIP:*")` is still there.
+
+The same checkbox turns on two things you can read without the console: the **media
+statistics** of the call in progress (codec, bitrate and loss each way over a sliding 10 s
+window), revealed from the *In call* pill, and — on each history line — the **packet log**
+of that call and its **media summary**, both reopenable from the line and copyable in one
+click. Nothing is measured or kept while the box is unticked.
 
 Transitions are also logged continuously (Elixip format) to the console.
 [docs/DIAGRAMS.md](docs/DIAGRAMS.md) is the versioned copy of those diagrams: a test fails if the
