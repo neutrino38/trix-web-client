@@ -18,6 +18,11 @@
  * métadonnées à tenir à jour en parallèle des dictionnaires n'aurait été
  * qu'une deuxième chose à oublier.
  *
+ * Une langue emporte plus que ses phrases : `<html lang>` et `<html dir>`
+ * suivent le dictionnaire chargé, si bien que passer à l'arabe retourne la
+ * mise en page sans qu'aucun écran ait à s'en occuper — le CSS n'emploie
+ * que des propriétés logiques.
+ *
  * Le chargement est donc asynchrone, mais `t()` reste synchrone — l'UI
  * rend en un seul passage. `initI18n()` est attendu avant le premier rendu
  * (`main.ts`), et `setLocaleChoice()` ne notifie qu'une fois le nouveau
@@ -25,17 +30,17 @@
  * moitié traduit.
  */
 
-import type { Dictionary, Locale, LocaleChoice, Msg, MsgKey, Vars } from "./types.js";
+import type { Locale, LocaleChoice, Msg, MsgKey, Translation, Vars } from "./types.js";
 
 export { msg, rawMsg } from "./types.js";
-export type { Locale, LocaleChoice, Msg, MsgKey } from "./types.js";
+export type { Locale, LocaleChoice, Msg, MsgKey, Translation } from "./types.js";
 
 const STORAGE_KEY = "trix-lang";
 
 /** Langue servie quand ni le choix ni le navigateur ne désignent une langue connue. */
 const FALLBACK: Locale = "fr";
 
-const dictModules = import.meta.glob<Dictionary>("./locales/*.ts", { import: "default" });
+const dictModules = import.meta.glob<Translation>("./locales/*.ts", { import: "default" });
 
 /** `./locales/fr.ts` → `fr`. */
 function codeOf(path: string): Locale {
@@ -121,12 +126,57 @@ export function localeTag(): string {
   return current;
 }
 
+/** Langues RTL connues, pour les moteurs sans `Intl.Locale#getTextInfo`. */
+const RTL_FALLBACK = new Set(["ar", "he", "fa", "ur", "ps", "ckb", "dv", "yi"]);
+
+/**
+ * Sens d'écriture d'une langue. Demandé à `Intl` plutôt qu'à une liste
+ * tenue à la main : le navigateur porte déjà les données CLDR, et une
+ * liste de langues RTL est exactement le genre d'inventaire qu'on oublie
+ * de compléter en même temps qu'on dépose un dictionnaire.
+ *
+ * `getTextInfo()` est récent ; la propriété `textInfo` l'a précédé, et
+ * quelques moteurs n'ont ni l'un ni l'autre. D'où le repli sur les langues
+ * qui s'écrivent de droite à gauche parmi celles que Trix pourrait servir
+ * — l'arabe, l'hébreu, le persan, l'ourdou. Se tromper de sens rend une
+ * interface pénible, pas inutilisable : le repli n'a pas à être exhaustif.
+ */
+export function directionOf(code: Locale): "ltr" | "rtl" {
+  try {
+    const info = new Intl.Locale(code) as Intl.Locale & {
+      getTextInfo?: () => { direction: string };
+      textInfo?: { direction: string };
+    };
+    const dir = info.getTextInfo?.().direction ?? info.textInfo?.direction;
+    if (dir === "rtl" || dir === "ltr") return dir;
+  } catch {
+    // balise refusée par Intl.Locale : le repli tranchera
+  }
+  return RTL_FALLBACK.has(code.toLowerCase().split("-")[0]!) ? "rtl" : "ltr";
+}
+
+/**
+ * Sens d'écriture de la langue courante — posé sur `<html dir>`, donc
+ * suffisant pour la mise en page : le CSS n'emploie que des propriétés
+ * logiques (`inset-inline-start` plutôt que `left`), qui basculent seules.
+ * Ne reste au JavaScript que ce qu'aucune propriété ne couvre : le sens du
+ * glisser qui élargit le panneau latéral (voir `ui/screens/call/panel.ts`).
+ */
+export function direction(): "ltr" | "rtl" {
+  return directionOf(current);
+}
+
+/** Raccourci de lecture pour les gestes qui dépendent du sens. */
+export function isRtl(): boolean {
+  return direction() === "rtl";
+}
+
 // ---------------------------------------------------------------------------
 // Dictionnaire actif
 // ---------------------------------------------------------------------------
 
 let current: Locale = FALLBACK;
-let dict: Dictionary | null = null;
+let dict: Translation | null = null;
 
 /**
  * Charge un dictionnaire et le rend courant, sans toucher au réglage
@@ -139,7 +189,10 @@ export async function useLocale(code: Locale): Promise<void> {
   if (!loader) throw new Error(`unknown locale: ${code}`);
   dict = await loader();
   current = code;
-  if (typeof document !== "undefined") document.documentElement.lang = localeTag();
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = localeTag();
+    document.documentElement.dir = direction();
+  }
 }
 
 /**

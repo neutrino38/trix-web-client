@@ -3,6 +3,7 @@ import { el, esc } from "../el.js";
 import { fslBadge, trixIcon } from "../logo.js";
 import { langPicker, wireLangPicker } from "../langpicker.js";
 import { t } from "../../i18n/index.js";
+import { APP_VERSION } from "../../version.js";
 
 export function renderHome(phone: PhoneInstance): HTMLElement {
   const cfg = phone.context.config;
@@ -12,6 +13,10 @@ export function renderHome(phone: PhoneInstance): HTMLElement {
         ${trixIcon(200)}
         <h1>Trix Communicator</h1>
         <div class="tagline">${esc(t("home.tagline"))}</div>
+        <!-- Le numéro de version : la première chose qu'on demande à qui
+             signale une anomalie, et le seul écran où l'on est sûr qu'il
+             sera passé. Il vient de package.json (voir src/version.ts). -->
+        <div class="version">${esc(t("home.version", { version: APP_VERSION }))}</div>
       </div>
       <div class="actions">
         ${

@@ -115,12 +115,17 @@ body {
 .screen-home img { display: block; margin: 0 auto 0.7rem; max-width: 45vw; height: auto; }
 .screen-home h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: 1.5px; }
 .screen-home .tagline { color: var(--ink-soft); font-size: 0.9rem; margin-top: 0.2rem; }
+/* version du logiciel — un cran plus effacée que la signature : on la lit
+   quand on la cherche, elle ne dispute pas la vedette au nom du produit */
+.screen-home .version { color: var(--ink-soft); font-size: 0.75rem; opacity: 0.75; margin-top: 0.35rem; }
 .screen-home .actions { display: flex; flex-direction: column; gap: 0.8rem; width: 300px; margin-top: 0.8rem; }
 .screen-home .account-hint { font-size: 0.8rem; color: var(--ink-soft); }
 
 /* crédit du framework d'orchestration — hors du bloc central, en pied d'écran */
 .fsl-badge {
-  position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%);
+  /* centré sans `translateX`, qui reste physique et décalerait le crédit
+     d'une demi-largeur une fois la page en RTL */
+  position: absolute; bottom: 1.25rem; inset-inline: 0; width: fit-content; margin-inline: auto;
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-size: 0.75rem; color: var(--ink-soft); text-decoration: none; white-space: nowrap;
 }
@@ -256,7 +261,7 @@ fieldset.field { border: none; }
 .video .idle-msg { color: #8f83a3; font-size: 0.95rem; text-align: center; }
 .video video.remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .video video.selfview {
-  position: absolute; top: 10px; left: 10px;
+  position: absolute; top: 10px; inset-inline-start: 10px;
   height: 25%; aspect-ratio: 4/3; object-fit: cover;
   background: #000; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
 }
@@ -267,7 +272,7 @@ fieldset.field { border: none; }
 .call-overlay .target { font-weight: 400; font-size: 0.85rem; color: #8f83a3; }
 /* vu-mètres sur toute la hauteur de la scène vidéo */
 .vumeters {
-  position: absolute; right: 10px; top: 10px; bottom: 78px;
+  position: absolute; inset-inline-end: 10px; top: 10px; bottom: 78px;
   display: flex; align-items: flex-end; gap: 5px;
 }
 .vumeters .bar {
@@ -370,7 +375,7 @@ fieldset.field { border: none; }
    sidebar. Le dégradé garantit le contraste des icônes quelle que soit
    l'image dessous ; la pastille reste opaque à 14 % pour tenir 3:1 (RGAA 3.2). */
 .overlaybar {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  position: absolute; inset-inline: 0; bottom: 0; z-index: 2;
   display: flex; align-items: center; justify-content: center; gap: 0.5rem;
   padding: 1.6rem calc(0.7rem + env(safe-area-inset-right))
            calc(0.9rem + env(safe-area-inset-bottom)) calc(0.7rem + env(safe-area-inset-left));
@@ -405,7 +410,7 @@ fieldset.field { border: none; }
 }
 
 .sidebar {
-  width: 300px; flex: none; position: relative; border-left: 1px solid var(--border);
+  width: 300px; flex: none; position: relative; border-inline-start: 1px solid var(--border);
   background: var(--panel); display: flex; flex-direction: column; min-height: 0;
 }
 
@@ -424,7 +429,7 @@ fieldset.field { border: none; }
 .screen-call.resizing { user-select: none; cursor: col-resize; }
 
 .panel-handle {
-  position: absolute; top: 0; bottom: 0; left: -5px; width: 11px; z-index: 3;
+  position: absolute; top: 0; bottom: 0; inset-inline-start: -5px; width: 11px; z-index: 3;
   display: flex; align-items: center; justify-content: center;
   cursor: col-resize; touch-action: none;
 }
@@ -437,14 +442,22 @@ fieldset.field { border: none; }
 .btn.call { background: var(--green); border-color: var(--green); color: #fff; }
 .btn.hangup { background: var(--red); border-color: var(--red); color: #fff; }
 .splitbtn { display: flex; width: 100%; position: relative; }
-.splitbtn .btn.call { flex: 1; border-radius: 999px 0 0 999px; }
+/* Une seule pilule en deux morceaux : chacun n'arrondit que son bord
+   extérieur, et en coordonnées d'écriture — sinon la jointure passerait du
+   mauvais côté une fois la page retournée. */
+.splitbtn .btn.call {
+  flex: 1; border-radius: 0;
+  border-start-start-radius: 999px; border-end-start-radius: 999px;
+}
 .splitbtn .caret {
-  border-radius: 0 999px 999px 0; border-left: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0;
+  border-start-end-radius: 999px; border-end-end-radius: 999px;
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.35);
   background: var(--green); color: #fff; border-color: var(--green);
   width: 44px; padding: 0;
 }
 .dropdown {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 5;
+  position: absolute; top: calc(100% + 6px); inset-inline-end: 0; z-index: 5;
   background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
   box-shadow: var(--shadow); min-width: 180px; overflow: hidden;
 }
@@ -455,7 +468,7 @@ fieldset.field { border: none; }
 }
 .dropdown button:hover { background: var(--panel-2); }
 .dropdown button.selected { font-weight: 600; }
-.dropdown .check { margin-left: auto; color: var(--green); }
+.dropdown .check { margin-inline-start: auto; color: var(--green); }
 
 /* le chrono vit dans la barre d'en-tête : lisible sans quitter la vidéo des yeux */
 .chrono {
@@ -523,6 +536,16 @@ fieldset.field { border: none; }
 }
 .icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
 
+/* Icônes dont le dessin dit un sens de lecture, et non une chose : la flèche
+   entrante/sortante de l'historique, la porte de sortie, le panneau et son
+   chevron. Elles se retournent avec la page en écriture droite-à-gauche —
+   sans quoi le panneau, passé à gauche, garderait sa colonne à droite.
+   Les autres (micro, caméra, horloge, combiné) n'ont aucun sens à inverser :
+   un combiné retourné n'est pas un combiné arabe, c'est un combiné cassé. */
+[dir="rtl"] .icon.dir,
+[dir="rtl"] [data-act="panel"] .icon,
+[dir="rtl"] [data-act="logout"] .icon { transform: scaleX(-1); }
+
 /* ---------- écran d'appel — vue mobile ---------- */
 .screen-call.mobile { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
@@ -556,13 +579,13 @@ fieldset.field { border: none; }
 }
 .mvideo video.remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .mvideo video.selfview {
-  position: absolute; top: 10px; right: 10px;
+  position: absolute; top: 10px; inset-inline-end: 10px;
   height: 22%; aspect-ratio: 3/4; object-fit: cover;
   background: #000; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
 }
-.mvideo .vumeters { top: 10px; bottom: 78px; right: 8px; }
+.mvideo .vumeters { top: 10px; bottom: 78px; inset-inline-end: 8px; }
 .mchrono {
-  position: absolute; top: 10px; left: 10px;
+  position: absolute; top: 10px; inset-inline-start: 10px;
   display: inline-flex; align-items: center; gap: 0.35rem;
   font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.85rem;
   color: #fff; background: rgba(0, 0, 0, 0.45);
@@ -578,9 +601,9 @@ fieldset.field { border: none; }
   .incoming-dialog .who { font-size: 1.75rem; }
 }
 
-/* raccrocher : bouton rond rouge, à droite des contrôles média */
+/* raccrocher : bouton rond rouge, à la suite des commandes média */
 .hangup-round {
-  width: 56px; height: 56px; border-radius: 50%; margin-left: 0.4rem;
+  width: 56px; height: 56px; border-radius: 50%; margin-inline-start: 0.4rem;
   border: none; background: var(--red); color: #fff; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; flex: none;
 }

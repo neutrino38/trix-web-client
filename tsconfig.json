@@ -7,6 +7,9 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    // `src/version.ts` lit la version dans package.json — une seule source
+    // de vérité pour le numéro affiché à l'écran.
+    "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,

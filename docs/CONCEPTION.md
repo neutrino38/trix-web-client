@@ -71,7 +71,7 @@ src/
   i18n/
     index.ts              # registre Vite, détection, t()/tn(), formats Intl
     types.ts              # Dictionary, Msg — sans dépendance à l'exécution
-    locales/{fr,en}.ts    # un fichier par langue, le français fait référence
+    locales/{fr,en,ar}.ts # un fichier par langue, le français fait référence
   debug/
     observability.ts      # export toMermaid(), logger de transitions
 ```
@@ -335,11 +335,11 @@ empêche une langue de partir en lambeaux au fil des évolutions. Ce que le
 compilateur ne peut pas voir (valeur vide, variable `{cause}` perdue en
 traduction) est couvert par `test/i18n.test.ts`, qui balaie le même glob.
 
-**Le nom du fichier est la balise BCP-47.** `fr`, `en`, `pt-BR` : la même
-chaîne sert au chargement, à `<html lang>`, aux formateurs `Intl` et à
+**Le nom du fichier est la balise BCP-47.** `fr`, `en`, `ar`, `pt-BR` : la
+même chaîne sert au chargement, à `<html lang>`, aux formateurs `Intl` et à
 `Intl.DisplayNames`, qui donne le nom de la langue *dans cette langue* pour
 le sélecteur. Aucun catalogue de métadonnées à maintenir en parallèle, donc
-aucun à oublier.
+aucun à oublier — le sens d'écriture lui-même se déduit de la balise.
 
 **Les automates ne parlent aucune langue.** `ctx.lastError`, `ctx.callError`
 et le motif de chaque ligne d'historique sont des `Msg` — une clé et ses
@@ -358,6 +358,26 @@ asynchrone (un chunk par langue), `t()` est synchrone : `main.ts` attend
 `initI18n()` avant le premier rendu, et `setLocaleChoice()` ne notifie
 qu'une fois le dictionnaire en place. Aucun écran ne peut donc se rendre à
 moitié traduit.
+
+**Droite à gauche.** L'arabe pose `dir="rtl"` sur `<html>`, et rien d'autre
+n'a à le savoir : `Intl.Locale` donne le sens à partir de la balise, et la
+feuille de style n'emploie que des propriétés logiques (`inset-inline-start`,
+`border-inline-start`, `margin-inline`) — la mise en page se retourne d'elle-même,
+panneau latéral compris. Deux exceptions, parce qu'aucune propriété ne les
+couvre : le glisser qui élargit le panneau, dont le signe se lit dans
+`isRtl()` (`ui/screens/call/panel.ts`), et les icônes qui disent un sens de
+lecture plutôt qu'une chose — flèches d'appel entrant/sortant, porte de
+sortie, panneau —, retournées par une règle `[dir="rtl"]`. Le combiné, le
+micro et l'horloge ne se retournent pas : ce sont des objets, pas des phrases.
+
+**Le pluriel n'est pas celui du français.** `tn()` passe par
+`Intl.PluralRules` : l'arabe demande six formes là où le français en compte
+deux. Une langue déclare les siennes dans son propre fichier (`.zero`,
+`.two`, `.few`, `.many`), le type `Translation` les autorise à elle seule, et
+`tn()` retombe sur `.other` pour celles qu'elle omet. Le français n'a donc
+pas à inventer un duel qui n'existe pas. Corollaire assumé : une forme de
+pluriel peut se passer du `{n}` — « depuis une minute » — là où le reste du
+dictionnaire doit reprendre exactement les variables du français.
 
 Ne sont pas traduits, et c'est délibéré : le nom du produit, le crédit
 « Powered by FSL », les descriptions de transitions FSL (`goto(..., "REGISTER

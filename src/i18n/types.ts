@@ -16,6 +16,27 @@ import type fr from "./locales/fr.js";
 export type Dictionary = typeof fr;
 export type MsgKey = keyof Dictionary;
 
+/** Les bases de pluriel du français — `announce.inCall`, depuis `.other`. */
+type BaseOf<K> = K extends `${infer Base}.other` ? Base : never;
+
+/**
+ * Ce qu'une langue a le droit d'écrire : **toutes** les clés du français,
+ * plus — pour elle seule — les formes de pluriel que le français n'a pas.
+ *
+ * Le français en compte deux (`.one`, `.other`) ; l'arabe en demande six et
+ * le russe quatre. Les faire porter à la langue de référence obligerait à
+ * inventer un « duel » français qui n'existe pas, et à le traduire partout.
+ * Chaque langue déclare donc les siennes, et `tn()` retombe sur `.other`
+ * pour celles qu'elle ne déclare pas.
+ *
+ * L'ouverture reste close sur le reste : seules ces quatre formes, et
+ * seulement sur une base que le français plurialise déjà, échappent au
+ * contrôle des clés. Une faute de frappe dans un nom de clé ordinaire est
+ * toujours refusée à la compilation.
+ */
+export type Translation = Dictionary &
+  Partial<Record<`${BaseOf<MsgKey>}.${"zero" | "two" | "few" | "many"}`, string>>;
+
 /**
  * Code d'une langue disponible — **le nom de son fichier** (`fr`, `en`,
  * `pt-BR`…), qui est du même coup une balise BCP-47 valide : elle sert

@@ -12,8 +12,9 @@
  * - clés plates en notation pointée, groupées par écran ou par domaine ;
  * - variables entre accolades — `{caller}` — substituées par `t()` ;
  * - pluriels en couples `.one` / `.other`, résolus par `tn()` via
- *   `Intl.PluralRules` : le russe ou l'arabe demanderaient d'autres formes,
- *   qu'une langue future ajoutera sans que celle-ci bouge.
+ *   `Intl.PluralRules` : les langues qui comptent autrement déclarent leurs
+ *   propres formes — l'arabe en a six (voir `ar.ts`) — sans que celle-ci
+ *   bouge.
  *
  * Ce que l'on ne traduit **pas** : « Trix », « Powered by FSL », les codes
  * techniques (SIP 486, WSS_LOST) et les causes brutes remontées par JsSIP.
@@ -42,6 +43,8 @@ const messages = {
   "home.tagline": "Webphone conversation totale",
   "home.useAccount": "Utiliser le compte",
   "home.newAccount": "Configurer un nouveau compte",
+  /** Version du logiciel, en pied de l'accueil — voir `src/version.ts`. */
+  "home.version": "Version {version}",
   "fsl.aria": "Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)",
 
   // ---------------------------------------------------------------------

@@ -40,13 +40,16 @@ Realtime text transport is the WebRTC data channel.
 
 ## Languages
 
-The UI ships in **English and French**. The language is picked on the home screen (and in
-the settings), with `Automatic` as the first choice — it follows the browser's language.
+The UI ships in **English, French and Modern Standard Arabic**. The language is picked on
+the home screen (and in the settings), with `Automatic` as the first choice — it follows
+the browser's language. Right-to-left is part of the deal: picking Arabic flips the whole
+layout, side panel included.
 
 Adding a language means dropping one file in `src/i18n/locales/`, named after its BCP-47
-tag (`de.ts`, `pt-BR.ts`): Vite discovers it, the picker lists it under its own name, and
-the build fails if any message from the French reference is missing. Nothing else to
-register. See [docs/CONCEPTION.md §4.6](docs/CONCEPTION.md).
+tag (`de.ts`, `pt-BR.ts`): Vite discovers it, the picker lists it under its own name, the
+writing direction comes from the tag, and the build fails if any message from the French
+reference is missing. Nothing else to register. See
+[docs/CONCEPTION.md §4.6](docs/CONCEPTION.md).
 
 ## Doc (in French)
 
@@ -97,8 +100,8 @@ Full steps, required modules and per-distribution paths:
       rejection, one call at a time (486/480), missed calls in the history, and a
       **deaf-accessible alert** (screen flash, blinking tab title and favicon, system
       notification, vibration, screen kept awake)
-- [x] Internationalisation — English/French UI, one file per language, automatic
-      detection, translated call history and error messages
+- [x] Internationalisation — English/French/Arabic UI, one file per language, automatic
+      detection, right-to-left layout, translated call history and error messages
 - [ ] Phase 4 — DTMF, chat over data channel
 - [ ] Phase 5 (future) — Tauri packaging
 

@@ -25,11 +25,13 @@ import {
   setPanelWidth,
 } from "../../prefs.js";
 import { esc } from "../../el.js";
-import { t } from "../../../i18n/index.js";
+import { isRtl, t } from "../../../i18n/index.js";
 
-/** Rectangle avec une colonne à droite : le panneau lui-même (maquette 1b/1c). */
+/** Rectangle avec une colonne sur le bord : le panneau lui-même (maquette
+ * 1b/1c). Le dessin est celui de la lecture latine ; le CSS le retourne en
+ * écriture droite-à-gauche, où le panneau borde l'autre côté. */
 const PANEL_GLYPH = `<path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/>`;
-/** Chevron vers la gauche : le panneau va ressortir (état replié). */
+/** Chevron vers l'extérieur : le panneau va ressortir (état replié). */
 const PANEL_CHEVRON = `<path d="M12.6 8.6 9.2 12l3.4 3.4" fill="none" stroke="currentColor"
   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
 
@@ -64,6 +66,15 @@ export function panelHandle(width: number): string {
 /** Pas du pilotage clavier : fin par défaut, large avec Maj. */
 const STEP = 16;
 const STEP_FAST = 64;
+
+/**
+ * Sens dans lequel il faut pousser pour élargir le panneau : vers la gauche
+ * (`-1`) quand il borde le côté droit de l'écran, vers la droite (`+1`)
+ * quand la page est en droite-à-gauche et qu'il est passé à gauche.
+ */
+function widenSign(): 1 | -1 {
+  return isRtl() ? 1 : -1;
+}
 
 export function wirePanel(screen: HTMLElement): void {
   const sidebar = screen.querySelector(".sidebar") as HTMLElement | null;
@@ -108,8 +119,12 @@ export function wirePanel(screen: HTMLElement): void {
     const startX = e.clientX;
     const startWidth = sidebar.getBoundingClientRect().width;
     let width = startWidth;
+    // Le geste suit le bord, pas la gauche : le panneau est du côté « fin de
+    // ligne », donc à gauche en écriture droite-à-gauche. `clientX` reste
+    // physique — c'est le seul endroit où le sens de la page doit être lu.
+    const towardsWide = widenSign();
     const move = (m: PointerEvent): void => {
-      width = show(startWidth + (startX - m.clientX));
+      width = show(startWidth + towardsWide * (m.clientX - startX));
     };
     const stop = (): void => {
       handle.removeEventListener("pointermove", move);
@@ -125,9 +140,11 @@ export function wirePanel(screen: HTMLElement): void {
     const step = e.shiftKey ? STEP_FAST : STEP;
     const width = sidebar.getBoundingClientRect().width;
     let next: number | null = null;
-    // le panneau est à droite : la flèche gauche l'élargit, comme le glisser
-    if (e.key === "ArrowLeft") next = width + step;
-    else if (e.key === "ArrowRight") next = width - step;
+    // la flèche qui pointe vers le panneau l'élargit, comme le glisser :
+    // gauche en écriture latine, droite une fois la page retournée
+    const wide = widenSign();
+    if (e.key === "ArrowLeft") next = width - wide * step;
+    else if (e.key === "ArrowRight") next = width + wide * step;
     else if (e.key === "Home") next = PANEL_MIN;
     else if (e.key === "End") next = panelMax();
     if (next === null) return;

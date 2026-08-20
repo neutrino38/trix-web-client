@@ -15,9 +15,9 @@
  * code stops being searchable once it is translated.
  */
 
-import type { Dictionary } from "../types.js";
+import type { Translation } from "../types.js";
 
-const messages: Dictionary = {
+const messages: Translation = {
   // ---------------------------------------------------------------------
   // Language picker
   // ---------------------------------------------------------------------
@@ -38,6 +38,7 @@ const messages: Dictionary = {
   "home.tagline": "Total Conversation webphone",
   "home.useAccount": "Use this account",
   "home.newAccount": "Set up a new account",
+  "home.version": "Version {version}",
   "fsl.aria": "Powered by FSL — finite-state-language on GitHub (new window)",
 
   // ---------------------------------------------------------------------

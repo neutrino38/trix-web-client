@@ -8,16 +8,30 @@
  * en route — « Registration refused: » sans son `{cause}` compile
  * parfaitement et n'affiche plus rien d'utile.
  *
+ * Une seule tolérance, et elle est nommée : les **formes de pluriel** qu'une
+ * langue ajoute pour elle seule (l'arabe en compte six, le français deux).
+ * Elles échappent aux deux premières règles — clé absente du français, et
+ * chiffre parfois porté par le mot plutôt que par `{n}` : « depuis une
+ * minute ». Partout ailleurs, l'égalité reste stricte.
+ *
  * Le balayage passe par le même `import.meta.glob` que l'application :
  * une langue ajoutée demain est vérifiée sans que ce fichier bouge.
  */
 
 import { describe, expect, it } from "vitest";
-import { LOCALES, detectLocale, localeName, t, tn, useLocale } from "../src/i18n/index.js";
-import { msg, rawMsg, type Dictionary } from "../src/i18n/types.js";
+import {
+  LOCALES,
+  detectLocale,
+  directionOf,
+  localeName,
+  t,
+  tn,
+  useLocale,
+} from "../src/i18n/index.js";
+import { msg, rawMsg, type Dictionary, type Translation } from "../src/i18n/types.js";
 import fr from "../src/i18n/locales/fr.js";
 
-const dicts = import.meta.glob<Dictionary>("../src/i18n/locales/*.ts", {
+const dicts = import.meta.glob<Translation>("../src/i18n/locales/*.ts", {
   eager: true,
   import: "default",
 });
@@ -41,15 +55,53 @@ describe("catalogue des langues", () => {
   it("nomme chaque langue dans sa propre langue", () => {
     expect(localeName("fr")).toBe("Français");
     expect(localeName("en")).toBe("English");
+    expect(localeName("ar")).toBe("العربية");
   });
 });
+
+describe("sens d'écriture", () => {
+  it("reconnaît les langues de droite à gauche", () => {
+    expect(directionOf("ar")).toBe("rtl");
+    expect(directionOf("he")).toBe("rtl");
+  });
+
+  it("laisse les autres de gauche à droite", () => {
+    expect(directionOf("fr")).toBe("ltr");
+    expect(directionOf("en")).toBe("ltr");
+  });
+
+  it("tranche même sur une balise qu'Intl refuse", () => {
+    expect(directionOf("ar-Arab-XX-nonsense")).toBe("rtl");
+    expect(directionOf("!")).toBe("ltr");
+  });
+});
+
+/** `announce.inCall.one` : une forme de pluriel, quelle que soit la langue. */
+function isPluralForm(key: string): boolean {
+  const dot = key.lastIndexOf(".");
+  return dot > 0 && [...EXTRA_PLURALS, "one", "other"].includes(key.slice(dot + 1));
+}
+
+/** Les formes qu'une langue peut ajouter à un pluriel que le français a. */
+const EXTRA_PLURALS = ["zero", "two", "few", "many"];
+
+/** `announce.inCall.few` quand `announce.inCall.other` existe en français. */
+function isExtraPluralForm(key: string): boolean {
+  const dot = key.lastIndexOf(".");
+  return (
+    dot > 0 &&
+    EXTRA_PLURALS.includes(key.slice(dot + 1)) &&
+    `${key.slice(0, dot)}.other` in fr
+  );
+}
 
 describe("complétude des dictionnaires", () => {
   const reference = Object.keys(fr).sort();
 
   for (const [code, dict] of Object.entries(byCode)) {
-    it(`${code} : mêmes clés que le français, aucune de plus`, () => {
-      expect(Object.keys(dict).sort()).toEqual(reference);
+    it(`${code} : toutes les clés du français, et rien d'autre qu'un pluriel de plus`, () => {
+      const keys = Object.keys(dict);
+      expect(keys.filter((k) => !isExtraPluralForm(k)).sort()).toEqual(reference);
     });
 
     it(`${code} : aucun libellé vide`, () => {
@@ -63,10 +115,14 @@ describe("complétude des dictionnaires", () => {
       const drift = Object.entries(dict)
         .filter(([key, value]) => {
           const source = fr[key as keyof Dictionary];
-          return (
-            source !== undefined &&
-            placeholders(value).join(",") !== placeholders(source).join(",")
-          );
+          if (source === undefined) return false;
+          // Un pluriel peut se passer du nombre — « depuis une minute » —,
+          // mais pas en inventer un que le français ne fournit pas.
+          const expected = placeholders(source);
+          const found = placeholders(value);
+          return isPluralForm(key)
+            ? found.some((name) => !expected.includes(name))
+            : found.join(",") !== expected.join(",");
         })
         .map(([key]) => key);
       expect(drift).toEqual([]);
@@ -128,6 +184,16 @@ describe("traduction", () => {
     await useLocale("en");
     expect(tn("announce.inCall", 1)).toBe("In call for 1 minute");
     expect(tn("announce.inCall", 4)).toBe("In call for 4 minutes");
+  });
+
+  it("accorde les six formes de l'arabe, et retombe sur « other »", async () => {
+    await useLocale("ar");
+    // le duel et le singulier portent le nombre dans le mot, sans chiffre
+    expect(tn("announce.inCall", 1)).toBe("في مكالمة منذ دقيقة واحدة");
+    expect(tn("announce.inCall", 2)).toBe("في مكالمة منذ دقيقتين");
+    expect(tn("announce.inCall", 3)).toBe("في مكالمة منذ 3 دقائق");
+    expect(tn("announce.inCall", 11)).toBe("في مكالمة منذ 11 دقيقة");
+    expect(tn("announce.inCall", 100)).toBe("في مكالمة منذ 100 دقيقة");
   });
 
   it("refuse une langue qui n'existe pas", async () => {
