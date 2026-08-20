@@ -49,6 +49,47 @@ autorise n'importe quel hôte en WebSocket sécurisé.
    - `/etc/pki/tls/private/trix.example.com.key` contient la clé privée. Mettez-la en
      mode `0600` et propriété `root`.
 
+## Déployer avec `deploy.sh`
+
+Le script [`deploy.sh`](../../deploy.sh) enchaîne les deux étapes précédentes : il construit
+le client, vérifie que les favicons et les logos sont bien dans `dist/`, puis transfère le
+tout par rsync, ou par scp si rsync manque.
+
+```sh
+./deploy.sh --host trix.example.com
+```
+
+Seul le serveur est à donner : la racine du site vaut `/var/www/trix` par défaut, et
+`--dir` la remplace au besoin. Les deux réglages peuvent aussi venir de l'environnement
+(`TARGET_HOST`, `TARGET_DIR`) ou d'un fichier `deploy.env` posé à côté du script, qui
+n'est pas versionné :
+
+```sh
+TARGET_HOST=trix.example.com
+REMOTE_SUDO=1          # écrire dans /var/www exige souvent sudo
+```
+
+Le déploiement enchaîne plusieurs `rsync` et `ssh`. Pour que le serveur ne réclame pas le
+mot de passe à chaque étape, le script ouvre une connexion ssh maîtresse et la partage
+entre toutes les autres (`ControlMaster`) : une seule authentification par déploiement.
+`--no-mux` revient à une connexion par étape, si le serveur refuse le multiplexage.
+
+Un agent ssh ne remplace pas ce mécanisme : il retient des clés privées déchiffrées, pas
+un mot de passe de compte. Pour supprimer la saisie tout à fait, passez à
+l'authentification par clé — `ssh-copy-id vous@trix.example.com` — et confiez la
+passphrase de la clé à `ssh-agent`.
+
+Avec `REMOTE_SUDO=1`, le `sudo` distant s'exécute sans terminal : il ne peut pas demander
+de mot de passe. Accordez au compte de déploiement une règle `NOPASSWD` sur `rsync`,
+`mkdir` et `restorecon`, ou déployez dans un répertoire dont il est propriétaire.
+
+`index.html` est envoyé après les assets, et les assets périmés du déploiement précédent
+sont effacés seulement une fois la nouvelle page en place : à aucun instant le serveur ne
+sert une page qui référence des fichiers absents. `restorecon` est lancé automatiquement
+si le serveur l'a. `./deploy.sh --help` liste le reste : `--dry-run`, `--skip-build`,
+`--delete` pour purger aussi les fichiers hors `assets/`, `--post-cmd` pour une commande
+finale.
+
 ## Apache 2.4
 
 Modules requis : `mod_ssl`, `mod_headers`, `mod_deflate`, `mod_dir`, `mod_alias`. Ajoutez

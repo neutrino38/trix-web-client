@@ -6,3 +6,6 @@ connect/
 node_modules/
 dist/
 *.log
+
+# Réglages de déploiement propres à la machine
+deploy.env
