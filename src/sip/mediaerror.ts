@@ -135,3 +135,19 @@ function firstLine(text: string): string {
   const end = text.indexOf("\n");
   return end === -1 ? text : text.slice(0, end);
 }
+
+/**
+ * L'INVITE entrant refusé avant d'avoir sonné : son offre n'est pas
+ * établissable ici (`sdp.unsupportedOffer`). Même règle que pour un échec
+ * du navigateur — console et carnet, sans condition —, à ceci près que le
+ * corps gardé est **l'offre elle-même** : c'est elle qui se relit, et qui
+ * dit au passage quelle passerelle manque en face.
+ */
+export function reportOfferRefused(
+  problem: string,
+  sdp: string | null,
+  sink: ErrorSink = consoleErrorSink,
+): void {
+  sink.error(`${TAG} INVITE refusé (488) : offre média incompatible WebRTC — ${problem}`);
+  recordError(`Offre média incompatible WebRTC : ${problem}`, sdp ?? "");
+}

@@ -115,7 +115,10 @@ class FakeSip implements SipPort {
 }
 
 /** INVITE entrant factice, tel que le port le remettrait à la machine. */
-function fakeIncoming(offered: CallMedia = { audio: true, video: false }) {
+function fakeIncoming(
+  offered: CallMedia = { audio: true, video: false },
+  offerProblem: string | null = null,
+) {
   const session = new FakeCallSession();
   const box = {
     session,
@@ -127,6 +130,7 @@ function fakeIncoming(offered: CallMedia = { audio: true, video: false }) {
     from: "sip:bob@example.fr",
     displayName: "Bob Martin",
     offered,
+    offerProblem,
     listen(send) {
       box.sendCall = send;
       return session;
@@ -733,6 +737,28 @@ describe("PhoneMachine — appel entrant", () => {
       outcome: "answered",
       endedBy: "remote",
       media: { audio: true, video: false },
+    });
+  });
+
+  it("offre inétablissable : refusée sans sonner, consignée, cause affichée", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const bad = fakeIncoming({ audio: true, video: false }, "ICE, DTLS, SRTP (RTP/AVP)");
+    sip.send({ type: "sip:incoming", call: bad.call });
+
+    // l'écran n'a jamais montré d'appel : on est resté disponible
+    expect(phone.state).toBe("ready");
+    expect(phone.context.call).toBeNull();
+    expect(bad.box.rejected).toEqual(["incompatible"]);
+    // la cause s'affiche, et la ligne d'historique la garde
+    expect(phone.context.callError).toEqual({
+      key: "reason.offerUnsupported",
+      vars: { detail: "ICE, DTLS, SRTP (RTP/AVP)" },
+    });
+    expect(phone.context.history[0]).toMatchObject({
+      direction: "incoming",
+      outcome: "missed",
+      connectedAt: null,
+      reason: { key: "reason.offerUnsupported" },
     });
   });
 

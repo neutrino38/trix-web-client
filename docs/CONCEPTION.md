@@ -213,6 +213,7 @@ chrono, vu-mètres et raccrochage sont écrits une seule fois.
 stateDiagram-v2
   [*] --> initial_state
   initial_state --> ringing_in : args.incoming présent
+  initial_state --> [*] : offre inétablissable → 488, call:missed(cause)
   ringing_in --> answering : ui.answer (médias choisis dans l'offre)
   ringing_in --> [*] : ui.reject → 603, call:missed("Appel refusé")
   ringing_in --> [*] : sip.failed (CANCEL) → call:missed("Appel manqué")
@@ -236,8 +237,29 @@ s'il a un port non nul et n'est pas `inactive`) :
 - vidéo seule proposée → uniquement « Répondre en vidéo ».
 
 Côté port (`sip/port.ts`), l'INVITE arrive en `sip:incoming` avec un objet `IncomingCall`
-— identité, médias proposés, `listen` / `answer(media)` / `reject(reason)`. Les codes SIP
-de refus ne vivent que là : `declined` → 603, `busy` → 486, `timeout` → 480.
+— identité, médias proposés, recevabilité de l'offre, `listen` / `answer(media)` /
+`reject(reason)`. Les codes SIP de refus ne vivent que là : `declined` → 603, `busy` → 486,
+`timeout` → 480, `incompatible` → 488.
+
+#### Une offre inétablissable ne fait pas sonner
+
+Un INVITE dont l'offre est hors de portée du navigateur (UA SIP classique : `RTP/AVP`,
+ni ICE ni DTLS) ne peut pas aboutir : faire sonner reviendrait à promettre un appel que
+le décrochage ferait échouer, et l'appelant aurait entendu une sonnerie qui n'existait
+pas. Le port constate le problème à l'arrivée (`sdp.unsupportedOffer`, §5.5) et le pose
+dans `IncomingCall.offerProblem` ; c'est `initial_state` qui décide — le port ne décide
+jamais — et refuse en 488 avant toute sonnerie.
+
+**Le 180 ne part qu'après nous**, et c'est ce qui rend la garantie tenable : JsSIP répond
+180 Ringing juste après avoir livré l'INVITE, et seulement si la session n'a pas déjà été
+terminée pendant l'événement. Tout le chemin — port, `send()`, entrée du bloc, `reject()`
+— est synchrone, donc le 488 part **à la place** du 180. Réciproquement, un 180 émis vaut
+promesse : l'offre a été acceptée, il ne reste qu'à attendre la décision de l'utilisateur.
+
+L'appel refusé ainsi n'est pas silencieux pour autant : `listen()` a ouvert son carnet
+avant le refus, l'offre et le 488 y sont consignés (§5.5), la cause s'affiche à l'écran et
+la ligne d'historique la garde — appel manqué, motif « Offre média sans ICE, DTLS, SRTP
+(RTP/AVP) : incompatible avec WebRTC ».
 
 **Un appel à la fois** : `ready` est le seul état qui accepte un INVITE. En communication
 il est refusé occupé (486), partout ailleurs (connexion, reconnexion, veille, échec
@@ -740,6 +762,13 @@ offer sdp: Called with SDP without ice-ufrag and ice-pwd.
   traduit, seul leur assemblage est une phrase. Le motif de fin d'appel devient
   « WebRTC Error — setRemoteDescription : OperationError: … (SIP 488) », sur l'écran
   comme dans l'historique, sans nouvelle clé d'internationalisation.
+
+Reste ce qui n'a pas à échouer du tout. Une offre qu'aucun navigateur ne peut établir se
+reconnaît à la lecture (`sdp.unsupportedOffer`) : elle est refusée en 488 avant même la
+sonnerie (§4.3), et la ligne de carnet qui l'accompagne garde **l'offre entière** — c'est
+elle qui dira quelle passerelle manque en face. Le contrôle se limite aux trois invariants
+qu'aucune pile WebRTC ne sait suppléer (ICE, DTLS, SRTP) : il doit être impossible qu'il
+refuse un appel que le navigateur aurait accepté.
 
 Un point d'ordonnancement : JsSIP émet `failed` **avant** l'événement qui porte
 l'erreur quand c'est `setRemoteDescription` qui a échoué (il répond 488, échoue la

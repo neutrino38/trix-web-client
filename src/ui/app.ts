@@ -10,9 +10,18 @@ import { setStateTitle } from "./title.js";
 import { STATUS, callLabel, displayTarget, fmtChrono, statusOf } from "./screens/call/parts.js";
 import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
+import type { CallLogEntry } from "../storage/store.js";
 
 let lastState: string | null = null;
 let lastLayout: LayoutMode | null = null;
+/**
+ * L'historique tel qu'il était au dernier rendu — la **référence**, pas son
+ * contenu : la machine ne le modifie jamais en place, elle en pose un
+ * nouveau (`ctx.history = […]`). Il change sans que l'état change (vidage
+ * demandé depuis l'écran, appel qui vient de se terminer), et c'est le seul
+ * cas où un `stay()` doit malgré tout redessiner l'écran d'accueil.
+ */
+let lastHistory: readonly CallLogEntry[] | null = null;
 
 /** Écrans sans état de téléphone à afficher : l'onglet nomme quand même l'écran. */
 const SCREEN_TITLE: Record<string, MsgKey> = {
@@ -58,6 +67,7 @@ function syncStatus(phone: PhoneInstance): void {
 export function invalidateScreen(): void {
   lastState = null;
   lastLayout = null;
+  lastHistory = null;
 }
 
 /**
@@ -67,14 +77,27 @@ export function invalidateScreen(): void {
  *
  * En `in_call`, on re-rend aussi sur les stay() : le bloc d'appel écrit
  * `ctx.call` dans ce même contexte et notifie sans changer l'état hôte.
- * Ailleurs on s'en abstient pour ne pas écraser les champs en saisie.
+ * Ailleurs on s'en abstient pour ne pas écraser les champs en saisie — à
+ * une exception près, l'historique : « Effacer » le vide par un `stay()`,
+ * et sans ce réveil la liste resterait affichée alors qu'elle n'existe
+ * plus. La saisie en cours survit de toute façon au rendu, `parts.ts` la
+ * garde hors du DOM (`draft()`).
  */
 export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
   const layout = layoutMode();
   syncStatus(phone); // avant le filtre : l'état peut changer sans re-rendu
-  if (phone.state === lastState && layout === lastLayout && phone.state !== "in_call") return;
+  const history = phone.context.history;
+  if (
+    phone.state === lastState &&
+    layout === lastLayout &&
+    history === lastHistory &&
+    phone.state !== "in_call"
+  ) {
+    return;
+  }
   lastState = phone.state;
   lastLayout = layout;
+  lastHistory = history;
   root.replaceChildren(pick(phone));
 }
 

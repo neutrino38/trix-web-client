@@ -95,7 +95,7 @@ Blocs entrés depuis cet état (`fx.sbb`) :
 | `saving` | `sys:sleep`, `sys:wake` |
 | `connecting` | `sip:incoming`, `sys:wake` |
 | `registering` | `sip:incoming`, `sys:wake` |
-| `ready` | `sip:connected` |
+| `ready` | `sip:connected`, `sip:failed`, `sip:ended` |
 | `reconnecting` | `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy` |
 | `sleeping` | `sys:sleep`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed` |
 | `reg_failed` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy`, `sys:sleep`, `sys:wake` |
@@ -116,6 +116,7 @@ stateDiagram-v2
   state hangingup
   [*] --> initial_state
   initial_state --> dialing: enter (INVITE sortant)
+  initial_state --> [*]: enter (call:missed)
   initial_state --> ringing_in: enter (INVITE entrant)
   dialing --> [*]: enter (call:rejected), sip:failed (call:rejected), sip:ended (call:canceled)
   dialing --> hangingup: sip:disconnected, sys:sleep, ui:hangup

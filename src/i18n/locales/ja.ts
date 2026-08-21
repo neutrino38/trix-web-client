@@ -350,6 +350,7 @@ const messages: Translation = {
   "reason.missed": "不在着信",
   "reason.missedNoAnswer": "不在着信（応答なし）",
   "reason.setupFailed": "通話を確立できませんでした",
+  "reason.offerUnsupported": "{detail} のないメディアオファー：WebRTC 非対応",
   "reason.callFailed": "発信できませんでした：{detail}",
   "reason.sip": "{cause}（SIP {code}）",
 

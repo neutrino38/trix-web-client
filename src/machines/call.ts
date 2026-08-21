@@ -207,13 +207,26 @@ function hangUp(fx: CallFx, ending: Ending, reason: Msg, desc: string) {
 
 /**
  * Fin d'un appel entrant jamais décroché. `reason` devient le motif de
- * la ligne d'historique (« manqué » vs « refusé »).
+ * la ligne d'historique (« manqué » vs « refusé »), et `failed` sépare ce
+ * que l'écran doit signaler (un refus technique) de ce qu'il doit taire
+ * (un appel simplement manqué).
+ *
+ * La vue est publiée avant de rapporter : elle porte la session, donc le
+ * carnet et le bilan média que l'hôte attache à la ligne d'historique
+ * (§5.3). Elle n'est jamais rendue — le rendu vient une microtask plus
+ * tard, quand le bloc a déjà rendu la main.
  */
-function refuse(ctx: CallHost, fx: CallFx, how: RejectReason, reason: Msg): void {
+function refuse(
+  ctx: CallHost,
+  fx: CallFx,
+  how: RejectReason,
+  reason: Msg,
+  failed = false,
+): void {
   fx.data.incoming?.reject(how);
   fx.data.endedBy = "local";
   publish("ringing_in", ctx, fx.data);
-  fx.sbbReturn("missed", { reason, failed: false });
+  fx.sbbReturn("missed", { reason, failed });
 }
 
 /**
@@ -421,9 +434,17 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
      * Aiguillage : traversé sans attendre d'événement. Pour un entrant,
      * on s'abonne d'abord à la session (sinon une annulation immédiate de
      * l'appelant passerait inaperçue), puis on part en `ringing_in`.
+     *
+     * Sauf si l'offre est hors de portée du navigateur : le téléphone ne
+     * sonne alors pas du tout. Faire sonner reviendrait à promettre un
+     * appel que le décrochage ferait échouer — et le 488 doit partir
+     * **avant** le 180, sans quoi l'appelant a entendu une sonnerie qui
+     * n'existait pas. C'est possible parce que tout ce chemin est
+     * synchrone : JsSIP n'envoie son 180 qu'au retour de l'événement qui
+     * nous a livré l'INVITE (§4.3).
      */
     initial_state: {
-      enter(_ctx, fx) {
+      enter(ctx, fx) {
         const d = fx.data;
         if (!d.incoming) return goto("dialing", "INVITE sortant");
         d.direction = "incoming";
@@ -432,7 +453,14 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         d.offered = d.incoming.offered;
         d.media = d.incoming.offered; // avant décision, l'affichage montre l'offre
         d.asked = d.incoming.offered;
+        // avant le refus comme avant la sonnerie : c'est `listen()` qui
+        // ouvre le carnet, et l'appel refusé doit garder le sien
         d.session = d.incoming.listen((ev) => fx.send(ev));
+        const problem = d.incoming.offerProblem;
+        if (problem) {
+          refuse(ctx, fx, "incompatible", msg("reason.offerUnsupported", { detail: problem }), true);
+          return;
+        }
         return goto("ringing_in", "INVITE entrant");
       },
       meta: { callState: "start" },

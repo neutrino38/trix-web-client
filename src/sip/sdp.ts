@@ -16,6 +16,12 @@
  *   d'en recevoir — et l'appelant continue d'émettre la sienne, ce qui
  *   n'est pas ce que l'appelé a demandé.
  *
+ * S'y ajoute un **contrôle de recevabilité** de l'offre entrante
+ * (`unsupportedOffer`) : ni un choix de codec ni une politique d'appel,
+ * seulement les trois invariants sans lesquels aucune implémentation
+ * WebRTC ne peut établir de session. Il sert à répondre 488 avant de
+ * faire sonner (§4.3).
+ *
  * Tout le reste (codecs, ICE, chiffrement) est l'affaire de JsSIP et du
  * navigateur.
  */
@@ -134,4 +140,64 @@ export function withoutVideo(sdp: string): string {
   closeVideo();
 
   return out.join(eol) + eol;
+}
+
+/**
+ * L'offre d'un INVITE entrant est-elle **hors de portée d'un navigateur** ?
+ * Rend la liste des manques (« ICE, DTLS, SRTP (RTP/AVP) »), ou `null` si
+ * rien ne s'y oppose.
+ *
+ * Ce n'est pas une réimplémentation de la validation du navigateur : c'est
+ * le minimum vital, les trois choses qu'un UA SIP classique n'a pas et
+ * qu'aucune pile WebRTC ne sait suppléer (RFC 8829 §5.9, RFC 8827) —
+ *
+ * - **ICE** : `a=ice-ufrag` et `a=ice-pwd`. Chrome refuse l'offre sur ce
+ *   seul point (« Called with SDP without ice-ufrag and ice-pwd ») ;
+ * - **DTLS** : `a=fingerprint`, sans quoi les clés SRTP ne peuvent pas
+ *   s'échanger ;
+ * - **SRTP** : un profil de transport `…SAVP`/`…SAVPF`. Le RTP en clair
+ *   (`RTP/AVP`) n'existe pas en WebRTC.
+ *
+ * Les trois sont cherchés **où qu'ils soient** — au niveau session ou dans
+ * n'importe quel flux actif : le but est de séparer une offre WebRTC d'une
+ * offre qui ne l'est pas, pas de juger de leur placement. Un flux au port
+ * nul est ignoré (il est rejeté ou `bundle-only`), et une offre sans SDP
+ * du tout n'est pas jugée : l'offre viendra dans l'ACK (`late SDP`), c'est
+ * l'affaire de JsSIP.
+ */
+export function unsupportedOffer(sdp: string | null | undefined): string | null {
+  if (!sdp || sdp.trim() === "") return null;
+
+  let ice = false;
+  let dtls = false;
+  /** Profil du premier flux actif qui n'est pas chiffré — celui qu'on cite. */
+  let clear: string | null = null;
+  let streams = 0;
+  let active = false;
+
+  for (const raw of sdp.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("m=")) {
+      const [kind, port, profile] = line.slice(2).split(/\s+/);
+      if (kind !== "audio" && kind !== "video") continue;
+      streams++;
+      if (port === "0" || port === undefined) continue;
+      active = true;
+      // « UDP/TLS/RTP/SAVPF », « RTP/SAVP »… : seul compte le chiffrement
+      if (clear === null && !/SAVPF?$/.test(profile ?? "")) clear = profile ?? "?";
+    } else if (line.startsWith("a=ice-ufrag:") || line.startsWith("a=ice-pwd:")) {
+      ice = true;
+    } else if (line.startsWith("a=fingerprint:")) {
+      dtls = true;
+    }
+  }
+
+  const missing: string[] = [];
+  // aucun flux audio ni vidéo : rien à répondre qui ressemble à un appel
+  if (streams === 0 || !active) missing.push("m=audio/m=video");
+  if (!ice) missing.push("ICE");
+  if (!dtls) missing.push("DTLS");
+  if (clear !== null) missing.push(`SRTP (${clear})`);
+
+  return missing.length > 0 ? missing.join(", ") : null;
 }

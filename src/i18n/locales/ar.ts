@@ -367,6 +367,7 @@ const messages: Translation = {
   "reason.missed": "مكالمة فائتة",
   "reason.missedNoAnswer": "مكالمة فائتة (بلا ردّ)",
   "reason.setupFailed": "تعذّر إنشاء المكالمة",
+  "reason.offerUnsupported": "عرض وسائط بدون {detail}: غير متوافق مع WebRTC",
   "reason.callFailed": "تعذّر إجراء المكالمة: {detail}",
   "reason.sip": "{cause} (SIP {code})",
 

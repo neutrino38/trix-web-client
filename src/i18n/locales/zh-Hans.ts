@@ -347,6 +347,7 @@ const messages: Translation = {
   "reason.missed": "未接来电",
   "reason.missedNoAnswer": "未接来电（无人接听）",
   "reason.setupFailed": "无法建立通话",
+  "reason.offerUnsupported": "媒体提议缺少 {detail}：与 WebRTC 不兼容",
   "reason.callFailed": "无法呼叫：{detail}",
   "reason.sip": "{cause}（SIP {code}）",
 

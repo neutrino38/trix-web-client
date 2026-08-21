@@ -75,7 +75,10 @@ function fakeHandle(opts: { throwOnCall?: string } = {}) {
 }
 
 /** INVITE entrant factice : mêmes points de contrôle que le port JsSIP. */
-function fakeIncoming(offered: CallMedia = { audio: true, video: false }) {
+function fakeIncoming(
+  offered: CallMedia = { audio: true, video: false },
+  offerProblem: string | null = null,
+) {
   const session = new FakeSession();
   const box = {
     session,
@@ -87,6 +90,7 @@ function fakeIncoming(offered: CallMedia = { audio: true, video: false }) {
     from: "sip:bob@example.fr",
     displayName: "Bob Martin",
     offered,
+    offerProblem,
     listen(send) {
       box.sendCall = send;
       return session;
@@ -323,6 +327,23 @@ describe("CallBlock — appel entrant", () => {
     expect(outcome(call)).toEqual({
       type: "call:missed",
       data: { reason: { key: "reason.declined" }, failed: false },
+    });
+  });
+
+  it("offre inétablissable : 488 sans sonnerie, et l'échec part en historique", () => {
+    const { incoming, box } = fakeIncoming({ audio: true, video: true }, "ICE, DTLS, SRTP (RTP/AVP)");
+    const call = startIncoming(incoming);
+    // le téléphone n'a jamais sonné : le bloc rend la main depuis l'aiguillage
+    expect(box.rejected).toEqual(["incompatible"]);
+    expect(outcome(call)).toEqual({
+      type: "call:missed",
+      data: {
+        reason: {
+          key: "reason.offerUnsupported",
+          vars: { detail: "ICE, DTLS, SRTP (RTP/AVP)" },
+        },
+        failed: true,
+      },
     });
   });
 

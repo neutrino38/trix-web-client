@@ -356,6 +356,7 @@ const messages: Translation = {
   "reason.missed": "Appel manqué",
   "reason.missedNoAnswer": "Appel manqué (personne n'a répondu)",
   "reason.setupFailed": "L'appel n'a pas pu s'établir",
+  "reason.offerUnsupported": "Offre média sans {detail} : incompatible avec WebRTC",
   "reason.callFailed": "Appel impossible : {detail}",
   "reason.sip": "{cause} (SIP {code})",
 

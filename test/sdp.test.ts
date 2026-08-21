@@ -4,7 +4,7 @@
  * vidéo dans la réponse, quand on décroche en audio seul (§4.4).
  */
 import { describe, expect, it } from "vitest";
-import { offeredMedia, withoutVideo } from "../src/sip/sdp.js";
+import { offeredMedia, unsupportedOffer, withoutVideo } from "../src/sip/sdp.js";
 
 const head = ["v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=-", "c=IN IP4 192.0.2.1", "t=0 0"];
 
@@ -111,5 +111,74 @@ describe("withoutVideo", () => {
   it("les fins de ligne du SDP d'origine sont conservées", () => {
     expect(withoutVideo(av)).toContain("\r\n");
     expect(withoutVideo(av.replaceAll("\r\n", "\n"))).not.toContain("\r");
+  });
+});
+
+/**
+ * Recevabilité de l'offre entrante : ce contrôle décide qu'un appel ne
+ * sonnera pas du tout (docs/CONCEPTION.md §4.3). Un faux positif coûterait
+ * un appel perdu — c'est le sens qui se vérifie le plus ici.
+ */
+describe("unsupportedOffer", () => {
+  /** L'offre d'un UA SIP classique : RTP en clair, ni ICE ni DTLS. */
+  const SIP_NATIF = sdp(
+    "m=audio 49276 RTP/AVP 98 0 8 101",
+    "a=rtpmap:98 opus/48000/2",
+    "a=sendrecv",
+    "m=video 63650 RTP/AVP 107",
+    "a=rtpmap:107 VP8/90000",
+    "a=sendrecv",
+  );
+
+  /** Ce qu'un navigateur envoie : ICE, DTLS, SRTP, tout au niveau du flux. */
+  const WEBRTC = sdp(
+    "m=audio 9 UDP/TLS/RTP/SAVPF 111",
+    "a=ice-ufrag:4ZcD",
+    "a=ice-pwd:2/1muCWoOi3uLifh0NuRHlZ6",
+    "a=fingerprint:sha-256 AB:CD:EF",
+    "a=rtcp-mux",
+    "a=sendrecv",
+  );
+
+  it("laisse passer une offre WebRTC", () => {
+    expect(unsupportedOffer(WEBRTC)).toBeNull();
+  });
+
+  it("nomme les trois manques d'une offre SIP native", () => {
+    expect(unsupportedOffer(SIP_NATIF)).toBe("ICE, DTLS, SRTP (RTP/AVP)");
+  });
+
+  it("ne juge pas une offre absente : elle viendra dans l'ACK", () => {
+    expect(unsupportedOffer(null)).toBeNull();
+    expect(unsupportedOffer("")).toBeNull();
+  });
+
+  it("accepte ICE et DTLS déclarés au niveau session", () => {
+    const offer = [
+      ...head,
+      "a=ice-ufrag:4ZcD",
+      "a=ice-pwd:2/1muCWoOi3uLifh0NuRHlZ6",
+      "a=fingerprint:sha-256 AB:CD:EF",
+      "m=audio 9 RTP/SAVPF 111",
+      "a=sendrecv",
+    ].join("\r\n");
+    expect(unsupportedOffer(offer)).toBeNull();
+  });
+
+  it("ignore un flux rejeté (port 0) et les sections non média", () => {
+    const offer = sdp(
+      "m=audio 9 UDP/TLS/RTP/SAVPF 111",
+      "a=ice-ufrag:4ZcD",
+      "a=ice-pwd:x",
+      "a=fingerprint:sha-256 AB",
+      "m=video 0 RTP/AVP 107",
+      "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+    );
+    expect(unsupportedOffer(offer)).toBeNull();
+  });
+
+  it("une offre sans flux audio ni vidéo n'est pas un appel", () => {
+    const offer = sdp("m=application 9 UDP/DTLS/SCTP webrtc-datachannel");
+    expect(unsupportedOffer(offer)).toContain("m=audio/m=video");
   });
 });

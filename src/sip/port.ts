@@ -8,10 +8,15 @@
 import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
 import { iceServers } from "./ice.js";
-import { answeredMedia, offeredMedia, withoutVideo } from "./sdp.js";
+import { answeredMedia, offeredMedia, unsupportedOffer, withoutVideo } from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
-import { MEDIA_ERROR_EVENTS, reportMediaError, type MediaFailure } from "./mediaerror.js";
+import {
+  MEDIA_ERROR_EVENTS,
+  reportMediaError,
+  reportOfferRefused,
+  type MediaFailure,
+} from "./mediaerror.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
 import { sipTraceEnabled } from "./trace.js";
 
@@ -136,8 +141,10 @@ export interface CallSession {
 /**
  * Motif de refus d'un appel entrant. Le port seul connaît les codes SIP
  * correspondants — les machines raisonnent en intentions.
+ * `incompatible` est le refus qui ne passe pas par l'utilisateur : l'offre
+ * ne peut pas être établie ici, le 488 part avant la sonnerie (§4.3).
  */
-export type RejectReason = "declined" | "busy" | "timeout";
+export type RejectReason = "declined" | "busy" | "timeout" | "incompatible";
 
 /**
  * Appel entrant en attente de décision (docs/CONCEPTION.md §4.3).
@@ -152,6 +159,13 @@ export interface IncomingCall {
   displayName: string | null;
   /** Médias réellement proposés par l'offre SDP de l'INVITE. */
   offered: CallMedia;
+  /**
+   * Ce qui, dans l'offre, met l'appel hors de portée du navigateur —
+   * « ICE, DTLS, SRTP (RTP/AVP) » — ou `null` si rien ne s'y oppose. Lu
+   * avant toute décision : un appel qui ne peut pas aboutir ne sonne pas
+   * (§4.3). Le port constate, la machine décide.
+   */
+  offerProblem: string | null;
   /** Branche les événements de la session (annulation comprise) et rend la session. */
   listen(send: (ev: CallSipEvent) => void): CallSession;
   /** 200 OK avec la combinaison de médias choisie (sous-ensemble de `offered`). */
@@ -357,6 +371,7 @@ const REJECT: Record<RejectReason, { status_code: number; reason_phrase: string 
   declined: { status_code: 603, reason_phrase: "Decline" },
   busy: { status_code: 486, reason_phrase: "Busy Here" },
   timeout: { status_code: 480, reason_phrase: "Temporarily Unavailable" },
+  incompatible: { status_code: 488, reason_phrase: "Not Acceptable Here" },
 };
 
 function wrapIncoming(
@@ -365,7 +380,11 @@ function wrapIncoming(
   pcConfig: RTCConfiguration,
 ): IncomingCall {
   const from = session.remote_identity;
-  const offered = offeredMedia(request.body ?? null);
+  const offer = request.body ?? null;
+  const offered = offeredMedia(offer);
+  // constaté à l'arrivée, avant que quoi que ce soit ne parte : c'est ce
+  // qui permet de répondre 488 sans qu'un 180 ait été envoyé
+  const problem = unsupportedOffer(offer);
   // né avec l'écoute, consulté par la réponse : c'est lui qui saura refuser
   // la vidéo d'une offre à laquelle on répond en audio seul
   let control: MediaControl | null = null;
@@ -373,6 +392,7 @@ function wrapIncoming(
     from: from.uri.toString(),
     displayName: from.display_name || null,
     offered,
+    offerProblem: problem,
     listen(send) {
       bindSession(session, send);
       control = mediaControl(session, send);
@@ -390,6 +410,9 @@ function wrapIncoming(
       session.answer({ mediaConstraints: { audio: media.audio, video: media.video }, pcConfig });
     },
     reject(reason) {
+      // le carnet est ouvert depuis `listen()` : la ligne d'erreur et le
+      // 488 qui la suit y tombent ensemble, dans cet ordre
+      if (reason === "incompatible" && problem) reportOfferRefused(problem, offer);
       if (!session.isEnded()) session.terminate(REJECT[reason]);
     },
   };

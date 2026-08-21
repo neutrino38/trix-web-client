@@ -341,6 +341,7 @@ const messages = {
   "reason.missed": "Appel manqué",
   "reason.missedNoAnswer": "Appel manqué (sans réponse)",
   "reason.setupFailed": "Établissement de l'appel impossible",
+  "reason.offerUnsupported": "Offre média sans {detail} : incompatible avec WebRTC",
   "reason.callFailed": "Appel impossible : {detail}",
   /** Cause SIP brute assortie de son code — les deux restent en clair. */
   "reason.sip": "{cause} (SIP {code})",

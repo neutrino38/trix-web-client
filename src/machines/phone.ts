@@ -470,6 +470,12 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // rafraîchissements périodiques du REGISTER
         "sip:registered": () => stay("re-REGISTER OK"),
         "sip:connected": () => undefined,
+        // suites d'un appel déjà refermé : le refus émis par le bloc (603,
+        // 480, ou 488 sur une offre inétablissable) éteint la session après
+        // qu'il a rendu la main. Plus rien à décider — mais l'événement doit
+        // être consommé, sinon il s'annonce comme un trou dans la table
+        "sip:failed": () => undefined,
+        "sip:ended": () => undefined,
         // sans code de réponse, l'échec vient du transport (REGISTER resté
         // sans réponse, socket morte) : on reconnecte au lieu d'accuser le compte
         "sip:registrationFailed": (ev, ctx) => {
