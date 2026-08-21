@@ -51,6 +51,18 @@ function lineHtml(line: TraceLine): string {
       <span class="head">${esc(line.head)}</span>
     </div>`;
   }
+  // l'échec WebRTC se déplie comme un paquet : le message du navigateur y
+  // est entier, avec sa pile — c'est ce qu'on colle dans un rapport
+  if (line.kind === "err") {
+    return `<details class="trace-line err">
+      <summary>
+        <span class="at">${esc(stamp(line.at))}</span>
+        <span class="way" aria-label="${esc(t("trace.error"))}">⚠</span>
+        <span class="head">${esc(line.head)}</span>
+      </summary>
+      <pre>${esc(line.body ?? "")}</pre>
+    </details>`;
+  }
   const clipped = line.clipped ? `\n${t("trace.clipped")}` : "";
   return `<details class="trace-line sip ${line.way === "out" ? "out" : "in"}">
     <summary>
@@ -83,6 +95,12 @@ export function traceDialogHtml(entry: CallLogEntry): string {
     <div class="trace-body">${lines.map(lineHtml).join("")}</div>`;
 }
 
+/** Ce qui tient lieu de sens dans le carnet en texte : flèche, ou nature de la ligne. */
+function marker(line: TraceLine): string {
+  if (line.kind === "sip") return line.way === "out" ? "→" : "←";
+  return line.kind === "err" ? "ERR" : "FSM";
+}
+
 /**
  * Le carnet en clair, prêt à coller dans un rapport : entêtes et corps,
  * dans l'ordre où ils sont passés.
@@ -92,9 +110,7 @@ export function traceAsText(lines: TraceLine[]): string {
     .map((l) =>
       l.kind === "cut"
         ? t("trace.truncated")
-        : `${stamp(l.at)} ${l.kind === "sip" ? (l.way === "out" ? "→" : "←") : "FSM"} ${l.head}${
-            l.body ? `\n${l.body}` : ""
-          }`,
+        : `${stamp(l.at)} ${marker(l)} ${l.head}${l.body ? `\n${l.body}` : ""}`,
     )
     .join("\n");
 }

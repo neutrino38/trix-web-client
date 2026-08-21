@@ -64,6 +64,7 @@ src/
     trace.ts              # trace des paquets SIP et des états d'appel (§5.2)
     record.ts             # carnet d'un appel, attaché à son historique (§5.3)
     stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
+    mediaerror.ts         # échecs WebRTC : console, carnet, motif d'appel (§5.5)
   storage/
     store.ts              # interface SecureStore + implé navigateur
     ha1.ts                # MD5(username:realm:password)
@@ -708,6 +709,45 @@ fois sur l'appel entier.
   deux arrondis d'une même mesure.
 - L'affichage est un `<dialog>` natif, comme le carnet : un appel terminé ne bouge
   plus, il n'a pas à suivre la souris.
+
+### 5.5 Échecs WebRTC : dire ce que le navigateur a refusé
+
+JsSIP réduit tout ce qui rate de la connexion pair-à-pair à une seule cause —
+`WebRTC Error` — et à un `488 Not Acceptable Here` sur le fil. Un SDP sans
+`ice-ufrag`, un codec impossible et une caméra déjà prise donnaient donc la même
+ligne à l'écran, la même en historique, et rien du tout dans la console : l'appel
+échoué était irréparable faute de savoir ce qu'il fallait réparer.
+
+Le message existe pourtant. Il voyage dans les événements `getusermediafailed` et
+`peerconnection:*failed` que JsSIP émet autour de l'échec de session.
+`sip/mediaerror.ts` est le seul point où il est lu, et il en fait trois choses.
+
+```
+[trix] WebRTC : setRemoteDescription a échoué — OperationError: Failed to set remote
+offer sdp: Called with SDP without ice-ufrag and ice-pwd.
+```
+
+- **Une ligne de console, toujours** — que la trace SIP soit cochée ou non. C'est
+  le seul incident du port qu'on ne sait pas reproduire à volonté après coup : il
+  ne peut pas dépendre d'une case qu'il aurait fallu cocher avant l'appel.
+  L'objet d'origine accompagne la ligne, la console sait déplier sa pile.
+- **Une ligne du carnet** (§5.3), à la même condition — c'est-à-dire aucune. C'est
+  la seule ligne que `sip/record.ts` accepte sans que la trace soit active, et elle
+  suffit à faire apparaître le parchemin sur la ligne d'historique. Le carnet garde
+  le message entier, là où le motif l'abrège.
+- **Un détail accroché à `sip:failed`**, que `failReason` (CallBlock) assemble à la
+  cause JsSIP exactement comme il lui assemble le code SIP : aucun des trois ne se
+  traduit, seul leur assemblage est une phrase. Le motif de fin d'appel devient
+  « WebRTC Error — setRemoteDescription : OperationError: … (SIP 488) », sur l'écran
+  comme dans l'historique, sans nouvelle clé d'internationalisation.
+
+Un point d'ordonnancement : JsSIP émet `failed` **avant** l'événement qui porte
+l'erreur quand c'est `setRemoteDescription` qui a échoué (il répond 488, échoue la
+session, puis seulement émet `peerconnection:setremotedescriptionfailed`). Les deux
+partent du même `catch`, donc du même tick : le port rapporte `sip:failed` au
+microtask suivant pour les causes qui peuvent porter un détail, et le motif arrive
+complet. Rien d'autre n'étant émis entre-temps, l'ordre des événements vus par la
+machine ne change pas.
 
 ## 6. Stockage sécurisé du compte
 

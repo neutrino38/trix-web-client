@@ -268,6 +268,7 @@ const messages: Translation = {
   "trace.count.other": "{n} 个数据包",
   "trace.sent": "已发送",
   "trace.received": "已接收",
+  "trace.error": "WebRTC 错误",
   "trace.copy": "复制",
   "trace.copied": "已复制",
   "trace.copyFailed": "复制被拒绝",

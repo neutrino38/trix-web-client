@@ -164,12 +164,13 @@ function notify(ctx: CallHost, fx: CallFx, message: Msg): void {
   publish("connected", ctx, fx.data);
 }
 
-function failReason(ev: { cause: string; statusCode?: number }): Msg {
-  // la cause vient de JsSIP et le code du protocole : ni l'une ni l'autre
-  // ne se traduit — seul leur assemblage est une phrase
-  return ev.statusCode
-    ? msg("reason.sip", { cause: ev.cause, code: ev.statusCode })
-    : rawMsg(ev.cause);
+function failReason(ev: { cause: string; statusCode?: number; detail?: string }): Msg {
+  // la cause vient de JsSIP, le code du protocole et le détail du
+  // navigateur : aucun des trois ne se traduit — seul leur assemblage est
+  // une phrase. Le détail n'existe que pour un échec média, et c'est lui
+  // qui dit ce que « WebRTC Error » cache (docs/CONCEPTION.md §5.5).
+  const cause = ev.detail ? `${ev.cause} — ${ev.detail}` : ev.cause;
+  return ev.statusCode ? msg("reason.sip", { cause, code: ev.statusCode }) : rawMsg(cause);
 }
 
 /** Traduit l'originator JsSIP en responsable de la fin d'appel (`system` = incident réseau). */

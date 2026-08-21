@@ -45,6 +45,13 @@ const FSM: TraceLine = {
   head: '(CallBlock/initial_state) → (CallBlock/dialing) "INVITE sortant"',
 };
 
+const ERR: TraceLine = {
+  at: AT + 20,
+  kind: "err",
+  head: "WebRTC setRemoteDescription : OperationError: SDP sans ice-ufrag",
+  body: "setRemoteDescription\nOperationError: SDP sans ice-ufrag\n  at answer()",
+};
+
 beforeEach(async () => {
   await useLocale("fr");
 });
@@ -72,6 +79,15 @@ describe("contenu du popup", () => {
     expect(traceDialogHtml(entry([INVITE, INVITE, FSM]))).toContain("2 paquets");
   });
 
+  it("déplie l'échec WebRTC : c'est lui qui explique le 488", () => {
+    const html = traceDialogHtml(entry([INVITE, ERR]));
+
+    expect(html).toContain('<details class="trace-line err">');
+    expect(html).toContain("OperationError: SDP sans ice-ufrag");
+    // le message entier, pile comprise, est dans le corps déplié
+    expect(html).toContain("at answer()");
+  });
+
   it("signale une trace coupée au plafond", () => {
     const html = traceDialogHtml(entry([INVITE, { at: AT, kind: "cut", head: "" }]));
     expect(html).toContain("trace-cut");
@@ -97,6 +113,12 @@ describe("contenu du popup", () => {
     expect(text).toContain("→ INVITE sip:bob@example.fr SIP/2.0");
     expect(text).toContain("Call-ID: abc");
     expect(text).toContain("FSM (CallBlock/initial_state) → (CallBlock/dialing)");
+  });
+
+  it("marque l'échec WebRTC dans le texte copié", () => {
+    const text = traceAsText([ERR]);
+    expect(text).toContain("ERR WebRTC setRemoteDescription");
+    expect(text).toContain("at answer()");
   });
 });
 

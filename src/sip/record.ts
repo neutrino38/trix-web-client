@@ -9,7 +9,8 @@
  * se remplit que si la trace est active — ce module ne consulte jamais le
  * réglage lui-même, `sip/trace.ts` ne lui envoie rien quand la case est
  * décochée, et l'appel en cours se met donc à s'enregistrer dès qu'on la
- * coche.
+ * coche. Une seule ligne échappe à la règle, `recordError` : un échec
+ * WebRTC ne se rejoue pas, il entre au carnet quoi qu'il arrive.
  *
  * Le découpage se fait sur le **Call-ID**, pas sur le temps : c'est ce qui
  * distingue les paquets d'un appel de ceux du REGISTER périodique ou d'un
@@ -29,11 +30,12 @@ export type Way = "in" | "out";
 /**
  * Une ligne du carnet, telle qu'elle est persistée avec l'appel.
  * `sip` porte un paquet (entête + corps dépliable), `fsm` une transition de
- * la machine d'appel, `cut` la marque d'une trace arrêtée au plafond.
+ * la machine d'appel, `err` un échec WebRTC (message du navigateur, pile
+ * s'il y en a une), `cut` la marque d'une trace arrêtée au plafond.
  */
 export interface TraceLine {
   at: number;
-  kind: "sip" | "fsm" | "cut";
+  kind: "sip" | "fsm" | "err" | "cut";
   way?: Way;
   /** Ce qui reste visible sans déplier : ligne de départ, ou transition. */
   head: string;
@@ -122,6 +124,18 @@ export function recordPacket(way: Way, head: string, text: string): void {
 export function recordFsm(head: string): void {
   const book = books[books.length - 1];
   if (book) add(book, { at: Date.now(), kind: "fsm", head });
+}
+
+/**
+ * Un échec WebRTC (`sip/mediaerror.ts`), au carnet du même appel que les
+ * transitions. C'est la seule ligne que le carnet accepte **sans que la
+ * trace soit cochée** : l'appel a raté, il ne se reproduira pas sur
+ * demande, et le message du navigateur est tout ce qui dira pourquoi. La
+ * ligne suffit à faire apparaître le parchemin dans l'historique.
+ */
+export function recordError(head: string, body: string): void {
+  const book = books[books.length - 1];
+  if (book) add(book, { at: Date.now(), kind: "err", head, body });
 }
 
 /** Remet le module à zéro — l'UA s'arrête, ou un test recommence. */

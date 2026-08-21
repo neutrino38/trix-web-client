@@ -262,6 +262,7 @@ const messages = {
   "trace.count.other": "{n} paquets",
   "trace.sent": "envoyé",
   "trace.received": "reçu",
+  "trace.error": "erreur WebRTC",
   "trace.copy": "Copier",
   "trace.copied": "Copié",
   "trace.copyFailed": "Copie refusée",

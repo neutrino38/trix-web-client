@@ -11,6 +11,7 @@ import { iceServers } from "./ice.js";
 import { answeredMedia, offeredMedia, withoutVideo } from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
+import { MEDIA_ERROR_EVENTS, reportMediaError, type MediaFailure } from "./mediaerror.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
 import { sipTraceEnabled } from "./trace.js";
 
@@ -44,7 +45,19 @@ export type CallSipEvent =
   | { type: "sip:accepted" }
   | { type: "sip:confirmed" }
   | { type: "sip:ended"; cause: string; originator?: SipOriginator }
-  | { type: "sip:failed"; cause: string; statusCode?: number; originator?: SipOriginator }
+  /**
+   * Fin de session avant établissement. `detail` porte ce que le
+   * navigateur a dit quand l'échec vient du média (`sip/mediaerror.ts`) :
+   * la cause JsSIP seule (« WebRTC Error ») ne nomme jamais le vrai
+   * problème.
+   */
+  | {
+      type: "sip:failed";
+      cause: string;
+      statusCode?: number;
+      originator?: SipOriginator;
+      detail?: string;
+    }
   /**
    * Les médias de l'appel viennent d'être négociés — à l'établissement
    * comme après un re-INVITE, dans un sens ou dans l'autre. C'est le
@@ -277,20 +290,66 @@ type Session = ReturnType<JsSIP.UA["call"]>;
 
 /** Seul point de traduction des événements d'une session JsSIP en événements de machine. */
 function bindSession(session: Session, send: (ev: CallSipEvent) => void): void {
+  // ce que le navigateur a refusé, capté avant que JsSIP ne le réduise à
+  // « WebRTC Error » : le dernier échec vu accompagne la fin de session
+  let failure: MediaFailure | null = null;
+  bindMediaErrors(session, (f) => {
+    failure = f;
+  });
+
   session.on("progress", () => send({ type: "sip:progress" }));
   session.on("accepted", () => send({ type: "sip:accepted" }));
   session.on("confirmed", () => send({ type: "sip:confirmed" }));
   session.on("ended", (e) =>
     send({ type: "sip:ended", cause: causeOf(e), originator: originatorOf(e) }),
   );
-  session.on("failed", (e) =>
-    send({
-      type: "sip:failed",
-      cause: causeOf(e),
-      statusCode: statusOf(e),
-      originator: originatorOf(e),
-    }),
-  );
+  session.on("failed", (e) => {
+    const cause = causeOf(e);
+    const report = (): void =>
+      send({
+        type: "sip:failed",
+        cause,
+        statusCode: statusOf(e),
+        originator: originatorOf(e),
+        ...(failure ? { detail: failure.detail } : {}),
+      });
+    // JsSIP émet `failed` **avant** l'événement qui porte l'erreur quand
+    // c'est setRemoteDescription qui a échoué (il répond 488, échoue la
+    // session, puis seulement émet `peerconnection:…failed`). Les deux
+    // partent du même `catch`, donc du même tick : rapporter au microtask
+    // suivant suffit à ce que le motif ait son détail, et l'ordre des
+    // événements vus par la machine ne change pas — rien d'autre n'est
+    // émis entre-temps.
+    if (mediaCause(cause)) queueMicrotask(report);
+    else report();
+  });
+}
+
+/** Causes JsSIP derrière lesquelles se cache un message du navigateur. */
+const MEDIA_CAUSES: ReadonlySet<string> = new Set<string>([
+  JsSIP.C.causes.WEBRTC_ERROR,
+  JsSIP.C.causes.USER_DENIED_MEDIA_ACCESS,
+  JsSIP.C.causes.BAD_MEDIA_DESCRIPTION,
+  JsSIP.C.causes.INTERNAL_ERROR,
+]);
+
+function mediaCause(cause: string): boolean {
+  return MEDIA_CAUSES.has(cause);
+}
+
+/**
+ * Branche les échecs WebRTC de la session. Ils sont tracés sans condition
+ * par `sip/mediaerror.ts` ; ce qui remonte ici est ce qui servira à dire
+ * *pourquoi* l'appel a échoué. Les noms d'événements ne sont pas dans les
+ * types de JsSIP, qui n'y déclare que les siens.
+ */
+function bindMediaErrors(session: Session, onFailure: (failure: MediaFailure) => void): void {
+  const emitter = session as unknown as {
+    on(event: string, listener: (error: unknown) => void): void;
+  };
+  for (const [event, op] of Object.entries(MEDIA_ERROR_EVENTS)) {
+    emitter.on(event, (error) => onFailure(reportMediaError(op, error)));
+  }
 }
 
 /** Codes SIP de refus : le reste de l'application raisonne en motifs. */
@@ -455,8 +514,15 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
     const tr = conn ? videoTransceiver(conn) : null;
     const track = tr?.sender.track;
     if (tr && track) {
+      // la piste s'arrête dans tous les cas — c'est elle qui tient le
+      // voyant de la caméra allumé. La détacher du sender, en revanche,
+      // n'a de sens que sur une connexion encore ouverte : `release()` est
+      // appelé sur `failed`, donc après que JsSIP a fermé la sienne, et
+      // `replaceTrack` y lève un InvalidStateError qui n'apprend rien.
       track.stop();
-      void tr.sender.replaceTrack(null);
+      if (conn && conn.signalingState !== "closed") {
+        void tr.sender.replaceTrack(null).catch(() => {});
+      }
     }
     own?.stop();
     own = null;

@@ -708,6 +708,9 @@ fieldset.field { border: none; }
 .trace-line.in .way { color: var(--green); }
 .trace-line .head { min-width: 0; overflow-wrap: anywhere; }
 .trace-line.fsm { color: var(--ink-soft); background: var(--ground); }
+/* l'échec WebRTC : la ligne qui explique le 488, elle doit sauter aux yeux */
+.trace-line.err > summary { color: var(--red); font-weight: 600; }
+.trace-line.err .way { color: var(--red); }
 .trace-line pre {
   margin: 0; padding: 0.5rem 1rem 0.7rem 2.4rem; background: var(--ground);
   white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-soft);

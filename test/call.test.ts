@@ -369,6 +369,34 @@ describe("CallBlock — appel entrant", () => {
     });
   });
 
+  it("488 après décrochage : le motif porte ce que le navigateur a refusé", () => {
+    const { incoming, box } = fakeIncoming();
+    const call = startIncoming(incoming);
+    call.send({ type: "ui:answer", media: { audio: true, video: false } });
+    box.sendCall({
+      type: "sip:failed",
+      cause: "WebRTC Error",
+      statusCode: 488,
+      originator: "system",
+      detail: "setRemoteDescription : OperationError: SDP sans ice-ufrag",
+    });
+    // « WebRTC Error (SIP 488) » ne dit rien de réparable : c'est le détail
+    // du navigateur qui nomme la vraie cause, et il part dans l'historique
+    expect(outcome(call)).toEqual({
+      type: "call:missed",
+      data: {
+        reason: {
+          key: "reason.sip",
+          vars: {
+            cause: "WebRTC Error — setRemoteDescription : OperationError: SDP sans ice-ufrag",
+            code: 488,
+          },
+        },
+        failed: true,
+      },
+    });
+  });
+
   it("raccrochage en communication depuis un entrant : BYE puis answered", () => {
     const { incoming, box } = fakeIncoming();
     const call = startIncoming(incoming);

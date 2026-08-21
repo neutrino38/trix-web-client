@@ -262,6 +262,7 @@ const messages: Translation = {
   "trace.count.other": "{n} packets",
   "trace.sent": "sent",
   "trace.received": "received",
+  "trace.error": "WebRTC error",
   "trace.copy": "Copy",
   "trace.copied": "Copied",
   // S'excuser d'un échec qui n'est pas le sien : rien de plus britannique.

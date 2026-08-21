@@ -288,6 +288,7 @@ const messages: Translation = {
   "trace.count.other": "{n} حزمة",
   "trace.sent": "مُرسَلة",
   "trace.received": "مُستقبَلة",
+  "trace.error": "خطأ WebRTC",
   "trace.copy": "نسخ",
   "trace.copied": "تمّ النسخ",
   "trace.copyFailed": "تعذّر النسخ",

@@ -271,6 +271,7 @@ const messages: Translation = {
   "trace.count.other": "{n} パケット",
   "trace.sent": "送信",
   "trace.received": "受信",
+  "trace.error": "WebRTC エラー",
   "trace.copy": "コピー",
   "trace.copied": "コピーしました",
   "trace.copyFailed": "コピーできませんでした",

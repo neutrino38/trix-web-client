@@ -277,6 +277,7 @@ const messages: Translation = {
   "trace.count.other": "{n} paquets",
   "trace.sent": "envoyé",
   "trace.received": "reçu",
+  "trace.error": "erreur WebRTC",
   "trace.copy": "Copier",
   "trace.copied": "Copié, tiguidou!",
   "trace.copyFailed": "Copie refusée",
