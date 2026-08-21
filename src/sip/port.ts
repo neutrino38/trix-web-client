@@ -8,7 +8,7 @@
 import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
 import { iceServers } from "./ice.js";
-import { offeredMedia } from "./sdp.js";
+import { answeredMedia, offeredMedia, withoutVideo } from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
@@ -44,7 +44,41 @@ export type CallSipEvent =
   | { type: "sip:accepted" }
   | { type: "sip:confirmed" }
   | { type: "sip:ended"; cause: string; originator?: SipOriginator }
-  | { type: "sip:failed"; cause: string; statusCode?: number; originator?: SipOriginator };
+  | { type: "sip:failed"; cause: string; statusCode?: number; originator?: SipOriginator }
+  /**
+   * Les médias de l'appel viennent d'être négociés — à l'établissement
+   * comme après un re-INVITE, dans un sens ou dans l'autre. C'est le
+   * **résultat**, lu sur la connexion pair-à-pair : ce que l'appel
+   * transporte réellement, et non ce qui avait été demandé.
+   */
+  | { type: "sip:mediaChanged"; media: CallMedia }
+  /**
+   * Notre demande de changement n'a pas abouti : l'appel continue tel
+   * qu'il était. `by` sépare les deux refus, qui ne se disent pas de la
+   * même façon à l'écran — le distant a dit non (488, ou 200 OK dont la
+   * réponse SDP désactive le flux), ou bien la demande n'a jamais pu
+   * partir d'ici (caméra indisponible, négociation déjà en cours).
+   */
+  | { type: "sip:mediaRefused"; by: "remote" | "local"; statusCode?: number }
+  /**
+   * Le distant demande à ajouter la vidéo à un appel qui n'en a pas : sa
+   * caméra s'allumerait sans que personne l'ait décidé ici, donc la
+   * réponse SIP attend la décision de l'utilisateur.
+   */
+  | { type: "sip:mediaOffer"; media: CallMedia; offer: MediaOffer };
+
+/**
+ * Demande de changement de média venue du distant, en attente de
+ * décision. Répondre est obligatoire : tant que ni `accept` ni `reject`
+ * n'est appelé, le re-INVITE reste sans réponse finale (le 100 Trying est
+ * déjà parti) et l'appelant patiente.
+ */
+export interface MediaOffer {
+  /** 200 OK : la caméra s'allume et la vidéo rejoint l'appel. */
+  accept(): void;
+  /** 488 Not Acceptable Here : l'appel continue sans la vidéo. */
+  reject(): void;
+}
 
 /**
  * Session d'appel côté machine/UI : la frontière média. `attachMedia`
@@ -60,7 +94,16 @@ export interface CallSession {
    */
   trace(): TraceLine[];
   setMicMuted(muted: boolean): void;
-  setCamMuted(muted: boolean): void;
+  /**
+   * Ajoute ou retire la vidéo de l'appel en cours par re-INVITE
+   * (docs/CONCEPTION.md §4.4) — il n'y a pas de « couper sa caméra » en
+   * conversation totale : ne plus émettre d'image, c'est retirer la vidéo
+   * de l'appel, et le distant doit le savoir.
+   *
+   * Ne rend rien : l'issue arrive par événement, `sip:mediaChanged` si le
+   * distant a suivi, `sip:mediaRefused` s'il a dit non.
+   */
+  setVideo(on: boolean): void;
   attachMedia(remote: HTMLVideoElement, local: HTMLVideoElement | null): void;
   /**
    * L'état du média sur les dix dernières secondes — ce que l'UI affiche
@@ -223,7 +266,7 @@ export function createJsSipPort(): SipPort {
             pcConfig,
           });
           bindSession(session, sendCall);
-          return wrapSession(session, book);
+          return wrapSession(session, book, mediaControl(session, sendCall));
         },
       };
     },
@@ -263,19 +306,28 @@ function wrapIncoming(
   pcConfig: RTCConfiguration,
 ): IncomingCall {
   const from = session.remote_identity;
+  const offered = offeredMedia(request.body ?? null);
+  // né avec l'écoute, consulté par la réponse : c'est lui qui saura refuser
+  // la vidéo d'une offre à laquelle on répond en audio seul
+  let control: MediaControl | null = null;
   return {
     from: from.uri.toString(),
     displayName: from.display_name || null,
-    offered: offeredMedia(request.body ?? null),
+    offered,
     listen(send) {
       bindSession(session, send);
+      control = mediaControl(session, send);
       // le carnet ne s'ouvre qu'ici, jamais à l'arrivée de l'INVITE : un
       // second appel refusé « occupé » n'est pas écouté, et n'a donc pas de
       // carnet à voler à la communication en cours. L'INVITE, lui, est déjà
       // passé — le Call-ID sert à le rattraper.
-      return wrapSession(session, openCallTrace(request.call_id ?? null));
+      return wrapSession(session, openCallTrace(request.call_id ?? null), control);
     },
     answer(media) {
+      // répondre « audio seul » à une offre audio + vidéo se dit dans la
+      // réponse SDP : sans cela le navigateur répondrait `recvonly` et
+      // l'appelant continuerait d'émettre son image (§4.4)
+      if (offered.video && !media.video) control?.refuseVideo();
       session.answer({ mediaConstraints: { audio: media.audio, video: media.video }, pcConfig });
     },
     reject(reason) {
@@ -300,12 +352,320 @@ function statusOf(e: unknown): number | undefined {
   return typeof m?.status_code === "number" ? m.status_code : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Négociation des médias en cours d'appel (docs/CONCEPTION.md §4.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ce que Trix pilote de la session au-delà des médias offerts au départ :
+ * refuser la vidéo d'une offre, l'ajouter ou la retirer en cours d'appel,
+ * et dire ce que l'appel transporte réellement après chaque négociation.
+ *
+ * Tout l'état média d'une session vit ici, dans une seule fermeture : la
+ * piste vidéo que nous avons ouverte (et que nous seuls pouvons éteindre),
+ * le refus en vigueur, le dernier résultat publié.
+ */
+interface MediaControl {
+  /** Prochaine réponse SDP : vidéo déclarée `inactive`. */
+  refuseVideo(): void;
+  /** Re-INVITE ajoutant (ou retirant) la vidéo. */
+  setVideo(on: boolean): void;
+  /** Fin d'appel : la caméra que nous avons allumée s'éteint avec lui. */
+  release(): void;
+}
+
+/** Le transceiver vidéo de la connexion, s'il en existe un. */
+function videoTransceiver(pc: RTCPeerConnection): RTCRtpTransceiver | null {
+  return (
+    pc
+      .getTransceivers()
+      .find((tr) => (tr.receiver.track?.kind ?? tr.sender.track?.kind) === "video") ?? null
+  );
+}
+
+/**
+ * Ce que la connexion transporte **effectivement**, lu sur la direction
+ * négociée de chaque transceiver. C'est la seule source honnête : le SDP
+ * dit ce qui a été demandé, `currentDirection` dit ce qui a été conclu.
+ * Un transceiver jamais négocié (`currentDirection === null`) ne compte
+ * pas encore.
+ */
+function negotiatedMedia(pc: RTCPeerConnection): CallMedia {
+  const media: CallMedia = { audio: false, video: false };
+  for (const tr of pc.getTransceivers()) {
+    const kind = tr.receiver.track?.kind ?? tr.sender.track?.kind;
+    if (kind !== "audio" && kind !== "video") continue;
+    if (tr.currentDirection && tr.currentDirection !== "inactive") media[kind] = true;
+  }
+  return media;
+}
+
+/**
+ * Ce que JsSIP ne montre pas dans ses types mais que la conversation
+ * totale exige :
+ *
+ * - `_sendReinvite` plutôt que `renegotiate()`, dont le gestionnaire
+ *   d'échec **raccroche l'appel** (500 Media Renegotiation Failed) : un
+ *   488 n'est pas une fin d'appel, c'est un non ;
+ * - `_receiveReinvite` intercepté, parce que l'événement public
+ *   `reinvite` ne se décide que sur-le-champ — or accepter la vidéo
+ *   demande d'allumer une caméra, donc l'accord de l'utilisateur, donc du
+ *   temps. La transaction serveur a déjà répondu 100 Trying : l'appelant
+ *   patiente sans que rien n'expire.
+ */
+interface Renegotiable {
+  isReadyToReOffer(): boolean;
+  _sendReinvite(options: {
+    eventHandlers: { succeeded(response: unknown): void; failed(response?: unknown): void };
+  }): void;
+  _receiveReinvite(request: InDialogRequest): void;
+}
+
+/** Le re-INVITE tel que nous avons besoin de le lire et d'y répondre. */
+interface InDialogRequest {
+  body?: string | null;
+  reply(code: number, reason?: string | null): void;
+}
+
+function mediaControl(session: Session, send: (ev: CallSipEvent) => void): MediaControl {
+  const raw = session as unknown as Session & Renegotiable;
+  /** La caméra que nous avons ouverte : personne d'autre ne l'éteindra. */
+  let own: MediaStreamTrack | null = null;
+  /** Vidéo refusée dans la prochaine réponse SDP (réponse audio à une offre A/V). */
+  let refusing = false;
+  /** Dernier résultat publié — on ne signale que les changements. */
+  let published: CallMedia | null = null;
+  /**
+   * Ce que notre re-INVITE en vol demande (`true` = ajouter la vidéo).
+   * Lu à l'arrivée de la réponse : c'est la demande, et non la caméra
+   * ouverte, qui dit s'il y a eu refus — la caméra, elle, a pu être
+   * refermée entre-temps par l'observateur de négociation.
+   */
+  let asking: boolean | null = null;
+  let pc: RTCPeerConnection | null = null;
+
+  /**
+   * Éteint la caméra qui alimentait l'appel — la nôtre comme celle que
+   * JsSIP a ouverte pour un INVITE vidéo. Une piste laissée vivante
+   * garderait le voyant de la machine allumé alors que plus personne ne
+   * reçoit l'image : c'est le genre de détail sur lequel se juge un
+   * logiciel de visiophonie.
+   */
+  const stopSending = (conn: RTCPeerConnection | null): void => {
+    const tr = conn ? videoTransceiver(conn) : null;
+    const track = tr?.sender.track;
+    if (tr && track) {
+      track.stop();
+      void tr.sender.replaceTrack(null);
+    }
+    own?.stop();
+    own = null;
+  };
+
+  /**
+   * Après chaque négociation (retour à `stable`), l'appel dit ce qu'il
+   * transporte. Un seul observateur pour tous les cas : établissement,
+   * re-INVITE reçu, re-INVITE émis — l'événement ne dépend pas de qui a
+   * pris l'initiative.
+   */
+  const watch = (conn: RTCPeerConnection): void => {
+    pc = conn;
+    conn.addEventListener("signalingstatechange", () => {
+      if (conn.signalingState !== "stable") return;
+      const media = negotiatedMedia(conn);
+      // la vidéo est sortie de l'appel : la caméra n'a plus de raison de
+      // rester allumée
+      if (!media.video) stopSending(conn);
+      if (published && published.audio === media.audio && published.video === media.video) return;
+      published = media;
+      send({ type: "sip:mediaChanged", media });
+    });
+  };
+  if (session.connection) watch(session.connection);
+  else session.on("peerconnection", (e) => watch(e.peerconnection));
+
+  /**
+   * Filet de la réponse SDP : le transceiver est déjà passé `inactive`
+   * (voir `blockVideoInAnswer`), cette réécriture ne fait que garantir que
+   * la réponse **partie sur le fil** le dit aussi, quelle que soit la
+   * façon dont le navigateur a rédigé son answer.
+   */
+  session.on("sdp", (e: { originator: string; type: string; sdp: string }) => {
+    if (refusing && e.originator === "local" && e.type === "answer") e.sdp = withoutVideo(e.sdp);
+  });
+
+  /**
+   * Notre image rejoint l'appel : la caméra s'ouvre, la piste prend la
+   * place du transceiver vidéo existant s'il y en a un (celui d'une offre
+   * refusée plus tôt), sinon elle en crée un.
+   */
+  const openCamera = async (conn: RTCPeerConnection): Promise<boolean> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const track = stream.getVideoTracks()[0];
+      if (!track) return false;
+      own = track;
+      const tr = videoTransceiver(conn);
+      if (tr) {
+        await tr.sender.replaceTrack(track);
+        tr.direction = "sendrecv";
+      } else {
+        conn.addTrack(track, stream);
+      }
+      return true;
+    } catch {
+      // caméra refusée par le système ou déjà prise : l'appel continue
+      stopSending(conn);
+      return false;
+    }
+  };
+
+  /** Notre image quitte l'appel : transceiver rendu inactif, caméra éteinte. */
+  const closeCamera = (conn: RTCPeerConnection): void => {
+    stopSending(conn);
+    const tr = videoTransceiver(conn);
+    if (tr) tr.direction = "inactive";
+  };
+
+  /**
+   * Notre re-INVITE. L'offre locale est déjà appliquée quand la réponse
+   * arrive : un refus laisse la connexion en `have-local-offer`, d'où le
+   * retour arrière — sans lui, plus aucune renégociation ne serait
+   * possible de tout l'appel.
+   */
+  const reinvite = (): void => {
+    raw._sendReinvite({
+      eventHandlers: {
+        succeeded: (response) => {
+          const body = (response as { body?: string | null }).body;
+          const wanted = asking;
+          asking = null;
+          // le résultat est publié par l'observateur de négociation ; ici
+          // on ne rattrape que le refus poli, celui qui répond 200 OK en
+          // ayant désactivé le flux
+          if (wanted && !answeredMedia(body).video)
+            send({ type: "sip:mediaRefused", by: "remote" });
+        },
+        failed: (response) => {
+          asking = null;
+          const conn = pc;
+          if (conn) {
+            if (conn.signalingState === "have-local-offer")
+              void conn.setLocalDescription({ type: "rollback" }).catch(() => {});
+            closeCamera(conn);
+          }
+          // sans réponse du tout (transport, délai), ce n'est pas un refus
+          // du distant : la phrase affichée n'est pas la même
+          const statusCode = statusOf(response ?? {});
+          send({ type: "sip:mediaRefused", by: statusCode ? "remote" : "local", statusCode });
+        },
+      },
+    });
+  };
+
+  /**
+   * Re-INVITE reçu. Ce qui ne fait qu'ôter la vidéo, ou n'y touche pas
+   * (rafraîchissement de session, mise en attente), suit le chemin normal
+   * de JsSIP. Ajouter la vidéo, en revanche, allumerait une caméra : la
+   * réponse attend que l'utilisateur ait tranché.
+   */
+  const passThrough = raw._receiveReinvite.bind(raw);
+  raw._receiveReinvite = (request: InDialogRequest): void => {
+    const conn = pc;
+    const wanted = offeredMedia(request.body ?? null);
+    if (!conn || !wanted.video || negotiatedMedia(conn).video) {
+      passThrough(request);
+      return;
+    }
+    let answered = false;
+    const once = (fn: () => void): (() => void) => () => {
+      if (answered || session.isEnded()) return;
+      answered = true;
+      fn();
+    };
+    send({
+      type: "sip:mediaOffer",
+      media: wanted,
+      offer: {
+        accept: once(() => {
+          refusing = false;
+          void openCamera(conn).then((ok) => {
+            // caméra impossible à ouvrir : mieux vaut le dire au distant
+            // que de lui répondre une vidéo qui n'arrivera jamais
+            if (ok) passThrough(request);
+            else request.reply(488, "Not Acceptable Here");
+          });
+        }),
+        reject: once(() => {
+          refusing = true;
+          request.reply(488, "Not Acceptable Here");
+        }),
+      },
+    });
+  };
+
+  return {
+    refuseVideo() {
+      refusing = true;
+      const block = (conn: RTCPeerConnection): void => blockVideoInAnswer(conn, () => refusing);
+      if (session.connection) block(session.connection);
+      else session.on("peerconnection", (e) => block(e.peerconnection));
+    },
+    setVideo(on) {
+      const conn = pc;
+      if (!conn || session.isEnded()) return;
+      if (!raw.isReadyToReOffer()) {
+        // une négociation est déjà en vol : réessayer plus tard vaut mieux
+        // que deux offres qui se croisent (RFC 3261 §14.1, « glare »)
+        send({ type: "sip:mediaRefused", by: "local" });
+        return;
+      }
+      if (!on) {
+        refusing = true;
+        asking = false;
+        closeCamera(conn);
+        reinvite();
+        return;
+      }
+      refusing = false;
+      void openCamera(conn).then((ok) => {
+        if (!ok) {
+          send({ type: "sip:mediaRefused", by: "local" });
+          return;
+        }
+        asking = true;
+        reinvite();
+      });
+    },
+    release: () => stopSending(pc),
+  };
+}
+
+/**
+ * Répondre sans vidéo à une offre qui en propose : le transceiver que
+ * l'offre distante vient de créer passe `inactive` **avant** que le
+ * navigateur ne rédige sa réponse. Laissé à lui-même, il répondrait
+ * `recvonly` — pas d'image envoyée, mais l'image du distant acceptée,
+ * c'est-à-dire tout le contraire de ce que l'appelé a demandé.
+ *
+ * Le rendez-vous est `have-remote-offer` : l'offre est appliquée, les
+ * transceivers existent, la réponse n'est pas encore écrite.
+ */
+function blockVideoInAnswer(pc: RTCPeerConnection, active: () => boolean): void {
+  pc.addEventListener("signalingstatechange", () => {
+    if (pc.signalingState !== "have-remote-offer" || !active()) return;
+    const tr = videoTransceiver(pc);
+    if (tr) tr.direction = "inactive";
+  });
+}
+
 interface RtcSessionLike {
   connection: RTCPeerConnection | undefined;
   isEnded(): boolean;
   terminate(): void;
   mute(opts: { audio?: boolean; video?: boolean }): void;
   unmute(opts: { audio?: boolean; video?: boolean }): void;
+  on(event: string, listener: (...args: never[]) => void): void;
 }
 
 /**
@@ -337,8 +697,16 @@ function collectStats(session: RtcSessionLike) {
   return media;
 }
 
-function wrapSession(session: RtcSessionLike, book: CallTraceHandle): CallSession {
+function wrapSession(
+  session: RtcSessionLike,
+  book: CallTraceHandle,
+  control: MediaControl,
+): CallSession {
   const media = collectStats(session);
+  // la caméra que nous avons ouverte survivrait au dialogue : JsSIP ne
+  // referme que le flux qu'il a demandé lui-même
+  session.on("ended", control.release);
+  session.on("failed", control.release);
   return {
     terminate() {
       if (!session.isEnded()) session.terminate();
@@ -351,10 +719,8 @@ function wrapSession(session: RtcSessionLike, book: CallTraceHandle): CallSessio
       if (muted) session.mute({ audio: true });
       else session.unmute({ audio: true });
     },
-    setCamMuted(muted) {
-      if (session.isEnded()) return;
-      if (muted) session.mute({ video: true });
-      else session.unmute({ video: true });
+    setVideo(on) {
+      control.setVideo(on);
     },
     attachMedia(remote, local) {
       const pc = session.connection;

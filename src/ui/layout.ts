@@ -1,7 +1,7 @@
 /**
  * Format d'affichage — signal purement UI.
  *
- * Choix d'architecture (voir docs/CONCEPTION.md §4.5) : le format ne
+ * Choix d'architecture (voir docs/CONCEPTION.md §4.6) : le format ne
  * change **rien** au protocole SIP, donc pas de machine à états dédiée.
  * PhoneMachine reste unique et le basculement mobile/bureau ne coupe ni
  * l'appel ni l'enregistrement — seul le module de rendu change.

@@ -36,11 +36,31 @@ export type SuspectField = "proxy" | "credentials" | "stun" | "turn";
 export type CallControlEvent =
   | { type: "ui:hangup" }
   | { type: "ui:muteMic" }
-  | { type: "ui:muteCam" }
+  /**
+   * L'icône de la caméra, en conversation totale : elle ajoute la vidéo à
+   * l'appel si elle n'y est pas, l'en retire si elle y est. Il n'y a pas
+   * de « couper sa caméra » — cesser d'émettre son image, c'est retirer la
+   * vidéo de l'appel, et le distant doit le savoir (docs/CONCEPTION.md §4.4).
+   */
+  | { type: "ui:toggleVideo" }
+  /** Décision sur la vidéo que le distant propose d'ajouter en cours d'appel. */
+  | { type: "ui:acceptVideo" }
+  | { type: "ui:rejectVideo" }
   | { type: "ui:toggleSelfView" }
   /** Appel entrant : répondre avec la combinaison choisie parmi les médias proposés. */
   | { type: "ui:answer"; media: CallMedia }
   | { type: "ui:reject" };
+
+/**
+ * Message fugace de l'appel — « Bob n'a pas accepté la vidéo ». Il ne
+ * décrit pas un état mais un événement qui vient de passer : l'écran
+ * l'affiche quelques secondes puis l'oublie, d'où le numéro d'ordre, seul
+ * moyen pour lui de distinguer un nouveau message d'un rendu de plus.
+ */
+export interface CallNotice {
+  seq: number;
+  message: Msg;
+}
 
 /**
  * Vue de l'appel, écrite par CallBlock **directement dans le contexte de
@@ -55,11 +75,16 @@ export interface CallView {
   displayName: string | null;
   /** Entrant : médias proposés par l'INVITE — décide des réponses possibles. */
   offered: CallMedia;
-  /** Médias effectivement négociés (entrant : ceux de la réponse). */
+  /** Médias effectivement négociés — ce que l'appel transporte à cet instant. */
   media: CallMedia;
   micMuted: boolean;
-  camMuted: boolean;
   selfViewHidden: boolean;
+  /** Notre demande d'ajout ou de retrait de la vidéo est en vol : l'icône attend. */
+  videoPending: boolean;
+  /** Le distant demande à ajouter la vidéo : l'écran pose la question. */
+  videoAsked: boolean;
+  /** Dernier message fugace à afficher, s'il y en a eu un. */
+  notice: CallNotice | null;
   /** Timestamp du 200 OK ; l'UI en dérive le chrono. */
   connectedAt: number | null;
   /** Qui a mis fin à l'appel, connu à partir de hangingup/fin de session. */

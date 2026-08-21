@@ -111,8 +111,12 @@ body {
   height: 100%; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 1.1rem; text-align: center;
 }
-/* icône + titre en texte : le nom suit la couleur du thème (voir ui/logo.ts) */
-.screen-home img { display: block; margin: 0 auto 0.7rem; max-width: 45vw; height: auto; }
+/* icône + titre en texte : le nom suit la couleur du thème (voir ui/logo.ts).
+   La classe n'est pas décorative : visant `img` seul, cette règle centrait
+   *toutes* les images de l'accueil — le crédit FSL a dû s'en défendre, et
+   les drapeaux du sélecteur héritaient d'une marge automatique qui les
+   décalait d'une ligne à l'autre. Une règle de marque ne vise que la marque. */
+.screen-home img.brand { display: block; margin: 0 auto 0.7rem; max-width: 45vw; height: auto; }
 .screen-home h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: 1.5px; }
 .screen-home .tagline { color: var(--ink-soft); font-size: 0.9rem; margin-top: 0.2rem; }
 /* version du logiciel — un cran plus effacée que la signature : on la lit
@@ -129,9 +133,7 @@ body {
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-size: 0.75rem; color: var(--ink-soft); text-decoration: none; white-space: nowrap;
 }
-/* margin/max-width explicites : cette icône vit dans .screen-home, dont la
-   règle d'image ci-dessus centre le logo de marque */
-.fsl-badge img { display: block; flex: none; margin: 0; max-width: none; }
+.fsl-badge img { display: block; flex: none; }
 .fsl-badge:hover { color: var(--accent); text-decoration: underline; }
 .fsl-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
@@ -216,19 +218,48 @@ fieldset.field { border: none; }
 .field .checkline input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 .field .checkline b { font-weight: 600; color: var(--ink); }
 .field input:disabled { opacity: 0.45; cursor: not-allowed; }
-/* Sélecteur de langue — même gabarit que les champs de saisie, à ceci près
-   que la flèche du menu appartient au navigateur : on ne repeint pas le
-   contrôle natif, dont le comportement au clavier et sur mobile est
-   irremplaçable. */
-.field select {
+/* Sélecteur de langue — même gabarit que les champs de saisie. Ce n'est
+   plus un `<select>` natif : il fallait des images pour les drapeaux qu'un
+   `<option>` refuse (voir `ui/langpicker.ts`), donc un bouton et un menu.
+   Le menu réutilise `.dropdown`, à trois réglages près — il s'aligne sur le
+   bord de départ plutôt que d'arrivée, épouse la largeur du bouton, et
+   défile au-delà d'une dizaine de langues. */
+.lang-picker { position: relative; }
+.lang-trigger {
   font: inherit; color: var(--ink); background: var(--panel);
   border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;
-  cursor: pointer;
+  cursor: pointer; display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  text-align: start;
 }
-.field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lang-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lang-trigger .caret { margin-inline-start: auto; color: var(--ink-soft); }
+/* Le menu s'aligne sur le bord de départ du bouton et ne prend que la
+   largeur de son entrée la plus longue — celle du bouton, qui suit la
+   colonne du formulaire, l'étirerait bien au-delà de ce qu'il a à dire. */
+.lang-menu {
+  inset-inline-start: 0; inset-inline-end: auto;
+  width: max-content; min-width: 0; max-width: 100%;
+  overflow-y: auto; max-height: min(60vh, 320px);
+}
+.lang-menu .lang-name { text-align: start; }
+/* Drapeaux : boîte unique pour toutes les langues, quel que soit le format
+   du drapeau (le britannique est en 1:2, les autres en 2:3) — une colonne
+   qui ondule se lit moins vite qu'une colonne droite. Le liseré tient les
+   champs blancs, japonais et québécois, qui sans lui fondraient dans le
+   fond clair. */
+.flag {
+  flex: none; width: 1.5rem; height: 1rem; object-fit: cover; border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.flag.emoji {
+  box-shadow: none; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1rem; line-height: 1;
+}
+/* la case de qui n'a pas de drapeau : elle tient la colonne, sans se voir */
+.flag.blank { box-shadow: none; }
 /* à l'accueil, le sélecteur suit la largeur de la colonne de boutons, et
    son intitulé se centre comme le reste de l'écran */
-.screen-home .lang-picker { margin-top: 0.4rem; text-align: center; }
+.screen-home .lang-picker { margin-top: 0.4rem; }
 .screen-home .lang-picker label { text-align: center; }
 .note {
   font-size: 0.78rem; color: var(--ink-soft);
@@ -408,6 +439,40 @@ fieldset.field { border: none; }
    reste bien visible, sans rien faire vaciller */
 @media (prefers-reduced-motion: reduce) {
   .callflash { animation: none; }
+}
+
+
+/* ---------- vidéo demandée en cours d'appel ---------- */
+/* Même modale que l'appel entrant, à deux différences près : elle ne voile
+   pas la conversation (on doit pouvoir raccrocher pendant qu'on réfléchit)
+   et son badge est violet — c'est une proposition, pas une sonnerie. */
+.videoask-veil { background: rgba(13, 10, 18, 0.3); }
+.videoask-veil,
+.videoask { pointer-events: auto; }
+.videoask .who { font-size: 1.6rem; }
+.videoask .ring-badge {
+  background: var(--accent);
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 18%, transparent);
+  animation: none;
+}
+
+/* ---------- message fugace de l'appel (ui/toast.ts) ---------- */
+/* Un événement qui vient de passer — « Bob n'a pas accepté la vidéo » — et
+   non un état : le bandeau s'efface tout seul au bout de quelques secondes.
+   Posé au-dessus de la modale de décision (50) mais sous le flash d'appel
+   entrant (60), et jamais cliquable : il n'y a rien à y faire. */
+.toast {
+  position: fixed; z-index: 55; pointer-events: none;
+  inset-inline: 0; bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  margin-inline: auto; width: max-content; max-width: min(90vw, 34rem);
+  padding: 0.7rem 1.1rem; border-radius: 14px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+  font-size: 1.02rem; font-weight: 600; text-align: center; text-wrap: balance;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast { opacity: 0; transform: translateY(8px); transition: opacity 0.18s, transform 0.18s; }
+  .toast.in { opacity: 1; transform: none; }
 }
 
 

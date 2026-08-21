@@ -17,6 +17,7 @@ import type { PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
+import { videoAskDialog } from "./videoask.js";
 import { statsPill } from "./stats.js";
 import {
   ICONS,
@@ -145,5 +146,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
              </div>`
       }
       ${incoming ? incomingDialog(view) : ""}
+      ${view?.videoAsked ? videoAskDialog(view) : ""}
     </div>`);
 }

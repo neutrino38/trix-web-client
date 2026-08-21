@@ -83,13 +83,21 @@ export function overlayBar(ctx: OverlayCtx): string {
       disabled: !connected,
     },
     {
-      act: "muteCam",
-      icon: view.camMuted ? ICONS_OFF.cam : ICONS.cam,
-      label: t(view.camMuted ? "ctrl.cam.unmute" : "ctrl.cam.mute"),
+      // en conversation totale, la caméra n'est pas une sourdine : elle
+      // ajoute la vidéo à l'appel ou l'en retire, et le distant le voit
+      // passer (docs/CONCEPTION.md §4.4). Barrée, elle dit que l'appel n'a pas
+      // de vidéo — et qu'un clic l'y mettrait.
+      act: "toggleVideo",
+      icon: video ? ICONS.cam : ICONS_OFF.cam,
+      label: t(
+        view.videoPending ? "ctrl.cam.pending" : video ? "ctrl.cam.remove" : "ctrl.cam.add",
+      ),
       aria: t("ctrl.cam.aria"),
-      pressed: view.camMuted,
+      pressed: !video,
       cut: true,
-      disabled: !video,
+      // pendant qu'une offre est en vol, le second clic n'a nulle part où
+      // aller : une renégociation à la fois
+      disabled: !connected || view.videoPending || view.videoAsked,
     },
     {
       act: "selfview",

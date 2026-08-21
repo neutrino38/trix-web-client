@@ -27,15 +27,16 @@ import type { MediaStats } from "../src/sip/stats.js";
 class FakeSession implements CallSession {
   terminated = 0;
   mic: boolean[] = [];
-  cam: boolean[] = [];
+  /** Les ajouts et retraits de vidéo demandés par re-INVITE. */
+  video: boolean[] = [];
   terminate(): void {
     this.terminated++;
   }
   setMicMuted(m: boolean): void {
     this.mic.push(m);
   }
-  setCamMuted(m: boolean): void {
-    this.cam.push(m);
+  setVideo(on: boolean): void {
+    this.video.push(on);
   }
   attachMedia(): void {}
   /** Le bilan média que le port aurait mesuré si la trace était active. */
@@ -249,19 +250,16 @@ describe("CallBlock — appel sortant", () => {
     }
   });
 
-  it("mutes en communication : vue publiée + action session, état inchangé", () => {
+  it("sourdine et self-view en communication : vue publiée, état inchangé", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle, true);
     box.sendCall({ type: "sip:accepted" });
     call.send({ type: "ui:muteMic" });
-    call.send({ type: "ui:muteCam" });
     call.send({ type: "ui:toggleSelfView" });
     expect(call.sbb?.state).toBe("connected");
     expect(call.context.call?.micMuted).toBe(true);
-    expect(call.context.call?.camMuted).toBe(true);
     expect(call.context.call?.selfViewHidden).toBe(true);
     expect(box.session.mic).toEqual([true]);
-    expect(box.session.cam).toEqual([true]);
   });
 
   it("annulation pendant dialing : CANCEL puis canceled au sip:failed", () => {
@@ -438,5 +436,192 @@ describe("CallBlock — ce que le bloc consomme pour son hôte", () => {
     await call.shutdown("test");
     expect(box.session.terminated).toBe(1);
     expect(call.context.call).toBeNull();
+  });
+});
+
+/**
+ * Négociation de la vidéo (docs/CONCEPTION.md §4.4). En conversation totale, la
+ * vidéo n'est pas une sourdine locale : elle entre dans l'appel ou en sort,
+ * et les deux correspondants voient la même chose.
+ */
+describe("CallBlock — la vidéo entre et sort de l'appel", () => {
+  /** Un appel établi, avec les médias que le port dit avoir négociés. */
+  function connectedCall(asked: boolean, negotiated = asked) {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle, asked);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: negotiated } });
+    box.sendCall({ type: "sip:accepted" });
+    return { call, box };
+  }
+
+  it("appel vidéo décroché en audio : la vue repasse en audio et le dit", () => {
+    const { call } = connectedCall(true, false);
+    expect(call.sbb?.state).toBe("connected");
+    const view = call.context.call!;
+    expect(view.media).toEqual({ audio: true, video: false });
+    expect(view.notice?.message).toEqual({
+      key: "notice.videoDeclined",
+      vars: { peer: "bob@example.fr" },
+    });
+  });
+
+  it("appel vidéo décroché en vidéo : rien à signaler", () => {
+    const { call } = connectedCall(true);
+    expect(call.context.call?.media).toEqual({ audio: true, video: true });
+    expect(call.context.call?.notice).toBeNull();
+  });
+
+  it("ajout de la vidéo : re-INVITE, attente, puis vue à jour", () => {
+    const { call, box } = connectedCall(false);
+    call.send({ type: "ui:toggleVideo" });
+    expect(box.session.video).toEqual([true]);
+    expect(call.sbb?.state).toBe("renegotiating");
+    expect(call.context.call?.videoPending).toBe(true);
+
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true } });
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.media).toEqual({ audio: true, video: true });
+    expect(call.context.call?.videoPending).toBe(false);
+  });
+
+  it("retrait de la vidéo : re-INVITE dans l'autre sens", () => {
+    const { call, box } = connectedCall(true);
+    call.send({ type: "ui:toggleVideo" });
+    expect(box.session.video).toEqual([false]);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false } });
+    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+  });
+
+  it("488 du distant : message, appel intact, vidéo toujours absente", () => {
+    const { call, box } = connectedCall(false);
+    call.send({ type: "ui:toggleVideo" });
+    box.sendCall({ type: "sip:mediaRefused", by: "remote", statusCode: 488 });
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+    expect(call.context.call?.notice?.message).toEqual({
+      key: "notice.videoRefused",
+      vars: { peer: "bob@example.fr" },
+    });
+  });
+
+  it("refus local (caméra indisponible) : message local", () => {
+    const { call, box } = connectedCall(false);
+    call.send({ type: "ui:toggleVideo" });
+    box.sendCall({ type: "sip:mediaRefused", by: "local" });
+    expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoUnavailable" });
+  });
+
+  it("un second clic pendant la renégociation ne part pas", () => {
+    const { call, box } = connectedCall(false);
+    call.send({ type: "ui:toggleVideo" });
+    call.send({ type: "ui:toggleVideo" });
+    expect(box.session.video).toEqual([true]);
+  });
+
+  it("renégociation sans réponse : l'appel continue au bout de 20 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const { call } = connectedCall(false);
+      call.send({ type: "ui:toggleVideo" });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(call.sbb?.state).toBe("connected");
+      expect(call.context.call?.videoPending).toBe(false);
+      expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoUnavailable" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("raccrocher pendant une renégociation reste possible", () => {
+    const { call, box } = connectedCall(false);
+    call.send({ type: "ui:toggleVideo" });
+    call.send({ type: "ui:hangup" });
+    expect(call.sbb?.state).toBe("hangingup");
+    expect(box.session.terminated).toBe(1);
+  });
+});
+
+describe("CallBlock — vidéo proposée par le distant", () => {
+  /** Un appel audio établi et l'offre vidéo que le distant vient d'envoyer. */
+  function offered() {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:accepted" });
+    const decisions: string[] = [];
+    box.sendCall({
+      type: "sip:mediaOffer",
+      media: { audio: true, video: true },
+      offer: {
+        accept: () => decisions.push("accept"),
+        reject: () => decisions.push("reject"),
+      },
+    });
+    return { call, box, decisions };
+  }
+
+  it("la question est posée à l'écran, l'appel continue derrière", () => {
+    const { call } = offered();
+    expect(call.sbb?.state).toBe("video_offer");
+    expect(call.context.call?.videoAsked).toBe(true);
+    expect(call.context.call?.state).toBe("connected");
+  });
+
+  it("acceptée : 200 OK puis attente du média négocié", () => {
+    const { call, decisions } = offered();
+    call.send({ type: "ui:acceptVideo" });
+    expect(decisions).toEqual(["accept"]);
+    expect(call.sbb?.state).toBe("renegotiating");
+    expect(call.context.call?.videoAsked).toBe(false);
+  });
+
+  it("refusée : 488 et message, l'appel reste en audio", () => {
+    const { call, decisions } = offered();
+    call.send({ type: "ui:rejectVideo" });
+    expect(decisions).toEqual(["reject"]);
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+    expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoDeclinedHere" });
+  });
+
+  it("sans réponse au bout de 25 s : refusée pour ne pas faire attendre l'appelant", async () => {
+    vi.useFakeTimers();
+    try {
+      const { call, decisions } = offered();
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(decisions).toEqual(["reject"]);
+      expect(call.sbb?.state).toBe("connected");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("une offre reçue hors communication est éconduite sur-le-champ", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    const decisions: string[] = [];
+    box.sendCall({
+      type: "sip:mediaOffer",
+      media: { audio: true, video: true },
+      offer: { accept: () => decisions.push("accept"), reject: () => decisions.push("reject") },
+    });
+    expect(decisions).toEqual(["reject"]);
+    expect(call.sbb?.state).toBe("dialing");
+  });
+});
+
+describe("CallBlock — raccrocher pendant une question de vidéo", () => {
+  it("l'offre en suspens reçoit sa réponse avant le BYE", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:accepted" });
+    const decisions: string[] = [];
+    box.sendCall({
+      type: "sip:mediaOffer",
+      media: { audio: true, video: true },
+      offer: { accept: () => decisions.push("accept"), reject: () => decisions.push("reject") },
+    });
+    call.send({ type: "ui:hangup" });
+    expect(decisions).toEqual(["reject"]);
+    expect(call.sbb?.state).toBe("hangingup");
   });
 });

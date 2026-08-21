@@ -191,8 +191,9 @@ const messages: Translation = {
   "ctrl.mic.mute": "كتم الميكروفون",
   "ctrl.mic.unmute": "إلغاء كتم الميكروفون",
   "ctrl.cam.aria": "الكاميرا",
-  "ctrl.cam.mute": "إيقاف الكاميرا",
-  "ctrl.cam.unmute": "تشغيل الكاميرا",
+  "ctrl.cam.add": "إضافة الفيديو",
+  "ctrl.cam.remove": "إزالة الفيديو",
+  "ctrl.cam.pending": "جارٍ تغيير الوسائط…",
   "ctrl.selfview.aria": "صورتك",
   "ctrl.selfview.hide": "إخفاء صورتك",
   "ctrl.selfview.show": "إظهار صورتك",
@@ -203,6 +204,24 @@ const messages: Translation = {
   "ctrl.dtmf.label": "لوحة أرقام DTMF — ستتوفّر في المرحلة 4",
   "ctrl.fullscreen": "ملء الشاشة",
   "ctrl.hangup": "إنهاء المكالمة",
+
+  // ---------------------------------------------------------------------
+  // طلب إضافة الفيديو أثناء المكالمة
+  // ---------------------------------------------------------------------
+  "videoask.title": "يريد {peer} إضافة الفيديو",
+  "videoask.body": "القبول سيشغّل الكاميرا لديك.",
+  "videoask.accept": "قبول الفيديو",
+  "videoask.reject": "رفض",
+
+  // ---------------------------------------------------------------------
+  // رسائل عابرة أثناء المكالمة
+  // ---------------------------------------------------------------------
+  "notice.videoDeclined": "لم يقبل {peer} الفيديو",
+  "notice.videoRefused": "رفض {peer} إضافة الفيديو إلى هذه المكالمة",
+  "notice.videoAdded": "أضاف {peer} الفيديو",
+  "notice.videoRemoved": "أزال {peer} الفيديو",
+  "notice.videoDeclinedHere": "تم رفض الفيديو",
+  "notice.videoUnavailable": "يتعذّر إضافة الفيديو في الوقت الحالي",
 
   // ---------------------------------------------------------------------
   // Panneau latéral

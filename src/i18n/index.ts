@@ -48,6 +48,19 @@ function codeOf(path: string): Locale {
 }
 
 /**
+ * Langues que `Intl.DisplayNames` nomme mal — et qui se nomment ici
+ * elles-mêmes, dans leur propre langue comme toutes les autres.
+ *
+ * Une seule pour l'instant : « fr-CA ». La balise dit « français
+ * canadien », et les moteurs ne s'accordent même pas là-dessus — Chrome
+ * rend « Français (Canada) », Node « français canadien ». Or ce
+ * dictionnaire n'est pas le français du Canada en général, c'est du
+ * québécois : c'est le mot que ses lecteurs cherchent dans un menu, et il
+ * a l'avantage de ne plus dépendre des données du navigateur.
+ */
+const NAME_OVERRIDE: Record<string, string> = { "fr-CA": "Québécois" };
+
+/**
  * Nom d'une langue **écrit dans cette langue** — « Français », « English »,
  * « Deutsch ». C'est la seule forme qui serve à qui ne lit pas la langue
  * courante : un anglophone tombé sur une interface en français doit
@@ -57,6 +70,8 @@ function codeOf(path: string): Locale {
  * une phrase mais pas à une entrée de menu.
  */
 export function localeName(code: Locale): string {
+  const override = NAME_OVERRIDE[code];
+  if (override !== undefined) return override;
   try {
     const name = new Intl.DisplayNames([code], { type: "language" }).of(code);
     if (name) return name.charAt(0).toLocaleUpperCase(code) + name.slice(1);
@@ -64,6 +79,64 @@ export function localeName(code: Locale): string {
     // navigateur sans Intl.DisplayNames, ou balise refusée : le code fera foi
   }
   return code;
+}
+
+/**
+ * Ce qu'une langue porte quand la région la plus probable de sa balise ne
+ * la représente pas. **La chaîne vide veut dire : rien du tout** — le nom
+ * seul, dans une liste qui porte des drapeaux par ailleurs.
+ *
+ * La clé est une balise complète, sinon la langue seule :
+ *
+ * - « en » → 🇬🇧 là où `maximize()` aurait dit 🇺🇸. Statistiquement juste,
+ *   visuellement faux ici : l'anglais de Trix est écrit en orthographe
+ *   britannique (« minimised », « Cancelled »).
+ * - « ar » → 🇹🇳 là où `maximize()` aurait dit 🇪🇬. Le dictionnaire est en
+ *   arabe standard moderne, que nul pays ne possède en propre ; il fallait
+ *   pourtant choisir, et ce choix-là ne se déduit d'aucune donnée.
+ *
+ * Ces emoji restent le repli : `ui/flags.ts` dessine les mêmes drapeaux, et
+ * c'est lui que le sélecteur sert en premier. Ils comptent là où l'image ne
+ * va pas — un titre, un texte brut, un jour peut-être une notification.
+ */
+const FLAG_OVERRIDE: Record<string, string> = { en: "🇬🇧", ar: "🇹🇳" };
+
+/**
+ * Drapeau d'une langue, **déduit de sa balise** — 🇫🇷, 🇯🇵, 🇨🇳.
+ *
+ * Un drapeau par langue est un raccourci discutable — une langue n'est pas
+ * un pays —, mais c'est le repère que l'œil trouve avant de lire, dans un
+ * menu où l'entrée qu'on cherche est justement celle qu'on ne sait pas
+ * lire. Là où le raccourci deviendrait un contresens, `FLAG_OVERRIDE`
+ * tranche : un autre emblème, ou aucun.
+ *
+ * Le reste se demande à `Intl` plutôt qu'à une liste tenue à la main,
+ * comme le nom et le sens d'écriture : `maximize()` complète la balise de
+ * la région la plus probable (« ja » → « ja-Jpan-JP »), dont les deux
+ * lettres se transposent en indicateurs régionaux — le mécanisme même des
+ * drapeaux d'Unicode. Déposer `de.ts` suffit donc à faire apparaître 🇩🇪.
+ *
+ * Rendu vide si la balise ne donne aucune région ou si le moteur ignore
+ * `maximize()` : le nom seul reste lisible, et le sélecteur ne perd que
+ * son ornement. Sous Windows, qui n'embarque pas les glyphes de drapeaux,
+ * c'est le sort de toutes les langues — les deux lettres du pays
+ * s'affichent à leur place. La fleur de lis, elle, y survit : ce n'est pas
+ * un drapeau.
+ */
+export function localeFlag(code: Locale): string {
+  const override = FLAG_OVERRIDE[code] ?? FLAG_OVERRIDE[code.split("-")[0]!];
+  if (override !== undefined) return override;
+  let region: string | undefined;
+  try {
+    const tag = new Intl.Locale(code);
+    region = tag.region ?? tag.maximize().region;
+  } catch {
+    // balise refusée par Intl.Locale, ou moteur sans maximize() : pas de drapeau
+  }
+  if (region?.length !== 2) return "";
+  return String.fromCodePoint(
+    ...[...region.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65),
+  );
 }
 
 /** Les langues disponibles, triées par leur nom d'affichage. */

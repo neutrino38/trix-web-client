@@ -7,7 +7,7 @@
  * bouton permettant de mettre fin à l'appel.
  *
  * L'état vit dans `prefs.ts`, jamais dans la machine : le format d'affichage
- * ne change rien au protocole SIP (docs/CONCEPTION.md §4.5).
+ * ne change rien au protocole SIP (docs/CONCEPTION.md §4.6).
  *
  * Le repli est un simple basculement de classe sur la racine de l'écran, et
  * non un re-rendu : l'écran est reconstruit à chaque notification de la

@@ -56,15 +56,16 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
 class FakeCallSession {
   terminated = 0;
   mic: boolean[] = [];
-  cam: boolean[] = [];
+  /** Les ajouts et retraits de vidéo demandés par re-INVITE. */
+  video: boolean[] = [];
   terminate(): void {
     this.terminated++;
   }
   setMicMuted(m: boolean): void {
     this.mic.push(m);
   }
-  setCamMuted(m: boolean): void {
-    this.cam.push(m);
+  setVideo(on: boolean): void {
+    this.video.push(on);
   }
   attachMedia(): void {}
   /** Le bilan média que le port aurait mesuré si la trace était active. */
@@ -613,7 +614,7 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
     expect(phone.state).toBe("ready");
   });
 
-  it("mute micro/caméra : relayés, reflétés dans la vue", async () => {
+  it("sourdine micro : relayée, reflétée dans la vue", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
     phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
     sip.sendCall({ type: "sip:accepted" });
@@ -622,9 +623,19 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
     expect(phone.context.call?.micMuted).toBe(true);
     phone.send({ type: "ui:muteMic" });
     expect(sip.session.mic).toEqual([true, false]);
-    phone.send({ type: "ui:muteCam" });
-    expect(sip.session.cam).toEqual([true]);
-    expect(phone.context.call?.camMuted).toBe(true);
+  });
+
+  it("retrait de la vidéo pendant l'appel : re-INVITE relayé jusqu'à la session", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true } });
+    phone.send({ type: "ui:toggleVideo" });
+    expect(sip.session.video).toEqual([false]);
+    expect(phone.context.call?.videoPending).toBe(true);
+    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false } });
+    expect(phone.context.call?.media).toEqual({ audio: true, video: false });
+    expect(phone.context.call?.videoPending).toBe(false);
   });
 
   it("Paramètres/Déconnexion pendant l'appel : consommés sans effet", async () => {

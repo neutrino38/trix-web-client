@@ -1,9 +1,10 @@
 /**
- * Lecture de l'offre SDP entrante : c'est elle qui décide des réponses
- * proposées à l'utilisateur (docs/CONCEPTION.md §4.3).
+ * Lecture de l'offre SDP entrante — c'est elle qui décide des réponses
+ * proposées à l'utilisateur (docs/CONCEPTION.md §4.3) — et refus de la
+ * vidéo dans la réponse, quand on décroche en audio seul (§4.4).
  */
 import { describe, expect, it } from "vitest";
-import { offeredMedia } from "../src/sip/sdp.js";
+import { offeredMedia, withoutVideo } from "../src/sip/sdp.js";
 
 const head = ["v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=-", "c=IN IP4 192.0.2.1", "t=0 0"];
 
@@ -75,5 +76,40 @@ describe("offeredMedia", () => {
       audio: true,
       video: true,
     });
+  });
+});
+
+describe("withoutVideo", () => {
+  const av = sdp(
+    "m=audio 49170 RTP/AVP 0 8",
+    "a=sendrecv",
+    "m=video 51372 RTP/AVP 96",
+    "a=rtpmap:96 H264/90000",
+    "a=sendrecv",
+  );
+
+  it("la vidéo passe inactive, l'audio ne bouge pas", () => {
+    const out = withoutVideo(av);
+    expect(offeredMedia(out)).toEqual({ audio: true, video: false });
+    expect(out).toContain("m=video 51372 RTP/AVP 96");
+    expect(out).toContain("a=rtpmap:96 H264/90000");
+    expect(out.match(/a=sendrecv/g)).toHaveLength(1); // celui de l'audio
+    expect(out).toContain("a=inactive");
+  });
+
+  it("une section vidéo sans direction s'en voit poser une", () => {
+    const out = withoutVideo(sdp("m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96"));
+    expect(offeredMedia(out)).toEqual({ audio: true, video: false });
+    expect(out.trimEnd().endsWith("a=inactive")).toBe(true);
+  });
+
+  it("sans vidéo, le SDP traverse inchangé", () => {
+    const audio = sdp("m=audio 49170 RTP/AVP 0", "a=sendrecv");
+    expect(withoutVideo(audio).trimEnd()).toBe(audio.trimEnd());
+  });
+
+  it("les fins de ligne du SDP d'origine sont conservées", () => {
+    expect(withoutVideo(av)).toContain("\r\n");
+    expect(withoutVideo(av.replaceAll("\r\n", "\n"))).not.toContain("\r");
   });
 });

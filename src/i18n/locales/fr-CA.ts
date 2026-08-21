@@ -1,33 +1,51 @@
 /**
- * Dictionnaire français — **la langue de référence**.
+ * Dictionnaire français canadien — le français d'ici, pas celui de France.
  *
- * Ce fichier n'est pas une traduction parmi d'autres : son type est le
- * contrat que toutes les autres langues doivent honorer (`Dictionary`,
- * dérivé de `typeof messages` dans `../types.ts`). Une clé ajoutée ici et
- * oubliée ailleurs fait échouer `npm run build` — c'est le seul filet qui
- * empêche une langue de partir en lambeaux au fil des évolutions.
+ * **C'est une vraie traduction, pas une parodie.** Le Québec ne parle pas
+ * un français de France avec un accent : le vocabulaire de l'informatique
+ * y est souvent plus francisé qu'en Europe, l'Office québécois de la
+ * langue française ayant tranché tôt et pour de bon. D'où « clavardage »
+ * là où la France dit « tchat », « fermer la session » pour « se
+ * déconnecter », et le couple **ouvrir / fermer** appliqué à tout ce qui
+ * s'allume et s'éteint — on ferme le son, on ouvre la caméra.
  *
- * Conventions :
+ * Le reste — les tournures qui font sourire — est placé **là où une
+ * lecture de travers ne coûte rien** : l'état vide de l'historique, les
+ * textes d'aide, la ligne qui raconte comment un appel s'est terminé.
+ * Jamais dans un message d'erreur, jamais sur un bouton dont dépend un
+ * appel en cours. Un « pantoute » bien placé fait sourire ; un « pantoute »
+ * dans « Adresse SIP invalide » ferait perdre un appel.
  *
- * - clés plates en notation pointée, groupées par écran ou par domaine ;
- * - variables entre accolades — `{caller}` — substituées par `t()` ;
- * - pluriels en couples `.one` / `.other`, résolus par `tn()` via
- *   `Intl.PluralRules` : les langues qui comptent autrement déclarent leurs
- *   propres formes — l'arabe en a six (voir `ar.ts`) — sans que celle-ci
- *   bouge.
+ * Le glossaire, pour qui n'est pas d'ici :
  *
- * Ce que l'on ne traduit **pas** : « Trix », « Powered by FSL », les codes
- * techniques (SIP 486, WSS_LOST) et les causes brutes remontées par JsSIP.
- * Un code d'erreur qui change de langue n'est plus cherchable.
+ * - **placoter** — bavarder de tout et de rien ;
+ * - **achaler** — importuner, déranger ;
+ * - **pantoute** — pas du tout (de « pas en tout ») ;
+ * - **tiguidou** — parfait, ça marche ;
+ * - **prendre une débarque** — tomber, se planter ;
+ * - **écornifler** — regarder ce qui ne nous regarde pas ;
+ * - **fermer la ligne** — raccrocher ;
+ * - **tantôt** — dans un moment ;
+ * - **se brancher** — se connecter.
+ *
+ * La typographie suit la Banque de dépannage linguistique, qui diffère de
+ * l'usage français sur un point visible : **pas d'espace devant `!` ni
+ * `?`**, mais une espace devant `:`, et les guillemets restent « ».
+ *
+ * Les pluriels sont ceux du français (`.one` / `.other`), et ce qui ne se
+ * traduit nulle part ne se traduit pas ici non plus : « Trix », « Powered
+ * by FSL », les codes techniques (SIP 486, WSS_LOST) et les causes brutes
+ * de JsSIP.
  */
 
-const messages = {
+import type { Translation } from "../types.js";
+
+const messages: Translation = {
   // ---------------------------------------------------------------------
   // Choix de la langue
   // ---------------------------------------------------------------------
   "lang.label": "Langue de l'interface",
   "lang.auto": "Automatique (langue du navigateur)",
-  /** Complète « Automatique » une fois la détection faite : « … — Français ». */
   "lang.autoDetected": "Automatique — {name}",
   "lang.hint": "« Automatique » suit la langue de votre navigateur.",
 
@@ -40,10 +58,9 @@ const messages = {
   // ---------------------------------------------------------------------
   // Écran d'accueil
   // ---------------------------------------------------------------------
-  "home.tagline": "Webphone conversation totale",
-  "home.useAccount": "Utiliser le compte",
+  "home.tagline": "Téléphone Web en conversation totale",
+  "home.useAccount": "Prendre ce compte-là",
   "home.newAccount": "Configurer un nouveau compte",
-  /** Version du logiciel, en pied de l'accueil — voir `src/version.ts`. */
   "home.version": "Version {version}",
   "fsl.aria": "Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)",
 
@@ -53,52 +70,51 @@ const messages = {
   "config.title": "Paramètres",
   "config.section.account": "Compte SIP",
   "config.proxy": "Serveur SIP",
-  "config.proxyPlaceholder": "wss://sip.example.fr:8443/ws",
+  "config.proxyPlaceholder": "wss://sip.exemple.qc.ca:8443/ws",
   "config.uri": "Adresse SIP",
-  "config.uriPlaceholder": "sip:alice@example.fr",
+  "config.uriPlaceholder": "sip:alice@exemple.qc.ca",
   "config.uriHint":
-    "Avec ou sans le préfixe « sip: ». Le domaine sert de realm pour l'authentification.",
+    "Avec ou sans le préfixe « sip: ». Le domaine sert de royaume (realm) pour l'authentification.",
   "config.displayName": "Votre nom",
-  /** `{user}` est un fragment HTML (le userpart en gras, suivi à la saisie). */
-  "config.authToggle": "Identifiant d'authentification (si différent de {user})",
+  "config.authToggle": "Identifiant d'authentification (s'il diffère de {user})",
   "config.authUserDefault": "l'utilisateur de l'adresse",
   "config.password": "Mot de passe",
   "config.passwordSet": "•••••• (déjà défini)",
-  "config.passwordKeep": "Laisser vide pour conserver le mot de passe actuel.",
+  "config.passwordKeep": "Laissez vide pour garder le mot de passe actuel.",
   "config.ha1Note":
-    "Le mot de passe n'est pas conservé : seule une empreinte (HA1) est stockée, chiffrée, dans ce navigateur.",
+    "Le mot de passe n'est pas gardé : seule une empreinte (HA1) est stockée, chiffrée, dans ce navigateur.",
 
   "config.section.nat": "Traversée de NAT",
   "config.natHint":
-    "Serveurs fournis par votre opérateur SIP. Sans eux, un appel entre deux réseaux privés peut aboutir sans qu'aucun son ne passe.",
+    "Des serveurs fournis par votre fournisseur SIP. Sans eux, un appel entre deux réseaux privés peut aboutir sans qu'on s'entende pantoute.",
   "config.stun": "Serveur STUN",
-  "config.stunPlaceholder": "stun.example.fr:3478",
-  "config.stunHint": "Facultatif. Hôte seul ou hôte:port — sans port, 3478 est utilisé.",
+  "config.stunPlaceholder": "stun.exemple.qc.ca:3478",
+  "config.stunHint": "Facultatif. Hôte seul ou hôte:port — sans port, c'est 3478.",
   "config.turn": "Serveur TURN",
-  "config.turnPlaceholder": "turn.example.fr:3478",
+  "config.turnPlaceholder": "turn.exemple.qc.ca:3478",
   "config.turnHint":
-    "Facultatif — relais des flux média quand la connexion directe échoue. Laisser vide pour ne pas en utiliser.",
+    "Facultatif — relais des flux média quand la connexion directe ne passe pas. Laissez vide pour vous en passer.",
   "config.turnUser": "Identifiant TURN",
   "config.turnPass": "Mot de passe TURN",
-  "config.turnPassKeep": "Laisser vide pour conserver le mot de passe actuel.",
+  "config.turnPassKeep": "Laissez vide pour garder le mot de passe actuel.",
   "config.turnTlsLabel": "TURN sur TLS",
   "config.turnTlsDesc":
-    " — relais chiffré (« turns: »), qui passe là où seul le trafic TLS est autorisé",
-  "config.turnTlsHint": "Sans port explicite, 5349 est alors utilisé au lieu de 3478.",
+    " — relais chiffré (« turns: »), qui passe là où seul le trafic TLS a le droit de circuler",
+  "config.turnTlsHint": "Sans port explicite, c'est 5349 au lieu de 3478.",
   "config.turnNote":
-    "Le mot de passe TURN, lui, est conservé (chiffré) : le relais réclame le secret lui-même à chaque appel, une empreinte n'y suffirait pas.",
+    "Le mot de passe TURN, lui, est gardé (chiffré) : le relais redemande le secret lui-même à chaque appel, une empreinte ne ferait pas l'affaire.",
 
   "config.section.alerts": "Alertes et affichage",
   "config.alertsHint":
-    "Ces réglages prennent effet immédiatement, sans attendre l'enregistrement — sauf le flash, qui suit le compte.",
+    "Ces réglages prennent effet tout de suite, sans attendre l'enregistrement — sauf le flash, qui suit le compte.",
   "config.flashLabel": "Flash visuel à l'appel entrant",
   "config.flashDesc":
-    " — l'écran clignote pendant la sonnerie, pour être alerté sans le son",
+    " — l'écran clignote pendant la sonnerie : on est averti même quand le son est fermé",
   "config.flashHint": "Enregistré avec le compte : il vous suit d'un poste à l'autre.",
   "config.notifications": "Notifications système",
   "config.notifEnable": "Activer les notifications",
   "config.notifHint":
-    "Sans elles, Trix ne peut pas vous alerter quand la fenêtre est masquée ou réduite.",
+    "Sans elles, Trix ne peut pas vous achaler quand la fenêtre est cachée ou réduite.",
   "config.notifOn": "Notifications activées",
   "config.notifBlocked": "Notifications bloquées par le navigateur",
   "config.notifBlockedHint":
@@ -113,29 +129,29 @@ const messages = {
   "config.section.diag": "Diagnostic",
   "config.traceLabel": "Tracer les échanges SIP",
   "config.traceDesc":
-    " — chaque paquet envoyé et reçu, et les états par lesquels l'appel passe, s'affichent dans la console du navigateur",
+    " — chaque paquet envoyé et reçu, et les états par lesquels l'appel passe, s'affichent dans la console du navigateur, pour qui veut écornifler",
   "config.traceHint":
-    "Effet immédiat, même en pleine communication : ouvrez la console (F12) pour lire les paquets. Chaque appel garde aussi les siens dans son historique, chiffrés, jusqu'à ce que vous l'effaciez. Ils portent votre adresse SIP et celle de vos correspondants — à retirer d'un rapport de bogue public.",
-  "config.save": "Enregistrer et se connecter",
+    "Effet immédiat, même en pleine conversation : ouvrez la console (F12) pour lire les paquets. Chaque appel garde aussi les siens dans son historique, chiffrés, tant que vous ne l'effacez pas. Ils portent votre adresse SIP et celle de vos correspondants — à retirer d'un rapport de bogue public.",
+  "config.save": "Enregistrer et se brancher",
   "config.saving": "Enregistrement…",
   "config.cancel": "Annuler",
 
   // ---------------------------------------------------------------------
   // État du téléphone (pastille de la barre d'en-tête, titre d'onglet)
   // ---------------------------------------------------------------------
-  "status.connecting": "Connexion…",
+  "status.connecting": "Branchement…",
   "status.registering": "Enregistrement…",
   "status.ready": "Enregistré",
-  "status.reconnecting": "Reconnexion…",
+  "status.reconnecting": "On se rebranche…",
   "status.sleeping": "En veille",
   "status.regFailed": "Échec d'enregistrement",
-  "status.unregistering": "Déconnexion…",
+  "status.unregistering": "Fermeture de la session…",
 
   // ---------------------------------------------------------------------
   // État de l'appel
   // ---------------------------------------------------------------------
   "call.dialing": "Appel en cours",
-  "call.ringing": "Sonnerie",
+  "call.ringing": "Ça sonne",
   "call.ringingIn": "Appel entrant",
   "call.answering": "Connexion…",
   "call.connected": "En communication",
@@ -146,45 +162,44 @@ const messages = {
   // ---------------------------------------------------------------------
   "call.targetLabel": "Adresse SIP",
   "call.callerLabel": "Appelant",
-  "call.domainHint": "Sans « @ » : appellera &lt;adresse&gt;@{domain}",
-  "call.idle": "Aucun appel en cours — saisissez une adresse SIP",
+  "call.domainHint": "Sans « @ » : ça appellera &lt;adresse&gt;@{domain}",
+  "call.idle": "Pas d'appel en cours — entrez une adresse SIP",
   "call.sleeping": "Veille — l'enregistrement reprendra au réveil",
   "call.sleepingShort": "Veille — reprise au réveil",
-  "call.retryIn": "Nouvelle tentative de connexion dans 10 s…",
+  "call.retryIn": "On réessaye tantôt — dans 10 s…",
   "call.chooseMode": "Choisir le mode d'appel",
   "mode.audio.label": "Appel audio",
   "mode.audio.button": "Appeler en audio",
   "mode.video.label": "Appel vidéo",
   "mode.video.button": "Appeler en vidéo",
-  "chat.strip": "Tchat — disponible en phase 4",
+  "chat.strip": "Clavardage — pour placoter, en phase 4",
 
   // ---------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------
   "action.settings": "Paramètres",
-  "action.logout": "Se déconnecter",
+  "action.logout": "Fermer la session",
   "action.retry": "Réessayer",
-  "action.retryNow": "Réessayer maintenant",
+  "action.retryNow": "Réessayer tout de suite",
   "action.fixSettings": "Corriger les paramètres",
-  /** Suffixe d'infobulle des commandes désactivées pendant un appel. */
-  "action.unavailableInCall": " (indisponible en appel)",
+  "action.unavailableInCall": " (pas disponible en appel)",
 
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
   "ctrl.mic.aria": "Micro",
-  "ctrl.mic.mute": "Couper le micro",
-  "ctrl.mic.unmute": "Rétablir le micro",
+  "ctrl.mic.mute": "Fermer le micro",
+  "ctrl.mic.unmute": "Ouvrir le micro",
   "ctrl.cam.aria": "Caméra",
   "ctrl.cam.add": "Ajouter la vidéo",
-  "ctrl.cam.remove": "Retirer la vidéo",
+  "ctrl.cam.remove": "Enlever la vidéo",
   "ctrl.cam.pending": "Changement de média en cours…",
-  "ctrl.selfview.aria": "Self-view",
-  "ctrl.selfview.hide": "Masquer le self-view",
-  "ctrl.selfview.show": "Afficher le self-view",
+  "ctrl.selfview.aria": "Image de soi",
+  "ctrl.selfview.hide": "Cacher l'image de soi",
+  "ctrl.selfview.show": "Montrer l'image de soi",
   "ctrl.speaker.aria": "Haut-parleur",
-  "ctrl.speaker.mute": "Couper le son",
-  "ctrl.speaker.unmute": "Rétablir le son",
+  "ctrl.speaker.mute": "Fermer le son",
+  "ctrl.speaker.unmute": "Ouvrir le son",
   "ctrl.dtmf.aria": "Clavier DTMF",
   "ctrl.dtmf.label": "Clavier DTMF — disponible en phase 4",
   "ctrl.fullscreen": "Plein écran",
@@ -193,8 +208,8 @@ const messages = {
   // ---------------------------------------------------------------------
   // Vidéo demandée en cours d'appel
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} souhaite ajouter la vidéo",
-  "videoask.body": "Accepter allumera votre caméra.",
+  "videoask.title": "{peer} veut ajouter la vidéo",
+  "videoask.body": "Accepter va ouvrir ta caméra.",
   "videoask.accept": "Accepter la vidéo",
   "videoask.reject": "Refuser",
 
@@ -204,25 +219,25 @@ const messages = {
   "notice.videoDeclined": "{peer} n'a pas accepté la vidéo",
   "notice.videoRefused": "{peer} refuse d'ajouter la vidéo à cet appel",
   "notice.videoAdded": "{peer} a ajouté la vidéo",
-  "notice.videoRemoved": "{peer} a retiré la vidéo",
+  "notice.videoRemoved": "{peer} a enlevé la vidéo",
   "notice.videoDeclinedHere": "Vidéo refusée",
-  "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour le moment",
+  "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour l'instant",
 
   // ---------------------------------------------------------------------
   // Panneau latéral
   // ---------------------------------------------------------------------
   "panel.aria": "Panneau latéral",
-  "panel.showChat": "Afficher le tchat",
-  "panel.hide": "Masquer le panneau latéral",
+  "panel.showChat": "Afficher le clavardage",
+  "panel.hide": "Cacher le panneau latéral",
   "panel.handleAria": "Largeur du panneau",
-  "panel.handleTitle": "Élargir le panneau — 33 % de la largeur au maximum",
+  "panel.handleTitle": "Étirez le panneau — 33 % de la largeur au maximum",
 
   // ---------------------------------------------------------------------
   // Préférences d'affichage en cours d'appel
   // ---------------------------------------------------------------------
   "prefs.fontSize": "Taille du texte",
-  "prefs.fontDown": "Réduire la taille du texte",
-  "prefs.fontUp": "Augmenter la taille du texte",
+  "prefs.fontDown": "Rapetisser le texte",
+  "prefs.fontUp": "Grossir le texte",
 
   // ---------------------------------------------------------------------
   // Appel entrant (popup modale)
@@ -242,7 +257,7 @@ const messages = {
   "alert.notifAudio": "{caller} — appel audio",
 
   // ---------------------------------------------------------------------
-  // Annonces aux lecteurs d'écran
+  // Annonces aux lecteurs d'écran — le sérieux reprend ses droits
   // ---------------------------------------------------------------------
   "announce.inCall.one": "En communication depuis {n} minute",
   "announce.inCall.other": "En communication depuis {n} minutes",
@@ -252,7 +267,7 @@ const messages = {
   // ---------------------------------------------------------------------
   "history.title": "Historique",
   "history.clear": "Effacer",
-  "history.empty": "Aucun appel enregistré",
+  "history.empty": "Pas un appel, pantoute",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active
@@ -263,19 +278,19 @@ const messages = {
   "trace.sent": "envoyé",
   "trace.received": "reçu",
   "trace.copy": "Copier",
-  "trace.copied": "Copié",
+  "trace.copied": "Copié, tiguidou!",
   "trace.copyFailed": "Copie refusée",
   "trace.close": "Fermer",
-  "trace.clipped": "… (paquet tronqué)",
+  "trace.clipped": "… (paquet coupé)",
   "trace.truncated": "Trace interrompue : l'appel a dépassé ce qui est gardé par appel.",
   "outcome.answered": "Répondu",
   "outcome.missed": "Manqué",
   "outcome.failed": "Échec",
   "outcome.canceled": "Annulé",
   "outcome.dropped": "Interrompu",
-  "endedBy.local": "raccroché par vous",
-  "endedBy.remote": "raccroché par le correspondant",
-  "endedBy.network": "coupé par le réseau",
+  "endedBy.local": "vous avez fermé la ligne",
+  "endedBy.remote": "le correspondant a fermé la ligne",
+  "endedBy.network": "le réseau a pris une débarque",
   "duration.minSec": "{m} min {s} s",
   "duration.sec": "{s} s",
 
@@ -305,22 +320,22 @@ const messages = {
   "stats.callTitle": "Statistiques média — {target}",
   "stats.close": "Fermer",
   "stats.copy": "Copier",
-  "stats.copied": "Copié",
+  "stats.copied": "Copié, tiguidou!",
   "stats.copyFailed": "Copie refusée",
 
   // ---------------------------------------------------------------------
-  // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
+  // Erreurs des automates — ici, on parle clair et net
   // ---------------------------------------------------------------------
   "error.invalidUri": "Adresse SIP invalide (attendu : utilisateur@domaine)",
   "error.passwordRequired": "Mot de passe requis",
   "error.saveFailed": "Sauvegarde impossible : {detail}",
   "error.invalidProxy": "Nom du proxy invalide — vérifiez l'adresse WSS",
-  "error.wssRefused": "Impossible de se connecter au proxy (connexion WSS refusée)",
-  "error.wssTimeout": "Le proxy ne répond pas (timeout WebSocket)",
+  "error.wssRefused": "Impossible de se brancher au proxy (connexion WSS refusée)",
+  "error.wssTimeout": "Le proxy ne répond pas (délai WebSocket dépassé)",
   "error.badCredentials": "Adresse SIP, mot de passe ou identifiant d'authentification incorrect",
   "error.regRefused": "Enregistrement refusé : {cause}",
   "error.wssLostDuringReg": "Connexion perdue pendant l'enregistrement",
-  "error.registrarTimeout": "Le registrar ne répond pas",
+  "error.registrarTimeout": "Le registraire ne répond pas",
   "error.regLost": "Enregistrement perdu : {cause}",
   "error.proxyLost": "Connexion au proxy perdue",
   "error.proxyLostDuringCall": "Connexion au proxy perdue pendant l'appel",
@@ -333,21 +348,16 @@ const messages = {
   // ---------------------------------------------------------------------
   // Motifs de fin d'appel (affichés près du champ d'adresse et en historique)
   // ---------------------------------------------------------------------
-  "reason.hungUp": "raccroché",
+  "reason.hungUp": "ligne fermée",
   "reason.sleep": "Mise en veille",
-  "reason.noAnswer": "Pas de réponse",
+  "reason.noAnswer": "Personne n'a répondu",
   "reason.declined": "Appel refusé",
   "reason.missed": "Appel manqué",
-  "reason.missedNoAnswer": "Appel manqué (sans réponse)",
-  "reason.setupFailed": "Établissement de l'appel impossible",
+  "reason.missedNoAnswer": "Appel manqué (personne n'a répondu)",
+  "reason.setupFailed": "L'appel n'a pas pu s'établir",
   "reason.callFailed": "Appel impossible : {detail}",
-  /** Cause SIP brute assortie de son code — les deux restent en clair. */
   "reason.sip": "{cause} (SIP {code})",
 
-  /**
-   * Texte technique qui n'a pas de traduction (cause JsSIP, historique
-   * enregistré avant l'i18n) : rendu tel quel, sans être perdu.
-   */
   "misc.raw": "{text}",
 };
 

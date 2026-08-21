@@ -17,6 +17,7 @@ import type { AccountConfig } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
 import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
+import { hideToast, showToast } from "../../toast.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
 import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
@@ -144,6 +145,8 @@ export function currentMode(): CallModeDef {
 // notification de la machine pendant un appel) et au changement de format.
 let draftTarget = "";
 let speakerMuted = false;
+/** Numéro d'ordre du dernier message fugace affiché (voir `wireCallScreen`). */
+let shownNotice = 0;
 let chronoTimer: ReturnType<typeof setInterval> | null = null;
 
 export const draft = (): string => draftTarget;
@@ -419,10 +422,26 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     stopIncomingAlert();
   }
 
+  // --- message fugace -------------------------------------------------------
+  // L'écran est reconstruit à chaque notification de la machine : c'est le
+  // numéro d'ordre, et lui seul, qui distingue un message neuf d'un rendu de
+  // plus. Sans lui, le même bandeau se rallumerait à chaque battement du
+  // chrono — et deux refus identiques n'en feraient qu'un.
+  if (view?.notice && view.notice.seq !== shownNotice) {
+    shownNotice = view.notice.seq;
+    showToast(t(view.notice.message));
+  }
+  if (!view) {
+    shownNotice = 0;
+    hideToast();
+  }
+
   // --- commandes en communication -----------------------------------------
   on('[data-act="hangup"]', () => phone.send({ type: "ui:hangup" }));
   on('[data-act="muteMic"]', () => phone.send({ type: "ui:muteMic" }));
-  on('[data-act="muteCam"]', () => phone.send({ type: "ui:muteCam" }));
+  on('[data-act="toggleVideo"]', () => phone.send({ type: "ui:toggleVideo" }));
+  on('[data-act="accept-video"]', () => phone.send({ type: "ui:acceptVideo" }));
+  on('[data-act="reject-video"]', () => phone.send({ type: "ui:rejectVideo" }));
   on('[data-act="selfview"]', () => phone.send({ type: "ui:toggleSelfView" }));
   // haut-parleur : UI pure (mute de l'élément <video> distant), pas de machine
   on('[data-act="speaker"]', (btn) => {

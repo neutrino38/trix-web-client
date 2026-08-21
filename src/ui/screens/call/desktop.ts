@@ -12,6 +12,7 @@ import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
+import { videoAskDialog } from "./videoask.js";
 import { panelHandle } from "./panel.js";
 import { statsPill } from "./stats.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
@@ -209,5 +210,6 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         </div>
       </div>
       ${incoming ? incomingDialog(view) : ""}
+      ${view?.videoAsked ? videoAskDialog(view) : ""}
     </div>`);
 }

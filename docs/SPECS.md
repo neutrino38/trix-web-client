@@ -63,7 +63,7 @@ sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est v
 - [ ] Champ de saisie d'adresse SIP sur l'écran d'appel.
 - [ ] Une saisie sans `@` est complétée implicitement : `adresse` → `adresse@<domaine configuré>`.
 - [ ] Bouton principal « Appeler » = appel **audio** ; menu déroulant accolé proposant « Appel vidéo ».
-- [ ] Pendant l'appel : chrono, mute micro, coupure caméra, masquage self-view, raccrocher.
+- [ ] Pendant l'appel : chrono, mute micro, ajout/retrait de la vidéo, masquage self-view, raccrocher.
 
 ### En tant qu'utilisateur, je veux recevoir un appel (phase 3)
 
@@ -73,6 +73,25 @@ sonnerie d'appel entrant n'est qu'un canal d'appoint ; l'alerte véritable est v
 - [x] Répondre en audio + vidéo (uniquement si la vidéo est proposée par l'appelant).
 - [x] Répondre en audio seul (sauf si l'appelant ne propose **que** la vidéo).
 - [x] Alerte perceptible sans le son (voir « Alerte d'appel entrant »).
+
+### En tant qu'utilisateur, je veux que la vidéo entre et sorte de l'appel de façon symétrique
+
+En conversation totale, la vidéo est **dans** l'appel ou elle n'y est pas : elle n'est
+jamais reçue par l'un sans être acceptée par l'autre.
+
+**Critères d'acceptation :**
+- [x] Un appel vidéo décroché en audio seul devient un appel audio **des deux côtés** :
+      l'appelé ne reçoit pas l'image de l'appelant.
+- [x] L'appelant en est informé par un message fugace : « Bob n'a pas accepté la vidéo ».
+- [x] L'icône de la caméra est barrée tant que l'appel n'a pas de vidéo.
+- [x] Un clic sur cette icône ajoute la vidéo à l'appel (re-INVITE) ; un clic quand elle
+      est présente l'en retire. Il n'y a pas de « couper sa caméra » : cesser d'émettre
+      son image, c'est retirer la vidéo de l'appel.
+- [x] Si le distant refuse (488), message fugace « X refuse d'ajouter la vidéo à cet
+      appel » — et l'appel continue tel qu'il était.
+- [x] Recevoir une demande d'ajout de vidéo pose la question avant d'allumer la caméra
+      (« X souhaite ajouter la vidéo » — Accepter / Refuser) ; refuser répond 488, ne pas
+      répondre en 25 s aussi.
 
 ### Alerte d'appel entrant (accessibilité sourds et malentendants)
 
@@ -158,7 +177,7 @@ Structure 2 zones
 - **Zone centrale (flexible)** : vidéo distante plein cadre sur fond noir ; self-view incrusté
   en haut-gauche (~25 % de hauteur, coins arrondis 10px) ; vu-mètres verticaux discrets ;
   overlay « Connexion… » pendant l'établissement. Double-clic = plein écran.
-- **Barre inférieure (48px)** : couper caméra, masquer self-view, haut-parleur, (DTMF — phase 4).
+- **Barre inférieure (48px)** : ajouter/retirer la vidéo, masquer self-view, haut-parleur, (DTMF — phase 4).
 - **Sidebar droite (300px)** :
   - champ « Adresse SIP » (complétion `@domaine` implicite),
   - bouton **« Appeler » (vert, audio) + menu déroulant « Appel vidéo »**,
@@ -200,6 +219,13 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 - [x] Appels entrants dans l'historique (répondu / manqué / refusé)
 - [x] Alerte multi-canal accessible : flash, onglet, notification système, vibration, wake lock
 - [x] Flash désactivable depuis la configuration du compte, réglage persisté avec lui
+
+### Phase 3bis : la vidéo entre et sort de l'appel
+- [x] Réponse audio à une offre vidéo : flux vidéo refusé dans la réponse SDP (`sdp.withoutVideo`)
+- [x] Médias réellement négociés lus sur la connexion, publiés par `sip:mediaChanged`
+- [x] Ajout / retrait de la vidéo en cours d'appel par re-INVITE (`renegotiating`)
+- [x] Demande d'ajout reçue : décision de l'utilisateur avant le 200 OK, 488 sinon (`video_offer`)
+- [x] Messages fugaces de l'appel (`ui/toast.ts`), refus compris
 
 ### Phase 4 : DTMF + Tchat data channel
 - [ ] DTMF (RFC 4733)

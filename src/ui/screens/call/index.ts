@@ -11,6 +11,7 @@ import { layoutMode } from "../../layout.js";
 import { renderDesktop } from "./desktop.js";
 import { renderMobile } from "./mobile.js";
 import { closeIncoming, wireIncoming } from "./incoming.js";
+import { closeVideoAsk, wireVideoAsk } from "./videoask.js";
 import { stopChrono, wireCallScreen } from "./parts.js";
 import { stopMediaStats } from "./stats.js";
 
@@ -32,6 +33,14 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     wireIncoming(node, () => phone.send({ type: "ui:reject" }));
   } else {
     closeIncoming();
+  }
+  // même partage pour la question posée en cours d'appel (« Alice souhaite
+  // ajouter la vidéo ») : les deux boutons sont câblés avec les autres,
+  // seul le focus est propre à la popup
+  if (view?.videoAsked) {
+    wireVideoAsk(node, () => phone.send({ type: "ui:rejectVideo" }));
+  } else {
+    closeVideoAsk();
   }
   return node;
 }

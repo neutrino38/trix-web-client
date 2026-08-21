@@ -8,7 +8,15 @@
  * This is a rewrite, not a word-for-word translation: English interface
  * strings drop the definite article ("Mute microphone", not "Mute the
  * microphone") and prefer the idiom over the French turn of phrase.
- * Spelling is British throughout ("minimised", "Cancelled").
+ * Spelling is British throughout ("minimised", "Cancelled"), and so is the
+ * tone.
+ *
+ * British humour is understatement, so the restraint *is* the joke: a
+ * dozen dry asides, no more, and only where reading them sideways costs
+ * nothing — the empty history, the hints, the line describing how a call
+ * ended, an apology for a refused copy. Never in an error message, never
+ * on a button an ongoing call depends on. "Ring off" for hanging up is not
+ * a joke at all, only the British way to say it.
  *
  * Deliberately left untranslated: "Trix", "Powered by FSL", technical codes
  * (SIP 486, WSS_LOST) and the raw causes JsSIP reports — a searchable error
@@ -63,7 +71,7 @@ const messages: Translation = {
 
   "config.section.nat": "NAT traversal",
   "config.natHint":
-    "Servers supplied by your SIP provider. Without them, a call between two private networks can connect with no audio getting through.",
+    "Servers supplied by your SIP provider. Without them, a call between two private networks can connect perfectly well while nobody hears a thing.",
   "config.stun": "STUN server",
   "config.stunPlaceholder": "stun.example.com:3478",
   "config.stunHint": "Optional. Host on its own or host:port — with no port, 3478 is used.",
@@ -91,7 +99,7 @@ const messages: Translation = {
   "config.notifications": "System notifications",
   "config.notifEnable": "Enable notifications",
   "config.notifHint":
-    "Without them, Trix cannot alert you while the window is hidden or minimised.",
+    "Without them, Trix cannot alert you while the window is hidden or minimised — it will simply wait, politely.",
   "config.notifOn": "Notifications enabled",
   "config.notifBlocked": "Notifications blocked by the browser",
   "config.notifBlockedHint":
@@ -108,7 +116,7 @@ const messages: Translation = {
   "config.traceDesc":
     " — every packet sent and received, and the states a call goes through, are printed to the browser console",
   "config.traceHint":
-    "Takes effect at once, even mid-call: open the console (F12) to read the packets. Each call also keeps its own with its history entry, encrypted, until you clear it. They carry your SIP address and your correspondents' — strip them from a public bug report.",
+    "Takes effect at once, even mid-call: open the console (F12) to read the packets. Each call also keeps its own with its history entry, encrypted, until you clear it. They carry your SIP address and your correspondents' — do strip them from a public bug report.",
   "config.save": "Save and connect",
   "config.saving": "Saving…",
   "config.cancel": "Cancel",
@@ -143,13 +151,13 @@ const messages: Translation = {
   "call.idle": "No call in progress — enter a SIP address",
   "call.sleeping": "Asleep — registration resumes when the device wakes",
   "call.sleepingShort": "Asleep — resumes on wake",
-  "call.retryIn": "Reconnecting in 10 s…",
+  "call.retryIn": "Reconnecting in 10 s — do bear with us…",
   "call.chooseMode": "Choose call type",
   "mode.audio.label": "Audio call",
   "mode.audio.button": "Start audio call",
   "mode.video.label": "Video call",
   "mode.video.button": "Start video call",
-  "chat.strip": "Chat — coming in phase 4",
+  "chat.strip": "Chat — coming in phase 4, weather permitting",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -168,8 +176,9 @@ const messages: Translation = {
   "ctrl.mic.mute": "Mute microphone",
   "ctrl.mic.unmute": "Unmute microphone",
   "ctrl.cam.aria": "Camera",
-  "ctrl.cam.mute": "Turn camera off",
-  "ctrl.cam.unmute": "Turn camera on",
+  "ctrl.cam.add": "Add video",
+  "ctrl.cam.remove": "Remove video",
+  "ctrl.cam.pending": "Changing media…",
   "ctrl.selfview.aria": "Self-view",
   "ctrl.selfview.hide": "Hide self-view",
   "ctrl.selfview.show": "Show self-view",
@@ -182,13 +191,31 @@ const messages: Translation = {
   "ctrl.hangup": "Hang up",
 
   // ---------------------------------------------------------------------
+  // Video requested mid-call
+  // ---------------------------------------------------------------------
+  "videoask.title": "{peer} wants to add video",
+  "videoask.body": "Accepting will turn your camera on.",
+  "videoask.accept": "Accept video",
+  "videoask.reject": "Decline",
+
+  // ---------------------------------------------------------------------
+  // Passing call messages
+  // ---------------------------------------------------------------------
+  "notice.videoDeclined": "{peer} did not accept video",
+  "notice.videoRefused": "{peer} declined to add video to this call",
+  "notice.videoAdded": "{peer} added video",
+  "notice.videoRemoved": "{peer} removed video",
+  "notice.videoDeclinedHere": "Video declined",
+  "notice.videoUnavailable": "Video cannot be added right now",
+
+  // ---------------------------------------------------------------------
   // Side panel
   // ---------------------------------------------------------------------
   "panel.aria": "Side panel",
   "panel.showChat": "Show chat",
   "panel.hide": "Hide side panel",
   "panel.handleAria": "Panel width",
-  "panel.handleTitle": "Drag to widen the panel — up to 33% of the width",
+  "panel.handleTitle": "Drag to widen the panel — 33% of the width, and not a pixel more",
 
   // ---------------------------------------------------------------------
   // Display preferences during a call
@@ -225,7 +252,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "history.title": "History",
   "history.clear": "Clear",
-  "history.empty": "No calls yet",
+  "history.empty": "No calls yet. Blissfully quiet",
   "history.entryTitle": "{target} — {outcome}",
 
   // A call's notebook: the SIP packets kept while tracing was on
@@ -237,7 +264,8 @@ const messages: Translation = {
   "trace.received": "received",
   "trace.copy": "Copy",
   "trace.copied": "Copied",
-  "trace.copyFailed": "Copy refused",
+  // S'excuser d'un échec qui n'est pas le sien : rien de plus britannique.
+  "trace.copyFailed": "Copy refused. Sorry about that",
   "trace.close": "Close",
   "trace.clipped": "… (packet truncated)",
   "trace.truncated": "Trace cut short: the call went past what is kept per call.",
@@ -246,9 +274,9 @@ const messages: Translation = {
   "outcome.failed": "Failed",
   "outcome.canceled": "Cancelled",
   "outcome.dropped": "Dropped",
-  "endedBy.local": "you hung up",
-  "endedBy.remote": "the other party hung up",
-  "endedBy.network": "cut off by the network",
+  "endedBy.local": "you rang off",
+  "endedBy.remote": "the other party rang off",
+  "endedBy.network": "the network gave up",
   "duration.minSec": "{m} min {s} s",
   "duration.sec": "{s} s",
 
@@ -267,8 +295,8 @@ const messages: Translation = {
   "stats.loss": "Loss",
   "stats.rtt": "Round trip",
   "stats.lossNote": "Send-side loss as reported by the other party's receiver reports.",
-  "stats.pending": "Measuring…",
-  "stats.none": "No media stream measured",
+  "stats.pending": "Measuring — won't be a moment…",
+  "stats.none": "No media stream measured. Nothing to see here",
   "stats.kbps": "{n} kbit/s",
   "stats.percent": "{n} %",
   "stats.ms": "{n} ms",
@@ -279,7 +307,7 @@ const messages: Translation = {
   "stats.close": "Close",
   "stats.copy": "Copy",
   "stats.copied": "Copied",
-  "stats.copyFailed": "Copy refused",
+  "stats.copyFailed": "Copy refused. Sorry about that",
 
   // ---------------------------------------------------------------------
   // State machine errors
@@ -306,7 +334,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Call end reasons
   // ---------------------------------------------------------------------
-  "reason.hungUp": "hung up",
+  "reason.hungUp": "rang off",
   "reason.sleep": "System sleep",
   "reason.noAnswer": "No answer",
   "reason.declined": "Call declined",

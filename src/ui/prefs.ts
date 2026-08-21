@@ -72,7 +72,7 @@ export function setCallModeId(id: string): void {
 //
 // Réglages d'affichage, donc localStorage et rien d'autre : replier le
 // panneau ou l'élargir ne change rien au protocole SIP, exactement comme le
-// choix mobile/bureau (docs/CONCEPTION.md §4.5). Aucune machine à prévenir.
+// choix mobile/bureau (docs/CONCEPTION.md §4.6). Aucune machine à prévenir.
 
 /**
  * Bornes de largeur. En dessous de 300 px, l'historique et le tchat se

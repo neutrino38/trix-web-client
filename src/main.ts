@@ -86,7 +86,7 @@ watchSystemLifecycle({
   onWake: () => phone.send({ type: "sys:wake" }),
 });
 
-// Observabilité (docs/CONCEPTION.md §4.4) : depuis la console,
+// Observabilité (docs/CONCEPTION.md §4.5) : depuis la console,
 // trix.mermaid() exporte les diagrammes, trix.phone.log les transitions.
 declare global {
   interface Window {

@@ -11,7 +11,7 @@
  * l'annonce des lecteurs d'écran (RGAA 1.2 — image décorative).
  */
 export function trixIcon(size: number, alt = ""): string {
-  return `<img src="/trix-icon.svg" width="${size}" height="${size}" alt="${alt}"${
+  return `<img class="brand" src="/trix-icon.svg" width="${size}" height="${size}" alt="${alt}"${
     alt === "" ? ' aria-hidden="true"' : ""
   }>`;
 }

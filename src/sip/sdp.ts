@@ -1,14 +1,23 @@
 /**
- * Lecture de l'offre SDP d'un INVITE entrant (docs/CONCEPTION.md §4.3).
- * Une seule question est posée au SDP : quels médias l'appelant
- * propose-t-il ? C'est elle qui décide des boutons de réponse offerts
- * (A/V, audio seul) — l'appel ne peut pas se répondre en vidéo si la
- * vidéo n'est pas proposée.
+ * Lecture et retouche du SDP (docs/CONCEPTION.md §4.3, §4.4).
  *
- * Analyse volontairement minimale (RFC 4566 §5.7/§5.14, RFC 4566 §6
- * pour les attributs de direction) : un flux compte s'il a un port non
- * nul et n'est pas déclaré `inactive`. Tout le reste (codecs, ICE,
- * chiffrement) est l'affaire de JsSIP et du navigateur.
+ * Deux questions seulement sont posées au SDP, et une seule retouche lui
+ * est faite :
+ *
+ * - **quels médias sont actifs ?** — sur l'offre d'un INVITE entrant, cela
+ *   décide des boutons de réponse (`offeredMedia`) ; sur la réponse à
+ *   notre INVITE ou à notre re-INVITE, cela dit ce que le distant a
+ *   réellement accepté (`answeredMedia`). La règle est la même des deux
+ *   côtés — un flux compte s'il a un port non nul et n'est pas déclaré
+ *   `inactive` (RFC 4566 §5.7/§5.14, RFC 3264 §6) ;
+ * - **refuser un flux vidéo** (`withoutVideo`) : répondre « audio seul » à
+ *   une offre audio + vidéo, c'est *le dire dans la réponse*. Sans cela le
+ *   navigateur répond `recvonly` — il ne capte pas d'image mais accepte
+ *   d'en recevoir — et l'appelant continue d'émettre la sienne, ce qui
+ *   n'est pas ce que l'appelé a demandé.
+ *
+ * Tout le reste (codecs, ICE, chiffrement) est l'affaire de JsSIP et du
+ * navigateur.
  */
 
 import type { CallMedia } from "./port.js";
@@ -23,10 +32,14 @@ function directionOf(line: string): Direction | null {
   return v === "sendrecv" || v === "sendonly" || v === "recvonly" || v === "inactive" ? v : null;
 }
 
-export function offeredMedia(sdp: string | null | undefined): CallMedia {
+/**
+ * Les médias qu'un SDP déclare actifs — commun à l'offre et à la réponse,
+ * parce que la question est la même : ce flux est-il de la partie ?
+ */
+function activeMedia(sdp: string | null | undefined): CallMedia {
   if (!sdp) return AUDIO_ONLY;
 
-  const offered = { audio: false, video: false };
+  const active = { audio: false, video: false };
   // direction de session, appliquée aux flux qui n'en déclarent pas
   let sessionDir: Direction = "sendrecv";
   let inMedia = false;
@@ -35,7 +48,7 @@ export function offeredMedia(sdp: string | null | undefined): CallMedia {
   let mediaDir: Direction | null = null;
 
   const flush = (): void => {
-    if (kind && port !== "0" && (mediaDir ?? sessionDir) !== "inactive") offered[kind] = true;
+    if (kind && port !== "0" && (mediaDir ?? sessionDir) !== "inactive") active[kind] = true;
   };
 
   for (const raw of sdp.split(/\r?\n/)) {
@@ -58,5 +71,67 @@ export function offeredMedia(sdp: string | null | undefined): CallMedia {
   }
   flush();
 
-  return offered.audio || offered.video ? offered : AUDIO_ONLY;
+  return active.audio || active.video ? active : AUDIO_ONLY;
+}
+
+/**
+ * Médias réellement proposés par l'offre SDP d'un INVITE entrant : c'est
+ * elle qui décide des réponses offertes — l'appel ne peut pas se répondre
+ * en vidéo si la vidéo n'est pas proposée.
+ */
+export const offeredMedia = activeMedia;
+
+/**
+ * Médias que le distant a acceptés, lus dans la réponse à notre offre.
+ * Toujours un sous-ensemble de ce que nous avons proposé : c'est la
+ * différence entre les deux qui se dit à l'écran (« Bob n'a pas accepté
+ * la vidéo »).
+ */
+export const answeredMedia = activeMedia;
+
+/**
+ * Le même SDP, sa vidéo déclarée `inactive` — la façon RFC 3264 §6.1 de
+ * répondre « pas de vidéo » sans rejeter la m-line, qui reste donc
+ * disponible pour une escalade ultérieure (ajout de la vidéo en cours
+ * d'appel, §4.4).
+ *
+ * Ne touche qu'aux sections `m=video` : les autres, audio comprise,
+ * sortent inchangées, y compris leurs propres attributs de direction.
+ * Une section vidéo qui n'en déclarait aucun s'en voit ajouter un — sans
+ * quoi elle hériterait de la direction de session.
+ */
+export function withoutVideo(sdp: string): string {
+  const eol = sdp.includes("\r\n") ? "\r\n" : "\n";
+  const out: string[] = [];
+  let inVideo = false;
+  let declared = false;
+
+  // la section vidéo se referme sur le m= suivant ou sur la fin du SDP :
+  // c'est là qu'on ajoute la direction si elle n'en portait pas
+  const closeVideo = (): void => {
+    if (inVideo && !declared) out.push("a=inactive");
+    inVideo = false;
+    declared = false;
+  };
+
+  for (const raw of sdp.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("m=")) {
+      closeVideo();
+      inVideo = line.startsWith("m=video");
+    }
+    if (inVideo && directionOf(line)) {
+      // une seule direction par section : les suivantes disparaissent
+      if (!declared) out.push("a=inactive");
+      declared = true;
+      continue;
+    }
+    // la dernière ligne d'un SDP est vide (il se termine par un CRLF) :
+    // elle ne doit pas s'intercaler avant l'attribut qu'on ajoute
+    if (line === "") continue;
+    out.push(line);
+  }
+  closeVideo();
+
+  return out.join(eol) + eol;
 }

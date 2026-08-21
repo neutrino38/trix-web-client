@@ -1,5 +1,5 @@
 /**
- * Garde anti-divergence (docs/CONCEPTION.md §4.4) : docs/DIAGRAMS.md doit
+ * Garde anti-divergence (docs/CONCEPTION.md §4.5) : docs/DIAGRAMS.md doit
  * être exactement le graphe extrait des sources des machines.
  * `npm run diagrams` (UPDATE_DIAGRAMS=1) régénère le fichier ; sans le
  * flag, ce test échoue si le code et la documentation ont divergé.

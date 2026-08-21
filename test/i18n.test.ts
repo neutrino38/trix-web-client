@@ -133,7 +133,15 @@ describe("complétude des dictionnaires", () => {
 describe("détection de la langue du navigateur", () => {
   it("prend la première langue disponible, par ordre de préférence", () => {
     expect(detectLocale(["en-US", "fr-FR"])).toBe("en");
-    expect(detectLocale(["fr-CA", "en"])).toBe("fr");
+    expect(detectLocale(["fr-CH", "en"])).toBe("fr");
+  });
+
+  it("préfère la balise exacte à la sous-étiquette primaire", () => {
+    // Deux français cohabitent : `fr-CA` doit gagner sur `fr` pour qui le
+    // demande, et `fr-CH` — que Trix ne parle pas — retomber sur `fr`.
+    expect(detectLocale(["fr-CA"])).toBe("fr-CA");
+    expect(detectLocale(["fr-CH"])).toBe("fr");
+    expect(detectLocale(["fr"])).toBe("fr");
   });
 
   it("ignore les langues qu'on ne parle pas", () => {
@@ -141,7 +149,7 @@ describe("détection de la langue du navigateur", () => {
   });
 
   it("retombe sur le français quand rien ne correspond", () => {
-    expect(detectLocale(["de-DE", "ja"])).toBe("fr");
+    expect(detectLocale(["de-DE", "ko"])).toBe("fr");
     expect(detectLocale([])).toBe("fr");
   });
 });
@@ -151,7 +159,7 @@ describe("traduction", () => {
     await useLocale("fr");
     expect(t("history.empty")).toBe("Aucun appel enregistré");
     await useLocale("en");
-    expect(t("history.empty")).toBe("No calls yet");
+    expect(t("history.empty")).toBe("No calls yet. Blissfully quiet");
   });
 
   it("substitue les variables", async () => {

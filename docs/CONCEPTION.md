@@ -70,13 +70,14 @@ src/
   ui/
     screens/{home,config,call}.ts
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
+    flags.ts              # drapeaux dessinés, pour ce qu'un emoji ne dit pas
     tracedialog.ts        # relecture du carnet d'un appel, en popup (§5.3)
     screens/call/stats.ts # encart des statistiques média, en direct et après coup (§5.4)
     theme.ts              # tokens FSL clair/sombre
   i18n/
     index.ts              # registre Vite, détection, t()/tn(), formats Intl
     types.ts              # Dictionary, Msg — sans dépendance à l'exécution
-    locales/{fr,en,ar}.ts # un fichier par langue, le français fait référence
+    locales/*.ts          # un fichier par langue, le français fait référence
   debug/
     observability.ts      # export toMermaid(), logger de transitions
 ```
@@ -85,7 +86,8 @@ src/
 
 - `ui:*` — actions utilisateur : `ui:configure`, `ui:saveConfig`, `ui:useAccount`,
   `ui:call {target, video}`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:retry`,
-  `ui:muteMic`, `ui:muteCam`, `ui:answer {video}`, `ui:reject`, `ui:dtmf {tone}` (ph. 4)
+  `ui:muteMic`, `ui:toggleVideo`, `ui:answer {video}`, `ui:reject`, `ui:acceptVideo`,
+  `ui:rejectVideo`, `ui:dtmf {tone}` (ph. 4)
 - `sip:*` — remontées JsSIP : `sip:connected`, `sip:disconnected`, `sip:registered`,
   `sip:unregistered`, `sip:registrationFailed {cause}`, `sip:newSession {session}`,
   `sip:progress`, `sip:accepted`, `sip:confirmed`, `sip:ended {cause}`, `sip:failed {cause}`
@@ -193,8 +195,9 @@ appel finit quand le dialogue finit. Les délais sont portés par les états —
 raccrochage.
 
 - `enter(dialing)` : `ua.call(uri, { mediaConstraints: { audio: true, video } , pcConfig })`.
-- En `connected` : `ui:muteMic` / `ui:muteCam` / `ui:muteSelfView` = `stay()` + mutation du
-  contexte + action JsSIP (`session.mute()` etc.) — pas de changement d'état.
+- En `connected` : `ui:muteMic` / `ui:toggleSelfView` = `stay()` + mutation du contexte +
+  action JsSIP (`session.mute()`) — pas de changement d'état. `ui:toggleVideo`, lui, engage
+  une renégociation et donc un état (§4.4).
 - Chrono : timestamp de `sip:accepted` en contexte, la UI dérive l'affichage.
 - Flux média : `session.connection` (RTCPeerConnection) → attach `remoteVideo`/`localVideo`.
 
@@ -276,7 +279,58 @@ Pour un futur empaquetage Tauri (§8), ces canaux ont des équivalents natifs pl
 (notification système native, `requestUserAttention` sur la fenêtre) : `ui/alert.ts` est
 l'unique endroit à adapter.
 
-### 4.4 Observabilité (phase 2)
+### 4.4 Négociation des médias en cours d'appel
+
+En conversation totale, la vidéo n'est pas une sourdine locale : elle est **dans**
+l'appel ou elle n'y est pas, et les deux correspondants voient la même chose. Trois
+conséquences, tenues par le port (`sip/port.ts`) et par trois états du bloc.
+
+**Répondre en audio à une offre vidéo, c'est le dire.** Laissé à lui-même, le
+navigateur répond `a=recvonly` sur la m-line vidéo — il ne capte pas d'image mais
+accepte d'en recevoir : l'appelé qui a choisi « Répondre en audio » verrait quand
+même son correspondant. Le port ferme donc le flux des deux côtés : le transceiver
+vidéo passe `inactive` dès `have-remote-offer` (les transceivers de l'offre existent,
+la réponse n'est pas encore écrite), et `sdp.withoutVideo()` garantit que la réponse
+partie sur le fil le dit aussi. La m-line n'est pas rejetée (port 0) mais désactivée :
+elle reste disponible pour une escalade ultérieure.
+
+**Ce que l'appel transporte se lit sur la connexion, pas sur l'intention.** Un seul
+observateur — le retour de `signalingState` à `stable` — recalcule les médias depuis
+`currentDirection` de chaque transceiver et émet `sip:mediaChanged`. Il couvre du même
+coup l'établissement et les renégociations, dans les deux sens. Le bloc compare ce
+résultat à ce qu'il avait demandé (`data.asked`) : la différence est exactement ce qui
+s'affiche — « Bob n'a pas accepté la vidéo ».
+
+**Ajouter ou retirer la vidéo est un re-INVITE.** L'icône de la caméra n'est plus une
+sourdine : elle envoie `ui:toggleVideo`, le port ouvre (ou ferme) la caméra puis
+renégocie, et le bloc attend l'issue en `renegotiating` — l'appel continue derrière,
+seule l'icône patiente. Deux détails de JsSIP méritent d'être écrits :
+
+- `renegotiate()` n'est pas utilisé : son gestionnaire d'échec **raccroche l'appel**
+  (500 Media Renegotiation Failed). Un 488 n'est pas une fin d'appel, c'est un non.
+  Le port passe donc par `_sendReinvite` avec ses propres gestionnaires, et remet la
+  connexion d'aplomb (`setLocalDescription({type:"rollback"})`) — sans quoi elle
+  resterait en `have-local-offer` et plus aucune renégociation ne serait possible.
+- le re-INVITE **reçu** est intercepté (`_receiveReinvite`) plutôt que traité par
+  l'événement public `reinvite`, qui ne se décide que sur-le-champ. Accepter la vidéo
+  allume une caméra : cela demande l'accord de son propriétaire, donc du temps. La
+  transaction serveur a déjà envoyé son 100 Trying, l'appelant patiente sans rien
+  faire expirer, et le bloc pose la question en `video_offer` — 200 OK si l'utilisateur
+  accepte, 488 Not Acceptable Here s'il refuse ou ne répond pas en 25 s. Ce qui ne
+  fait qu'ôter la vidéo, ou n'y touche pas, suit le chemin normal de JsSIP.
+
+Les deux nouveaux états publient `connected` dans la vue : l'appel n'a pas changé de
+nature parce qu'une offre est en vol, et raccrocher, couper son micro ou masquer son
+self-view y marchent comme partout ailleurs (`inCall()`, écrit une fois pour les trois).
+
+**Ce qui vient de se passer n'est pas un état.** Un refus de vidéo est un événement,
+pas une propriété de l'appel : l'afficher à demeure mentirait dès la seconde suivante.
+Le bloc le publie donc comme `CallView.notice`, numéro d'ordre compris — c'est lui, et
+non le texte, qui permet à l'écran de distinguer un message neuf d'un rendu de plus —
+et `ui/toast.ts` le montre quelques secondes, hors de `#app` comme l'alerte d'appel
+entrant, pour survivre au re-rendu qui l'a déclenché.
+
+### 4.5 Observabilité (phase 2)
 
 - `npm run diagrams` régénère [DIAGRAMS.md](DIAGRAMS.md) et un test échoue si le fichier
   a divergé du code — la conception et le code ne peuvent pas diverger silencieusement.
@@ -311,11 +365,11 @@ l'unique endroit à adapter.
     que rien ne l'annonce ; `instance.done` la signale, journal joint ;
   - **événements non consommés** — restés en file d'attente, c'est-à-dire un état sans
     clause pour eux (invariant 7 des SBB, §4.3).
-  L'inspection est différée d'une microtask, comme le rendu (§4.5) et pour la même
+  L'inspection est différée d'une microtask, comme le rendu (§4.6) et pour la même
   raison. `window.trix.dump()` rend le journal des transitions en clair, à joindre à
   un rapport de bug.
 
-### 4.5 Rendu : une microtask après la transition
+### 4.6 Rendu : une microtask après la transition
 
 `main.ts` ne rend pas dans le callback d'abonnement, mais dans une microtask
 coalescée. La notification d'une transition part **avant** le `enter()` de l'état
@@ -327,7 +381,7 @@ compris, et n'en rend que le résultat ; les rendus intermédiaires d'une même 
 sont fondus en un seul. `ui/diagnostics.ts` inspecte le contexte de la même façon,
 pour la même raison.
 
-### 4.6 Internationalisation
+### 4.7 Internationalisation
 
 Un fichier par langue dans `src/i18n/locales/`, découvert par
 `import.meta.glob` : ajouter une langue, c'est déposer `xx.ts`, sans registre
@@ -340,11 +394,47 @@ empêche une langue de partir en lambeaux au fil des évolutions. Ce que le
 compilateur ne peut pas voir (valeur vide, variable `{cause}` perdue en
 traduction) est couvert par `test/i18n.test.ts`, qui balaie le même glob.
 
-**Le nom du fichier est la balise BCP-47.** `fr`, `en`, `ar`, `pt-BR` : la
-même chaîne sert au chargement, à `<html lang>`, aux formateurs `Intl` et à
-`Intl.DisplayNames`, qui donne le nom de la langue *dans cette langue* pour
-le sélecteur. Aucun catalogue de métadonnées à maintenir en parallèle, donc
-aucun à oublier — le sens d'écriture lui-même se déduit de la balise.
+**Le nom du fichier est la balise BCP-47.** `fr`, `fr-CA`, `en`, `ar`, `ja`,
+`zh-Hans` : la même chaîne sert au chargement, à `<html lang>`, aux
+formateurs `Intl` et à `Intl.DisplayNames`, qui donne le nom de la langue
+*dans cette langue* pour le sélecteur. La balise peut donc être aussi précise
+que la langue l'exige — `zh-Hans` se nomme « 简体中文 » quand `zh` ne dirait
+que « 中文 », `fr-CA` « Français canadien » —, et deux variantes d'une même
+langue cohabitent sans se gêner : `detectLocale()` cherche la balise exacte
+avant la sous-étiquette primaire, si bien qu'un navigateur réglé sur `fr-CA`
+obtient le québécois, sur `fr-CH` le français de référence, et sur `zh-CN` le
+chinois simplifié.
+
+Aucun catalogue de métadonnées à maintenir en parallèle, donc aucun à
+oublier — le sens d'écriture se déduit de la balise, et le drapeau qui
+précède chaque entrée du sélecteur aussi : `localeFlag()` demande à
+`Intl.Locale#maximize()` la région la plus probable (« ja » → « JP ») et en
+transpose les deux lettres en indicateurs régionaux. Deux exceptions,
+déclarées dans `FLAG_OVERRIDE` : l'anglais de Trix porte 🇬🇧 là où CLDR aurait
+dit 🇺🇸, son orthographe étant britannique ; et l'arabe 🇹🇳 là où il aurait dit
+🇪🇬 — l'arabe standard moderne n'étant la langue propre d'aucun pays, le
+drapeau est ici un choix assumé et non une déduction. « Automatique » prend le
+globe 🌐, n'étant d'aucun pays. `NAME_OVERRIDE`, à côté, corrige de même le
+seul libellé qu'`Intl` nomme mal : `fr-CA` s'affiche « Québécois », ce que le
+dictionnaire est réellement — et les moteurs ne s'accordaient même pas sur
+l'autre nom (« Français (Canada) » sous Chrome, « français canadien » sous
+Node).
+
+**Le fleurdelisé a coûté le `<select>`.** Unicode ne code que trois drapeaux
+de subdivision — Angleterre, Écosse, pays de Galles —, le Québec n'en est
+pas, et aucun navigateur n'affiche d'image dans un `<option>` : montrer le
+drapeau du français canadien imposait de remplacer le contrôle natif par un
+menu de boutons (`ui/langpicker.ts`, sur le motif de celui du mode d'appel).
+Ce n'est pas gratuit — la roue de sélection d'iOS, la recherche à la lettre
+et le clavier gratuit s'en vont avec lui, et il a fallu réécrire flèches,
+Origine, Fin, Échap et le retour du focus (en micro-tâche : `renderApp` câble
+l'écran avant de le poser dans le document, et un élément détaché ne prend pas
+le focus). En échange, `ui/flags.ts` dessine six drapeaux en SVG minuscules
+servis en `data:`, qui s'affichent aussi sous Windows — lequel n'embarque aucun
+glyphe de drapeau et rendait jusqu'ici « FR », « GB » en toutes lettres.
+L'emoji déduit reste le repli de toute langue qu'on n'a pas dessinée, et une
+case vide celui de qui n'a ni l'un ni l'autre : déposer `de.ts` continue de
+suffire, et la colonne des drapeaux ne se brise sur aucune entrée.
 
 **Les automates ne parlent aucune langue.** `ctx.lastError`, `ctx.callError`
 et le motif de chaque ligne d'historique sont des `Msg` — une clé et ses
@@ -377,7 +467,7 @@ micro et l'horloge ne se retournent pas : ce sont des objets, pas des phrases.
 
 **Le pluriel n'est pas celui du français.** `tn()` passe par
 `Intl.PluralRules` : l'arabe demande six formes là où le français en compte
-deux. Une langue déclare les siennes dans son propre fichier (`.zero`,
+deux, et le japonais comme le chinois une seule. Une langue déclare les siennes dans son propre fichier (`.zero`,
 `.two`, `.few`, `.many`), le type `Translation` les autorise à elle seule, et
 `tn()` retombe sur `.other` pour celles qu'elle omet. Le français n'a donc
 pas à inventer un duel qui n'existe pas. Corollaire assumé : une forme de
@@ -482,7 +572,7 @@ seule.
   et ne rapporte que le **bloc** en cours — son entrée, ses transitions internes, son
   retour à l'hôte : l'appel, aujourd'hui le seul bloc (§4.3). Les transitions du
   téléphone lui-même n'y sont pas ; elles ne racontent pas un échange SIP, et le
-  `logger` de la machine les porte déjà en `console.debug` (§4.4). Le format est celui
+  `logger` de la machine les porte déjà en `console.debug` (§4.5). Le format est celui
   du journal (`window.trix.dump()`), pour que les deux se relisent ensemble.
 - Comme pour les paquets, le réglage est consulté à **chaque** transition : cocher la
   case pendant la sonnerie trace la suite de l'appel.
