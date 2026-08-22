@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+      --shadow: 0 10px 30px rgba(62, 42, 86, 0.12);
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .icon { width: 16px; height: 16px; fill: currentColor; flex: none; }
+    .dc .row {
+      display: grid; grid-template-columns: auto 1fr auto auto auto;
+      gap: 0.15rem 0.45rem; align-items: center;
+      padding: 0.45rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+    }
+    .dc .row .who { grid-column: 2; grid-row: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dc .row .when { grid-column: 5; grid-row: 1; font-size: 0.72rem; color: var(--ink-soft); white-space: nowrap; }
+    .dc .row .detail { grid-column: 2 / 3; grid-row: 2; font-size: 0.72rem; color: var(--ink-soft); }
+    .dc .row .dir { grid-column: 1; grid-row: 1; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+    .dc .row .cam { grid-column: 4; grid-row: 1; }
+    .dc .row .act {
+      grid-row: 2; justify-self: center; align-self: center;
+      border: none; background: none; padding: 0; cursor: pointer;
+      display: inline-flex; line-height: 0; color: var(--ink-soft);
+    }
+    .dc .row .act:hover { color: var(--accent); }
+    .dc .row .talk { grid-column: 3; }
+    .dc .row .scroll { grid-column: 4; }
+    .dc .row .lens { grid-column: 5; }
+    .dc .them {
+      align-self: flex-start; max-width: 78%; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 14px 14px 14px 4px;
+      padding: 0.4rem 0.65rem; font-size: 0.85rem; line-height: 1.45;
+    }
+    .dc .me {
+      align-self: flex-end; max-width: 78%; background: var(--accent-soft); color: var(--ink);
+      border-radius: 14px 14px 4px 14px; padding: 0.4rem 0.65rem; font-size: 0.85rem; line-height: 1.45;
+    }
+    .dc .at { font-size: 0.66rem; color: var(--ink-soft); margin-top: -0.25rem; }
+    .dc .linkbtn { font: inherit; font-size: 0.78rem; font-weight: 600; border: none; background: none; color: var(--accent); cursor: pointer; padding: 0; }
+    .dc .cap { font-size: 0.74rem; color: var(--ink-soft); line-height: 1.5; }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 1120px; height: 780px; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 1.05rem; font-weight: 600;">Après l'appel — la conversation se relit depuis l'historique</h2>
+    <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--ink-soft); max-width: 84ch;">Le tchat n'existe qu'en communication : l'appel raccroché, il quitte l'écran et rejoint la ligne d'historique, où une bulle « T » le rouvre à côté du parchemin de la trace SIP et de la loupe du bilan média.</p>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex; gap: 18px;">
+
+    <!-- la sidebar hors appel : pas d'onglet Tchat, il n'y a pas de tchat -->
+    <div style="flex: none; width: 340px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); display: flex; flex-direction: column; overflow: hidden;">
+        <div style="flex: none; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem;">
+          <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+            <span style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);">Adresse SIP</span>
+            <input value="bob" style="font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem;" readonly>
+          </div>
+          <div style="display: flex; width: 100%;">
+            <button style="font: inherit; font-weight: 600; flex: 1; border: 1px solid var(--green); background: var(--green); color: #fff; padding: 0.65rem 1rem; min-height: 44px; border-radius: 999px 0 0 999px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">
+              <svg class="icon" viewBox="0 0 24 24" style="width: 20px; height: 20px;"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+              Appeler en audio
+            </button>
+            <button style="font: inherit; font-weight: 600; width: 44px; border: 1px solid var(--green); border-inline-start: 1px solid rgba(255, 255, 255, 0.35); background: var(--green); color: #fff; border-radius: 0 999px 999px 0;">▾</button>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-height: 0; border-top: 1px solid var(--border); background: var(--ground); display: flex; flex-direction: column;">
+          <div style="flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 1rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);">
+            <span>Historique</span>
+            <button class="linkbtn" style="font-size: 0.72rem;">Effacer</button>
+          </div>
+
+          <div style="flex: 1; min-height: 0; overflow-y: auto;">
+            <div class="row" style="background: var(--panel-2);">
+              <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+              <span class="who" style="color: var(--green);">bob@example.fr</span>
+              <svg class="icon cam" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+              <span class="when">14:31</span>
+              <span class="detail">6 min 47 s — raccroché par vous</span>
+              <button class="act talk" style="color: var(--accent);" title="Relire la conversation" aria-label="Relire la conversation">
+                <svg viewBox="0 0 24 24" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M4 5.5h16v10H8.5L4 19V5.5z" stroke-linejoin="round"/>
+                  <path d="M9 9h6M12 9v4" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="act scroll" title="Trace SIP" aria-label="Trace SIP">
+                <svg viewBox="0 0 24 24" style="width: 14px; height: 14px;" fill="currentColor"><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm2 4h7v1.6H8V7zm0 4h7v1.6H8V11zm0 4h5v1.6H8V15z"/></svg>
+              </button>
+              <button class="act lens" title="Bilan média" aria-label="Bilan média">
+                <svg viewBox="0 0 24 24" style="width: 14px; height: 14px;" fill="currentColor"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm5.7 8.3 4 4-1.4 1.4-4-4 1.4-1.4z"/></svg>
+              </button>
+            </div>
+
+            <div class="row">
+              <svg class="icon dir" viewBox="0 0 24 24" style="color: var(--red);"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
+              <span class="who">carol@example.fr</span>
+              <span class="when">12:05</span>
+              <span class="detail">Manqué</span>
+            </div>
+
+            <div class="row">
+              <svg class="icon dir" viewBox="0 0 24 24" style="color: var(--green);"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
+              <span class="who">dave@example.fr</span>
+              <span class="when">hier 18:20</span>
+              <span class="detail">2 min 04 s — raccroché par le correspondant</span>
+              <button class="act talk" title="Relire la conversation" aria-label="Relire la conversation">
+                <svg viewBox="0 0 24 24" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M4 5.5h16v10H8.5L4 19V5.5z" stroke-linejoin="round"/>
+                  <path d="M9 9h6M12 9v4" stroke-linecap="round"/>
+                </svg>
+              </button>
+              <button class="act scroll" title="Trace SIP" aria-label="Trace SIP">
+                <svg viewBox="0 0 24 24" style="width: 14px; height: 14px;" fill="currentColor"><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm2 4h7v1.6H8V7zm0 4h7v1.6H8V11zm0 4h5v1.6H8V15z"/></svg>
+              </button>
+              <button class="act lens" title="Bilan média" aria-label="Bilan média">
+                <svg viewBox="0 0 24 24" style="width: 14px; height: 14px;" fill="currentColor"><path d="M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm5.7 8.3 4 4-1.4 1.4-4-4 1.4-1.4z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">La bulle ne s'affiche que sur les appels qui ont porté du texte — les autres lignes gardent exactement l'allure qu'elles ont aujourd'hui.</p>
+    </div>
+
+    <!-- le dialogue de relecture, sur le gabarit du parchemin de trace -->
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px;">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden;">
+        <div style="flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);">
+          <div style="min-width: 0;">
+            <h3 style="margin: 0; font-size: 0.95rem; font-weight: 600; overflow-wrap: anywhere;">Conversation — bob@example.fr</h3>
+            <div style="font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem;">22 août 2026, 14:31 – 14:38 · 9 tours de parole</div>
+          </div>
+          <div style="flex: none; display: flex; gap: 0.9rem; align-items: center;">
+            <button class="linkbtn">Copier</button>
+            <button class="linkbtn">Exporter en .vtt</button>
+            <button class="linkbtn" style="color: var(--ink-soft); font-size: 1rem;" aria-label="Fermer">✕</button>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-height: 0; overflow-y: auto; background: var(--ground); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+          <div style="align-self: center; font-size: 0.68rem; color: var(--ink-soft); background: var(--panel-2); border-radius: 999px; padding: 0.1rem 0.7rem;">Texte temps réel ouvert · 14:31</div>
+
+          <div class="them">bonjour, je vous entends très mal — on continue en texte ?</div>
+          <span class="at" style="align-self: flex-start; padding-inline-start: 0.3rem;">14:31</span>
+
+          <div class="me">oui bien sûr, je vous lis</div>
+          <span class="at" style="align-self: flex-end; padding-inline-end: 0.3rem;">14:31</span>
+
+          <div class="them">le rendez-vous est bien au <span style="color: var(--red); font-weight: 600;">12 rue des Lilas</span>, bâtiment C</div>
+          <span class="at" style="align-self: flex-start; padding-inline-start: 0.3rem;">14:32</span>
+
+          <div class="me">c'est noté, merci</div>
+          <span class="at" style="align-self: flex-end; padding-inline-end: 0.3rem;">14:33</span>
+
+          <div style="align-self: center; font-size: 0.66rem; font-weight: 600; color: var(--orange); border: 1px solid var(--orange); border-radius: 999px; padding: 0.1rem 0.7rem;">texte perdu pendant une coupure du canal · 14:35</div>
+
+          <div class="them"><span style="color: var(--orange); font-weight: 700;">&#65533;</span> le code de la porte est 45A</div>
+          <span class="at" style="align-self: flex-start; padding-inline-start: 0.3rem;">14:36</span>
+
+          <div class="me">parfait, j'arrive dans dix minutes</div>
+          <span class="at" style="align-self: flex-end; padding-inline-end: 0.3rem;">14:37</span>
+
+          <div style="align-self: center; font-size: 0.68rem; color: var(--ink-soft); background: var(--panel-2); border-radius: 999px; padding: 0.1rem 0.7rem;">appel terminé · 14:38</div>
+        </div>
+
+        <div style="flex: none; border-top: 1px solid var(--border); padding: 0.55rem 1rem; font-size: 0.7rem; color: var(--ink-soft); display: flex; justify-content: space-between; gap: 1rem;">
+          <span>Conservée chiffrée avec l'appel, dans l'historique du compte.</span>
+          <span>Export en sous-titres WebVTT, calés sur le début de l'appel.</span>
+        </div>
+      </div>
+      <p class="cap">Même gabarit que le parchemin de la trace SIP et que le bilan média : un dialogue par-dessus l'écran, un corps qui défile, « Copier » en tête. Les marqueurs du direct — texte perdu, alerte — survivent à l'enregistrement : ils font partie de ce qui s'est dit.</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"$preview":{"width":1120,"height":780}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.theme === "sombre" ? "dc dark" : "dc" };
+  }
+}
+</script>
+</body>
+</html>

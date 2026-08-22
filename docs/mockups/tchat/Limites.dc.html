@@ -1,0 +1,173 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .card {
+      display: flex; flex-direction: column; min-width: 0;
+      border: 1px solid var(--border); border-radius: 16px;
+      background: var(--panel); overflow: hidden;
+    }
+    .dc .card > h3 {
+      margin: 0; flex: none; padding: 0.55rem 0.85rem;
+      font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--ink-soft); border-bottom: 1px solid var(--border); background: var(--panel);
+    }
+    .dc .thread {
+      flex: 1; min-height: 0; background: var(--ground);
+      padding: 0.7rem; display: flex; flex-direction: column; gap: 0.45rem;
+    }
+    .dc .them {
+      align-self: flex-start; max-width: 90%; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 14px 14px 14px 4px;
+      padding: 0.4rem 0.6rem; font-size: 0.8rem; line-height: 1.45;
+    }
+    .dc .me {
+      align-self: flex-end; max-width: 90%; background: var(--accent-soft); color: var(--ink);
+      border-radius: 14px 14px 4px 14px; padding: 0.4rem 0.6rem; font-size: 0.8rem; line-height: 1.45;
+    }
+    .dc .foot {
+      flex: none; border-top: 1px solid var(--border); background: var(--panel);
+      padding: 0.5rem 0.7rem; display: flex; flex-direction: column; gap: 0.3rem;
+    }
+    .dc .box {
+      background: var(--ground); border: 1px solid var(--border); border-radius: 12px;
+      padding: 0.45rem 0.65rem; font-size: 0.8rem; min-height: 40px; color: var(--ink-soft);
+    }
+    .dc .state { display: flex; align-items: center; gap: 0.35rem; font-size: 0.66rem; color: var(--ink-soft); }
+    .dc .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+    .dc .why { font-size: 0.72rem; color: var(--ink-soft); line-height: 1.5; padding: 0 0.2rem; }
+    .dc .caret {
+      display: inline-block; width: 0.5em; height: 1.05em; vertical-align: -0.18em;
+      background: var(--accent); border-radius: 1px; margin-inline-start: 1px;
+    }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 1080px; height: 840px; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 22px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 1.05rem; font-weight: 600;">Quand ça ne se passe pas bien</h2>
+    <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--ink-soft);">Le tchat en appel dépend d'un canal de données que le correspondant peut ne pas ouvrir, et d'un appel qui finit toujours par se terminer.</p>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 16px;">
+
+    <!-- 1 : ouverture -->
+    <div class="card">
+      <h3>Canal en cours d'ouverture</h3>
+      <div class="thread" style="align-items: center; justify-content: center;">
+        <span style="font-size: 0.78rem; color: var(--ink-soft); text-align: center;">Ouverture du texte temps réel…</span>
+      </div>
+      <div class="foot">
+        <div class="box" style="opacity: 0.45;">Écrivez…</div>
+        <div class="state"><span class="dot" style="background: var(--orange);"></span>Pas encore disponible</div>
+      </div>
+    </div>
+
+    <!-- 2 : pas de T.140 en face -->
+    <div class="card">
+      <h3>Correspondant sans texte temps réel</h3>
+      <div class="thread" style="align-items: center; justify-content: center; text-align: center;">
+        <span style="font-size: 0.78rem; color: var(--ink-soft);">Ce correspondant ne prend pas le texte temps réel.</span>
+        <span style="font-size: 0.72rem; color: var(--ink-soft);">L'appel audio et vidéo continue normalement.</span>
+      </div>
+      <div class="foot">
+        <div class="box" style="opacity: 0.45;">Écrivez…</div>
+        <div class="state"><span class="dot" style="background: var(--ink-soft);"></span>Canal refusé à la négociation</div>
+      </div>
+    </div>
+
+    <!-- 3 : texte perdu -->
+    <div class="card">
+      <h3>Canal rompu puis rétabli</h3>
+      <div class="thread">
+        <div class="them">on se retrouve devant le</div>
+        <div style="align-self: center; font-size: 0.66rem; font-weight: 600; color: var(--orange); border: 1px solid var(--orange); border-radius: 999px; padding: 0.1rem 0.6rem;">texte perdu pendant la coupure</div>
+        <div class="them"><span style="color: var(--orange); font-weight: 700;">&#65533;</span> bâtiment C, vers 14 h<span class="caret"></span></div>
+      </div>
+      <div class="foot">
+        <div class="box">d'accord</div>
+        <div class="state"><span class="dot" style="background: var(--green);"></span>Rétabli — le marqueur reste dans le fil</div>
+      </div>
+    </div>
+
+    <!-- 4 : BEL -->
+    <div class="card" style="outline: 3px solid var(--orange); outline-offset: -3px;">
+      <h3>Alerte reçue (BEL)</h3>
+      <div class="thread">
+        <div class="them">vous êtes toujours là ?</div>
+        <div style="align-self: center; font-size: 0.66rem; font-weight: 600; color: var(--orange); border: 1px solid var(--orange); border-radius: 999px; padding: 0.1rem 0.6rem;">sonnerie + flash écran</div>
+      </div>
+      <div class="foot">
+        <div class="box">oui, je reviens</div>
+        <div class="state"><span class="dot" style="background: var(--orange);"></span>Les deux canaux de la phase 3, réemployés</div>
+      </div>
+    </div>
+
+    <!-- 5 : appel terminé -->
+    <div class="card">
+      <h3>Appel terminé</h3>
+      <div class="thread" style="justify-content: center; gap: 0.6rem;">
+        <div style="align-self: center; font-size: 0.72rem; color: var(--ink-soft); text-align: center; padding: 0 0.4rem;">Le fil quitte l'écran avec l'appel. La sidebar revient à l'historique :</div>
+        <div style="background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 0.4rem 0.55rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem;">
+          <span style="font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">bob@example.fr</span>
+          <span style="flex: 1;"></span>
+          <span style="font-size: 0.66rem; color: var(--ink-soft);">14:31</span>
+          <span style="display: inline-flex; color: var(--accent);" title="Relire la conversation">
+            <svg viewBox="0 0 24 24" style="width: 16px; height: 16px;" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M4 5.5h16v10H8.5L4 19V5.5z" stroke-linejoin="round"/>
+              <path d="M9 9h6M12 9v4" stroke-linecap="round"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+      <div class="foot">
+        <div class="why" style="text-align: center;">La bulle « T » de la ligne rouvre la conversation, en lecture seule, avec « Copier » et « Exporter ».</div>
+      </div>
+    </div>
+
+    <!-- 6 : sombre + texte agrandi -->
+    <div class="dc dark card">
+      <h3>Thème sombre, texte agrandi</h3>
+      <div class="thread">
+        <div class="them" style="font-size: 1rem;">le code de la porte est 45A</div>
+        <div class="me" style="font-size: 1rem;">merci !</div>
+      </div>
+      <div class="foot">
+        <div class="box" style="font-size: 1rem; color: var(--ink);">j'arrive<span class="caret"></span></div>
+        <div class="state"><span class="dot" style="background: var(--green);"></span>Le A+ du pied de panneau agrandit tout le fil</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"$preview":{"width":1080,"height":840}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.theme === "sombre" ? "dc dark" : "dc" };
+  }
+}
+</script>
+</body>
+</html>

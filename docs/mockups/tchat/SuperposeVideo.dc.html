@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .lo { --paper: #FFFFFF; --line: #B9B2C4; --wash: #ECE9F0; --note: #6B6478; --ink: #241F2C; }
+    .lo * { box-sizing: border-box; }
+    .lo .lbl { font-size: 0.72rem; color: var(--note); }
+    .lo .bar { background: var(--wash); border: 1px solid var(--line); border-radius: 4px; }
+  </style>
+</helmet>
+
+<div class="lo" style="width: 720px; height: 470px; background: var(--paper); color: var(--ink); font-family: Poppins, 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 22px; display: flex; flex-direction: column; gap: 12px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 0.95rem; font-weight: 600;">Variante — le tchat posé sur la vidéo</h2>
+    <p style="margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--note);">Un panneau translucide au-dessus de la scène, comme le pavé DTMF de la phase 4.</p>
+  </div>
+
+  <!-- croquis -->
+  <div style="flex: 1; min-height: 0; display: flex; gap: 12px;">
+    <div style="flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; overflow: hidden;">
+      <div class="bar" style="flex: none; height: 26px; border: none; border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 8px;"><span class="lbl">barre d'en-tête</span></div>
+      <div style="flex: 1; min-height: 0; display: flex;">
+        <div style="flex: 1; min-width: 0; position: relative; background: repeating-linear-gradient(135deg, #F4F2F7 0 6px, #ECE9F0 6px 12px);">
+          <span class="lbl" style="position: absolute; top: 8px; left: 10px;">vidéo</span>
+          <!-- le panneau posé dessus -->
+          <div style="position: absolute; left: 14px; right: 14px; bottom: 46px; height: 150px; border: 1.5px solid var(--ink); border-radius: 8px; background: rgba(255, 255, 255, 0.88); padding: 8px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="height: 20px; width: 60%; border-radius: 10px 10px 10px 2px; border: 1px solid var(--line); background: var(--wash);"></div>
+            <div style="height: 20px; width: 45%; align-self: flex-end; border-radius: 10px 10px 2px 10px; background: var(--wash);"></div>
+            <div style="height: 24px; width: 78%; border-radius: 10px 10px 10px 2px; border: 1.5px solid var(--ink); background: #fff;"></div>
+            <div style="margin-top: auto; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--wash);"></div>
+          </div>
+          <div style="position: absolute; inset-inline: 0; bottom: 8px; display: flex; justify-content: center; gap: 6px;">
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: var(--wash); border: 1px solid var(--line);"></span>
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: var(--wash); border: 1px solid var(--line);"></span>
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: var(--ink);"></span>
+          </div>
+        </div>
+        <div style="width: 96px; flex: none; border-inline-start: 1px solid var(--line); padding: 8px;"><span class="lbl">appel, historique</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; font-size: 0.76rem; line-height: 1.5;">
+    <div><b style="font-weight: 600;">Pour</b><br><span style="color: var(--note);">Cohérent avec le pavé DTMF déjà posé là ; s'ouvre et se ferme d'un bouton ; identique en bureau et en mobile.</span></div>
+    <div><b style="font-weight: 600;">Contre</b><br><span style="color: var(--note);">Il mange l'image du correspondant — gênant pour lire sur les lèvres ou signer, c'est-à-dire pour le public même de la conversation totale.</span></div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

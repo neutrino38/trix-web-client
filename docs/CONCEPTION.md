@@ -536,6 +536,179 @@ communication. Le clavier physique compose sur tout l'écran d'appel tant qu'il 
 déployé — on regarde son correspondant, pas ses propres boutons —, jamais pendant une
 saisie, et Échap le range.
 
+### 4.9 Texte temps réel T.140 : le tchat de l'appel (phase 4)
+
+Le tchat de la phase 4 est celui de **l'appel** : il naît avec le canal de données,
+vit tant que la communication dure, et disparaît de l'écran quand elle se termine. La
+messagerie hors appel — événements, messages différés — est un autre composant, à
+concevoir plus tard ; rien ici ne doit lui fermer la porte.
+
+#### Ce que la norme donne, et ce qu'on en prend
+
+T.140 est un protocole minuscule : un flux UTF-8 de caractères et neuf codes de
+commande. Le texte est l'élément par défaut — tout ce qui n'est pas reconnu comme
+commande **est** du texte (§8.1) — et le seul mécanisme d'effacement est le retour
+arrière, qui efface un caractère combiné entier (§8.2).
+
+| Élément | Code | Émission | Réception |
+|---|---|---|---|
+| Texte | ISO/CEI 10646 en UTF-8 | oui | oui, par **graphème** |
+| Signature de session | `U+FEFF` | à l'ouverture du canal | consommée, jamais affichée |
+| Retour arrière | `U+0008` | dérivé de l'édition locale | efface un graphème complet |
+| Séparateur de ligne | `U+2028` | oui, sur Entrée | fige la bulle vivante |
+| Nouvelle ligne acceptée | `CR LF` | jamais émis | traité comme `U+2028` |
+| Alerte en séance | `U+0007` | non émis en phase 4 | sonnerie **et** flash écran |
+| Mise en valeur graphique | `SGR` (`U+009B` Ps `U+006D`) | non émis en phase 4 | `0`, `1`, `3`, `4`, `30–37`, `40–47`, `90–97`, **remappés sur la palette du thème** |
+| Extension de protocole | `SOS … ST` | non émis | avalée en entier, rien ne s'affiche |
+| Interruption | `ESC 0x61` | non émis | ignorée — Trix n'a pas de bascule de mode |
+| Jeu UCS supplémentaire | — | non émis | ignoré |
+| Texte perdu | `U+FFFD` | — | marqueur visible dans le fil (RFC 8865) |
+
+**Les couleurs reçues sont remappées, jamais appliquées telles quelles.** La norme
+laisse explicitement le récepteur décider selon ses capacités et les préférences de
+l'utilisateur (§8.8) : un `31` devient `--red`, pas `#FF0000`. Sans quoi un
+correspondant peindrait du jaune sur notre fond clair, ou du bleu nuit sur le sombre.
+
+#### Le transport (RFC 8865)
+
+Data channel **fiable et ordonné**, `subprotocol="t140"`, ni `max-retr` ni
+`max-time` — la redondance de RFC 4103 n'a pas lieu d'être ici, SCTP garantit déjà la
+livraison et l'ordre. Débit annoncé `cps=30`, tampon d'émission **300 ms** (500 ms au
+maximum, ce qui rejoint le « 0,5 s » de T.140 §6.1.1), un canal par correspondant, et
+`U+FFFD` inséré à la reprise si le canal a été rompu.
+
+#### Le fil : une seule bulle vivante par côté
+
+Le fil est une conversation en bulles ; **seule la dernière de chaque côté est
+vivante**, et elle interprète le flux caractère par caractère, comme un terminal —
+c'est ce que l'appendice I de la norme décrit déjà en 1998 : afficher dès réception,
+indiquer la source et les coordonnées temporelles, permettre de revenir en arrière.
+Un curseur bloc marque la fin de la bulle vivante ; le séparateur la fige et en ouvre
+une neuve. Un séparateur reçu sur une bulle vide ne crée rien.
+
+**Un retour arrière peut franchir un séparateur.** La norme dit que les séquences de
+commande s'effacent en une seule opération (§8.2) : un `U+0008` reçu alors que la
+bulle vivante est vide refusionne donc la bulle figée précédente. Nous sommes
+tolérants en réception et simples en émission — nous n'en produisons jamais, puisque
+la bulle locale est close par Entrée.
+
+#### Le champ de saisie, et la règle des deux secondes
+
+L'utilisateur écrit dans un champ ordinaire : flèches, corrections au milieu,
+collage. Le protocole, lui, ne sait qu'effacer par la fin. La réconciliation se fait
+par comparaison de ce qui est **parti** avec ce qui est **affiché**, en graphèmes :
+
+- le texte affiché commence par ce qui est parti → on émet le suffixe, tout de suite ;
+- ce qui est parti commence par le texte affiché → effacement en fin de ligne, on émet
+  les retours arrière, tout de suite ;
+- divergence au milieu → **deux secondes de silence**, puis on remonte d'un coup
+  jusqu'au point de divergence et on retape la suite. Une seule fois, au lieu de
+  trembler à chaque touche.
+
+Conséquences assumées : la bulle locale montre ce qui est **réellement parti** (la
+norme impose l'affichage local des caractères émis, §7), donc elle diverge du champ
+pendant ces deux secondes — un état visible le dit. Un **collage** part en bloc, le
+`cps` annoncé dépassé sciemment : le canal le supporte et l'attente serait absurde.
+Les retours chariot d'un collage sont neutralisés en espaces — sans quoi un texte de
+dix lignes figerait dix bulles. Il n'y a pas de saut de ligne dans une bulle : le seul
+séparateur du protocole est celui qui la clôt.
+
+#### Après l'appel : l'historique, et l'export en sous-titres
+
+Le fil quitte l'écran avec l'appel et rejoint l'historique du compte, **chiffré comme
+le reste** (§6) : effacer l'historique efface donc aussi les conversations. La ligne
+d'historique gagne une bulle « T », à côté du parchemin de la trace SIP et de la loupe
+du bilan média (§5.3, §5.4), qui rouvre la conversation en lecture seule avec
+« Copier » et « Exporter ».
+
+L'export est du **WebVTT**, calé sur le début de la communication et non sur l'heure
+du jour : le fichier se pose tel quel sur un enregistrement de l'appel. Une bulle
+figée devient une entrée, du premier caractère reçu au séparateur qui l'a close ; le
+locuteur est balisé `<v Bob>` et non préfixé. Trois raisons de préférer VTT à SubRip,
+dans l'ordre où elles pèsent : l'UTF-8 y est normatif — SRT n'a pas d'encodage
+spécifié, et Trix parle arabe, japonais et chinois ; les entrées qui se **recouvrent**
+y sont admises et empilées par les lecteurs, or deux personnes écrivent en même temps
+en texte temps réel ; le locuteur y est une donnée, pas une convention. La conversion
+vers SubRip reste mécanique depuis le même modèle si un outil l'exige — au prix d'une
+fusion des recouvrements en une entrée à deux lignes. Le corps d'une entrée VTT doit
+échapper `<` et `&`.
+
+#### Ce que `tchat3` nous apprend
+
+Le composant `tchat3` (Elioz) fait du T.140 en production depuis des années. Il n'est
+pas un modèle d'architecture — jQuery, PHP, TinyMCE, rendu en `innerHTML` — mais c'est
+un terrain éprouvé, et ses cicatrices valent des spécifications.
+
+**Pièges à éviter, tous vus dans le code :**
+
+- **Compter en unités UTF-16.** `charAt()` à l'émission, `buf.pop()` à la réception :
+  un émoji ou un caractère combiné compte double, et un retour arrière laisse un
+  demi-caractère derrière lui. Nous comptons en graphèmes (`Intl.Segmenter`), des deux
+  côtés — c'est aussi ce que demande §8.2.
+- **Rendre le flux distant en HTML.** Le décodeur y répare des `&lt;` et `&gt;` que la
+  couche d'affichage avait introduits : le protocole et le balisage se contaminent, et
+  le correspondant écrit dans notre DOM. Chez nous, un caractère reçu devient un nœud
+  texte, jamais du balisage.
+- **Sérialiser depuis le DOM.** Le bouton « Copier » relit les `<span>` de l'historique
+  et les recolle avec des espaces ; leur propre commentaire l'admet (« *We should
+  serialize the buffer here instead of using the content of the local field* »). Le
+  modèle est la source, le DOM une projection — c'est ce qui rend l'export VTT possible.
+- **Retirer un préfixe avec `replace(prefix, "")`**, qui remplace la première
+  occurrence où qu'elle soit. Un `slice()` sur une longueur mesurée ne ment pas.
+- **Émettre un `CR` seul** comme fin de ligne, hors norme. Nous émettons `U+2028` et
+  acceptons les trois formes.
+- **Ignorer le `BEL` en réception** : l'alerte prévue par la norme n'arrive alors nulle
+  part. Chez nous elle réemploie les canaux de la phase 3.
+- **La zone d'édition partagée** (« mode mixte », les deux interlocuteurs dans le même
+  éditeur) est la source de la moitié de la complexité du composant : TinyMCE, et une
+  fonction entière dont le seul rôle est d'empêcher l'utilisateur d'effacer le texte de
+  son correspondant. Deux zones séparées, toujours.
+- **Un composant d'interface qui dépend du serveur** : détection de navigateur en PHP
+  pour contourner un bug de superposition. Et des réglages dupliqués en cookie **et**
+  en `localStorage`.
+
+**Astuces à reprendre :**
+
+- **Le tampon d'émission adaptatif** : au-delà de quatre caractères en attente, on
+  émet tout de suite ; en deçà, on attend 300 ms. La frappe rapide part sans latence,
+  la frappe lente ne mitraille pas le canal — et cela colle à RFC 8865.
+- **Découper les longues salves** : ils émettent les retours arrière par tranches de
+  200 caractères. Nous découperons à la taille de message du data channel.
+- **Dédoublonner les pertes** : des `U+FFFD` consécutifs ne valent qu'un seul marqueur
+  dans le fil.
+- **Ne jamais faire défiler d'autorité.** Quand l'utilisateur a remonté le fil, le
+  défilement automatique s'arrête et un bouton « descendre » apparaît, avec le nombre
+  de messages reçus depuis ; il se remet à zéro une fois en bas. Un fil qui saute sous
+  les yeux de quelqu'un qui relit est insupportable — a fortiori quand le texte est
+  l'unique canal.
+- **Neutraliser les fins de ligne d'un collage** (eux : dix espaces ; nous : une seule).
+- **Filtrer les caractères parasites** (`U+0000` et compagnie) avant l'affichage.
+- **L'envoi mot à mot** (émission au délimiteur : espace, point, virgule, point
+  d'interrogation) existe chez eux en option. À garder en réserve : c'est un réglage de
+  confort réel pour qui n'aime pas être lu en train de se corriger.
+
+#### Découpage
+
+- `sip/t140.ts` — le codec, **sans DOM** : décodage du flux en événements
+  (texte, effacement, fin de bulle, alerte, attributs, perte) et calcul du différentiel
+  d'émission. Pur, donc testé comme `sdp.ts` ou `ice.ts`.
+- `sip/rtt.ts` — le canal : ouverture, signature de session, tampon 300 ms, découpage
+  des messages, reprise après rupture.
+- `ui/screens/call/chat.ts` — le panneau : onglets, fil, bulles, composeur.
+- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle.
+
+**Pas d'émulateur de terminal.** `xterm.js` est la seule bibliothèque sérieuse du
+domaine, et elle ne convient pas : elle rend une grille monospace de dimensions fixes
+là où une bulle a une largeur en pixels et une hauteur qui grandit ; elle ne fait pas
+le bidirectionnel, alors que l'interface existe en arabe et que la norme impose de
+respecter le sens d'écriture implicite ; elle interprète tout le vocabulaire VT
+— curseur adressable, effacement d'écran — dont T.140 n'autorise qu'une poignée, ce
+qui obligerait de toute façon à filtrer le flux en amont. La sensation de terminal
+vient du comportement, pas d'une grille de caractères.
+
+Maquettes : `docs/mockups/tchat/` (canevas multi-planches, décodeur et champ de saisie
+exécutables).
+
 ## 5. Intégration JsSIP
 
 ```ts
@@ -555,8 +728,9 @@ const ua = new JsSIP.UA({
   idem sur chaque `RTCSession` (`progress`, `accepted`, `confirmed`, `ended`, `failed`)
   → `call.send(…)`.
 - DTMF : `session.sendDTMF(tone, { transportType: "RFC2833" })` — §5.6.
-- Tchat (phase 4) : data channel via `session.connection.createDataChannel("t140")` —
-  à concevoir après analyse de `../generique/composants/tchat3`.
+- Tchat (phase 4) : data channel `session.connection.createDataChannel("t140", {
+  ordered: true })` — sous-protocole `t140`, fiable et ordonné (RFC 8865). Conception,
+  niveau de support de la norme et enseignements de `tchat3` en §4.9.
 
 ### 5.1 Serveurs ICE (STUN / TURN)
 

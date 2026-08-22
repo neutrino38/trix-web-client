@@ -1,0 +1,293 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .caret {
+      display: inline-block; width: 0.5em; height: 1.05em; vertical-align: -0.18em;
+      background: var(--accent); border-radius: 1px; margin-inline-start: 1px;
+      animation: dcblink 1.06s step-end infinite;
+    }
+    @keyframes dcblink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .dc .caret { animation: none; } }
+    .dc .key {
+      font: inherit; font-size: 0.78rem; font-weight: 600;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: var(--panel); color: var(--ink);
+      padding: 0.42rem 0.85rem; min-height: 34px; cursor: pointer;
+    }
+    .dc .key:hover { background: var(--panel-2); border-color: var(--accent); }
+    .dc .key.go { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .dc .cell { white-space: pre; }
+    .dc .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 920px; height: 700px; display: flex; flex-direction: column; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 20px; gap: 14px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 1.05rem; font-weight: 600;">Le flux distant, décodé</h2>
+    <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--ink-soft); max-width: 64ch;">Seule la dernière bulle reçue est vivante : elle interprète le flux caractère par caractère, comme un terminal. Les commandes du bas injectent les codes de la norme.</p>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;">
+
+    <div style="min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+      <div style="flex: none; padding: 0.5rem 0.9rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); border-bottom: 1px solid var(--border);">Ce qui s'affiche</div>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 0.8rem; background: var(--ground); display: flex; flex-direction: column; gap: 0.5rem; outline: {{flashRing}}; outline-offset: -3px;">
+        <sc-for list="{{bubbles}}" as="b" hint-placeholder-count="3">
+          <div style="{{b.style}}">
+            <sc-for list="{{b.cells}}" as="c" hint-placeholder-count="12">
+              <span class="cell" style="{{c.style}}">{{c.ch}}</span>
+            </sc-for>
+            <sc-if value="{{b.live}}" hint-placeholder-val="{{true}}"><span class="caret"></span></sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{belFlash}}" hint-placeholder-val="{{true}}">
+          <div style="align-self: center; font-size: 0.7rem; font-weight: 600; color: var(--orange); border: 1px solid var(--orange); border-radius: 999px; padding: 0.15rem 0.7rem;">BEL reçu — sonnerie et flash écran</div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div style="min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+      <div style="flex: none; padding: 0.5rem 0.9rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); border-bottom: 1px solid var(--border);">Ce qui arrive sur le canal</div>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; direction: ltr; text-align: left;">
+        <sc-for list="{{trace}}" as="l" hint-placeholder-count="6">
+          <div class="mono" style="display: flex; gap: 0.5rem; align-items: baseline; padding: 0.3rem 0.9rem; font-size: 0.72rem; border-bottom: 1px solid var(--border);">
+            <span style="flex: none; color: var(--ink-soft); font-size: 0.68rem;">{{l.at}}</span>
+            <span style="flex: none; font-weight: 700; color: {{l.color}};">{{l.code}}</span>
+            <span style="min-width: 0; overflow-wrap: anywhere; color: var(--ink-soft);">{{l.what}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;">
+    <sc-for list="{{keys}}" as="k" hint-placeholder-count="8">
+      <button class="{{k.cls}}" onClick="{{k.run}}" title="{{k.title}}">{{k.label}}</button>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"police":{"editor":"enum","options":["proportionnelle","chasse fixe"],"default":"proportionnelle","section":"Bulles"},"$preview":{"width":920,"height":700}}'>
+/* Les codes de commande T.140, jamais ecrits en clair dans ce fichier :
+   un caractere de controle recopie dans un source HTML ne survit pas
+   toujours au voyage. */
+const BS = String.fromCharCode(0x0008);   // retour arriere
+const LS = String.fromCharCode(0x2028);   // separateur de ligne (code prefere)
+const CR = String.fromCharCode(0x000D);
+const NL = String.fromCharCode(0x000A);
+const BEL = String.fromCharCode(0x0007);  // alerte en cours de session
+const CSI = String.fromCharCode(0x009B);  // introducteur SGR
+const SOS = String.fromCharCode(0x0098);  // debut de chaine (extension)
+const ST = String.fromCharCode(0x009C);   // fin de chaine
+const BOM = String.fromCharCode(0xFEFF);  // signature et synchronisation
+const LOST = String.fromCharCode(0xFFFD); // marqueur de texte perdu (RFC 8865)
+
+/* Sous-ensemble SGR retenu, remappe sur la palette du theme : jamais du RGB
+   brut. Une couleur venue du correspondant doit rester lisible sur les deux
+   fonds, et la norme laisse le recepteur en decider (T.140, section 8.8). */
+const SGR = {
+  0:  {reset: true},
+  1:  {weight: "700"},
+  3:  {italic: true},
+  4:  {underline: true},
+  31: {color: "var(--red)"},
+  32: {color: "var(--green)"},
+  33: {color: "var(--orange)"},
+  34: {color: "var(--accent)"},
+  39: {color: ""},
+};
+
+function graphemes(s) {
+  if (typeof Intl !== "undefined" && Intl.Segmenter) {
+    const seg = new Intl.Segmenter("fr", {granularity: "grapheme"});
+    return Array.from(seg.segment(s), (x) => x.segment);
+  }
+  return Array.from(s);
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {bubbles: [], live: [], sgr: {}, trace: [], t0: Date.now(), bel: false};
+    this.timers = [];
+  }
+
+  componentDidMount() { this.replay(); }
+  componentWillUnmount() { this.timers.forEach(clearTimeout); }
+
+  /* ---- le decodeur : une passe sur le flux, aucun retour en arriere ---- */
+  feed(chunk) {
+    const st = {
+      bubbles: this.state.bubbles.slice(), live: this.state.live.slice(),
+      sgr: Object.assign({}, this.state.sgr), trace: this.state.trace.slice(),
+      t0: this.state.t0, bel: false,
+    };
+    /* La trace groupe ce qui se groupe : une salve de frappe est une ligne,
+       une remontee de retours arriere en est une autre. */
+    let typed = "", back = 0;
+    const flushText = () => { if (typed) { this.log(st, "TXT", typed); typed = ""; } };
+    const flushBack = () => { if (back) { this.log(st, "BS x " + back, "efface " + back + " graphème(s) par la fin"); back = 0; } };
+    const flush = () => { flushText(); flushBack(); };
+
+    let i = 0;
+    while (i < chunk.length) {
+      const ch = chunk[i];
+      if (ch === BS) {
+        flushText();
+        if (st.live.length > 0) {
+          st.live.pop();
+          back += 1;
+        } else if (st.bubbles.length > 0) {
+          flushBack();
+          st.live = st.bubbles.pop().cells;
+          this.log(st, "BS", "efface le séparateur : la bulle précédente redevient vivante");
+        }
+        i += 1; continue;
+      }
+      if (ch === LS || (ch === CR && chunk[i + 1] === NL)) {
+        flush();
+        if (st.live.length > 0) { st.bubbles.push({cells: st.live}); st.live = []; }
+        this.log(st, ch === LS ? "LS" : "CRLF", "fin de bulle, elle se fige");
+        i += ch === LS ? 1 : 2; continue;
+      }
+      if (ch === BEL) {
+        flush();
+        st.bel = true;
+        this.log(st, "BEL", "alerte : sonnerie et flash écran");
+        i += 1; continue;
+      }
+      if (ch === CSI) {
+        flush();
+        const end = chunk.indexOf("m", i);
+        const ps = chunk.slice(i + 1, end).split(";");
+        ps.forEach((p) => {
+          const rule = SGR[Number(p)];
+          if (!rule) return;
+          if (rule.reset) { st.sgr = {}; return; }
+          Object.assign(st.sgr, rule);
+        });
+        this.log(st, "SGR", "attributs d’affichage : " + ps.join(";"));
+        i = end + 1; continue;
+      }
+      if (ch === SOS) {
+        flush();
+        const end = chunk.indexOf(ST, i);
+        this.log(st, "SOS", "extension de protocole : ignorée en entier");
+        i = end === -1 ? chunk.length : end + 1; continue;
+      }
+      if (ch === BOM) { flush(); this.log(st, "BOM", "ouverture de session"); i += 1; continue; }
+      if (ch === LOST) {
+        flush();
+        st.live.push({ch: LOST, sgr: {color: "var(--orange)"}});
+        this.log(st, "FFFD", "texte perdu pendant la coupure du canal");
+        i += 1; continue;
+      }
+      flushBack();
+      const style = Object.assign({}, st.sgr);
+      graphemes(ch).forEach((g) => st.live.push({ch: g, sgr: style}));
+      typed += ch;
+      i += 1;
+    }
+    flush();
+    this.setState(st);
+    if (st.bel) this.timers.push(setTimeout(() => this.setState({bel: false}), 1100));
+  }
+
+  log(st, code, what) {
+    const at = ((Date.now() - st.t0) / 1000).toFixed(1) + " s";
+    st.trace = st.trace.concat([{code: code, what: what, at: at}]);
+    if (st.trace.length > 80) st.trace = st.trace.slice(-80);
+  }
+
+  /* Corriger un mot deja parti : la seule voie que la norme laisse, remonter
+     par des BS jusqu'au point de divergence puis retaper la fin. */
+  correct() {
+    this.feed(BS.repeat(9));
+    this.timers.push(setTimeout(() => this.feed("des Tilleuls"), 320));
+  }
+
+  replay() {
+    this.timers.forEach(clearTimeout); this.timers = [];
+    this.setState({bubbles: [], live: [], sgr: {}, trace: [], t0: Date.now(), bel: false});
+    const script = [
+      [200, BOM], [420, "bonjour, je vous entends mal"], [1100, LS],
+      [1400, "le rendez-vous est au "], [2100, CSI + "31m"], [2250, "12 rue des Lilas"],
+      [3000, CSI + "0m"], [3150, ", bâtiment C"],
+    ];
+    script.forEach((step) => this.timers.push(setTimeout(() => this.feed(step[1]), step[0])));
+  }
+
+  renderVals() {
+    const mono = this.props.police === "chasse fixe";
+    const face = mono ? "font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem;" : "";
+    const base = "align-self: flex-start; max-width: 92%; background: var(--panel); border-radius: 14px 14px 14px 4px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.5; min-height: 2rem;";
+    const bubble = base + " border: 1px solid var(--border);" + face;
+    const liveBubble = base + " border: 1px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);" + face;
+
+    const cells = (list) => list.map((c) => {
+      const s = c.sgr || {};
+      let css = "";
+      if (s.color) css += "color: " + s.color + ";";
+      if (s.weight) css += "font-weight: " + s.weight + ";";
+      if (s.italic) css += "font-style: italic;";
+      if (s.underline) css += "text-decoration: underline;";
+      return {ch: c.ch, style: css};
+    });
+
+    const bubbles = this.state.bubbles.map((b) => ({style: bubble, cells: cells(b.cells), live: false}));
+    bubbles.push({style: liveBubble, cells: cells(this.state.live), live: true});
+
+    const trace = this.state.trace.map((l) => ({
+      at: l.at, code: l.code, what: l.what,
+      color: l.code === "BS" ? "var(--red)" : l.code === "TXT" ? "var(--green)" : "var(--accent)",
+    }));
+
+    const keys = [
+      {label: "Rejouer", title: "Rejoue la scène complète", cls: "key go", run: () => this.replay()},
+      {label: "Taper", title: "Ajoute du texte", cls: "key", run: () => this.feed(" et le code est 45A")},
+      {label: "Retour arrière", title: "BS : efface un graphème entier", cls: "key", run: () => this.feed(BS)},
+      {label: "Corriger un mot", title: "BS jusqu’au point de divergence, puis retape", cls: "key", run: () => this.correct()},
+      {label: "Couleur", title: "SGR 31, remappé sur la palette", cls: "key", run: () => this.feed(CSI + "31m")},
+      {label: "Gras", title: "SGR 1", cls: "key", run: () => this.feed(CSI + "1m")},
+      {label: "Neutre", title: "SGR 0 : retour aux attributs par défaut", cls: "key", run: () => this.feed(CSI + "0m")},
+      {label: "Émoji", title: "Un graphème, donc un seul retour arrière", cls: "key", run: () => this.feed(" 👍🏽")},
+      {label: "Sonnerie", title: "BEL : alerte en cours de session", cls: "key", run: () => this.feed(BEL)},
+      {label: "Figer la bulle", title: "LS : fin de bulle", cls: "key", run: () => this.feed(LS)},
+      {label: "Extension", title: "SOS puis ST : ignorée en entier", cls: "key", run: () => this.feed(SOS + "?profil" + ST)},
+      {label: "Texte perdu", title: "U+FFFD après rétablissement du canal", cls: "key", run: () => this.feed(LOST)},
+    ];
+
+    return {
+      themeClass: this.props.theme === "sombre" ? "dc dark" : "dc",
+      bubbles: bubbles, trace: trace, keys: keys,
+      belFlash: this.state.bel,
+      flashRing: this.state.bel ? "3px solid var(--orange)" : "none",
+    };
+  }
+}
+</script>
+</body>
+</html>

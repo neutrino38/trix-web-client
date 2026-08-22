@@ -1,0 +1,173 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .them {
+      align-self: flex-start; max-width: 86%; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 14px 14px 14px 4px;
+      padding: 0.35rem 0.6rem; font-size: 0.8rem; line-height: 1.4;
+    }
+    .dc .me {
+      align-self: flex-end; max-width: 86%; background: var(--accent-soft); color: var(--ink);
+      border-radius: 14px 14px 4px 14px; padding: 0.35rem 0.6rem; font-size: 0.8rem; line-height: 1.4;
+    }
+    .dc .at { font-size: 0.64rem; color: var(--ink-soft); margin-top: -0.28rem; font-variant-numeric: tabular-nums; }
+    .dc .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .dc .cap { font-size: 0.74rem; color: var(--ink-soft); line-height: 1.5; margin: 0; }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 1000px; height: 760px; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 22px; display: flex; flex-direction: column; gap: 14px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 1.05rem; font-weight: 600;">L'export en sous-titres</h2>
+    <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--ink-soft); max-width: 80ch;">WebVTT, calé sur le début de la communication et non sur l'heure du jour : le fichier se pose tel quel sur un enregistrement de l'appel. Une bulle figée devient une entrée, du premier caractère reçu jusqu'au séparateur qui l'a close.</p>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px;">
+
+    <div style="min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+      <div style="flex: none; padding: 0.5rem 0.9rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); border-bottom: 1px solid var(--border);">La conversation enregistrée</div>
+      <div style="flex: 1; min-height: 0; overflow-y: auto; background: var(--ground); padding: 0.8rem; display: flex; flex-direction: column; gap: 0.45rem;">
+        <sc-for list="{{turns}}" as="t" hint-placeholder-count="6">
+          <div class="{{t.cls}}">{{t.text}}</div>
+          <span class="at" style="{{t.atStyle}}">{{t.at}}</span>
+        </sc-for>
+      </div>
+      <div style="flex: none; border-top: 1px solid var(--border); padding: 0.5rem 0.9rem; font-size: 0.7rem; color: var(--ink-soft);">Les deux tours de 00:40 et 00:50 se recouvrent — c'est le cas normal en texte temps réel, chacun écrit quand il veut.</div>
+    </div>
+
+    <div style="min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+        <div style="flex: none; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border);">
+          <span class="mono" style="font-size: 0.74rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{filename}}</span>
+          <span style="flex: 1;"></span>
+          <span style="font-size: 0.68rem; color: var(--ink-soft);">{{blockCount}}</span>
+        </div>
+        <pre class="mono" style="flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0.8rem 0.9rem; font-size: 0.74rem; line-height: 1.55; background: var(--ground); color: var(--ink); direction: ltr; text-align: left; white-space: pre;">{{subs}}</pre>
+      </div>
+      <p class="cap">{{explain}}</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"format":{"editor":"enum","options":["WebVTT","SubRip"],"default":"WebVTT","section":"Export"},"$preview":{"width":1000,"height":760}}'>
+/* Les tours de parole tels que le fil les a figes : debut au premier
+   caractere recu, fin au separateur de ligne qui a close la bulle.
+   Les millisecondes comptent a partir du debut de la communication. */
+const TURNS = [
+  {who: "Bob", from: 3200, to: 11400, text: "bonjour, je vous entends très mal — on continue en texte ?"},
+  {who: "Vous", from: 12000, to: 16800, text: "oui bien sûr, je vous lis"},
+  {who: "Bob", from: 40000, to: 52300, text: "le rendez-vous est bien au 12 rue des Lilas, bâtiment C"},
+  {who: "Vous", from: 50100, to: 55000, text: "c'est noté, merci"},
+  {who: "Bob", from: 260000, to: 271000, text: String.fromCharCode(0xFFFD) + " le code de la porte est 45A"},
+  {who: "Vous", from: 302000, to: 308500, text: "parfait, j'arrive dans dix minutes"},
+];
+
+const pad = (n, w) => String(n).padStart(w, "0");
+
+function stamp(ms, sep) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor(ms / 60000) % 60;
+  const s = Math.floor(ms / 1000) % 60;
+  return pad(h, 2) + ":" + pad(m, 2) + ":" + pad(s, 2) + sep + pad(ms % 1000, 3);
+}
+
+function clock(ms) {
+  return pad(Math.floor(ms / 60000), 2) + ":" + pad(Math.floor(ms / 1000) % 60, 2);
+}
+
+/* WebVTT admet des entrees qui se recouvrent — les lecteurs les empilent.
+   Les temps restent donc ceux de la conversation, sans arrangement. */
+function webvtt(turns) {
+  const body = turns.map((t, i) => {
+    return (i + 1) + "\n"
+      + stamp(t.from, ".") + " --> " + stamp(t.to, ".") + "\n"
+      + "<v " + t.who + ">" + t.text;
+  }).join("\n\n");
+  return "WEBVTT\n\n" + body + "\n";
+}
+
+/* SubRip, lui, ne sait pas empiler : deux tours qui se recouvrent doivent
+   fondre dans une seule entree a deux lignes, chacune prefixee du tiret de
+   dialogue — et la fin de l une des deux est repoussee. */
+function subrip(turns) {
+  const blocks = [];
+  turns.forEach((t) => {
+    const last = blocks[blocks.length - 1];
+    if (last && t.from < last.to) {
+      last.to = Math.max(last.to, t.to);
+      last.lines.push(t);
+    } else {
+      blocks.push({from: t.from, to: t.to, lines: [t]});
+    }
+  });
+  const body = blocks.map((b, i) => {
+    const text = b.lines.length > 1
+      ? b.lines.map((l) => "- " + l.who + " : " + l.text).join("\n")
+      : b.lines[0].who + " : " + b.lines[0].text;
+    return (i + 1) + "\n" + stamp(b.from, ",") + " --> " + stamp(b.to, ",") + "\n" + text;
+  }).join("\n\n");
+  return {text: body + "\n", count: blocks.length};
+}
+
+class Component extends DCLogic {
+  renderVals() {
+    const turns = TURNS.slice().sort((a, b) => a.from - b.from);
+    const vtt = this.props.format !== "SubRip";
+
+    let subs, count, filename, explain;
+    if (vtt) {
+      subs = webvtt(turns);
+      count = turns.length + " entrées";
+      filename = "trix-bob@example.fr-20260822-1431.vtt";
+      explain = "Les deux entrées qui se recouvrent restent telles quelles : WebVTT les empile, la fidélité des temps ne coûte rien. Le locuteur est balisé, pas préfixé — un outil le relit sans deviner. Reste à échapper les rares caractères réservés du corps de texte, « < » et « & ».";
+    } else {
+      const out = subrip(turns);
+      subs = out.text;
+      count = out.count + " blocs";
+      filename = "trix-bob@example.fr-20260822-1431.srt";
+      explain = "Pour comparaison : SubRip ne sachant pas empiler, les tours de 00:40 et 00:50 fondent dans un seul bloc à deux lignes, et la fin du premier est repoussée jusqu'à celle du second. Le locuteur redevient une convention d'écriture. Conversion mécanique depuis le même modèle, si un vieil outil de montage l'exige.";
+    }
+
+    return {
+      themeClass: this.props.theme === "sombre" ? "dc dark" : "dc",
+      turns: turns.map((t) => ({
+        cls: t.who === "Bob" ? "them" : "me",
+        text: t.text,
+        at: clock(t.from) + " → " + clock(t.to),
+        atStyle: t.who === "Bob"
+          ? "align-self: flex-start; padding-inline-start: 0.3rem;"
+          : "align-self: flex-end; padding-inline-end: 0.3rem;",
+      })),
+      subs: subs,
+      filename: filename,
+      blockCount: count,
+      explain: explain,
+    };
+  }
+}
+</script>
+</body>
+</html>

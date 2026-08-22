@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .lo { --paper: #FFFFFF; --line: #B9B2C4; --wash: #ECE9F0; --note: #6B6478; --ink: #241F2C; }
+    .lo * { box-sizing: border-box; }
+    .lo .lbl { font-size: 0.72rem; color: var(--note); }
+  </style>
+</helmet>
+
+<div class="lo" style="width: 720px; height: 470px; background: var(--paper); color: var(--ink); font-family: Poppins, 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 22px; display: flex; flex-direction: column; gap: 12px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 0.95rem; font-weight: 600;">Variante — sidebar empilée, sans onglets</h2>
+    <p style="margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--note);">Tchat et historique cohabitent dans le même défilement, l'un sous l'autre.</p>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex; gap: 12px;">
+    <div style="flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; overflow: hidden;">
+      <div style="flex: none; height: 26px; border-bottom: 1px solid var(--line); background: var(--wash); display: flex; align-items: center; padding: 0 8px;"><span class="lbl">barre d'en-tête</span></div>
+      <div style="flex: 1; min-height: 0; display: flex;">
+        <div style="flex: 1; min-width: 0; background: repeating-linear-gradient(135deg, #F4F2F7 0 6px, #ECE9F0 6px 12px); position: relative;">
+          <span class="lbl" style="position: absolute; top: 8px; left: 10px;">vidéo</span>
+        </div>
+        <div style="width: 168px; flex: none; border-inline-start: 1px solid var(--line); display: flex; flex-direction: column;">
+          <div style="flex: none; padding: 8px; border-bottom: 1px solid var(--line);">
+            <span class="lbl">adresse, raccrocher</span>
+            <div style="height: 22px; margin-top: 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--wash);"></div>
+            <div style="height: 24px; margin-top: 6px; border-radius: 12px; background: var(--ink);"></div>
+          </div>
+          <div style="flex: 1; min-height: 0; padding: 8px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px;">
+            <span class="lbl">tchat</span>
+            <div style="height: 16px; width: 72%; border-radius: 8px 8px 8px 2px; border: 1px solid var(--line); background: var(--wash);"></div>
+            <div style="height: 16px; width: 55%; align-self: flex-end; border-radius: 8px 8px 2px 8px; background: var(--wash);"></div>
+            <div style="height: 18px; width: 80%; border-radius: 8px 8px 8px 2px; border: 1.5px solid var(--ink); background: #fff;"></div>
+            <div style="margin-top: auto; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--wash);"></div>
+          </div>
+          <div style="flex: none; height: 92px; padding: 8px; display: flex; flex-direction: column; gap: 4px;">
+            <span class="lbl">historique</span>
+            <div style="height: 13px; border-radius: 3px; background: var(--wash);"></div>
+            <div style="height: 13px; border-radius: 3px; background: var(--wash);"></div>
+            <div style="height: 13px; border-radius: 3px; background: var(--wash);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; font-size: 0.76rem; line-height: 1.5;">
+    <div><b style="font-weight: 600;">Pour</b><br><span style="color: var(--note);">Tout est visible d'un seul coup d'œil, sans geste de bascule ; rien ne se cache derrière un onglet.</span></div>
+    <div><b style="font-weight: 600;">Contre</b><br><span style="color: var(--note);">Chaque zone est à l'étroit — or une conversation en texte temps réel a besoin de hauteur, et c'est elle qui grandit pendant l'appel.</span></div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

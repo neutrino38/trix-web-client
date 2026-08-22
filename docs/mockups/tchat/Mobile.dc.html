@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --video-bg: #0D0A12; --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
+    .dc .iconbtn {
+      width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border);
+      background: var(--panel); color: var(--ink);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .dc .ovbtn {
+      width: 44px; height: 44px; border-radius: 50%; border: none; color: #fff;
+      background: rgba(255, 255, 255, 0.14);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .dc .ovbtn svg { width: 22px; height: 22px; fill: currentColor; }
+    .dc .ovbtn.on { background: var(--accent); }
+    .dc .caret {
+      display: inline-block; width: 0.5em; height: 1.05em; vertical-align: -0.18em;
+      background: var(--accent); border-radius: 1px; margin-inline-start: 1px;
+      animation: dcblink 1.06s step-end infinite;
+    }
+    @keyframes dcblink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .dc .caret { animation: none; } }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5;">
+
+  <!-- barre haute -->
+  <div style="flex: none; display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; background: var(--panel); border-bottom: 1px solid var(--border);">
+    <span style="width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--red);"></span>
+    <span style="font-size: 0.8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">En communication — bob@example.fr</span>
+    <span style="flex: 1;"></span>
+    <button class="iconbtn" style="opacity: 0.5;" aria-label="Paramètres">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+    </button>
+  </div>
+
+  <!-- vidéo : elle cède la moitié basse au tchat, sans disparaître -->
+  <div style="flex: none; height: 300px; position: relative; background: var(--video-bg); overflow: hidden;">
+    <div style="position: absolute; inset: 0; background: radial-gradient(62% 72% at 50% 40%, #2A2036 0%, #17111F 46%, #0D0A12 100%);"></div>
+    <div style="position: absolute; left: 50%; top: 48%; transform: translate(-50%, -50%); opacity: 0.5;">
+      <div style="width: 96px; height: 96px; border-radius: 50%; margin: 0 auto; background: linear-gradient(160deg, #4C3D63, #2E2440); filter: blur(1.2px);"></div>
+      <div style="width: 188px; height: 104px; margin: 16px auto 0; border-radius: 94px 94px 18px 18px; background: linear-gradient(160deg, #443756, #262035); filter: blur(1.2px);"></div>
+    </div>
+
+    <div style="position: absolute; top: 10px; right: 10px; height: 22%; aspect-ratio: 3 / 4; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: linear-gradient(150deg, #1D1729, #0C0912);"></div>
+
+    <div style="position: absolute; top: 10px; left: 10px; display: inline-flex; align-items: center; gap: 0.35rem; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.85rem; color: #fff; background: rgba(0, 0, 0, 0.45); border-radius: 999px; padding: 0.2rem 0.6rem;">
+      <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>
+      00:04:12
+    </div>
+
+    <div style="position: absolute; inset-inline: 0; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 1.4rem 0.5rem 0.7rem; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55) 45%);">
+      <div style="display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18);">
+        <button class="ovbtn" aria-label="Couper le micro"><svg viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg></button>
+        <button class="ovbtn" aria-label="Retirer la vidéo"><svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
+        <button class="ovbtn" aria-label="Clavier DTMF"><svg viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+        <button class="ovbtn on" aria-label="Masquer le tchat" aria-expanded="true"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg></button>
+      </div>
+      <button style="width: 56px; height: 56px; border-radius: 50%; border: none; background: var(--red); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: none;" aria-label="Raccrocher">
+        <svg class="icon" viewBox="0 0 24 24" style="width: 26px; height: 26px; transform: rotate(135deg);"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- tchat : il prend la place laissée par la vidéo, pas une couche de plus -->
+  <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--border);">
+    <div style="flex: none; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border);">
+      <span style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;">Tchat</span>
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--green);"></span>
+      <span style="flex: 1;"></span>
+      <button style="font: inherit; font-size: 0.72rem; font-weight: 600; border: none; background: none; color: var(--accent);">Historique</button>
+    </div>
+
+    <div style="flex: 1; min-height: 0; overflow-y: auto; background: var(--ground); padding: 0.7rem 0.75rem; display: flex; flex-direction: column; gap: 0.45rem;">
+      <div style="align-self: center; font-size: 0.68rem; color: var(--ink-soft); padding: 0.1rem 0.6rem; background: var(--panel-2); border-radius: 999px;">Texte temps réel ouvert · 14:31</div>
+
+      <span style="align-self: flex-start; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); padding-inline-start: 0.2rem;">Bob</span>
+      <div style="align-self: flex-start; max-width: 84%; background: var(--panel); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 0.45rem 0.65rem; font-size: 0.9rem; line-height: 1.45;">bonjour, je vous entends très mal — on continue en texte ?</div>
+
+      <div style="align-self: flex-end; max-width: 84%; background: var(--accent-soft); border-radius: 14px 14px 4px 14px; padding: 0.45rem 0.65rem; font-size: 0.9rem; line-height: 1.45; color: var(--ink);">oui bien sûr, je vous lis</div>
+
+      <span style="align-self: flex-start; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); padding-inline-start: 0.2rem;">Bob</span>
+      <div style="align-self: flex-start; max-width: 84%; background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 14px 14px 14px 4px; padding: 0.45rem 0.65rem; font-size: 0.9rem; line-height: 1.45;">le code de la porte est 45A<span class="caret"></span></div>
+    </div>
+
+    <div style="flex: none; border-top: 1px solid var(--border); background: var(--panel); padding: 0.55rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 0.3rem;">
+      <div style="background: var(--ground); border: 1px solid var(--border); border-radius: 12px; padding: 0.55rem 0.7rem; font-size: 0.95rem; line-height: 1.45; min-height: 46px; color: var(--ink-soft);">Écrivez…</div>
+      <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.68rem; color: var(--ink-soft);">
+        <span style="display: inline-flex; align-items: center; gap: 0.35rem;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background: var(--green);"></span>
+          Part au fil de la frappe
+        </span>
+        <span>Entrée fige la bulle</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.theme === "sombre" ? "dc dark" : "dc" };
+  }
+}
+</script>
+</body>
+</html>

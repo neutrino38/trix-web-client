@@ -1,0 +1,223 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --video-bg: #0D0A12; --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+      --shadow: 0 10px 30px rgba(62, 42, 86, 0.12);
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
+    .dc .pill {
+      display: inline-flex; align-items: center; gap: 0.45rem;
+      font-size: 0.8rem; font-weight: 600; border-radius: 999px;
+      padding: 0.3rem 0.85rem; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--ink);
+    }
+    .dc .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .dc .iconbtn {
+      width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border);
+      background: var(--panel); color: var(--ink);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .dc .ovbtn {
+      width: 44px; height: 44px; border-radius: 50%; border: none; color: #fff;
+      background: rgba(255, 255, 255, 0.14);
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .dc .ovbtn svg { width: 22px; height: 22px; }
+    .dc .caret {
+      display: inline-block; width: 0.5em; height: 1.05em; vertical-align: -0.18em;
+      background: var(--accent); border-radius: 1px; margin-inline-start: 1px;
+      animation: dcblink 1.06s step-end infinite;
+    }
+    @keyframes dcblink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .dc .caret { animation: none; } }
+    .dc .tab {
+      font: inherit; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--ink-soft); background: none; border: none;
+      padding: 0.62rem 0.9rem 0.55rem; border-bottom: 2px solid transparent;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .dc .tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5;">
+
+  <!-- ===== barre d'en-tête ===== -->
+  <div style="display: flex; align-items: center; gap: 1rem; padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); background: var(--panel); flex: none;">
+    <span style="display: inline-flex; align-items: center; gap: 0.6rem; font-weight: 600; letter-spacing: 1px;">
+      <svg viewBox="0 0 512 512" width="38" height="38" aria-hidden="true">
+        <rect width="512" height="512" rx="112" fill="#6B4487"/>
+        <g transform="translate(52.7 56.9) scale(0.20253)">
+          <path d="M 1507 1647 C 1638 1636 1722 1578 1730 1493 C 1732 1475 1729 1456 1721 1441 L 1718 1434 L 1718 1414 L 1718 1393 L 1721 1388 C 1740 1360 1743 1319 1729 1285 C 1726 1278 1726 1278 1726 1258 L 1726 1239 L 1737 1229 C 1789 1179 1794 1102 1747 1048 L 1742 1042 L 1742 1022 L 1742 1002 L 1746 997 C 1785 951 1786 892 1749 852 C 1715 815 1665 798 1598 800 C 1565 802 1425 814 1365 822 C 1350 823 1340 824 1326 824 L 1308 824 L 1305 811 C 1299 785 1298 782 1299 750 C 1299 707 1304 686 1324 644 C 1335 622 1341 612 1375 563 C 1435 477 1442 411 1395 374 C 1316 312 1175 376 1098 508 C 1075 548 1060 581 1022 683 C 966 831 931 892 871 942 L 860 951 L 841 951 L 822 951 L 814 948 C 792 938 773 935 740 934 C 707 934 693 935 620 943 C 590 947 404 958 352 959 C 290 960 271 965 250 983 C 220 1011 214 1057 229 1164 C 234 1192 234 1198 242 1298 C 266 1620 264 1607 272 1617 C 274 1619 275 1622 275 1624 C 275 1638 294 1649 308 1643 C 317 1639 358 1638 520 1636 C 626 1635 648 1634 684 1627 C 732 1619 775 1601 804 1577 L 810 1572 L 829 1572 L 849 1572 L 859 1576 C 897 1590 987 1604 1064 1608 C 1114 1610 1189 1608 1234 1602 C 1238 1601 1250 1601 1261 1601 L 1280 1601 L 1288 1606 C 1337 1638 1422 1654 1507 1647 Z" fill="#FFFFFF"/>
+        </g>
+      </svg>
+      <span>Trix</span>
+    </span>
+    <span class="pill"><span class="dot" style="background: var(--green);"></span>Enregistré — alice@example.fr</span>
+    <span class="pill"><span class="dot" style="background: var(--red);"></span>En communication — bob@example.fr</span>
+    <span style="font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 0.45rem;">
+      <svg class="icon" viewBox="0 0 24 24" style="width: 16px; height: 16px;"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>
+      <span>00:04:12</span>
+    </span>
+    <span style="flex: 1;"></span>
+    <button class="iconbtn" style="opacity: 0.5;" aria-label="Paramètres">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>
+    </button>
+    <button class="iconbtn" style="opacity: 0.5;" aria-label="Se déconnecter">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>
+    </button>
+  </div>
+
+  <!-- ===== corps ===== -->
+  <div style="flex: 1; display: flex; min-height: 0;">
+
+    <!-- scène vidéo -->
+    <div style="flex: 1; min-width: 0; position: relative; background: var(--video-bg); overflow: hidden;">
+      <div style="position: absolute; inset: 0; background: radial-gradient(58% 70% at 50% 42%, #2A2036 0%, #17111F 46%, #0D0A12 100%);"></div>
+      <div style="position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); width: 340px; height: 400px; opacity: 0.5;">
+        <div style="width: 168px; height: 168px; border-radius: 50%; margin: 0 auto; background: linear-gradient(160deg, #4C3D63, #2E2440); filter: blur(1.5px);"></div>
+        <div style="width: 320px; height: 190px; margin: 26px auto 0; border-radius: 150px 150px 30px 30px; background: linear-gradient(160deg, #443756, #262035); filter: blur(1.5px);"></div>
+      </div>
+
+      <!-- self-view -->
+      <div style="position: absolute; top: 10px; left: 10px; height: 25%; aspect-ratio: 4 / 3; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25); background: linear-gradient(150deg, #1D1729, #0C0912); overflow: hidden;">
+        <div style="position: absolute; left: 50%; top: 54%; transform: translate(-50%, -50%); opacity: 0.45;">
+          <div style="width: 54px; height: 54px; border-radius: 50%; margin: 0 auto; background: #3E3252;"></div>
+          <div style="width: 104px; height: 58px; margin: 8px auto 0; border-radius: 52px 52px 10px 10px; background: #372C4A;"></div>
+        </div>
+      </div>
+
+      <!-- vu-mètres -->
+      <div style="position: absolute; right: 10px; top: 10px; bottom: 78px; display: flex; align-items: flex-end; gap: 5px;">
+        <span style="width: 5px; height: 46%; border-radius: 3px; background: linear-gradient(180deg, #ffa84c 0%, #e72d4f 100%);"></span>
+        <span style="width: 5px; height: 12%; border-radius: 3px; background: linear-gradient(180deg, #ffa84c 0%, #e72d4f 100%);"></span>
+      </div>
+
+      <!-- commandes média en surimpression -->
+      <div style="position: absolute; inset-inline: 0; bottom: 0; display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1.6rem 0.7rem 0.9rem; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55) 45%);">
+        <div style="display: flex; align-items: center; gap: 0.35rem; padding: 0.3rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18);">
+          <button class="ovbtn" aria-label="Couper le micro">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg>
+          </button>
+          <button class="ovbtn" aria-label="Retirer la vidéo">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+          </button>
+          <button class="ovbtn" aria-label="Masquer mon image">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>
+          </button>
+          <button class="ovbtn" aria-label="Haut-parleur">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg>
+          </button>
+          <button class="ovbtn" aria-label="Clavier DTMF">
+            <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg>
+          </button>
+          <button class="ovbtn" aria-label="Plein écran">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>
+          </button>
+          <button class="ovbtn" aria-label="Replier le panneau">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/><path d="M12.6 8.6 9.2 12l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== sidebar ===== -->
+    <aside style="width: 340px; flex: none; border-inline-start: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; min-height: 0;">
+
+      <!-- commandes d'appel : inchangées, le tchat ne les déloge pas -->
+      <div style="padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; flex: none;">
+        <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+          <span style="font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);">Correspondant</span>
+          <input value="bob@example.fr" disabled style="font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.8rem; opacity: 0.45;">
+        </div>
+        <button style="font: inherit; font-weight: 600; border-radius: 999px; border: 1px solid var(--red); background: var(--red); color: #fff; padding: 0.65rem 1.5rem; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">
+          <svg class="icon" viewBox="0 0 24 24" style="transform: rotate(135deg);"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>
+          Raccrocher
+        </button>
+      </div>
+
+      <!-- onglets : le tchat prend la place de l'historique, sans le chasser -->
+      <div style="display: flex; align-items: center; gap: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--panel); flex: none; padding-inline: 0.35rem;">
+        <button class="tab on">Tchat<span class="dot" style="background: var(--green);"></span></button>
+        <button class="tab">Historique</button>
+      </div>
+
+      <!-- fil de conversation -->
+      <div style="flex: 1; min-height: 0; overflow-y: auto; background: var(--ground); padding: 0.8rem 0.75rem 0.9rem; display: flex; flex-direction: column; gap: 0.5rem;">
+
+        <div style="align-self: center; font-size: 0.68rem; color: var(--ink-soft); padding: 0.1rem 0.6rem; background: var(--panel-2); border-radius: 999px;">Texte temps réel ouvert · 14:31</div>
+
+        <span style="align-self: flex-start; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); padding-inline-start: 0.2rem;">Bob</span>
+        <div style="align-self: flex-start; max-width: 88%; background: var(--panel); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45;">bonjour, je vous entends très mal — on continue en texte ?</div>
+        <span style="align-self: flex-start; font-size: 0.66rem; color: var(--ink-soft); padding-inline-start: 0.3rem; margin-top: -0.3rem;">14:31</span>
+
+        <div style="align-self: flex-end; max-width: 88%; background: var(--accent-soft); border-radius: 14px 14px 4px 14px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45; color: var(--ink);">oui bien sûr, je vous lis</div>
+        <span style="align-self: flex-end; font-size: 0.66rem; color: var(--ink-soft); padding-inline-end: 0.3rem; margin-top: -0.3rem;">14:31</span>
+
+        <span style="align-self: flex-start; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); padding-inline-start: 0.2rem;">Bob</span>
+        <div style="align-self: flex-start; max-width: 88%; background: var(--panel); border: 1px solid var(--border); border-radius: 14px 14px 14px 4px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45;">le rendez-vous est bien au <span style="color: var(--red); font-weight: 600;">12 rue des Lilas</span>, bâtiment C</div>
+        <span style="align-self: flex-start; font-size: 0.66rem; color: var(--ink-soft); padding-inline-start: 0.3rem; margin-top: -0.3rem;">14:32 · couleur reçue</span>
+
+        <div style="align-self: flex-end; max-width: 88%; background: var(--accent-soft); border-radius: 14px 14px 4px 14px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45; color: var(--ink);">c'est noté, merci</div>
+        <span style="align-self: flex-end; font-size: 0.66rem; color: var(--ink-soft); padding-inline-end: 0.3rem; margin-top: -0.3rem;">14:33</span>
+
+        <span style="align-self: flex-start; font-size: 0.68rem; font-weight: 600; color: var(--ink-soft); padding-inline-start: 0.2rem;">Bob</span>
+        <!-- la bulle vivante : la seule du fil qui bouge -->
+        <div style="align-self: flex-start; max-width: 88%; background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 14px 14px 14px 4px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45;">le code de la porte est 45A<span class="caret"></span></div>
+        <span style="align-self: flex-start; font-size: 0.66rem; color: var(--accent); font-weight: 600; padding-inline-start: 0.3rem; margin-top: -0.3rem;">en cours de frappe</span>
+      </div>
+
+      <!-- champ de saisie -->
+      <div style="flex: none; border-top: 1px solid var(--border); background: var(--panel); padding: 0.6rem 0.75rem 0.5rem; display: flex; flex-direction: column; gap: 0.35rem;">
+        <div style="background: var(--ground); border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 0.7rem; font-size: 0.875rem; line-height: 1.45; min-height: 44px; max-height: 132px; overflow-y: auto; outline: 2px solid var(--accent); outline-offset: 1px;">j'arrive dans dix minutes<span class="caret"></span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.68rem; color: var(--ink-soft);">
+          <span style="display: inline-flex; align-items: center; gap: 0.35rem;">
+            <span class="dot" style="background: var(--green); width: 7px; height: 7px;"></span>
+            Part au fil de la frappe
+          </span>
+          <span>Entrée fige la bulle</span>
+        </div>
+      </div>
+
+      <!-- pied : taille du texte -->
+      <div style="flex: none; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 1rem; font-size: 0.8rem; color: var(--ink-soft);">
+        <span>Taille du texte</span>
+        <span style="display: flex; gap: 0.4rem;">
+          <button style="font: inherit; font-weight: 700; font-size: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--ink); width: 30px; height: 26px;">A−</button>
+          <button style="font: inherit; font-weight: 700; font-size: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--ink); width: 30px; height: 26px;">A+</button>
+        </span>
+      </div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { themeClass: this.props.theme === 'sombre' ? 'dc dark' : 'dc' };
+  }
+}
+</script>
+</body>
+</html>

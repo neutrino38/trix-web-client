@@ -1,0 +1,262 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #7B54A0; } a:hover { color: #5E3C7E; }
+    .dc {
+      --ground: #F6F4FA; --panel: #FFFFFF; --panel-2: #EFEAF6;
+      --ink: #3E2A56; --ink-soft: #6E5A86;
+      --accent: #7B54A0; --accent-soft: #C9A9E0; --border: #DFD7EA;
+      --green: #36AD45; --orange: #D98324; --red: #E94E3C;
+    }
+    .dc.dark {
+      --ground: #17101F; --panel: #241933; --panel-2: #2E2140;
+      --ink: #EDE6F5; --ink-soft: #B4A5C8;
+      --accent: #A97FD1; --accent-soft: #6B4487; --border: #3A2B4E;
+    }
+    .dc * { box-sizing: border-box; }
+    .dc .caret {
+      display: inline-block; width: 0.5em; height: 1.05em; vertical-align: -0.18em;
+      background: var(--accent); border-radius: 1px; margin-inline-start: 1px;
+      animation: dcblink 1.06s step-end infinite;
+    }
+    @keyframes dcblink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .dc .caret { animation: none; } }
+    .dc .composer {
+      font: inherit; font-size: 0.875rem; line-height: 1.5; color: var(--ink);
+      background: var(--ground); border: 1px solid var(--border); border-radius: 12px;
+      padding: 0.5rem 0.7rem; width: 100%; min-height: 44px; max-height: 132px;
+      resize: none; overflow-y: auto; display: block;
+    }
+    .dc .composer:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .dc .key {
+      font: inherit; font-size: 0.75rem; font-weight: 600;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: var(--panel); color: var(--ink);
+      padding: 0.36rem 0.8rem; min-height: 32px; cursor: pointer;
+    }
+    .dc .key:hover { background: var(--panel-2); border-color: var(--accent); }
+    .dc .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+</helmet>
+
+<div class="{{themeClass}}" style="width: 920px; height: 760px; display: flex; flex-direction: column; background: var(--ground); color: var(--ink); font-family: Poppins, 'Nunito Sans', 'Segoe UI', system-ui, sans-serif; line-height: 1.5; padding: 20px; gap: 14px;">
+
+  <div style="flex: none;">
+    <h2 style="margin: 0; font-size: 1.05rem; font-weight: 600;">Écrire, et ce que le fil en fait</h2>
+    <p style="margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--ink-soft); max-width: 74ch;">Le champ s'édite librement — flèches, corrections au milieu, collage. T.140, lui, ne sait qu'effacer par la fin : tapez ici pour voir ce qui part réellement sur le canal.</p>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;">
+
+    <!-- le composeur, tel qu'il vivra au bas de la sidebar -->
+    <div style="min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div style="border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+        <div style="padding: 0.5rem 0.9rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); border-bottom: 1px solid var(--border);">Votre champ de saisie</div>
+        <div style="padding: 0.6rem 0.75rem 0.5rem; display: flex; flex-direction: column; gap: 0.35rem;">
+          <textarea class="composer" rows="2" ref="{{setTa}}" onInput="{{onInput}}" onKeyDown="{{onKey}}" placeholder="Écrivez — le texte part au fil de la frappe"></textarea>
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 0.68rem; color: var(--ink-soft); gap: 0.5rem;">
+            <span style="display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0;">
+              <span style="width: 7px; height: 7px; border-radius: 50%; flex: none; background: {{stateColor}};"></span>
+              <span style="color: {{stateColor}}; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{stateLabel}}</span>
+            </span>
+            <span style="flex: none;">Entrée fige la bulle</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+        <sc-for list="{{keys}}" as="k" hint-placeholder-count="3">
+          <button class="key" onClick="{{k.run}}" title="{{k.title}}">{{k.label}}</button>
+        </sc-for>
+      </div>
+
+      <div style="border: 1px solid var(--border); border-radius: 14px; background: var(--panel); padding: 0.7rem 0.9rem; font-size: 0.78rem; color: var(--ink-soft); line-height: 1.55;">
+        <b style="color: var(--ink); font-weight: 600;">La règle des deux secondes.</b> Taper en fin de ligne part tout de suite ; effacer la fin aussi. Une modification <i>au milieu</i> attend deux secondes de silence, puis remonte d'un coup par retours arrière jusqu'au point de divergence et retape la suite — une seule fois, au lieu de trembler à chaque touche.
+      </div>
+    </div>
+
+    <!-- ce que le correspondant reçoit -->
+    <div style="min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div style="flex: none; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+        <div style="padding: 0.5rem 0.9rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); border-bottom: 1px solid var(--border);">Chez le correspondant</div>
+        <div style="padding: 0.8rem; background: var(--ground); display: flex; flex-direction: column; gap: 0.5rem; min-height: 160px;">
+          <sc-for list="{{bubbles}}" as="b" hint-placeholder-count="2">
+            <div style="{{b.style}}">{{b.text}}<sc-if value="{{b.live}}" hint-placeholder-val="{{true}}"><span class="caret"></span></sc-if></div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); overflow: hidden;">
+        <div style="flex: none; padding: 0.5rem 0.9rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); border-bottom: 1px solid var(--border);">Ce qui part sur le canal</div>
+        <div style="flex: 1; min-height: 0; overflow-y: auto; direction: ltr; text-align: left;">
+          <sc-for list="{{trace}}" as="l" hint-placeholder-count="5">
+            <div class="mono" style="display: flex; gap: 0.5rem; align-items: baseline; padding: 0.28rem 0.9rem; font-size: 0.72rem; border-bottom: 1px solid var(--border);">
+              <span style="flex: none; font-weight: 700; color: {{l.color}};">{{l.code}}</span>
+              <span style="min-width: 0; overflow-wrap: anywhere; color: var(--ink-soft);">{{l.what}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["clair","sombre"],"default":"clair","section":"Thème"},"$preview":{"width":920,"height":760}}'>
+const BS = String.fromCharCode(0x0008);
+const LS = String.fromCharCode(0x2028);
+const HOLD = 2000; // temporisation avant de reconcilier une edition au milieu
+
+function graphemes(s) {
+  if (typeof Intl !== "undefined" && Intl.Segmenter) {
+    const seg = new Intl.Segmenter("fr", {granularity: "grapheme"});
+    return Array.from(seg.segment(s), (x) => x.segment);
+  }
+  return Array.from(s);
+}
+
+/* Nombre de graphemes a effacer et texte a retaper pour passer de `sent` a
+   `text` : on garde le plus long prefixe commun, mesure en graphemes — un
+   BS efface un caractere combine entier (T.140, section 8.2). */
+function diff(sent, text) {
+  const a = graphemes(sent), b = graphemes(text);
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i += 1;
+  return {back: a.length - i, add: b.slice(i).join("")};
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {sent: "", text: "", frozen: [], trace: [], pending: 0};
+    this.hold = null;
+    this.tick = null;
+  }
+
+  componentWillUnmount() { clearTimeout(this.hold); clearInterval(this.tick); }
+
+  log(code, what, color) {
+    const trace = this.state.trace.concat([{code: code, what: what, color: color}]);
+    this.setState({trace: trace.length > 60 ? trace.slice(-60) : trace});
+  }
+
+  emit(back, add) {
+    if (back > 0) this.log("BS x " + back, "remonte jusqu'au point de divergence", "var(--red)");
+    if (add) this.log("TXT", add, "var(--green)");
+    this.setState({sent: this.state.text});
+  }
+
+  onInput(e) {
+    const text = e.target.value.replace(/\n/g, " ");
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 132) + "px";
+    clearTimeout(this.hold); clearInterval(this.tick);
+    this.setState({text: text, pending: 0});
+
+    const sent = this.state.sent;
+    if (text.indexOf(sent) === 0) {           // on ecrit a la fin : rien a attendre
+      const add = text.slice(sent.length);
+      if (add) this.log("TXT", add, "var(--green)");
+      this.setState({sent: text});
+      return;
+    }
+    if (sent.indexOf(text) === 0) {           // on efface par la fin : BS immediat
+      const back = graphemes(sent).length - graphemes(text).length;
+      this.log("BS x " + back, "effacement en fin de ligne", "var(--red)");
+      this.setState({sent: text});
+      return;
+    }
+    /* edition au milieu : deux secondes de silence avant de reconcilier */
+    const until = Date.now() + HOLD;
+    this.setState({pending: HOLD});
+    this.tick = setInterval(() => {
+      const left = Math.max(0, until - Date.now());
+      this.setState({pending: left});
+      if (left === 0) clearInterval(this.tick);
+    }, 100);
+    this.hold = setTimeout(() => {
+      clearInterval(this.tick);
+      const d = diff(this.state.sent, this.state.text);
+      this.setState({pending: 0});
+      this.emit(d.back, d.add);
+    }, HOLD);
+  }
+
+  onKey(e) {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    e.preventDefault();
+    clearTimeout(this.hold); clearInterval(this.tick);
+    const d = diff(this.state.sent, this.state.text);
+    if (d.back > 0) this.log("BS x " + d.back, "correction envoyée avant de figer", "var(--red)");
+    if (d.add) this.log("TXT", d.add, "var(--green)");
+    if (this.state.text) {
+      this.log("LS", "fin de bulle", "var(--accent)");
+      this.setState({frozen: this.state.frozen.concat([this.state.text])});
+    }
+    this.setState({sent: "", text: "", pending: 0});
+    if (this.ta) { this.ta.value = ""; this.ta.style.height = "auto"; }
+  }
+
+  paste() {
+    const blob = "Je vous confirme les trois points : la salle est réservée de 9 h à 17 h, le badge vous attend à l'accueil au nom de Trix, et le repas de midi est prévu sur place. Prévenez-moi si vous arrivez plus tard, je laisserai la consigne à la personne qui tient l'accueil ce jour-là.";
+    if (this.ta) {
+      this.ta.value = blob;
+      this.ta.style.height = "auto";
+      this.ta.style.height = Math.min(this.ta.scrollHeight, 132) + "px";
+    }
+    clearTimeout(this.hold); clearInterval(this.tick);
+    const add = blob.slice(this.state.sent.length);
+    this.log("TXT", blob.length + " caractères en un bloc — le débit cps est dépassé sciemment", "var(--green)");
+    this.setState({text: blob, sent: blob, pending: 0});
+  }
+
+  reset() {
+    clearTimeout(this.hold); clearInterval(this.tick);
+    if (this.ta) { this.ta.value = ""; this.ta.style.height = "auto"; }
+    this.setState({sent: "", text: "", frozen: [], trace: [], pending: 0});
+  }
+
+  renderVals() {
+    const frozenStyle = "align-self: flex-end; max-width: 88%; background: var(--accent-soft); color: var(--ink); border-radius: 14px 14px 4px 14px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45;";
+    const liveStyle = "align-self: flex-end; max-width: 88%; background: var(--accent-soft); color: var(--ink); border: 1px solid var(--accent); border-radius: 14px 14px 4px 14px; padding: 0.45rem 0.65rem; font-size: 0.875rem; line-height: 1.45;";
+
+    const bubbles = this.state.frozen.map((t) => ({style: frozenStyle, text: t, live: false}));
+    bubbles.push({style: liveStyle, text: this.state.sent, live: true});
+
+    let stateLabel = "Rien à envoyer";
+    let stateColor = "var(--ink-soft)";
+    if (this.state.pending > 0) {
+      stateLabel = "Correction dans " + (this.state.pending / 1000).toFixed(1) + " s";
+      stateColor = "var(--orange)";
+    } else if (this.state.text) {
+      stateLabel = "En direct — le correspondant vous lit";
+      stateColor = "var(--green)";
+    }
+
+    return {
+      themeClass: this.props.theme === "sombre" ? "dc dark" : "dc",
+      setTa: (el) => { this.ta = el; },
+      onInput: (e) => this.onInput(e),
+      onKey: (e) => this.onKey(e),
+      bubbles: bubbles,
+      trace: this.state.trace,
+      stateLabel: stateLabel,
+      stateColor: stateColor,
+      keys: [
+        {label: "Coller un pavé", title: "Envoi en bloc, débit dépassé", run: () => this.paste()},
+        {label: "Effacer tout", title: "Repart de zéro", run: () => this.reset()},
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

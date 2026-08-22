@@ -1,0 +1,36 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Bureau — tchat en appel" },
+    { "file": "Mobile.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844, "title": "Mobile — tchat en appel" },
+    { "file": "Historique.dc.html", "x": 2050, "y": 0, "w": 1120, "h": 780, "title": "Relecture depuis l'historique" },
+    { "file": "FluxT140.dc.html", "x": 0, "y": 1100, "w": 920, "h": 700, "title": "Le flux distant, décodé" },
+    { "file": "Saisie.dc.html", "x": 1010, "y": 1100, "w": 920, "h": 760, "title": "Le champ de saisie" },
+    { "file": "Limites.dc.html", "x": 2020, "y": 1100, "w": 1080, "h": 840, "title": "États limites" },
+    { "file": "ExportSousTitres.dc.html", "x": 3180, "y": 1100, "w": 1000, "h": 760, "title": "L'export en sous-titres" },
+    { "file": "SuperposeVideo.dc.html", "x": 0, "y": 2140, "w": 720, "h": 470, "title": "Variante — posé sur la vidéo" },
+    { "file": "SidebarEmpilee.dc.html", "x": 810, "y": 2140, "w": 720, "h": 470, "title": "Variante — sidebar empilée" }
+  ],
+  "annotations": [
+    {
+      "id": "parti-pris",
+      "x": 0, "y": -170, "w": 640,
+      "text": "Parti pris : le tchat prend la place de l'historique dans la sidebar, derrière deux onglets. Les commandes d'appel et le bouton Raccrocher ne bougent pas d'un pixel.\n\nDeux autres emplacements sont esquissés en bas du canevas, avec leur pour et leur contre."
+    },
+    {
+      "id": "apres-appel",
+      "x": 2050, "y": -170, "w": 620,
+      "text": "Le tchat n'existe que PENDANT l'appel. Raccroché, il se range dans l'historique du compte — chiffré comme le reste — et se relit depuis la bulle « T » de sa ligne."
+    },
+    {
+      "id": "mecanique",
+      "x": 0, "y": 950, "w": 560,
+      "text": "La mécanique T.140. Ces deux artboards ne sont pas des images : le décodeur du flux distant et l'algorithme d'émission y tournent réellement — cliquez, tapez, corrigez au milieu d'un mot."
+    },
+    {
+      "id": "variantes",
+      "x": 0, "y": 2010, "w": 560,
+      "text": "Emplacements écartés, gardés pour la discussion. Croquis volontairement grossiers : ils servent à choisir une direction, pas à montrer un rendu."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}
