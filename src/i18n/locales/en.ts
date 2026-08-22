@@ -186,9 +186,20 @@ const messages: Translation = {
   "ctrl.speaker.mute": "Mute speaker",
   "ctrl.speaker.unmute": "Unmute speaker",
   "ctrl.dtmf.aria": "DTMF keypad",
-  "ctrl.dtmf.label": "DTMF keypad — coming in phase 4",
+  "ctrl.dtmf.show": "Show the DTMF keypad",
+  "ctrl.dtmf.hide": "Hide the DTMF keypad",
   "ctrl.fullscreen": "Full screen",
   "ctrl.hangup": "Hang up",
+
+  // ---------------------------------------------------------------------
+  // Clavier DTMF
+  // ---------------------------------------------------------------------
+  "dtmf.aria": "DTMF keypad",
+  "dtmf.sent": "Tones sent",
+  "dtmf.hint": "Dial with the keys or your keyboard",
+  "dtmf.keyAria": "Key {key}",
+  "dtmf.star": "star",
+  "dtmf.hash": "hash",
 
   // ---------------------------------------------------------------------
   // Video requested mid-call
@@ -207,6 +218,7 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} removed video",
   "notice.videoDeclinedHere": "Video declined",
   "notice.videoUnavailable": "Video cannot be added right now",
+  "notice.dtmfFailed": "Tone {tone} could not be sent",
 
   // ---------------------------------------------------------------------
   // Side panel

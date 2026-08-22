@@ -201,9 +201,20 @@ const messages: Translation = {
   "ctrl.speaker.mute": "كتم الصوت",
   "ctrl.speaker.unmute": "إلغاء كتم الصوت",
   "ctrl.dtmf.aria": "لوحة أرقام DTMF",
-  "ctrl.dtmf.label": "لوحة أرقام DTMF — ستتوفّر في المرحلة 4",
+  "ctrl.dtmf.show": "إظهار لوحة أرقام DTMF",
+  "ctrl.dtmf.hide": "إخفاء لوحة أرقام DTMF",
   "ctrl.fullscreen": "ملء الشاشة",
   "ctrl.hangup": "إنهاء المكالمة",
+
+  // ---------------------------------------------------------------------
+  // Clavier DTMF
+  // ---------------------------------------------------------------------
+  "dtmf.aria": "لوحة أرقام DTMF",
+  "dtmf.sent": "النغمات المُرسَلة",
+  "dtmf.hint": "اطلب بالأزرار أو بلوحة المفاتيح",
+  "dtmf.keyAria": "المفتاح {key}",
+  "dtmf.star": "نجمة",
+  "dtmf.hash": "مربّع",
 
   // ---------------------------------------------------------------------
   // طلب إضافة الفيديو أثناء المكالمة
@@ -222,6 +233,7 @@ const messages: Translation = {
   "notice.videoRemoved": "أزال {peer} الفيديو",
   "notice.videoDeclinedHere": "تم رفض الفيديو",
   "notice.videoUnavailable": "يتعذّر إضافة الفيديو في الوقت الحالي",
+  "notice.dtmfFailed": "تعذّر إرسال النغمة {tone}",
 
   // ---------------------------------------------------------------------
   // Panneau latéral

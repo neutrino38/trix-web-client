@@ -106,7 +106,10 @@ Full steps, required modules and per-distribution paths:
 - [x] Internationalisation — English/French/Québécois/Japanese/Chinese/Arabic UI, one file
       per language, automatic detection, right-to-left layout, translated call history and
       error messages
-- [ ] Phase 4 — DTMF, chat over data channel
+- [x] Phase 4 (DTMF) — 12-key keypad over the video stage, physical keyboard, local
+      tone feedback, and an on-screen echo of the tones that actually went out
+      (RFC 4733: a DTMF is neither heard here nor carried by any SIP packet)
+- [ ] Phase 4 (chat) — chat over the WebRTC data channel
 - [ ] Phase 5 (future) — Tauri packaging
 
 ## Observability

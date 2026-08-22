@@ -177,7 +177,7 @@ Structure 2 zones
 - **Zone centrale (flexible)** : vidéo distante plein cadre sur fond noir ; self-view incrusté
   en haut-gauche (~25 % de hauteur, coins arrondis 10px) ; vu-mètres verticaux discrets ;
   overlay « Connexion… » pendant l'établissement. Double-clic = plein écran.
-- **Barre inférieure (48px)** : ajouter/retirer la vidéo, masquer self-view, haut-parleur, (DTMF — phase 4).
+- **Barre inférieure (48px)** : ajouter/retirer la vidéo, masquer self-view, haut-parleur, clavier DTMF.
 - **Sidebar droite (300px)** :
   - champ « Adresse SIP » (complétion `@domaine` implicite),
   - bouton **« Appeler » (vert, audio) + menu déroulant « Appel vidéo »**,
@@ -228,7 +228,9 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 - [x] Messages fugaces de l'appel (`ui/toast.ts`), refus compris
 
 ### Phase 4 : DTMF + Tchat data channel
-- [ ] DTMF (RFC 4733)
+- [x] DTMF (RFC 4733) : pavé 12 touches sur la scène vidéo, clavier physique, retour
+      sonore local, et **écho à l'écran des seules tonalités réellement parties**
+      (accessibilité sourds — un DTMF ne s'entend ni ne se lit nulle part ailleurs)
 - [ ] Analyse `../generique/composants/tchat3`, composant équivalent sur data channel WebRTC
 
 ### Phase 5 (future) : Tauri

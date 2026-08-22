@@ -68,6 +68,22 @@ export const consoleTraceSink: TraceSink = {
   groupEnd: () => console.groupEnd(),
 };
 
+/**
+ * Un événement de l'appel qui n'est ni un paquet ni une transition : la
+ * console et le carnet le reçoivent comme le reste, au même réglage.
+ *
+ * Aujourd'hui les tonalités DTMF, et c'est bien pourquoi cette fonction
+ * existe — parties en RFC 4733, elles voyagent dans le flux RTP et ne
+ * laissent **aucune** trace SIP. Sans cette ligne, le carnet d'un appel
+ * passé à naviguer dans un serveur vocal ne dirait rien de ce qui a été
+ * composé, la seule chose qu'on veuille y relire.
+ */
+export function traceNote(head: string, sink: TraceSink = consoleTraceSink): void {
+  if (!sipTraceEnabled()) return;
+  recordFsm(head);
+  sink.line(`${TAG} ${head}`);
+}
+
 /** Sens d'un paquet, du point de vue de Trix. */
 type Way = "→" | "←";
 

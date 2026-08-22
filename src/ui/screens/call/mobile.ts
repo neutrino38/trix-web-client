@@ -18,6 +18,7 @@ import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { videoAskDialog } from "./videoask.js";
+import { dtmfPad } from "./dtmf.js";
 import { statsPill } from "./stats.js";
 import {
   ICONS,
@@ -98,6 +99,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                    : `<div class="call-overlay">${esc(callLabel(view.state))}…<br>
                         <span class="target">${esc(displayTarget(view.target))}</span></div>`
                }
+               ${dtmfPad(view)}
                ${overlayBar({ view, speakerMuted, withHangup: true })}
              </div>`
           : `<div class="mdial">

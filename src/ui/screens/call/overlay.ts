@@ -19,6 +19,7 @@
 import type { CallView } from "../../../machines/events.js";
 import { ICONS, ICONS_OFF } from "./parts.js";
 import { panelIcon, panelToggleLabel } from "./panel.js";
+import { DTMF_PAD_ID, dtmfOpen } from "./dtmf.js";
 import { t } from "../../../i18n/index.js";
 import { esc } from "../../el.js";
 
@@ -35,12 +36,20 @@ interface Cmd {
    */
   expanded?: boolean;
   controls?: string; // id de la région, quand il y a `expanded`
+  /**
+   * Ce qui allume le bouton, quand « déployé » et « allumé » ne se
+   * répondent pas : le panneau latéral s'annonce **replié**, le clavier
+   * DTMF s'annonce **ouvert**. Sans cela, l'un des deux serait allumé au
+   * repos, et une barre de commandes qui s'allume toute seule ne veut plus
+   * rien dire.
+   */
+  highlight?: boolean;
   cut?: boolean; // flux coupé → rouge, sinon bascule locale → violet
   disabled?: boolean;
 }
 
 function button(c: Cmd): string {
-  const active = c.expanded !== undefined ? !c.expanded : c.pressed;
+  const active = c.highlight ?? (c.expanded !== undefined ? !c.expanded : c.pressed);
   const cls = active ? (c.cut ? "off" : "toggled") : "";
   const state =
     c.expanded !== undefined
@@ -117,11 +126,16 @@ export function overlayBar(ctx: OverlayCtx): string {
       disabled: !connected,
     },
     {
+      // le pavé déployé est un affichage local de plus, comme le self-view :
+      // violet, et jamais rouge — rien n'est coupé quand il est ouvert
       act: "dtmf",
       icon: ICONS.dtmf,
-      label: t("ctrl.dtmf.label"),
+      label: t(dtmfOpen() ? "ctrl.dtmf.hide" : "ctrl.dtmf.show"),
       aria: t("ctrl.dtmf.aria"),
-      disabled: true,
+      expanded: connected && dtmfOpen(),
+      highlight: connected && dtmfOpen(),
+      controls: DTMF_PAD_ID,
+      disabled: !connected,
     },
   ];
 

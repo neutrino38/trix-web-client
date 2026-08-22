@@ -64,6 +64,11 @@ class FakeCallSession {
   setMicMuted(m: boolean): void {
     this.mic.push(m);
   }
+  tones: string[] = [];
+  sendDtmf(tone: string): boolean {
+    this.tones.push(tone);
+    return true;
+  }
   setVideo(on: boolean): void {
     this.video.push(on);
   }

@@ -30,6 +30,7 @@ function view(over: Partial<CallView> = {}): CallView {
     selfViewHidden: false,
     videoPending: false,
     videoAsked: false,
+    dtmfSent: "",
     notice: null,
     connectedAt: Date.now(),
     endedBy: null,

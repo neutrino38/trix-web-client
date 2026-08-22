@@ -47,6 +47,11 @@ export type CallControlEvent =
   | { type: "ui:acceptVideo" }
   | { type: "ui:rejectVideo" }
   | { type: "ui:toggleSelfView" }
+  /**
+   * Une tonalité DTMF composée au clavier de l'appel (`0-9`, `*`, `#`) —
+   * une par événement : c'est une touche pressée, pas une séquence.
+   */
+  | { type: "ui:dtmf"; tone: string }
   /** Appel entrant : répondre avec la combinaison choisie parmi les médias proposés. */
   | { type: "ui:answer"; media: CallMedia }
   | { type: "ui:reject" };
@@ -83,6 +88,14 @@ export interface CallView {
   videoPending: boolean;
   /** Le distant demande à ajouter la vidéo : l'écran pose la question. */
   videoAsked: boolean;
+  /**
+   * Les tonalités DTMF composées depuis le début de l'appel, dans l'ordre,
+   * et seulement celles qui sont **parties**. Rien d'autre ne les rejoue :
+   * un DTMF ne s'entend pas ici, il n'apparaît dans aucun paquet SIP, et
+   * l'application s'adresse d'abord à des sourds — les lire à l'écran est
+   * la seule confirmation qu'ils existent (docs/CONCEPTION.md §4.8).
+   */
+  dtmfSent: string;
   /** Dernier message fugace à afficher, s'il y en a eu un. */
   notice: CallNotice | null;
   /** Timestamp du 200 OK ; l'UI en dérive le chrono. */

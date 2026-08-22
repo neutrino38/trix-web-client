@@ -18,7 +18,7 @@ import {
   type MediaFailure,
 } from "./mediaerror.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
-import { sipTraceEnabled } from "./trace.js";
+import { sipTraceEnabled, traceNote } from "./trace.js";
 
 export type SipEvent =
   | { type: "sip:connected" }
@@ -122,6 +122,17 @@ export interface CallSession {
    * distant a suivi, `sip:mediaRefused` s'il a dit non.
    */
   setVideo(on: boolean): void;
+  /**
+   * Envoie une tonalité DTMF (RFC 4733) dans le flux audio de l'appel :
+   * `0-9`, `*`, `#`, `A-D`. Rend `false` si elle n'a pas pu partir — appel
+   * pas encore établi, tonalité inconnue, ou pas de piste audio émise, le
+   * seul chemin qu'un événement RTP `telephone-event` puisse emprunter.
+   *
+   * Rendre un booléen plutôt que d'émettre un événement est délibéré :
+   * l'insertion dans le flux est synchrone et personne n'accuse réception
+   * d'un DTMF. Il n'y a donc rien à attendre — ou c'est parti, ou non.
+   */
+  sendDtmf(tone: string): boolean;
   attachMedia(remote: HTMLVideoElement, local: HTMLVideoElement | null): void;
   /**
    * L'état du média sur les dix dernières secondes — ce que l'UI affiche
@@ -752,6 +763,7 @@ interface RtcSessionLike {
   connection: RTCPeerConnection | undefined;
   isEnded(): boolean;
   terminate(): void;
+  sendDTMF(tone: string, options?: { transportType?: string }): void;
   mute(opts: { audio?: boolean; video?: boolean }): void;
   unmute(opts: { audio?: boolean; video?: boolean }): void;
   on(event: string, listener: (...args: never[]) => void): void;
@@ -786,6 +798,20 @@ function collectStats(session: RtcSessionLike) {
   return media;
 }
 
+/** Les tonalités qu'un clavier téléphonique peut produire (RFC 4733 §3.10). */
+const DTMF_TONE = /^[0-9A-D*#]$/i;
+
+/**
+ * L'émetteur de tonalités de la piste audio sortante, s'il y en a une :
+ * c'est lui qui insère les événements `telephone-event` dans le flux RTP.
+ * Absent, il n'y a pas de RFC 4733 possible — un appel sans audio émis, ou
+ * une connexion déjà refermée.
+ */
+function dtmfSender(pc: RTCPeerConnection | undefined): RTCDTMFSender | null {
+  const sender = pc?.getSenders().find((s) => s.track?.kind === "audio");
+  return sender?.dtmf ?? null;
+}
+
 function wrapSession(
   session: RtcSessionLike,
   book: CallTraceHandle,
@@ -810,6 +836,22 @@ function wrapSession(
     },
     setVideo(on) {
       control.setVideo(on);
+    },
+    sendDtmf(tone) {
+      if (session.isEnded() || !DTMF_TONE.test(tone)) return false;
+      // JsSIP enverrait des INFO par défaut : le transport se demande
+      // explicitement (docs/CONCEPTION.md §5.6). Sans piste audio émise, il
+      // se contenterait d'un avertissement dans la console et la tonalité
+      // serait perdue sans que personne ne le sache — on constate d'abord.
+      if (!dtmfSender(session.connection)) return false;
+      try {
+        session.sendDTMF(tone, { transportType: "RFC2833" });
+      } catch {
+        // état de session refusé par JsSIP (dialogue en train de se fermer)
+        return false;
+      }
+      traceNote(`DTMF « ${tone} » → RFC 4733`);
+      return true;
     },
     attachMedia(remote, local) {
       const pc = session.connection;

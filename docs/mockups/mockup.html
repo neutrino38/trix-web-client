@@ -71,11 +71,11 @@
 
 <div class="wrap">
   <header class="page-head">
-    <h1>Trix Communicator — maquettes (état du logiciel, phase 3)</h1>
+    <h1>Trix Communicator — maquettes (état du logiciel, phase 4)</h1>
     <p>Webphone SIP conversation totale. Layout hérité d'Elioz Connect, palette FSL,
        logique FSL + JsSIP. Ces maquettes reflètent l'application telle qu'elle est écrite
-       (phases 0 à 3) : elles chargent <code>src/ui/theme.css</code> et recopient le balisage
-       de <code>src/ui/screens/</code>. Seuls le tchat et le DTMF restent marqués « phase 4 ».</p>
+       (phases 0 à 4) : elles chargent <code>src/ui/theme.css</code> et recopient le balisage
+       de <code>src/ui/screens/</code>. Seul le tchat reste marqué « phase 4 ».</p>
   </header>
 
   <nav class="tabs" aria-label="Écrans">
@@ -388,13 +388,20 @@
                 <span class="bar" style="height:62%"></span>
                 <span class="bar" style="height:18%"></span>
               </div>
+              <div class="dtmfpad" id="call-dtmf" role="group" aria-label="Clavier DTMF">
+                <p class="dtmf-echo">
+                  <span class="sent-label">Tonalités envoyées</span>
+                  <span class="sent" dir="ltr">*4021</span>
+                </p>
+                <div class="dtmf-keys" dir="ltr"><button class="dtmfkey" data-tone="1" aria-label="Touche 1"><span class="digit">1</span><span class="letters" aria-hidden="true"></span></button><button class="dtmfkey" data-tone="2" aria-label="Touche 2"><span class="digit">2</span><span class="letters" aria-hidden="true">ABC</span></button><button class="dtmfkey" data-tone="3" aria-label="Touche 3"><span class="digit">3</span><span class="letters" aria-hidden="true">DEF</span></button><button class="dtmfkey" data-tone="4" aria-label="Touche 4"><span class="digit">4</span><span class="letters" aria-hidden="true">GHI</span></button><button class="dtmfkey" data-tone="5" aria-label="Touche 5"><span class="digit">5</span><span class="letters" aria-hidden="true">JKL</span></button><button class="dtmfkey" data-tone="6" aria-label="Touche 6"><span class="digit">6</span><span class="letters" aria-hidden="true">MNO</span></button><button class="dtmfkey" data-tone="7" aria-label="Touche 7"><span class="digit">7</span><span class="letters" aria-hidden="true">PQRS</span></button><button class="dtmfkey" data-tone="8" aria-label="Touche 8"><span class="digit">8</span><span class="letters" aria-hidden="true">TUV</span></button><button class="dtmfkey" data-tone="9" aria-label="Touche 9"><span class="digit">9</span><span class="letters" aria-hidden="true">WXYZ</span></button><button class="dtmfkey" data-tone="*" aria-label="Touche étoile"><span class="digit">*</span><span class="letters" aria-hidden="true"></span></button><button class="dtmfkey" data-tone="0" aria-label="Touche 0"><span class="digit">0</span><span class="letters" aria-hidden="true">+</span></button><button class="dtmfkey" data-tone="#" aria-label="Touche dièse"><span class="digit">#</span><span class="letters" aria-hidden="true"></span></button></div>
+              </div>
               <div class="overlaybar">
                 <div class="overlay-pill">
                   <button class="iconbtn off" title="Rétablir le micro" aria-label="Micro" aria-pressed="true"><svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/><path d="M3.5 3.5l17 17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
                   <button class="iconbtn " title="Couper la caméra" aria-label="Caméra" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
                   <button class="iconbtn " title="Masquer le self-view" aria-label="Self-view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg></button>
                   <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
-                  <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+                  <button class="iconbtn toggled" title="Masquer le clavier DTMF" aria-label="Clavier DTMF" aria-expanded="true" aria-controls="call-dtmf"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
                   <button class="iconbtn " title="Plein écran" aria-label="Plein écran"><svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg></button>
                   <button class="iconbtn " title="Masquer le panneau latéral" aria-label="Panneau latéral" aria-expanded="true" aria-controls="call-panel"><svg class="icon" viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/></svg></button>
                 </div>
@@ -499,7 +506,7 @@
                   <button class="iconbtn " title="Couper la caméra" aria-label="Caméra" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
                   <button class="iconbtn " title="Masquer le self-view" aria-label="Self-view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg></button>
                   <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
-                  <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+                  <button class="iconbtn toggled" title="Masquer le clavier DTMF" aria-label="Clavier DTMF" aria-expanded="true" aria-controls="call-dtmf"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
                   <button class="iconbtn " title="Plein écran" aria-label="Plein écran"><svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg></button>
                   <button class="iconbtn toggled" title="Afficher le tchat" aria-label="Panneau latéral" aria-expanded="false" aria-controls="call-panel-b"><svg class="icon" viewBox="0 0 24 24"><path d="M3 4h18v16H3V4zm11 2v12h5V6h-5z"/><path d="M12.6 8.6 9.2 12l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
                 </div>
@@ -823,13 +830,20 @@
             <svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>
             <span>00:04:37</span>
           </div>
+          <div class="dtmfpad" id="call-dtmf" role="group" aria-label="Clavier DTMF">
+            <p class="dtmf-echo">
+              <span class="sent-label">Tonalités envoyées</span>
+              <span class="sent" dir="ltr">*4021</span>
+            </p>
+            <div class="dtmf-keys" dir="ltr"><button class="dtmfkey" data-tone="1" aria-label="Touche 1"><span class="digit">1</span><span class="letters" aria-hidden="true"></span></button><button class="dtmfkey" data-tone="2" aria-label="Touche 2"><span class="digit">2</span><span class="letters" aria-hidden="true">ABC</span></button><button class="dtmfkey" data-tone="3" aria-label="Touche 3"><span class="digit">3</span><span class="letters" aria-hidden="true">DEF</span></button><button class="dtmfkey" data-tone="4" aria-label="Touche 4"><span class="digit">4</span><span class="letters" aria-hidden="true">GHI</span></button><button class="dtmfkey" data-tone="5" aria-label="Touche 5"><span class="digit">5</span><span class="letters" aria-hidden="true">JKL</span></button><button class="dtmfkey" data-tone="6" aria-label="Touche 6"><span class="digit">6</span><span class="letters" aria-hidden="true">MNO</span></button><button class="dtmfkey" data-tone="7" aria-label="Touche 7"><span class="digit">7</span><span class="letters" aria-hidden="true">PQRS</span></button><button class="dtmfkey" data-tone="8" aria-label="Touche 8"><span class="digit">8</span><span class="letters" aria-hidden="true">TUV</span></button><button class="dtmfkey" data-tone="9" aria-label="Touche 9"><span class="digit">9</span><span class="letters" aria-hidden="true">WXYZ</span></button><button class="dtmfkey" data-tone="*" aria-label="Touche étoile"><span class="digit">*</span><span class="letters" aria-hidden="true"></span></button><button class="dtmfkey" data-tone="0" aria-label="Touche 0"><span class="digit">0</span><span class="letters" aria-hidden="true">+</span></button><button class="dtmfkey" data-tone="#" aria-label="Touche dièse"><span class="digit">#</span><span class="letters" aria-hidden="true"></span></button></div>
+          </div>
           <div class="overlaybar">
                 <div class="overlay-pill">
                   <button class="iconbtn " title="Couper le micro" aria-label="Micro" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg></button>
                   <button class="iconbtn " title="Couper la caméra" aria-label="Caméra" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg></button>
                   <button class="iconbtn " title="Masquer le self-view" aria-label="Self-view" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg></button>
                   <button class="iconbtn speaking" title="Couper le son" aria-label="Haut-parleur" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg></button>
-                  <button class="iconbtn " disabled title="Clavier DTMF — disponible en phase 4" aria-label="Clavier DTMF"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
+                  <button class="iconbtn toggled" title="Masquer le clavier DTMF" aria-label="Clavier DTMF" aria-expanded="true" aria-controls="call-dtmf"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
                 </div>
                 <button class="hangup-round" data-act="hangup" aria-label="Raccrocher"><svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></button>
               </div>

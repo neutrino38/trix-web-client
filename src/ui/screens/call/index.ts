@@ -12,6 +12,7 @@ import { renderDesktop } from "./desktop.js";
 import { renderMobile } from "./mobile.js";
 import { closeIncoming, wireIncoming } from "./incoming.js";
 import { closeVideoAsk, wireVideoAsk } from "./videoask.js";
+import { closeDtmf } from "./dtmf.js";
 import { stopChrono, wireCallScreen } from "./parts.js";
 import { stopMediaStats } from "./stats.js";
 
@@ -34,6 +35,9 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
   } else {
     closeIncoming();
   }
+  // le pavé DTMF ne survit pas à la communication : un appel qui se termine
+  // le referme, et le suivant repart clavier rangé
+  if (view?.state !== "connected") closeDtmf();
   // même partage pour la question posée en cours d'appel (« Alice souhaite
   // ajouter la vidéo ») : les deux boutons sont câblés avec les autres,
   // seul le focus est propre à la popup

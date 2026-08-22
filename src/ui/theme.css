@@ -515,6 +515,56 @@ fieldset.field { border: none; }
   .overlay-pill .iconbtn { transition: box-shadow 90ms linear, color 90ms linear, background 90ms linear; }
 }
 
+/* ---------- clavier DTMF (call/dtmf.ts) ---------- */
+/* Posé sur la vidéo, juste au-dessus de la barre de commandes, et non dans
+   une modale : la conversation continue pendant qu'on navigue dans un serveur
+   vocal, et le correspondant doit rester visible. L'écho des touches est la
+   seule confirmation qu'une tonalité est partie — un DTMF ne s'entend pas
+   d'ici et n'apparaît dans aucun paquet SIP. */
+.dtmfpad {
+  position: absolute; z-index: 3;
+  inset-inline: 0; bottom: 5.5rem; margin-inline: auto; width: max-content;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 0.7rem; border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.dtmfpad[hidden] { display: none; }
+.dtmf-echo {
+  display: flex; flex-direction: column; gap: 0.1rem;
+  min-height: 2.4rem; margin: 0; padding: 0.25rem 0.5rem;
+  border-radius: 10px; background: var(--panel-2);
+}
+.dtmf-echo .sent-label { font-size: 0.7rem; color: var(--ink-soft); }
+/* les chiffres composés : lisibles de loin, et jamais coupés à gauche —
+   c'est la fin de la séquence qui compte, on la garde sous les yeux */
+.dtmf-echo .sent {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.15rem; font-weight: 600; letter-spacing: 0.12em;
+  color: var(--ink); direction: ltr; overflow-wrap: anywhere;
+}
+.dtmf-echo .hint { font-size: 0.8rem; color: var(--ink-soft); }
+.dtmf-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; }
+.dtmfkey {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 62px; height: 46px; gap: 0;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--ink); cursor: pointer;
+}
+.dtmfkey .digit { font-size: 1.25rem; font-weight: 600; line-height: 1.1; }
+.dtmfkey .letters { font-size: 0.6rem; letter-spacing: 0.14em; color: var(--ink-soft); }
+.dtmfkey:hover { background: var(--panel-2); }
+.dtmfkey:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* la touche pressée s'allume — au clavier physique, c'est ce qui dit laquelle
+   a répondu, et cela se voit sans le son (RGAA 3.1) */
+.dtmfkey:active,
+.dtmfkey.hit { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dtmfkey.hit .letters,
+.dtmfkey:active .letters { color: rgba(255, 255, 255, 0.8); }
+@media (prefers-reduced-motion: no-preference) {
+  .dtmfkey { transition: background 90ms linear, color 90ms linear; }
+}
+
 .sidebar {
   width: 300px; flex: none; position: relative; border-inline-start: 1px solid var(--border);
   background: var(--panel); display: flex; flex-direction: column; min-height: 0;

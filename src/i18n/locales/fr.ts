@@ -186,9 +186,20 @@ const messages = {
   "ctrl.speaker.mute": "Couper le son",
   "ctrl.speaker.unmute": "Rétablir le son",
   "ctrl.dtmf.aria": "Clavier DTMF",
-  "ctrl.dtmf.label": "Clavier DTMF — disponible en phase 4",
+  "ctrl.dtmf.show": "Afficher le clavier DTMF",
+  "ctrl.dtmf.hide": "Masquer le clavier DTMF",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
+
+  // ---------------------------------------------------------------------
+  // Clavier DTMF
+  // ---------------------------------------------------------------------
+  "dtmf.aria": "Clavier DTMF",
+  "dtmf.sent": "Tonalités envoyées",
+  "dtmf.hint": "Composez sur les touches ou au clavier",
+  "dtmf.keyAria": "Touche {key}",
+  "dtmf.star": "étoile",
+  "dtmf.hash": "dièse",
 
   // ---------------------------------------------------------------------
   // Vidéo demandée en cours d'appel
@@ -207,6 +218,7 @@ const messages = {
   "notice.videoRemoved": "{peer} a retiré la vidéo",
   "notice.videoDeclinedHere": "Vidéo refusée",
   "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour le moment",
+  "notice.dtmfFailed": "La tonalité {tone} n'a pas pu être envoyée",
 
   // ---------------------------------------------------------------------
   // Panneau latéral

@@ -88,7 +88,7 @@ src/
 - `ui:*` — actions utilisateur : `ui:configure`, `ui:saveConfig`, `ui:useAccount`,
   `ui:call {target, video}`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:retry`,
   `ui:muteMic`, `ui:toggleVideo`, `ui:answer {video}`, `ui:reject`, `ui:acceptVideo`,
-  `ui:rejectVideo`, `ui:dtmf {tone}` (ph. 4)
+  `ui:rejectVideo`, `ui:dtmf {tone}`
 - `sip:*` — remontées JsSIP : `sip:connected`, `sip:disconnected`, `sip:registered`,
   `sip:unregistered`, `sip:registrationFailed {cause}`, `sip:newSession {session}`,
   `sip:progress`, `sip:accepted`, `sip:confirmed`, `sip:ended {cause}`, `sip:failed {cause}`
@@ -502,6 +502,40 @@ Ne sont pas traduits, et c'est délibéré : le nom du produit, le crédit
 OK")`, versionnées dans `DIAGRAMS.md`) et les traces console, qui s'adressent
 au développeur.
 
+### 4.8 DTMF : composer pendant l'appel (phase 4)
+
+Un serveur vocal, un code de conférence, un standard : composer en cours d'appel est
+la dernière chose qu'un téléphone doive savoir faire. `ui:dtmf {tone}` porte **une**
+touche — c'est une touche pressée, pas une séquence — et n'est traité que par les
+trois états de la communication (`inCall()`) : hors de là, il n'y a pas de flux RTP
+où glisser la tonalité, et l'événement est consommé sans effet comme les autres
+commandes désactivées à l'écran.
+
+**Ce qui est affiché est ce qui est parti, et rien d'autre.** Un DTMF est le geste le
+plus discret du téléphone : il voyage dans le flux audio (RFC 4733), aucun paquet SIP
+ne le porte, l'émetteur ne l'entend pas — le navigateur ne rejoue pas ce qu'il insère
+dans le RTP sortant — et personne n'en accuse réception. Trois conséquences, qui font
+toute la conception :
+
+- `CallSession.sendDtmf()` rend un **booléen** plutôt que d'émettre un événement :
+  l'insertion est synchrone, il n'y a rien à attendre (§5.6) ;
+- la vue ne retient la touche (`CallView.dtmfSent`, les 32 dernières) que si le port
+  l'a réellement émise. Afficher un chiffre que le serveur vocal n'a jamais reçu
+  serait pire que ne rien afficher — l'utilisateur attendrait une réponse qui ne
+  viendra pas. L'échec, lui, se dit sur-le-champ (`notice.dtmfFailed`) ;
+- l'écran est la **seule** confirmation qui existe, et l'application s'adresse
+  d'abord à des sourds : l'écho des touches composées reste lisible tout l'appel.
+  Le retour sonore (`ui/screens/call/dtmf.ts`) est une bitonalité synthétisée
+  localement — celle d'un poste téléphonique, pour qui l'entend — et non l'écoute
+  d'un DTMF qui, lui, est déjà parti.
+
+Le pavé lui-même est un **affichage local** : il s'ouvre et se ferme sans que la
+machine en sache rien, comme le repli du panneau latéral, et son état vit hors du DOM
+pour survivre aux re-rendus. Il se referme de lui-même quand l'appel quitte la
+communication. Le clavier physique compose sur tout l'écran d'appel tant qu'il est
+déployé — on regarde son correspondant, pas ses propres boutons —, jamais pendant une
+saisie, et Échap le range.
+
 ## 5. Intégration JsSIP
 
 ```ts
@@ -520,7 +554,7 @@ const ua = new JsSIP.UA({
   "registrationFailed"|"newRTCSession", …)` → `phone.send({type:"sip:…", …})` ;
   idem sur chaque `RTCSession` (`progress`, `accepted`, `confirmed`, `ended`, `failed`)
   → `call.send(…)`.
-- DTMF (phase 4) : `session.sendDTMF(tone)` (RFC 4733 par défaut).
+- DTMF : `session.sendDTMF(tone, { transportType: "RFC2833" })` — §5.6.
 - Tchat (phase 4) : data channel via `session.connection.createDataChannel("t140")` —
   à concevoir après analyse de `../generique/composants/tchat3`.
 
@@ -777,6 +811,25 @@ partent du même `catch`, donc du même tick : le port rapporte `sip:failed` au
 microtask suivant pour les causes qui peuvent porter un détail, et le motif arrive
 complet. Rien d'autre n'étant émis entre-temps, l'ordre des événements vus par la
 machine ne change pas.
+
+### 5.6 DTMF : RFC 4733, et le dire explicitement
+
+JsSIP envoie les DTMF en **SIP INFO** par défaut. Ce n'est pas ce que nous voulons :
+les spécifications demandent la RFC 4733, le seul transport que les passerelles
+attendent sans configuration particulière, et le seul qui reste en phase avec le flux
+audio. Le port passe donc `transportType: "RFC2833"` à chaque envoi — le nom historique,
+dans JsSIP comme ailleurs, de ce que la RFC 4733 a remplacé.
+
+Ce transport a une condition : il faut une piste audio **émise**, dont l'émetteur RTP
+porte un `RTCDTMFSender`. Sans elle, JsSIP se contenterait d'un avertissement dans la
+console et la tonalité serait perdue sans que personne le sache. Le port constate donc
+avant d'envoyer (`dtmfSender()`), refuse une tonalité hors de `0-9 * # A-D`, et rend
+`false` dans tous ces cas — c'est la machine qui décide ce qui s'en dit à l'écran.
+
+Enfin, une tonalité partie en RFC 4733 ne laisse **aucune** trace SIP : le carnet d'un
+appel passé à naviguer dans un serveur vocal ne dirait rien de ce qui a été composé,
+la seule chose qu'on veuille y relire. D'où `traceNote()` (`sip/trace.ts`), qui pose la
+ligne au carnet et à la console, au même réglage que le reste (§5.2).
 
 ## 6. Stockage sécurisé du compte
 

@@ -191,9 +191,20 @@ const messages: Translation = {
   "ctrl.speaker.mute": "关闭声音",
   "ctrl.speaker.unmute": "打开声音",
   "ctrl.dtmf.aria": "DTMF 拨号键盘",
-  "ctrl.dtmf.label": "DTMF 拨号键盘 — 第 4 阶段推出",
+  "ctrl.dtmf.show": "显示 DTMF 拨号键盘",
+  "ctrl.dtmf.hide": "隐藏 DTMF 拨号键盘",
   "ctrl.fullscreen": "全屏",
   "ctrl.hangup": "挂断",
+
+  // ---------------------------------------------------------------------
+  // Clavier DTMF
+  // ---------------------------------------------------------------------
+  "dtmf.aria": "DTMF 拨号键盘",
+  "dtmf.sent": "已发送的按键音",
+  "dtmf.hint": "点击按键或使用键盘输入",
+  "dtmf.keyAria": "按键 {key}",
+  "dtmf.star": "星号",
+  "dtmf.hash": "井号",
 
   // ---------------------------------------------------------------------
   // 通话中请求添加视频
@@ -212,6 +223,7 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} 取消了视频",
   "notice.videoDeclinedHere": "已拒绝视频",
   "notice.videoUnavailable": "目前无法添加视频",
+  "notice.dtmfFailed": "无法发送按键音 {tone}",
 
   // ---------------------------------------------------------------------
   // Panneau latéral

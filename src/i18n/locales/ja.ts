@@ -194,9 +194,20 @@ const messages: Translation = {
   "ctrl.speaker.mute": "音声をミュートする",
   "ctrl.speaker.unmute": "音声のミュートを解除する",
   "ctrl.dtmf.aria": "DTMF キーパッド",
-  "ctrl.dtmf.label": "DTMF キーパッド — フェーズ 4 で提供",
+  "ctrl.dtmf.show": "DTMF キーパッドを表示",
+  "ctrl.dtmf.hide": "DTMF キーパッドを閉じる",
   "ctrl.fullscreen": "全画面表示",
   "ctrl.hangup": "通話を切る",
+
+  // ---------------------------------------------------------------------
+  // Clavier DTMF
+  // ---------------------------------------------------------------------
+  "dtmf.aria": "DTMF キーパッド",
+  "dtmf.sent": "送信したトーン",
+  "dtmf.hint": "キーまたはキーボードで入力してください",
+  "dtmf.keyAria": "{key} キー",
+  "dtmf.star": "アスタリスク",
+  "dtmf.hash": "シャープ",
 
   // ---------------------------------------------------------------------
   // 通話中のビデオ追加要求
@@ -215,6 +226,7 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} がビデオを削除しました",
   "notice.videoDeclinedHere": "ビデオを拒否しました",
   "notice.videoUnavailable": "現在ビデオを追加できません",
+  "notice.dtmfFailed": "トーン {tone} を送信できませんでした",
 
   // ---------------------------------------------------------------------
   // Panneau latéral

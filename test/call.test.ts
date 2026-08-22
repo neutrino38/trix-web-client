@@ -38,6 +38,15 @@ class FakeSession implements CallSession {
   setVideo(on: boolean): void {
     this.video.push(on);
   }
+  /** Les tonalités reçues par le port, et ce qu'il en fait (cf. `dtmfFails`). */
+  tones: string[] = [];
+  /** Le port refuse d'émettre : pas de piste audio, session en train de finir. */
+  dtmfFails = false;
+  sendDtmf(tone: string): boolean {
+    if (this.dtmfFails) return false;
+    this.tones.push(tone);
+    return true;
+  }
   attachMedia(): void {}
   /** Le bilan média que le port aurait mesuré si la trace était active. */
   statsSummary: MediaStats | null = null;
@@ -672,5 +681,66 @@ describe("CallBlock — raccrocher pendant une question de vidéo", () => {
     call.send({ type: "ui:hangup" });
     expect(decisions).toEqual(["reject"]);
     expect(call.sbb?.state).toBe("hangingup");
+  });
+});
+
+describe("CallBlock — DTMF", () => {
+  /** Un appel établi, prêt à composer. */
+  function connected() {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:accepted" });
+    return { call, box };
+  }
+
+  it("en communication : la tonalité part et rejoint l'écho de la vue", () => {
+    const { call, box } = connected();
+    call.send({ type: "ui:dtmf", tone: "4" });
+    call.send({ type: "ui:dtmf", tone: "*" });
+    expect(box.session.tones).toEqual(["4", "*"]);
+    expect(call.context.call?.dtmfSent).toBe("4*");
+    // composer ne fait pas bouger l'appel
+    expect(call.sbb?.state).toBe("connected");
+  });
+
+  it("tonalité perdue : rien dans l'écho, un message le dit", () => {
+    const { call, box } = connected();
+    box.session.dtmfFails = true;
+    call.send({ type: "ui:dtmf", tone: "7" });
+    expect(box.session.tones).toEqual([]);
+    expect(call.context.call?.dtmfSent).toBe("");
+    expect(call.context.call?.notice?.message).toEqual({
+      key: "notice.dtmfFailed",
+      vars: { tone: "7" },
+    });
+  });
+
+  it("l'écho ne garde que les dernières tonalités", () => {
+    const { call } = connected();
+    for (const tone of "0123456789") call.send({ type: "ui:dtmf", tone });
+    for (const tone of "0123456789") call.send({ type: "ui:dtmf", tone });
+    for (const tone of "0123456789") call.send({ type: "ui:dtmf", tone });
+    for (const tone of "01") call.send({ type: "ui:dtmf", tone });
+    const sent = call.context.call?.dtmfSent ?? "";
+    expect(sent).toHaveLength(32);
+    expect(sent.endsWith("678901")).toBe(true);
+  });
+
+  it("une renégociation en vol n'empêche pas de composer", () => {
+    const { call, box } = connected();
+    call.send({ type: "ui:toggleVideo" });
+    expect(call.sbb?.state).toBe("renegotiating");
+    call.send({ type: "ui:dtmf", tone: "1" });
+    expect(box.session.tones).toEqual(["1"]);
+    expect(call.sbb?.state).toBe("renegotiating");
+  });
+
+  it("hors communication : la touche est consommée, rien n'est émis", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:progress" });
+    call.send({ type: "ui:dtmf", tone: "5" });
+    expect(box.session.tones).toEqual([]);
+    expect(call.sbb?.state).toBe("ringing");
   });
 });

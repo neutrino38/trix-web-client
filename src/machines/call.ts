@@ -85,6 +85,8 @@ export interface CallData {
   videoPending: boolean;
   /** Vidéo proposée par le distant, en attente de la décision de l'utilisateur. */
   videoOffer: MediaOffer | null;
+  /** Les tonalités DTMF réellement parties, dans l'ordre de composition. */
+  dtmfSent: string;
   /** Dernier message fugace publié, et le numéro d'ordre qui le distingue. */
   notice: CallNotice | null;
   noticeSeq: number;
@@ -130,6 +132,7 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
     selfViewHidden: data.selfViewHidden,
     videoPending: data.videoPending,
     videoAsked: data.videoOffer !== null,
+    dtmfSent: data.dtmfSent,
     notice: data.notice,
     connectedAt: data.connectedAt,
     endedBy: data.endedBy,
@@ -316,6 +319,9 @@ function interruptions(ending: Ending): CallOn {
     // désactivés à l'écran pendant l'appel : consommés pour qu'un clic ne
     // reste pas en attente et ne s'exécute pas après coup
     "ui:toggleVideo": () => undefined,
+    // le clavier DTMF n'existe qu'en communication : hors de là, il n'y a
+    // pas de flux RTP où glisser la tonalité
+    "ui:dtmf": () => undefined,
     "ui:acceptVideo": () => undefined,
     "ui:rejectVideo": () => undefined,
     "ui:backToSettings": () => undefined,
@@ -327,6 +333,13 @@ function interruptions(ending: Ending): CallOn {
     "sys:wake": () => undefined,
   };
 }
+
+/**
+ * Combien de tonalités la vue garde. Un code de conférence en fait une
+ * douzaine, un menu vocal quelques-unes de plus ; au-delà, ce sont les
+ * dernières qui intéressent — et l'écho de l'écran a une largeur finie.
+ */
+const DTMF_KEPT = 32;
 
 /**
  * Ce que les trois états de la communication partagent — `connected` et
@@ -379,6 +392,22 @@ function inCall(): CallOn {
       publish("connected", ctx, fx.data);
       return stay("self-view");
     },
+    /**
+     * Une touche du clavier DTMF. La tonalité part dans le flux audio
+     * (RFC 4733) et n'y laisse aucune trace visible : ce que la vue en
+     * garde est tout ce qui dira qu'elle est partie. Elle ne s'y ajoute
+     * donc que si le port l'a réellement émise — afficher un chiffre que
+     * le serveur vocal n'a jamais reçu serait pire que ne rien afficher.
+     */
+    "ui:dtmf": (ev, ctx, fx) => {
+      if (fx.data.session?.sendDtmf(ev.tone) !== true) {
+        notify(ctx, fx, msg("notice.dtmfFailed", { tone: ev.tone }));
+        return stay("DTMF perdu");
+      }
+      fx.data.dtmfSent = (fx.data.dtmfSent + ev.tone).slice(-DTMF_KEPT);
+      publish("connected", ctx, fx.data);
+      return stay("DTMF");
+    },
   };
 }
 
@@ -413,6 +442,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
     selfViewHidden: false,
     videoPending: false,
     videoOffer: null,
+    dtmfSent: "",
     notice: null,
     noticeSeq: 0,
     endingAs: "canceled",
@@ -821,6 +851,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         "ui:toggleVideo": () => undefined,
         "ui:acceptVideo": () => undefined,
         "ui:rejectVideo": () => undefined,
+        "ui:dtmf": () => undefined,
         "sip:registrationFailed": () => undefined,
         "sip:registered": () => undefined,
         "sip:connected": () => undefined,

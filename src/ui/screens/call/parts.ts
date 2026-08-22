@@ -23,6 +23,7 @@ import { announce } from "../../announce.js";
 import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
 import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
+import { wireDtmf } from "./dtmf.js";
 import { LENS_ICON, showStatsDialog, startMediaStats } from "./stats.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
@@ -478,6 +479,12 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       });
     }
   }
+
+  // --- clavier DTMF ---------------------------------------------------------
+  // Le pavé s'ouvre et se ferme sans la machine (call/dtmf.ts) ; seule la
+  // tonalité pressée lui est envoyée, et c'est elle qui décidera si elle
+  // rejoint l'écho de l'écran.
+  wireDtmf(node, (tone) => phone.send({ type: "ui:dtmf", tone }));
 
   // --- panneau latéral (repli, largeur) ------------------------------------
   // absent de la vue mobile : `wirePanel` ne trouve alors ni bouton ni

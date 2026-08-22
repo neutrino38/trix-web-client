@@ -13,6 +13,7 @@ import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { videoAskDialog } from "./videoask.js";
+import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
 import { statsPill } from "./stats.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
@@ -114,6 +115,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                        : `<div class="call-overlay">${esc(callLabel(view.state))}…<br>
                             <span class="target">${esc(displayTarget(view.target))}</span></div>`
                    }
+                   ${dtmfPad(view)}
                    ${overlayBar({
                      view,
                      speakerMuted,
