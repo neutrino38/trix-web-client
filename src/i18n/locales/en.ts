@@ -89,6 +89,21 @@ const messages: Translation = {
   "config.turnNote":
     "The TURN password, by contrast, is stored (encrypted): the relay asks for the secret itself on every call, so a digest would not do.",
 
+  "config.section.rtt": "Real-time text",
+  "config.rttHint":
+    "Text is written and read character by character during the call. Which path it takes depends on the platform you are calling.",
+  "config.rttTransport": "Transport",
+  "config.rttNone": "None",
+  "config.rttNoneDesc": " — the call goes as before: nothing is added to what is negotiated",
+  "config.rttWs": "Over WebSocket",
+  "config.rttWsDesc":
+    " — the non-standard format of gateways already deployed: what services in place understand",
+  "config.rttDc": "Over data channel",
+  "config.rttDcDesc":
+    " — the standard (RFC 8865), the one to pick when talking to a standard real-time text client",
+  "config.rttNote":
+    "Saved with the account. When in doubt, leave it on “None”: offering text changes the offer of every call you make, and a server that is not expecting it may take it badly.",
+
   "config.section.alerts": "Alerts and display",
   "config.alertsHint":
     "These settings take effect straight away, without waiting for registration — except the flash, which follows the account.",

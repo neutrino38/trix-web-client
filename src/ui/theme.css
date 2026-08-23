@@ -187,6 +187,11 @@ fieldset.field { border: none; }
   text-transform: none; letter-spacing: normal;
 }
 .field .radio input { accent-color: var(--accent); cursor: pointer; }
+/* Choix mutuellement exclusifs qui ne tiennent pas sur une ligne : chacun
+   porte son intitulé et ce qu'il implique, comme une case à cocher. */
+.radio-col { display: flex; flex-direction: column; gap: 0.4rem; }
+.radio-col .radio { align-items: baseline; font-size: 0.78rem; color: var(--ink-soft); }
+.radio-col .radio b { font-weight: 600; color: var(--ink); }
 /* un bouton d'action dans un champ ne s'étire pas à la largeur du formulaire :
    il agit sur un seul réglage, sa taille doit le dire */
 .field .btn { align-self: flex-start; }

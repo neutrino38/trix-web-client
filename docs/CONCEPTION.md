@@ -569,13 +569,72 @@ laisse explicitement le récepteur décider selon ses capacités et les préfér
 l'utilisateur (§8.8) : un `31` devient `--red`, pas `#FF0000`. Sans quoi un
 correspondant peindrait du jaune sur notre fond clair, ou du bleu nuit sur le sombre.
 
-#### Le transport (RFC 8865)
+#### Le transport : deux tuyaux, un seul contrat
 
-Data channel **fiable et ordonné**, `subprotocol="t140"`, ni `max-retr` ni
-`max-time` — la redondance de RFC 4103 n'a pas lieu d'être ici, SCTP garantit déjà la
-livraison et l'ordre. Débit annoncé `cps=30`, tampon d'émission **300 ms** (500 ms au
-maximum, ce qui rejoint le « 0,5 s » de T.140 §6.1.1), un canal par correspondant, et
-`U+FFFD` inséré à la reprise si le canal a été rompu.
+La cible est **RFC 8865** : data channel fiable et ordonné, `subprotocol="t140"`, ni
+`max-retr` ni `max-time` — la redondance de RFC 4103 n'a pas lieu d'être ici, SCTP
+garantit déjà la livraison et l'ordre. Débit annoncé `cps=30`, signature de session en
+tête du flux, un canal par correspondant.
+
+Mais les plateformes qu'il faut appeler **aujourd'hui** ne le parlent pas : elles
+transportent le même flux T.140 sur un **WebSocket**, ouvert à une URL que la passerelle
+annonce dans la réponse SDP, sur une section `m=text` que l'offre a proposée —
+
+```
+offre    m=text 60000 TCP/WSS t140   (a=setup:active, a=connection:new, a=sendrecv)
+réponse  m=text 60000 TCP/WSS t140   a=wss://passerelle.example.fr/rtt/42
+```
+
+C'est non standard, mais le **flux lui-même est intact** : caractères, `U+0008`,
+`U+2028`, `BEL`, `U+FFFD`. Seul le tuyau change — ce qui rend les deux
+interchangeables sous une seule interface, `RttChannel` (`sip/rtt.ts`). Le choix est
+un **réglage du compte** (`AccountConfig.rtt`), au même titre que le proxy et les
+serveurs ICE : c'est l'opérateur qui sait ce que sa plateforme reçoit.
+
+Trois valeurs, et le défaut est **`none`** — comptes migrés compris. Proposer le texte
+modifie l'offre SDP de *tous* les appels du compte ; un serveur qui ne l'attend pas
+devrait répondre par un port nul (RFC 3264 §6), mais une pile stricte peut refuser
+l'INVITE entier, et un appel perdu pour une fonction que personne n'a demandée serait
+un mauvais échange. Le texte s'active donc en connaissance de cause, comme les serveurs
+ICE. `none` ne pose même pas d'écouteur sur la signalisation : l'appel se négocie
+exactement comme avant l'existence de ce réglage.
+
+**La règle du branchement tient en une phrase : la section `m=text` est ajoutée à ce
+qui part, et retirée de ce qui arrive avant que le navigateur ne la voie.** Chrome ne
+connaît pas `m=text TCP/WSS` ; une description distante qui en porte une est refusée
+par `setRemoteDescription`, et une réponse qui compte une section de plus que l'offre
+locale ne correspond plus à ce que la connexion a rédigé. Le texte vit donc entièrement
+en dehors de la pile WebRTC. Quatre passages sur l'événement `sdp` de JsSIP, et rien
+d'autre (`sip/rttsip.ts`) :
+
+| SDP | qui | quoi |
+|---|---|---|
+| offre | locale | on **ajoute** la section, en dernier |
+| réponse | distante | on **lit** l'URL, puis on **retire** la section |
+| offre | distante | on **lit** l'URL, puis on **retire** la section |
+| réponse | locale | on **ajoute** la section, au rang qu'elle occupait dans l'offre |
+
+Le rôle — appelant, appelé — n'y entre pas : ces quatre cas le décrivent déjà,
+re-INVITE compris. Le rang est repris de l'offre parce que l'ordre des sections d'une
+réponse est celui de l'offre (RFC 3264 §6), et on ne propose jamais de texte dans une
+réponse à une offre qui n'en portait pas.
+
+Le canal, lui, **existe dès le début de l'appel** et reste le même jusqu'au
+raccrochage : ce qui est tapé pendant la sonnerie attend dans son tampon et part à
+l'ouverture, et son état (`connecting`, `open`, `lost`, `closed`) dit à l'interface où
+en est le lien sans qu'elle ait à guetter un objet qui apparaît. Un distant qui refuse
+le texte — port nul, ou pas un mot à ce sujet — le ferme au lieu de le laisser
+espérer. Il s'expose par `CallSession.rtt()`, et l'on s'y abonne par `listen()` : le
+premier abonné reçoit ce qui est arrivé avant lui, le panneau de tchat n'ayant aucune
+raison de s'ouvrir avant le premier caractère d'un correspondant pressé.
+
+Ce qui est commun aux deux vit au-dessus des fils : tampon d'émission **300 ms**
+(500 ms au maximum, ce qui rejoint le « 0,5 s » de T.140 §6.1.1), envoi immédiat au
+delà de quatre caractères en attente, découpage des salves **sur des frontières de
+graphèmes**, file d'attente qui survit à une rupture. Ce qui les sépare tient à la
+nature du fil : le WebSocket se reconnecte (dix essais, une seconde) et insère
+`U+FFFD` à la reprise, puisque du texte distant a manqué ; un canal de données fermé
+est fermé — SCTP ne perd rien en route.
 
 #### Le fil : une seule bulle vivante par côté
 
@@ -692,8 +751,12 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
 - `sip/t140.ts` — le codec, **sans DOM** : décodage du flux en événements
   (texte, effacement, fin de bulle, alerte, attributs, perte) et calcul du différentiel
   d'émission. Pur, donc testé comme `sdp.ts` ou `ice.ts`.
-- `sip/rtt.ts` — le canal : ouverture, signature de session, tampon 300 ms, découpage
-  des messages, reprise après rupture.
+- `sip/rtt.ts` — le canal : contrat commun (`RttChannel`), tampon 300 ms, découpage des
+  messages, file d'attente, abonnement, et la fabrique qui choisit le fil ;
+  `sip/rttws.ts` (retouches SDP et socket des passerelles) et `sip/rttdc.ts` (RFC 8865,
+  signature de session) sont les deux fils, et l'interface n'en connaît aucun ;
+  `sip/rttsip.ts` branche le premier sur la signalisation — c'est le seul module qui
+  touche à l'événement `sdp`.
 - `ui/screens/call/chat.ts` — le panneau : onglets, fil, bulles, composeur.
 - `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle.
 
@@ -728,9 +791,15 @@ const ua = new JsSIP.UA({
   idem sur chaque `RTCSession` (`progress`, `accepted`, `confirmed`, `ended`, `failed`)
   → `call.send(…)`.
 - DTMF : `session.sendDTMF(tone, { transportType: "RFC2833" })` — §5.6.
-- Tchat (phase 4) : data channel `session.connection.createDataChannel("t140", {
-  ordered: true })` — sous-protocole `t140`, fiable et ordonné (RFC 8865). Conception,
-  niveau de support de la norme et enseignements de `tchat3` en §4.9.
+- Tchat (phase 4) : selon `AccountConfig.rtt` — `none` (défaut, rien n'est branché),
+  WebSocket ouvert à l'URL que le SDP
+  distant annonce — l'offre ayant été complétée d'une section `m=text`, retirée de tout
+  ce qui remonte au navigateur (`sip/rttsip.ts`, branché sur l'événement `sdp` de la
+  session) — ou data channel
+  `session.connection.createDataChannel("t140", { ordered: true, protocol: "t140" })`,
+  fiable et ordonné (RFC 8865), dont la négociation reste à écrire. La session expose le
+  lien par `CallSession.rtt()` ; au-dessus, personne ne sait par où le texte passe.
+  Conception, niveau de support de la norme et enseignements de `tchat3` en §4.9.
 
 ### 5.1 Serveurs ICE (STUN / TURN)
 
@@ -1034,6 +1103,7 @@ interface AccountConfig {
   ha1: string;          // jamais le mot de passe
   flashAlert: boolean;  // réglage d'accessibilité (§4.3) — suit le compte, pas le navigateur
   ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
+  rtt: RttTransport;    // texte en temps réel (§4.9) — aucun (défaut), WebSocket, ou canal de données
 }
 interface SecureStore {
   load(): Promise<AccountConfig | null>;

@@ -2,6 +2,7 @@ import type { SbbReturn, TaskResult } from "finite-state-language";
 import type { AccountConfig, CallDirection, CallLogEntry } from "../storage/store.js";
 import type { CallMedia, CallSession, CallSipEvent, SipEvent } from "../sip/port.js";
 import type { Msg } from "../i18n/types.js";
+import type { RttTransport } from "../sip/rtt.js";
 
 /** Contenu du formulaire de configuration. `password: null` = inchangé (conserver le HA1 existant). */
 export interface ConfigForm {
@@ -23,6 +24,8 @@ export interface ConfigForm {
   turnPassword: string | null;
   /** TURN sur TLS (`turns:`). */
   turnTls: boolean;
+  /** Transport du texte en temps réel — WebSocket ou canal de données. */
+  rtt: RttTransport;
 }
 
 /**

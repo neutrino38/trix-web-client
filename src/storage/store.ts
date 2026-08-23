@@ -9,6 +9,7 @@ import type { CallMedia } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
+import { parseRttTransport, type RttTransport } from "../sip/rtt.js";
 import { rawMsg, type Msg } from "../i18n/types.js";
 
 export interface AccountConfig {
@@ -32,6 +33,16 @@ export interface AccountConfig {
    * son introduction — l'appel se comporte comme avant.
    */
   ice: IceConfig;
+  /**
+   * Transport du texte en temps réel (`sip/rtt.ts`). Réglage du compte,
+   * comme le proxy et les serveurs ICE : c'est la plateforme de
+   * l'opérateur qui décide de ce qu'elle sait recevoir — WebSocket pour
+   * les services déjà déployés, canal de données pour les clients
+   * standards, et `none` pour n'en proposer aucun. Aucun pour les comptes
+   * enregistrés avant son introduction : leurs appels ne doivent pas
+   * changer de forme sans qu'on l'ait demandé.
+   */
+  rtt: RttTransport;
 }
 
 export type CallDirection = "outgoing" | "incoming";
@@ -203,13 +214,14 @@ export function createBrowserStore(): SecureStore {
         const cfg = (await decryptGet(db, DATA_ID)) as AccountConfig | null;
         if (!cfg) return null;
         // comptes enregistrés avant l'ajout de ces champs : identifiant séparé
-        // absent, flash actif (le désactiver ne peut être qu'un choix explicite)
-        // et aucun serveur ICE
+        // absent, flash actif (le désactiver ne peut être qu'un choix explicite),
+        // aucun serveur ICE et aucun texte en temps réel
         return {
           ...cfg,
           authUsername: cfg.authUsername ?? null,
           flashAlert: cfg.flashAlert ?? true,
           ice: cfg.ice ?? { ...NO_ICE },
+          rtt: parseRttTransport(cfg.rtt),
         };
       } finally {
         db.close();

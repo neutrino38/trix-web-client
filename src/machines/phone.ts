@@ -28,6 +28,7 @@ import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
 import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { parseIceForm } from "../sip/ice.js";
+import { parseRttTransport } from "../sip/rtt.js";
 import { msg, type Msg } from "../i18n/types.js";
 
 export interface PhoneCtx {
@@ -244,6 +245,9 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     ha1,
     flashAlert: f.flashAlert,
     ice: ice.ice,
+    // rien à valider : le choix vient d'un bouton radio, et une valeur
+    // inconnue (compte migré, formulaire trafiqué) retombe sur le défaut
+    rtt: parseRttTransport(f.rtt),
   };
   return goto("saving");
 }

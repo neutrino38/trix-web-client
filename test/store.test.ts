@@ -15,6 +15,7 @@ const CFG: AccountConfig = {
   ha1: "939e7578ed9e3c518a452acee763bce9",
   flashAlert: true,
   ice: NO_ICE,
+  rtt: "websocket",
 };
 
 /** L'enregistrement chiffré tel qu'il est réellement écrit dans IndexedDB. */
@@ -87,6 +88,22 @@ describe("browserStore", () => {
     delete legacy.flashAlert;
     await store.save(legacy as AccountConfig);
     expect((await store.load())!.flashAlert).toBe(true);
+  });
+
+  it("compte enregistré avant le choix du transport texte : aucun", async () => {
+    const store = createBrowserStore();
+    const legacy = { ...CFG } as Partial<AccountConfig>;
+    delete legacy.rtt;
+    await store.save(legacy as AccountConfig);
+    // proposer du texte modifie l'offre SDP de tous ses appels : ce
+    // compte-là ne l'a jamais demandé
+    expect((await store.load())!.rtt).toBe("none");
+  });
+
+  it("transport texte conservé au round-trip", async () => {
+    const store = createBrowserStore();
+    await store.save({ ...CFG, rtt: "datachannel" });
+    expect((await store.load())!.rtt).toBe("datachannel");
   });
 
   it("clear efface le compte", async () => {

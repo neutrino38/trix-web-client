@@ -8,6 +8,7 @@ import type { SuspectField } from "../../machines/events.js";
 import { langPicker, wireLangPicker } from "../langpicker.js";
 import { t } from "../../i18n/index.js";
 import type { MsgKey } from "../../i18n/types.js";
+import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
 
 /**
  * État de la permission de notification — le seul canal d'alerte qui traverse
@@ -41,6 +42,17 @@ const THEMES: { id: ThemeChoice; label: MsgKey }[] = [
   { id: "light", label: "theme.light" },
   { id: "dark", label: "theme.dark" },
 ];
+
+/**
+ * Libellés des transports du texte en temps réel. La liste elle-même vit
+ * dans `sip/rtt.ts` : en ajouter un se voit à la compilation ici, faute
+ * de clé — l'écran ne peut pas en oublier un en silence.
+ */
+const RTT_LABELS: Record<RttTransport, { label: MsgKey; desc: MsgKey }> = {
+  none: { label: "config.rttNone", desc: "config.rttNoneDesc" },
+  websocket: { label: "config.rttWs", desc: "config.rttWsDesc" },
+  datachannel: { label: "config.rttDc", desc: "config.rttDcDesc" },
+};
 
 export function renderConfig(phone: PhoneInstance): HTMLElement {
   const cfg = phone.context.config;
@@ -136,6 +148,27 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         </div>
         <div class="note">${esc(t("config.turnNote"))}</div>
 
+        <!-- Le texte en temps réel voyage par un tuyau que la plateforme
+             de l'opérateur choisit : il est ici, avec les autres réglages
+             de transport, et non avec les réglages d'affichage. -->
+        <h3>${esc(t("config.section.rtt"))}</h3>
+        <p class="section-hint">${esc(t("config.rttHint"))}</p>
+        <fieldset class="field">
+          <legend class="field-title">${esc(t("config.rttTransport"))}</legend>
+          <div class="radio-col">
+            ${RTT_TRANSPORTS.map(
+              (id) => `<label class="radio">
+                        <input type="radio" name="rtt" value="${id}"
+                               ${(cfg?.rtt ?? DEFAULT_RTT_TRANSPORT) === id ? "checked" : ""}>
+                        <span><b>${esc(t(RTT_LABELS[id].label))}</b>${esc(
+                          t(RTT_LABELS[id].desc),
+                        )}</span>
+                      </label>`,
+            ).join("")}
+          </div>
+          <span class="hint">${esc(t("config.rttNote"))}</span>
+        </fieldset>
+
         </section>
 
         <section class="config-col">
@@ -214,6 +247,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
     const password = v("password");
     const turnPass = v("turnPassword");
     const authUsername = authToggle.checked ? v("authUsername") : "";
+    const rtt = form.querySelector<HTMLInputElement>('input[name="rtt"]:checked');
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -228,6 +262,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         turnUsername: v("turnUsername"),
         turnPassword: turnPass === "" ? null : turnPass,
         turnTls: turnTls.checked,
+        rtt: (rtt?.value as RttTransport | undefined) ?? DEFAULT_RTT_TRANSPORT,
       },
     });
   });

@@ -99,6 +99,17 @@ const messages: Translation = {
   "config.turnNote":
     "TURN 密码则会（加密）保存：中继在每次通话时都要求密码本身，摘要不够用。",
 
+  "config.section.rtt": "实时文字",
+  "config.rttHint": "通话过程中，文字逐字发出、逐字读到。走哪条路，取决于您呼叫的平台。",
+  "config.rttTransport": "传输方式",
+  "config.rttNone": "无",
+  "config.rttNoneDesc": " — 通话与以往一样：不往协商内容里添加任何东西",
+  "config.rttWs": "经 WebSocket",
+  "config.rttWsDesc": " — 已部署网关使用的非标准格式：在运行的服务只认它",
+  "config.rttDc": "经数据通道",
+  "config.rttDcDesc": " — 标准做法（RFC 8865），与标准实时文字客户端通话时选它",
+  "config.rttNote": "随账号保存。拿不准就保留“无”：提出文字会改变您每一次呼叫的提议，不预期它的服务器可能因此出错。",
+
   "config.section.alerts": "提醒与显示",
   "config.alertsHint": "这些设置立即生效，无需等待注册 — 闪烁提醒除外，它随账号保存。",
   "config.flashLabel": "来电时闪烁屏幕",

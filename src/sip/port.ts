@@ -18,6 +18,8 @@ import {
   type MediaFailure,
 } from "./mediaerror.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
+import type { RttChannel } from "./rtt.js";
+import { openRttFor, type RttNegotiation } from "./rttsip.js";
 import { sipTraceEnabled, traceNote } from "./trace.js";
 
 export type SipEvent =
@@ -147,6 +149,13 @@ export interface CallSession {
    * connexion pair-à-pair ne survivant pas à la fin de session.
    */
   callStats(): MediaStats | null;
+  /**
+   * Le lien texte en temps réel de l'appel (§4.9), ou `null` quand le
+   * compte n'en demande pas. Il existe **dès le début de l'appel** et ne
+   * change pas : c'est son état qui dit si le distant a suivi. Ce qui est
+   * tapé avant l'ouverture attend dans son tampon.
+   */
+  rtt(): RttChannel | null;
 }
 
 /**
@@ -280,7 +289,7 @@ export function createJsSipPort(): SipPort {
           if (e.originator !== "remote") return;
           send({
             type: "sip:incoming",
-            call: wrapIncoming(e.session, e.request, pcConfig),
+            call: wrapIncoming(e.session, e.request, pcConfig, cfg),
           });
         },
       );
@@ -304,7 +313,15 @@ export function createJsSipPort(): SipPort {
             pcConfig,
           });
           bindSession(session, sendCall);
-          return wrapSession(session, book, mediaControl(session, sendCall));
+          // le texte se greffe avant que le premier SDP ne soit rédigé :
+          // `ua.call()` a lancé la négociation, elle n'est pas encore
+          // arrivée à l'offre (getUserMedia d'abord)
+          return wrapSession(
+            session,
+            book,
+            mediaControl(session, sendCall),
+            openRttFor(cfg.rtt, session),
+          );
         },
       };
     },
@@ -389,6 +406,7 @@ function wrapIncoming(
   session: Session,
   request: { body?: string | null; call_id?: string },
   pcConfig: RTCConfiguration,
+  cfg: AccountConfig,
 ): IncomingCall {
   const from = session.remote_identity;
   const offer = request.body ?? null;
@@ -407,11 +425,15 @@ function wrapIncoming(
     listen(send) {
       bindSession(session, send);
       control = mediaControl(session, send);
+      // le texte se greffe avant `answer()` : c'est là que JsSIP présente
+      // l'offre distante, dont il faut retirer la section texte avant que
+      // le navigateur ne la voie
+      const rtt = openRttFor(cfg.rtt, session);
       // le carnet ne s'ouvre qu'ici, jamais à l'arrivée de l'INVITE : un
       // second appel refusé « occupé » n'est pas écouté, et n'a donc pas de
       // carnet à voler à la communication en cours. L'INVITE, lui, est déjà
       // passé — le Call-ID sert à le rattraper.
-      return wrapSession(session, openCallTrace(request.call_id ?? null), control);
+      return wrapSession(session, openCallTrace(request.call_id ?? null), control, rtt);
     },
     answer(media) {
       // répondre « audio seul » à une offre audio + vidéo se dit dans la
@@ -816,13 +838,20 @@ function wrapSession(
   session: RtcSessionLike,
   book: CallTraceHandle,
   control: MediaControl,
+  rtt: RttNegotiation | null,
 ): CallSession {
   const media = collectStats(session);
   // la caméra que nous avons ouverte survivrait au dialogue : JsSIP ne
   // referme que le flux qu'il a demandé lui-même
   session.on("ended", control.release);
   session.on("failed", control.release);
+  // le socket texte est hors de la connexion pair-à-pair : rien ne le
+  // refermerait avec l'appel, et il se reconnecterait tout seul
+  const closeRtt = (): void => rtt?.close();
+  session.on("ended", closeRtt);
+  session.on("failed", closeRtt);
   return {
+    rtt: () => rtt?.channel ?? null,
     terminate() {
       if (!session.isEnded()) session.terminate();
     },

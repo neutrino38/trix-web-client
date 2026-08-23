@@ -48,6 +48,10 @@ class FakeSession implements CallSession {
     return true;
   }
   attachMedia(): void {}
+  /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
+  rtt(): null {
+    return null;
+  }
   /** Le bilan média que le port aurait mesuré si la trace était active. */
   statsSummary: MediaStats | null = null;
   mediaStats(): MediaStats | null {

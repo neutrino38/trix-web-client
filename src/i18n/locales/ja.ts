@@ -98,6 +98,21 @@ const messages: Translation = {
   "config.turnNote":
     "TURN のパスワードは、これだけは（暗号化して）保存されます。中継は通話のたびに秘密そのものを求めるため、ダイジェストでは足りません。",
 
+  "config.section.rtt": "リアルタイム文字",
+  "config.rttHint":
+    "文字は通話中に一文字ずつ書かれ、読まれます。どの経路を通るかは、発信先のプラットフォームによって決まります。",
+  "config.rttTransport": "転送方式",
+  "config.rttNone": "なし",
+  "config.rttNoneDesc": " — 通話はこれまでどおり。ネゴシエーションに何も加えません",
+  "config.rttWs": "WebSocket 経由",
+  "config.rttWsDesc":
+    " — すでに配備されているゲートウェイの非標準の形式。稼働中のサービスが理解できるのはこちらです",
+  "config.rttDc": "データチャネル経由",
+  "config.rttDcDesc":
+    " — 標準（RFC 8865）。標準的なリアルタイム文字クライアントと話すならこちらです",
+  "config.rttNote":
+    "アカウントとともに保存されます。迷ったら「なし」のままに。文字を申し出ると発信するすべての通話のオファーが変わり、それを想定していないサーバーでは不調の原因になります。",
+
   "config.section.alerts": "通知と表示",
   "config.alertsHint":
     "これらの設定は、登録を待たずにすぐ反映されます。ただしフラッシュはアカウントに従います。",

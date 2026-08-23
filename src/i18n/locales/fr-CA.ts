@@ -104,6 +104,22 @@ const messages: Translation = {
   "config.turnNote":
     "Le mot de passe TURN, lui, est gardé (chiffré) : le relais redemande le secret lui-même à chaque appel, une empreinte ne ferait pas l'affaire.",
 
+  "config.section.rtt": "Texte en temps réel",
+  "config.rttHint":
+    "Le texte s'écrit et se lit caractère par caractère pendant l'appel. Le chemin qu'il prend dépend de la plateforme que vous appelez.",
+  "config.rttTransport": "Transport",
+  "config.rttNone": "Aucun",
+  "config.rttNoneDesc":
+    " — l'appel se passe comme avant : rien n'est ajouté à ce qui est négocié",
+  "config.rttWs": "Sur WebSocket",
+  "config.rttWsDesc":
+    " — le format non standard des passerelles déjà déployées : c'est ce que comprennent les services en place",
+  "config.rttDc": "Sur canal de données",
+  "config.rttDcDesc":
+    " — la norme (RFC 8865), à prendre pour parler à un client de texte en temps réel standard",
+  "config.rttNote":
+    "Gardé avec le compte. Dans le doute, laissez « Aucun » : proposer du texte change l'offre de tous vos appels, et un serveur qui ne s'y attend pas peut mal le prendre.",
+
   "config.section.alerts": "Alertes et affichage",
   "config.alertsHint":
     "Ces réglages prennent effet tout de suite, sans attendre l'enregistrement — sauf le flash, qui suit le compte.",

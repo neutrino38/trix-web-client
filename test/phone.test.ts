@@ -29,6 +29,7 @@ const CFG: AccountConfig = {
   ha1: computeHa1("alice", "example.fr", "secret123"),
   flashAlert: true,
   ice: NO_ICE,
+  rtt: "websocket",
 };
 
 function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[] = []) {
@@ -73,6 +74,10 @@ class FakeCallSession {
     this.video.push(on);
   }
   attachMedia(): void {}
+  /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
+  rtt(): null {
+    return null;
+  }
   /** Le bilan média que le port aurait mesuré si la trace était active. */
   statsSummary: MediaStats | null = null;
   mediaStats(): MediaStats | null {
@@ -206,6 +211,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -231,6 +237,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -254,6 +261,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     expect(phone.state).toBe("configuring");
@@ -277,6 +285,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -302,6 +311,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     expect(phone.state).toBe("configuring");
@@ -325,6 +335,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -349,6 +360,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     expect(phone.state).toBe("configuring");
@@ -372,6 +384,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     expect(phone.state).toBe("configuring");
@@ -395,6 +408,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "alice",
         turnPassword: "relais",
         turnTls: true,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -422,6 +436,7 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     expect(phone.state).toBe("configuring");
@@ -447,11 +462,63 @@ describe("PhoneMachine — configuration", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
     expect(box.saved!.flashAlert).toBe(false);
     expect(phone.context.config!.flashAlert).toBe(false);
+  });
+
+  it("transport du texte en temps réel : persisté avec le compte", async () => {
+    const { phone, box } = await bootTo("home", CFG);
+    phone.send({ type: "ui:configure" });
+    phone.send({
+      type: "ui:saveConfig",
+      form: {
+        proxy: CFG.proxy,
+        uri: `${CFG.username}@${CFG.domain}`,
+        displayName: CFG.displayName,
+        authUsername: null,
+        password: null,
+        flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
+        rtt: "datachannel",
+      },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(box.saved!.rtt).toBe("datachannel");
+    expect(phone.context.config!.rtt).toBe("datachannel");
+  });
+
+  it("transport inconnu : le compte retombe sur « aucun », sans échouer", async () => {
+    const { phone, box } = await bootTo("home", CFG);
+    phone.send({ type: "ui:configure" });
+    phone.send({
+      type: "ui:saveConfig",
+      form: {
+        proxy: CFG.proxy,
+        uri: `${CFG.username}@${CFG.domain}`,
+        displayName: CFG.displayName,
+        authUsername: null,
+        password: null,
+        flashAlert: true,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
+        // un choix qui n'existe pas : formulaire trafiqué, ou réglage
+        // d'une version à venir relu par celle-ci
+        rtt: "rtp" as unknown as "websocket",
+      },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(box.saved!.rtt).toBe("none");
   });
 });
 
@@ -1139,6 +1206,7 @@ describe("PhoneMachine — sorties", () => {
         turnUsername: "",
         turnPassword: null,
         turnTls: false,
+        rtt: "websocket",
       },
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
