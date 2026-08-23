@@ -18,7 +18,7 @@
 
 import type { CallView } from "../../../machines/events.js";
 import { esc } from "../../el.js";
-import { ICONS, answerChoices, callerName, displayTarget } from "./parts.js";
+import { ICONS, answerChoices, callKind, callerName, displayTarget } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
 /**
@@ -29,7 +29,7 @@ import { t } from "../../../i18n/index.js";
  * au-dessus des 10,5 px de la maquette.
  */
 function kicker(view: CallView): string {
-  return t(view.offered.video ? "incoming.kicker.video" : "incoming.kicker.audio");
+  return t(`incoming.kicker.${callKind(view.offered)}`);
 }
 
 /**

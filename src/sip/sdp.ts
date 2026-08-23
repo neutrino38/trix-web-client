@@ -18,24 +18,42 @@
  *
  * S'y ajoute un **contrôle de recevabilité** de l'offre entrante
  * (`unsupportedOffer`) : ni un choix de codec ni une politique d'appel,
- * seulement les trois invariants sans lesquels aucune implémentation
- * WebRTC ne peut établir de session. Il sert à répondre 488 avant de
- * faire sonner (§4.3).
+ * seulement les invariants sans lesquels aucune implémentation WebRTC ne
+ * peut établir de session — plus la question de savoir si une offre sans
+ * audio ni vidéo porte du texte que ce poste sait lire. Il sert à répondre
+ * 488 avant de faire sonner (§4.3).
  *
  * Tout le reste (codecs, ICE, chiffrement) est l'affaire de JsSIP et du
  * navigateur.
  */
 
 import type { CallMedia } from "./port.js";
+import type { RttTransport } from "./rtt.js";
 
 /** Offre illisible ou vide : on suppose de l'audio, le cas de très loin le plus courant. */
 const AUDIO_ONLY: CallMedia = { audio: true, video: false };
+
+/** Appel texte seul : ni micro ni caméra, et c'est un appel quand même (§4.9). */
+const TEXT_ONLY: CallMedia = { audio: false, video: false };
 
 type Direction = "sendrecv" | "sendonly" | "recvonly" | "inactive";
 
 function directionOf(line: string): Direction | null {
   const v = line.slice(2);
   return v === "sendrecv" || v === "sendonly" || v === "recvonly" || v === "inactive" ? v : null;
+}
+
+/**
+ * Le transport texte qu'une ligne `m=` propose, ou `null` si elle n'en
+ * propose aucun. Une forme par transport (§4.9) : le canal de données
+ * WebRTC (`m=application … webrtc-datachannel`, RFC 8865) et la section
+ * `m=text` des passerelles déployées.
+ */
+function textTransportOf(line: string): RttTransport | null {
+  const [kind, , proto = "", ...fmt] = line.slice(2).split(/\s+/);
+  if (kind === "text") return "websocket";
+  if (kind !== "application") return null;
+  return /SCTP/i.test(proto) || fmt.includes("webrtc-datachannel") ? "datachannel" : null;
 }
 
 /**
@@ -46,15 +64,19 @@ function activeMedia(sdp: string | null | undefined): CallMedia {
   if (!sdp) return AUDIO_ONLY;
 
   const active = { audio: false, video: false };
+  /** Un flux de texte actif : de quoi distinguer l'appel texte du silence. */
+  let text = false;
   // direction de session, appliquée aux flux qui n'en déclarent pas
   let sessionDir: Direction = "sendrecv";
   let inMedia = false;
-  let kind: "audio" | "video" | null = null;
+  let kind: "audio" | "video" | "text" | null = null;
   let port = "0";
   let mediaDir: Direction | null = null;
 
   const flush = (): void => {
-    if (kind && port !== "0" && (mediaDir ?? sessionDir) !== "inactive") active[kind] = true;
+    if (!kind || port === "0" || (mediaDir ?? sessionDir) === "inactive") return;
+    if (kind === "text") text = true;
+    else active[kind] = true;
   };
 
   for (const raw of sdp.split(/\r?\n/)) {
@@ -63,7 +85,7 @@ function activeMedia(sdp: string | null | undefined): CallMedia {
       flush();
       const [k, p] = line.slice(2).split(/\s+/);
       inMedia = true;
-      kind = k === "audio" || k === "video" ? k : null;
+      kind = k === "audio" || k === "video" ? k : textTransportOf(line) !== null ? "text" : null;
       port = p ?? "0";
       mediaDir = null;
     } else if (line.startsWith("a=")) {
@@ -77,7 +99,10 @@ function activeMedia(sdp: string | null | undefined): CallMedia {
   }
   flush();
 
-  return active.audio || active.video ? active : AUDIO_ONLY;
+  if (active.audio || active.video) return active;
+  // du texte et rien d'autre : c'est un appel texte seul, pas une offre
+  // illisible — la nuance décide des boutons de réponse
+  return text ? TEXT_ONLY : AUDIO_ONLY;
 }
 
 /**
@@ -164,24 +189,39 @@ export function withoutVideo(sdp: string): string {
  * nul est ignoré (il est rejeté ou `bundle-only`), et une offre sans SDP
  * du tout n'est pas jugée : l'offre viendra dans l'ACK (`late SDP`), c'est
  * l'affaire de JsSIP.
+ *
+ * S'y ajoute une quatrième question, qui n'est pas de WebRTC mais de nous :
+ * **une offre sans audio ni vidéo est-elle un appel ?** Elle l'est si elle
+ * porte du texte temps réel *et* que ce poste sait ouvrir ce lien-là —
+ * c'est ce que dit `carries`, le transport texte du compte (§4.9). Un
+ * appel texte seul reçu par un poste qui ne transporte pas le texte, ou
+ * qui n'en transporte pas la forme proposée, serait un appel sans rien :
+ * il se refuse avant de faire sonner, comme les trois autres.
  */
-export function unsupportedOffer(sdp: string | null | undefined): string | null {
+export function unsupportedOffer(
+  sdp: string | null | undefined,
+  carries: RttTransport = "none",
+): string | null {
   if (!sdp || sdp.trim() === "") return null;
 
   let ice = false;
   let dtls = false;
   /** Profil du premier flux actif qui n'est pas chiffré — celui qu'on cite. */
   let clear: string | null = null;
-  let streams = 0;
   let active = false;
+  /** Un flux de texte actif, du transport que ce poste sait ouvrir. */
+  let text = false;
 
   for (const raw of sdp.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("m=")) {
       const [kind, port, profile] = line.slice(2).split(/\s+/);
-      if (kind !== "audio" && kind !== "video") continue;
-      streams++;
-      if (port === "0" || port === undefined) continue;
+      const dead = port === "0" || port === undefined;
+      if (kind !== "audio" && kind !== "video") {
+        if (!dead && textTransportOf(line) === carries) text = true;
+        continue;
+      }
+      if (dead) continue;
       active = true;
       // « UDP/TLS/RTP/SAVPF », « RTP/SAVP »… : seul compte le chiffrement
       if (clear === null && !/SAVPF?$/.test(profile ?? "")) clear = profile ?? "?";
@@ -193,8 +233,9 @@ export function unsupportedOffer(sdp: string | null | undefined): string | null 
   }
 
   const missing: string[] = [];
-  // aucun flux audio ni vidéo : rien à répondre qui ressemble à un appel
-  if (streams === 0 || !active) missing.push("m=audio/m=video");
+  // ni parole, ni image, ni texte que nous sachions porter : rien à
+  // répondre qui ressemble à un appel
+  if (!active && !text) missing.push("m=audio/m=video");
   if (!ice) missing.push("ICE");
   if (!dtls) missing.push("DTLS");
   if (clear !== null) missing.push(`SRTP (${clear})`);

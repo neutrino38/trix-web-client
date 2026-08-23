@@ -189,7 +189,37 @@ const messages: Translation = {
   "mode.video.button": "الاتصال بالفيديو",
   "mode.text.label": "مكالمة نصية",
   "mode.text.button": "الاتصال بالنص",
-  "chat.strip": "الدردشة — ستتوفّر في المرحلة 4",
+  "chat.strip": "تُفتح الدردشة مع المكالمة",
+  // ---------------------------------------------------------------------
+  // دردشة النص الفوري (T.140)
+  // ---------------------------------------------------------------------
+  "chat.tab": "الدردشة",
+  "chat.aria": "محادثة مع {peer}",
+  "chat.you": "أنت",
+  "chat.typing": "يكتب الآن",
+  "chat.announce": "{who}: {text}",
+  "chat.jump.zero": "النزول إلى الأسفل",
+  "chat.jump.one": "النزول إلى الأسفل — رسالة واحدة",
+  "chat.jump.two": "النزول إلى الأسفل — رسالتان",
+  "chat.jump.few": "النزول إلى الأسفل — {n} رسائل",
+  "chat.jump.many": "النزول إلى الأسفل — {n} رسالة",
+  "chat.jump.other": "النزول إلى الأسفل — {n} رسالة",
+  "chat.composerAria": "رسالة نصّ فوري",
+  "chat.placeholder": "اكتب — يُرسَل النصّ أثناء الكتابة",
+  "chat.placeholderClosed": "النصّ غير متاح في هذه المكالمة",
+  "chat.enterHint": "مفتاح الإدخال يُثبّت الفقاعة",
+  "chat.state.open": "يُرسَل أثناء الكتابة",
+  "chat.state.connecting": "جارٍ فتح النصّ الفوري…",
+  "chat.state.lost": "انقطع الاتصال — جارٍ الاستئناف",
+  "chat.state.closed": "أُغلِق النصّ الفوري",
+  "chat.state.refused": "لا يدعم هذا المراسِل النصّ الفوري",
+  "chat.state.pending": "التصحيح خلال {s} ثانية",
+  "chat.note.opened": "فُتح النصّ الفوري",
+  "chat.note.lost": "ضاع نصّ أثناء الانقطاع",
+  "chat.note.broken": "انقطع اتصال النصّ — جارٍ الاستئناف",
+  "chat.note.closed": "أُغلِق النصّ الفوري",
+  "chat.note.refused": "لا يدعم هذا المراسِل النصّ الفوري",
+  "chat.note.alert": "وصل تنبيه",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -220,6 +250,9 @@ const messages: Translation = {
   "ctrl.dtmf.aria": "لوحة أرقام DTMF",
   "ctrl.dtmf.show": "إظهار لوحة أرقام DTMF",
   "ctrl.dtmf.hide": "إخفاء لوحة أرقام DTMF",
+  "ctrl.chat.aria": "الدردشة",
+  "ctrl.chat.show": "إظهار الدردشة",
+  "ctrl.chat.hide": "إخفاء الدردشة",
   "ctrl.fullscreen": "ملء الشاشة",
   "ctrl.hangup": "إنهاء المكالمة",
 
@@ -273,8 +306,10 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "مكالمة فيديو واردة",
   "incoming.kicker.audio": "مكالمة صوتية واردة",
+  "incoming.kicker.text": "مكالمة نصية واردة",
   "incoming.answerVideo": "الرد بالفيديو",
   "incoming.answerAudio": "الرد بالصوت",
+  "incoming.answerText": "الرد بالنص",
   "incoming.reject": "رفض المكالمة",
 
   // ---------------------------------------------------------------------
@@ -284,6 +319,7 @@ const messages: Translation = {
   "alert.notifTitle": "مكالمة واردة",
   "alert.notifVideo": "{caller} — مكالمة فيديو",
   "alert.notifAudio": "{caller} — مكالمة صوتية",
+  "alert.notifText": "{caller} — مكالمة نصية",
 
   // ---------------------------------------------------------------------
   // Annonces aux lecteurs d'écran

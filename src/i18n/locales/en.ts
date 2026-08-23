@@ -174,7 +174,33 @@ const messages: Translation = {
   "mode.video.button": "Start video call",
   "mode.text.label": "Text call",
   "mode.text.button": "Start text call",
-  "chat.strip": "Chat — coming in phase 4, weather permitting",
+  "chat.strip": "Chat opens with the call",
+  // ---------------------------------------------------------------------
+  // Real-time text chat (T.140)
+  // ---------------------------------------------------------------------
+  "chat.tab": "Chat",
+  "chat.aria": "Conversation with {peer}",
+  "chat.you": "You",
+  "chat.typing": "typing",
+  "chat.announce": "{who}: {text}",
+  "chat.jump.one": "Jump down — {n} message",
+  "chat.jump.other": "Jump down — {n} messages",
+  "chat.composerAria": "Real-time text message",
+  "chat.placeholder": "Type — the text leaves as you write",
+  "chat.placeholderClosed": "Text unavailable on this call",
+  "chat.enterHint": "Enter freezes the bubble",
+  "chat.state.open": "Leaving as you type",
+  "chat.state.connecting": "Opening real-time text…",
+  "chat.state.lost": "Link broken — recovering",
+  "chat.state.closed": "Real-time text closed",
+  "chat.state.refused": "This correspondent does not take real-time text",
+  "chat.state.pending": "Correction in {s} s",
+  "chat.note.opened": "Real-time text open",
+  "chat.note.lost": "Text lost during the outage",
+  "chat.note.broken": "Text link broken — recovering",
+  "chat.note.closed": "Real-time text closed",
+  "chat.note.refused": "This correspondent does not take real-time text",
+  "chat.note.alert": "Alert received",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -205,6 +231,9 @@ const messages: Translation = {
   "ctrl.dtmf.aria": "DTMF keypad",
   "ctrl.dtmf.show": "Show the DTMF keypad",
   "ctrl.dtmf.hide": "Hide the DTMF keypad",
+  "ctrl.chat.aria": "Chat",
+  "ctrl.chat.show": "Show chat",
+  "ctrl.chat.hide": "Hide chat",
   "ctrl.fullscreen": "Full screen",
   "ctrl.hangup": "Hang up",
 
@@ -258,8 +287,10 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "INCOMING VIDEO CALL",
   "incoming.kicker.audio": "INCOMING AUDIO CALL",
+  "incoming.kicker.text": "INCOMING TEXT CALL",
   "incoming.answerVideo": "Answer with video",
   "incoming.answerAudio": "Answer with audio",
+  "incoming.answerText": "Answer with text",
   "incoming.reject": "Decline",
 
   // ---------------------------------------------------------------------
@@ -269,6 +300,7 @@ const messages: Translation = {
   "alert.notifTitle": "Incoming call",
   "alert.notifVideo": "{caller} — video call",
   "alert.notifAudio": "{caller} — audio call",
+  "alert.notifText": "{caller} — text call",
 
   // ---------------------------------------------------------------------
   // Screen reader announcements

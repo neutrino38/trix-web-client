@@ -95,6 +95,8 @@ la langue servira à l'affichage.
 | `sip/rttdc.ts` | le fil RFC 8865 : création, arbitrage, reprise |
 | `sip/rttsip.ts` | le branchement sur la session JsSIP, pour les deux transports |
 | `sip/rttws.ts` | le fil WebSocket des passerelles déployées (hors RFC 8865) |
+| `sip/t140.ts` | le codec, sans DOM : décodage du flux en événements, différentiel d'émission |
+| `ui/screens/call/chat.ts` | le panneau : modèle du fil, bulles, composeur, projection |
 
 États du lien, tels que l'interface les voit : `connecting`, `open`, `lost`, `closed`.
 
@@ -107,14 +109,76 @@ caméra. Le mode « appel texte » n'est proposé que si le compte transporte le
 Le maintien de la connexion sans RTP est assuré par les couches basses — consentement
 ICE, allocation TURN, HEARTBEAT SCTP (RFC 8865 §6) : **aucun keepalive applicatif.**
 
+**À la réception**, une offre sans `m=audio` ni `m=video` n'est pas refusée pour
+autant : le contrôle de recevabilité (`sdp.unsupportedOffer`) accepte une offre qui ne
+porte qu'un canal de données — ou qu'une section `m=text` — dès lors que le compte
+transporte le texte **sous cette forme-là**. Un poste sans texte, ou branché sur
+l'autre transport, refuse en 488 avant de sonner : il n'aurait ni parole, ni image, ni
+texte. La popup d'appel entrant propose alors « Répondre en texte », seul bouton de
+réponse, et n'ouvre ni micro ni caméra.
+
 **Limite connue, hors périmètre.** En mode passerelle vers l'IMS, un appel texte seul
 peut être refusé par le réseau : 3GPP TS 26.114 impose qu'une description média de
 canal de données ne précède pas la première description média de parole. Le profil
 suppose donc une jambe audio. C'est l'affaire de la passerelle, pas de Trix.
 
+## Le décodage, tel qu'il est écrit
+
+`sip/t140.ts` est un décodeur **incrémental** : il rend une liste d'événements par
+fragment reçu (`text`, `erase`, `break`, `alert`, `attrs`, `lost`) et garde ce qu'il ne
+peut pas encore lire. Les frontières de message ne voulant rien dire, une séquence de
+commande coupée en deux — un `CSI 3` suivi d'un `1m`, un `CR` suivi d'un `LF` — est
+recollée au fragment suivant plutôt qu'affichée en morceaux.
+
+| Reçu | Effet |
+|---|---|
+| `CSI Ps m` | attributs, **remappés sur la palette du thème** (voir plus bas) |
+| `CSI` autre finale | séquence avalée en entier, rien ne s'affiche |
+| `SOS … ST` | extension avalée en entier ; formes 8 bits et 7 bits acceptées |
+| `ESC x` | ignorée — Trix n'a pas de bascule de mode |
+| `U+0000`–`U+001F`, `U+007F`–`U+009F` non traités | filtrés avant l'affichage |
+| séquence sans fin | abandonnée au-delà de 4 000 caractères en attente |
+
+**Les couleurs sont remappées, jamais appliquées telles quelles** (T.140 §8.8) : `31`
+devient `var(--red)`, `34` et `36` deux teintes ajoutées au thème (`--t140-blue`,
+`--t140-cyan`) pour rester lisibles sur les deux fonds, et un fond reçu (`40`–`47`) est
+dilué à 22 %. La plage claire (`90`–`97`) rejoint la même palette : une fois remappé,
+« rouge vif » ne veut plus rien dire.
+
+## Le panneau
+
+`ui/screens/call/chat.ts` tient le **modèle** du fil et sa projection à l'écran — le
+modèle est la source, le DOM n'en est qu'une vue, ce qui rendra l'export en sous-titres
+possible sans relire la page. Un caractère reçu devient un nœud texte, jamais du
+balisage.
+
+- **Une bulle vivante par côté**, la dernière ; le séparateur la fige et en ouvre une
+  neuve. Un séparateur reçu sur une bulle vide ne crée rien, et un retour arrière reçu
+  sur une bulle vide **refusionne la bulle figée précédente** (§8.2).
+- **Le fil ne saute jamais sous les yeux de qui relit** : le défilement automatique
+  s'arrête dès que l'utilisateur remonte, et un bouton « descendre » compte les bulles
+  figées arrivées depuis.
+- **Le champ de saisie** suit la règle des deux secondes : écrire ou effacer à la fin
+  part tout de suite, une correction au milieu attend 2 s de silence puis remonte d'un
+  coup jusqu'au point de divergence. La bulle locale montre ce qui est **réellement
+  parti** (§7), et l'écart se lit dans la ligne d'état.
+- **Le `BEL` reçu** réemploie les canaux de l'appel entrant — cadre, salve, vibration —
+  en un seul battement (`ui/alert.ts`, `pulseAlert`).
+- **Rien n'est rendu par un temporisateur** : l'affichage du texte reçu est piloté par
+  l'arrivée du fragment. Les deux seuls temporisateurs servent l'émission différée et
+  son décompte.
+- **Lecteurs d'écran** : le fil est un `log` sans `aria-live` — une bulle vivante change
+  à chaque caractère. C'est la bulle **figée** qui est annoncée, une fois, par la région
+  d'état de l'application.
+
+Bureau : le fil prend la sidebar sous les commandes d'appel, qui ne bougent pas ;
+**l'historique disparaît pendant l'appel** — à 300 px les deux ne tiennent pas côte à
+côte, et un historique n'a rien à dire pendant qu'on parle. Mobile : la vidéo cède la
+place basse au fil, et le bouton de la barre de surimpression la lui rend.
+
 ## Ce qui reste à faire
 
-Le codec (`sip/t140.ts`) et le panneau de tchat (`ui/screens/call/chat.ts`) décrits en
-§4.9 ne sont pas écrits : le flux reçu remonte tel quel aux abonnés de `RttChannel`,
-commandes comprises. L'affichage incrémental par correspondant, l'interprétation des
-commandes de présentation et l'historique en dépendent.
+L'**historique** des conversations (le fil chiffré avec le reste du compte, relu depuis
+la bulle « T » de sa ligne) et l'**export en sous-titres** WebVTT (`ui/subtitles.ts`)
+décrits en §4.9 ne sont pas écrits : le fil quitte l'écran avec l'appel et n'est
+conservé nulle part.

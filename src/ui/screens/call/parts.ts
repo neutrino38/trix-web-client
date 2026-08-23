@@ -25,6 +25,7 @@ import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
 import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
+import { wireChat } from "./chat.js";
 import { LENS_ICON, showStatsDialog, startMediaStats } from "./stats.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
@@ -78,7 +79,7 @@ export const ICONS = {
   mic: `<svg class="icon" viewBox="0 0 24 24"><path d="M12 14c1.7 0 3-1.3 3-3V5c0-1.7-1.3-3-3-3S9 3.3 9 5v6c0 1.7 1.3 3 3 3zm5-3c0 2.8-2.2 5-5 5s-5-2.2-5-5H5c0 3.5 2.6 6.4 6 6.9V21h2v-3.1c3.4-.5 6-3.4 6-6.9h-2z"/></svg>`,
   clock: `<svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>`,
   fullscreen: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>`,
-  chat: `<svg class="icon" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`,
+  chat: `<svg class="icon" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`,
 };
 
 /**
@@ -186,16 +187,30 @@ export function displayTarget(target: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Le média d'un appel en un mot — l'ordre est celui de la richesse, et
+ * « texte » est ce qui reste quand il n'y a ni image ni son : un appel
+ * texte seul (§4.9) n'est pas un appel muet, c'est son propre mode.
+ */
+export type CallKind = "audio" | "video" | "text";
+
+export function callKind(media: CallMedia): CallKind {
+  return media.video ? "video" : media.audio ? "audio" : "text";
+}
+
+/**
  * Réponses proposées, dérivées des seuls médias offerts par l'INVITE
  * (docs/SPECS.md, phase 3) : vidéo proposée → réponse A/V possible ;
  * audio proposé → réponse audio seul possible. Une offre vidéo pure ne
- * laisse donc que la réponse A/V, une offre audio pure que l'audio.
+ * laisse donc que la réponse A/V, une offre audio pure que l'audio. Une
+ * offre qui ne porte ni l'un ni l'autre est un appel texte seul — le port
+ * a déjà refusé celles qui n'étaient rien du tout (`unsupportedOffer`) —
+ * et se répond en texte, sans micro ni caméra.
  *
  * Règle tenue ici et nulle part ailleurs : les deux gabarits déroulent
  * simplement cette liste.
  */
 export interface AnswerChoice {
-  act: "answer-av" | "answer-audio";
+  act: "answer-av" | "answer-audio" | "answer-text";
   label: string;
   icon: string;
 }
@@ -206,14 +221,17 @@ export function answerChoices(offered: CallMedia): AnswerChoice[] {
     choices.push({ act: "answer-av", label: t("incoming.answerVideo"), icon: ICONS.cam });
   if (offered.audio)
     choices.push({ act: "answer-audio", label: t("incoming.answerAudio"), icon: ICONS.phone });
+  if (!offered.audio && !offered.video)
+    choices.push({ act: "answer-text", label: t("incoming.answerText"), icon: ICONS.chat });
   return choices;
 }
 
 /** Médias de la réponse pour un choix donné (jamais plus que ce qui est proposé). */
 function answerMedia(act: AnswerChoice["act"], offered: CallMedia): CallMedia {
-  return act === "answer-av"
-    ? { audio: offered.audio, video: true }
-    : { audio: true, video: false };
+  if (act === "answer-av") return { audio: offered.audio, video: true };
+  // répondre en texte, c'est n'allumer ni micro ni caméra
+  if (act === "answer-text") return { audio: false, video: false };
+  return { audio: true, video: false };
 }
 
 /** Identité de l'appelant : nom affiché si le From en porte un, URI sinon. */
@@ -431,7 +449,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     // alerte multi-canal : l'application s'adresse d'abord à des sourds
     startIncomingAlert({
       caller: callerName(view),
-      video: view.offered.video,
+      kind: callKind(view.offered),
       flash: cfg?.flashAlert !== false,
     });
   } else {
@@ -500,6 +518,17 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   // tonalité pressée lui est envoyée, et c'est elle qui décidera si elle
   // rejoint l'écho de l'écran.
   wireDtmf(node, (tone) => phone.send({ type: "ui:dtmf", tone }));
+
+  // --- tchat texte temps réel ----------------------------------------------
+  // Comme le pavé DTMF : le panneau vit hors de la machine, qui ne sait rien
+  // du texte échangé — il naît avec le canal de l'appel et meurt avec lui.
+  wireChat(node, {
+    view,
+    peer: view ? callerName(view) : "",
+    // l'alerte en séance (`BEL`) réemploie les canaux de l'appel entrant,
+    // réglage du compte compris
+    flash: cfg?.flashAlert !== false,
+  });
 
   // --- panneau latéral (repli, largeur) ------------------------------------
   // absent de la vue mobile : `wirePanel` ne trouve alors ni bouton ni

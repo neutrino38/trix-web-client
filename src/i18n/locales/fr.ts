@@ -174,7 +174,34 @@ const messages = {
   "mode.video.button": "Appeler en vidéo",
   "mode.text.label": "Appel texte",
   "mode.text.button": "Appeler en texte",
-  "chat.strip": "Tchat — disponible en phase 4",
+  "chat.strip": "Le tchat s'ouvre avec l'appel",
+  // ---------------------------------------------------------------------
+  // Tchat texte temps réel (T.140)
+  // ---------------------------------------------------------------------
+  "chat.tab": "Tchat",
+  "chat.aria": "Conversation avec {peer}",
+  "chat.you": "Vous",
+  "chat.typing": "en cours de frappe",
+  /** Bulle figée annoncée aux lecteurs d'écran — jamais la bulle vivante. */
+  "chat.announce": "{who} : {text}",
+  "chat.jump.one": "Descendre — {n} message",
+  "chat.jump.other": "Descendre — {n} messages",
+  "chat.composerAria": "Message en texte temps réel",
+  "chat.placeholder": "Écrivez — le texte part au fil de la frappe",
+  "chat.placeholderClosed": "Texte indisponible sur cet appel",
+  "chat.enterHint": "Entrée fige la bulle",
+  "chat.state.open": "Part au fil de la frappe",
+  "chat.state.connecting": "Ouverture du texte temps réel…",
+  "chat.state.lost": "Lien rompu — reprise en cours",
+  "chat.state.closed": "Texte temps réel fermé",
+  "chat.state.refused": "Ce correspondant ne prend pas le texte temps réel",
+  "chat.state.pending": "Correction dans {s} s",
+  "chat.note.opened": "Texte temps réel ouvert",
+  "chat.note.lost": "Texte perdu pendant la coupure",
+  "chat.note.broken": "Lien texte rompu — reprise en cours",
+  "chat.note.closed": "Texte temps réel fermé",
+  "chat.note.refused": "Ce correspondant ne prend pas le texte temps réel",
+  "chat.note.alert": "Alerte reçue",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -206,6 +233,9 @@ const messages = {
   "ctrl.dtmf.aria": "Clavier DTMF",
   "ctrl.dtmf.show": "Afficher le clavier DTMF",
   "ctrl.dtmf.hide": "Masquer le clavier DTMF",
+  "ctrl.chat.aria": "Tchat",
+  "ctrl.chat.show": "Afficher le tchat",
+  "ctrl.chat.hide": "Masquer le tchat",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
 
@@ -259,8 +289,10 @@ const messages = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "APPEL VIDÉO ENTRANT",
   "incoming.kicker.audio": "APPEL AUDIO ENTRANT",
+  "incoming.kicker.text": "APPEL TEXTE ENTRANT",
   "incoming.answerVideo": "Répondre en vidéo",
   "incoming.answerAudio": "Répondre en audio",
+  "incoming.answerText": "Répondre en texte",
   "incoming.reject": "Refuser",
 
   // ---------------------------------------------------------------------
@@ -270,6 +302,7 @@ const messages = {
   "alert.notifTitle": "Appel entrant",
   "alert.notifVideo": "{caller} — appel vidéo",
   "alert.notifAudio": "{caller} — appel audio",
+  "alert.notifText": "{caller} — appel texte",
 
   // ---------------------------------------------------------------------
   // Annonces aux lecteurs d'écran

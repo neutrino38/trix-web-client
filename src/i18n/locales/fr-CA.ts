@@ -190,7 +190,33 @@ const messages: Translation = {
   "mode.video.button": "Appeler en vidéo",
   "mode.text.label": "Appel texte",
   "mode.text.button": "Appeler en texte",
-  "chat.strip": "Clavardage — pour placoter, en phase 4",
+  "chat.strip": "Le clavardage s'ouvre avec l'appel",
+  // ---------------------------------------------------------------------
+  // Clavardage en temps réel (T.140)
+  // ---------------------------------------------------------------------
+  "chat.tab": "Clavardage",
+  "chat.aria": "Conversation avec {peer}",
+  "chat.you": "Vous",
+  "chat.typing": "en train d'écrire",
+  "chat.announce": "{who} : {text}",
+  "chat.jump.one": "Descendre — {n} message",
+  "chat.jump.other": "Descendre — {n} messages",
+  "chat.composerAria": "Message en texte temps réel",
+  "chat.placeholder": "Écrivez — le texte part au fur et à mesure",
+  "chat.placeholderClosed": "Texte non disponible pour cet appel",
+  "chat.enterHint": "Entrée fige la bulle",
+  "chat.state.open": "Part au fur et à mesure",
+  "chat.state.connecting": "Ouverture du texte temps réel…",
+  "chat.state.lost": "Lien coupé — on reprend",
+  "chat.state.closed": "Texte temps réel fermé",
+  "chat.state.refused": "Ce correspondant ne prend pas le texte temps réel",
+  "chat.state.pending": "Correction dans {s} s",
+  "chat.note.opened": "Texte temps réel ouvert",
+  "chat.note.lost": "Texte perdu pendant la coupure",
+  "chat.note.broken": "Lien texte coupé — on reprend",
+  "chat.note.closed": "Texte temps réel fermé",
+  "chat.note.refused": "Ce correspondant ne prend pas le texte temps réel",
+  "chat.note.alert": "Alerte reçue",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -221,6 +247,9 @@ const messages: Translation = {
   "ctrl.dtmf.aria": "Clavier DTMF",
   "ctrl.dtmf.show": "Afficher le clavier DTMF",
   "ctrl.dtmf.hide": "Masquer le clavier DTMF",
+  "ctrl.chat.aria": "Clavardage",
+  "ctrl.chat.show": "Afficher le clavardage",
+  "ctrl.chat.hide": "Masquer le clavardage",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
 
@@ -274,8 +303,10 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "APPEL VIDÉO ENTRANT",
   "incoming.kicker.audio": "APPEL AUDIO ENTRANT",
+  "incoming.kicker.text": "APPEL TEXTE ENTRANT",
   "incoming.answerVideo": "Répondre en vidéo",
   "incoming.answerAudio": "Répondre en audio",
+  "incoming.answerText": "Répondre en texte",
   "incoming.reject": "Refuser",
 
   // ---------------------------------------------------------------------
@@ -285,6 +316,7 @@ const messages: Translation = {
   "alert.notifTitle": "Appel entrant",
   "alert.notifVideo": "{caller} — appel vidéo",
   "alert.notifAudio": "{caller} — appel audio",
+  "alert.notifText": "{caller} — appel texte",
 
   // ---------------------------------------------------------------------
   // Annonces aux lecteurs d'écran — le sérieux reprend ses droits

@@ -183,7 +183,9 @@ Structure 2 zones
   - bouton **« Appeler » (vert, audio) + menu déroulant « Appel vidéo »**,
   - bouton « Raccrocher » (rouge, visible uniquement en communication),
   - chrono HH:MM:SS + mute micro,
-  - zone tchat **grisée** avec mention « disponible en phase 4 »,
+  - zone tchat : le fil du texte temps réel pendant l'appel, à la place de
+    l'historique — qui est masqué tant que l'appel dure (phase 4) ; hors appel, la
+    mention « le tchat s'ouvre avec l'appel »,
   - pied : A-/A+ et interrupteur thème clair/foncé.
 
 États des boutons inactifs : opacité 0,5 (convention Elioz conservée).
@@ -231,7 +233,15 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 - [x] DTMF (RFC 4733) : pavé 12 touches sur la scène vidéo, clavier physique, retour
       sonore local, et **écho à l'écran des seules tonalités réellement parties**
       (accessibilité sourds — un DTMF ne s'entend ni ne se lit nulle part ailleurs)
-- [ ] Analyse `../generique/composants/tchat3`, composant équivalent sur data channel WebRTC
+- [x] Analyse `../generique/composants/tchat3`, composant équivalent sur data channel WebRTC
+- [x] Texte temps réel T.140 : transport WebSocket (passerelles déployées) et canal de
+      données RFC 8865, au choix du compte (`sip/rtt.ts`, `rttws.ts`, `rttdc.ts`, `rttsip.ts`)
+- [x] Codec T.140 sans DOM : décodage incrémental du flux, couleurs reçues **remappées
+      sur la palette du thème**, différentiel d'émission en graphèmes (`sip/t140.ts`)
+- [x] Panneau de tchat : une bulle vivante par côté, champ de saisie et règle des deux
+      secondes, alerte `BEL` sur les canaux de la phase 3, défilement jamais imposé
+      (`ui/screens/call/chat.ts`) — bureau à la place de l'historique, mobile sous la vidéo
+- [ ] Historique des conversations (chiffré avec le compte) et export WebVTT
 
 ### Phase 5 (future) : Tauri
 - [ ] Option d'embarquement Tauri + paquet Ubuntu — **reportée**, contraintes en `CONCEPTION.md` §8

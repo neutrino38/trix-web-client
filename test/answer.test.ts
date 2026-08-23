@@ -21,6 +21,15 @@ describe("answerChoices", () => {
   it("vidéo seule proposée : pas de réponse audio seul", () => {
     expect(acts(false, true)).toEqual(["answer-av"]);
   });
+
+  /**
+   * Ni parole ni image : c'est un appel texte seul (§4.9) — le port a déjà
+   * refusé les offres qui n'étaient rien du tout. Sans ce cas, la popup
+   * n'offrirait que Refuser.
+   */
+  it("ni audio ni vidéo : c'est un appel texte, et il se répond", () => {
+    expect(acts(false, false)).toEqual(["answer-text"]);
+  });
 });
 
 describe("callModes", () => {

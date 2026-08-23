@@ -33,6 +33,18 @@ function burst(): void {
   osc.stop(t0 + TONE_MS / 1000 + 0.02);
 }
 
+/**
+ * Une seule salve, sans cadence : l'alerte en séance de T.140 (`BEL`, §4.9)
+ * n'est pas un appel qui sonne, c'est un correspondant qui appelle
+ * l'attention. Le contexte audio est le même — il n'y a aucune raison d'en
+ * ouvrir un second.
+ */
+export function ringOnce(): void {
+  audio ??= new AudioContext();
+  void audio.resume().catch(() => {});
+  burst();
+}
+
 /** Idempotent : appelable à chaque rendu de l'écran d'appel. */
 export function startRing(): void {
   if (timer !== null) return;

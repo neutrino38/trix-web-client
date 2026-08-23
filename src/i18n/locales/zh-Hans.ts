@@ -175,7 +175,33 @@ const messages: Translation = {
   "mode.video.button": "发起视频通话",
   "mode.text.label": "文字通话",
   "mode.text.button": "发起文字通话",
-  "chat.strip": "聊天 — 第 4 阶段推出",
+  "chat.strip": "聊天随通话一起打开",
+  // ---------------------------------------------------------------------
+  // 实时文本（T.140）聊天
+  // ---------------------------------------------------------------------
+  "chat.tab": "聊天",
+  "chat.aria": "与 {peer} 的对话",
+  "chat.you": "我",
+  "chat.typing": "正在输入",
+  "chat.announce": "{who}：{text}",
+  "chat.jump.one": "回到底部 — {n} 条",
+  "chat.jump.other": "回到底部 — {n} 条",
+  "chat.composerAria": "实时文本消息",
+  "chat.placeholder": "边打字边发送",
+  "chat.placeholderClosed": "本次通话无法使用文本",
+  "chat.enterHint": "回车结束当前气泡",
+  "chat.state.open": "边打字边发送",
+  "chat.state.connecting": "正在打开实时文本…",
+  "chat.state.lost": "连接中断 — 正在恢复",
+  "chat.state.closed": "实时文本已关闭",
+  "chat.state.refused": "对方不支持实时文本",
+  "chat.state.pending": "{s} 秒后发送更正",
+  "chat.note.opened": "实时文本已打开",
+  "chat.note.lost": "中断期间丢失了文本",
+  "chat.note.broken": "文本连接中断 — 正在恢复",
+  "chat.note.closed": "实时文本已关闭",
+  "chat.note.refused": "对方不支持实时文本",
+  "chat.note.alert": "收到提醒",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -206,6 +232,9 @@ const messages: Translation = {
   "ctrl.dtmf.aria": "DTMF 拨号键盘",
   "ctrl.dtmf.show": "显示 DTMF 拨号键盘",
   "ctrl.dtmf.hide": "隐藏 DTMF 拨号键盘",
+  "ctrl.chat.aria": "聊天",
+  "ctrl.chat.show": "显示聊天",
+  "ctrl.chat.hide": "隐藏聊天",
   "ctrl.fullscreen": "全屏",
   "ctrl.hangup": "挂断",
 
@@ -259,8 +288,10 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "视频来电",
   "incoming.kicker.audio": "语音来电",
+  "incoming.kicker.text": "文字来电",
   "incoming.answerVideo": "用视频接听",
   "incoming.answerAudio": "用语音接听",
+  "incoming.answerText": "用文字接听",
   "incoming.reject": "拒接",
 
   // ---------------------------------------------------------------------
@@ -270,6 +301,7 @@ const messages: Translation = {
   "alert.notifTitle": "来电",
   "alert.notifVideo": "{caller} — 视频通话",
   "alert.notifAudio": "{caller} — 语音通话",
+  "alert.notifText": "{caller} — 文字通话",
 
   // ---------------------------------------------------------------------
   // Annonces aux lecteurs d'écran

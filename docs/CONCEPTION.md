@@ -261,6 +261,14 @@ avant le refus, l'offre et le 488 y sont consignés (§5.5), la cause s'affiche 
 la ligne d'historique la garde — appel manqué, motif « Offre média sans ICE, DTLS, SRTP
 (RTP/AVP) : incompatible avec WebRTC ».
 
+**Une offre sans audio ni vidéo n'est pas pour autant inétablissable.** L'appel texte
+seul (§4.9) est exactement cela : un SDP qui ne porte qu'une section `m=application`
+(canal de données, RFC 8865) ou `m=text` (passerelle). Le contrôle ne s'y oppose que si
+ce poste ne sait pas ouvrir ce lien-là — texte désactivé au compte, ou transport autre
+que celui que l'offre propose : il recevrait alors un appel sans parole, sans image et
+sans texte. `unsupportedOffer` prend donc le transport texte du compte en second
+argument, et lui seul tranche ce cas.
+
 **Un appel à la fois** : `ready` est le seul état qui accepte un INVITE. En communication
 il est refusé occupé (486), partout ailleurs (connexion, reconnexion, veille, échec
 d'enregistrement) temporairement indisponible (480).
@@ -825,7 +833,7 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
   l'interface n'en connaît aucun ; `sip/rttsip.ts` branche les deux sur la session —
   le WebSocket par l'événement `sdp`, qu'il est seul à toucher, le canal de données
   par la connexion pair-à-pair, sans une ligne de SDP.
-- `ui/screens/call/chat.ts` — le panneau : onglets, fil, bulles, composeur.
+- `ui/screens/call/chat.ts` — le panneau : en-tête, fil, bulles, composeur.
 - `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle.
 
 **Pas d'émulateur de terminal.** `xterm.js` est la seule bibliothèque sérieuse du
@@ -1112,8 +1120,10 @@ Reste ce qui n'a pas à échouer du tout. Une offre qu'aucun navigateur ne peut 
 reconnaît à la lecture (`sdp.unsupportedOffer`) : elle est refusée en 488 avant même la
 sonnerie (§4.3), et la ligne de carnet qui l'accompagne garde **l'offre entière** — c'est
 elle qui dira quelle passerelle manque en face. Le contrôle se limite aux trois invariants
-qu'aucune pile WebRTC ne sait suppléer (ICE, DTLS, SRTP) : il doit être impossible qu'il
-refuse un appel que le navigateur aurait accepté.
+qu'aucune pile WebRTC ne sait suppléer (ICE, DTLS, SRTP), et à la question de savoir si
+une offre sans audio ni vidéo porte du texte que ce poste sache lire : il doit être
+impossible qu'il refuse un appel que le navigateur aurait accepté — un appel texte seul
+en est un.
 
 Un point d'ordonnancement : JsSIP émet `failed` **avant** l'événement qui porte
 l'erreur quand c'est `setRemoteDescription` qui a échoué (il répond 488, échoue la

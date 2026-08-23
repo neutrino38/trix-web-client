@@ -74,6 +74,12 @@ export interface OverlayCtx {
   withFullscreen?: boolean;
   /** Bureau : bouton de repli du panneau latéral, en fin de barre. */
   panel?: { collapsed: boolean; controls: string };
+  /**
+   * Mobile : bouton de pli du tchat, faute de sidebar pour l'accueillir.
+   * Absent quand l'appel ne porte pas de texte — un bouton qui n'ouvre rien
+   * ne vaut pas mieux qu'un bouton grisé.
+   */
+  chat?: { open: boolean; controls: string };
 }
 
 export function overlayBar(ctx: OverlayCtx): string {
@@ -148,6 +154,20 @@ export function overlayBar(ctx: OverlayCtx): string {
       label: t("ctrl.fullscreen"),
       aria: t("ctrl.fullscreen"),
       disabled: !view.media.video,
+    });
+  }
+
+  if (ctx.chat) {
+    // le tchat déployé est un affichage local de plus, comme le pavé DTMF :
+    // violet, jamais rouge — rien n'est coupé quand il est ouvert
+    cmds.push({
+      act: "chat",
+      icon: ICONS.chat,
+      label: t(ctx.chat.open ? "ctrl.chat.hide" : "ctrl.chat.show"),
+      aria: t("ctrl.chat.aria"),
+      expanded: ctx.chat.open,
+      highlight: ctx.chat.open,
+      controls: ctx.chat.controls,
     });
   }
 

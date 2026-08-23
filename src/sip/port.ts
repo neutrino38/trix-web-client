@@ -413,8 +413,10 @@ function wrapIncoming(
   const offer = request.body ?? null;
   const offered = offeredMedia(offer);
   // constaté à l'arrivée, avant que quoi que ce soit ne parte : c'est ce
-  // qui permet de répondre 488 sans qu'un 180 ait été envoyé
-  const problem = unsupportedOffer(offer);
+  // qui permet de répondre 488 sans qu'un 180 ait été envoyé. Le transport
+  // texte du compte en fait partie : lui seul dit si une offre texte seul
+  // est un appel ici (§4.9)
+  const problem = unsupportedOffer(offer, cfg.rtt);
   // né avec l'écoute, consulté par la réponse : c'est lui qui saura refuser
   // la vidéo d'une offre à laquelle on répond en audio seul
   let control: MediaControl | null = null;

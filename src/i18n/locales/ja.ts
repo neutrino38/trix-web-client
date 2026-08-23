@@ -182,7 +182,33 @@ const messages: Translation = {
   "mode.video.button": "ビデオで発信する",
   "mode.text.label": "テキスト通話",
   "mode.text.button": "テキストで発信する",
-  "chat.strip": "チャット — フェーズ 4 で提供",
+  "chat.strip": "チャットは通話とともに開きます",
+  // ---------------------------------------------------------------------
+  // リアルタイムテキスト（T.140）のチャット
+  // ---------------------------------------------------------------------
+  "chat.tab": "チャット",
+  "chat.aria": "{peer} との会話",
+  "chat.you": "自分",
+  "chat.typing": "入力中",
+  "chat.announce": "{who}：{text}",
+  "chat.jump.one": "最新へ — {n} 件",
+  "chat.jump.other": "最新へ — {n} 件",
+  "chat.composerAria": "リアルタイムテキストのメッセージ",
+  "chat.placeholder": "入力すると、そのまま相手に届きます",
+  "chat.placeholderClosed": "この通話ではテキストを使えません",
+  "chat.enterHint": "Enter で吹き出しを確定",
+  "chat.state.open": "入力しながら送信中",
+  "chat.state.connecting": "リアルタイムテキストを開いています…",
+  "chat.state.lost": "接続が切れました — 復旧中",
+  "chat.state.closed": "リアルタイムテキストは終了しました",
+  "chat.state.refused": "この相手はリアルタイムテキストに対応していません",
+  "chat.state.pending": "{s} 秒後に修正を送信",
+  "chat.note.opened": "リアルタイムテキストを開始しました",
+  "chat.note.lost": "切断中にテキストが失われました",
+  "chat.note.broken": "テキストの接続が切れました — 復旧中",
+  "chat.note.closed": "リアルタイムテキストは終了しました",
+  "chat.note.refused": "この相手はリアルタイムテキストに対応していません",
+  "chat.note.alert": "注意喚起を受信しました",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -213,6 +239,9 @@ const messages: Translation = {
   "ctrl.dtmf.aria": "DTMF キーパッド",
   "ctrl.dtmf.show": "DTMF キーパッドを表示",
   "ctrl.dtmf.hide": "DTMF キーパッドを閉じる",
+  "ctrl.chat.aria": "チャット",
+  "ctrl.chat.show": "チャットを表示する",
+  "ctrl.chat.hide": "チャットを閉じる",
   "ctrl.fullscreen": "全画面表示",
   "ctrl.hangup": "通話を切る",
 
@@ -266,8 +295,10 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "ビデオ通話の着信",
   "incoming.kicker.audio": "音声通話の着信",
+  "incoming.kicker.text": "テキスト通話の着信",
   "incoming.answerVideo": "ビデオで応答する",
   "incoming.answerAudio": "音声で応答する",
+  "incoming.answerText": "テキストで応答する",
   "incoming.reject": "拒否する",
 
   // ---------------------------------------------------------------------
@@ -277,6 +308,7 @@ const messages: Translation = {
   "alert.notifTitle": "着信",
   "alert.notifVideo": "{caller} — ビデオ通話",
   "alert.notifAudio": "{caller} — 音声通話",
+  "alert.notifText": "{caller} — テキスト通話",
 
   // ---------------------------------------------------------------------
   // Annonces aux lecteurs d'écran

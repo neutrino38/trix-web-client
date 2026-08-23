@@ -14,15 +14,25 @@
  */
 
 import type { PhoneInstance } from "../../../machines/phone.js";
+import type { CallView } from "../../../machines/events.js";
 import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { videoAskDialog } from "./videoask.js";
 import { dtmfPad } from "./dtmf.js";
+import {
+  CHAT_PANE_ID,
+  chatChannel,
+  chatHead,
+  chatMobileOpen,
+  chatPane,
+  chatRefused,
+} from "./chat.js";
 import { statsPill } from "./stats.js";
 import {
   ICONS,
   callLabel,
+  callerName,
   currentMode,
   displayTarget,
   draft,
@@ -48,9 +58,13 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
+  // le tchat n'existe que si le canal existe (§4.9) ; déplié, il prend la
+  // place que la vidéo lui cède — ce n'est pas une couche de plus
+  const chat = chatChannel(view) !== null && !chatRefused();
+  const chatOpen = chat && chatMobileOpen();
 
   return el(`
-    <div class="screen-call mobile">
+    <div class="screen-call mobile ${chatOpen ? "chat-open" : ""}">
       <div class="mtopbar">
         <span class="dot ${status.cls}" title="${esc(status.label)}"
               role="img" aria-label="${esc(status.label)}"></span>
@@ -100,8 +114,14 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                         <span class="target">${esc(displayTarget(view.target))}</span></div>`
                }
                ${dtmfPad(view)}
-               ${overlayBar({ view, speakerMuted, withHangup: true })}
-             </div>`
+               ${overlayBar({
+                 view,
+                 speakerMuted,
+                 withHangup: true,
+                 ...(chat ? { chat: { open: chatOpen, controls: CHAT_PANE_ID } } : {}),
+               })}
+             </div>
+             ${chat ? mobileChat(view) : ""}`
           : `<div class="mdial">
                ${
                  failed || reconnecting
@@ -150,4 +170,15 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
       ${incoming ? incomingDialog(view) : ""}
       ${view?.videoAsked ? videoAskDialog(view) : ""}
     </div>`);
+}
+
+/**
+ * Le tchat mobile : un en-tête minuscule — il n'y a pas d'onglets là où il
+ * n'y a pas de sidebar — et le même panneau que sur le bureau.
+ */
+function mobileChat(view: CallView): string {
+  return `<div class="mchat">
+      ${chatHead(ICONS.chat)}
+      ${chatPane(callerName(view))}
+    </div>`;
 }

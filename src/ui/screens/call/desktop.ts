@@ -15,11 +15,13 @@ import { incomingDialog } from "./incoming.js";
 import { videoAskDialog } from "./videoask.js";
 import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
+import { chatChannel, chatHead, chatPane, chatRefused } from "./chat.js";
 import { statsPill } from "./stats.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
   ICONS,
   callLabel,
+  callerName,
   currentMode,
   displayTarget,
   draft,
@@ -52,6 +54,10 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // rendrait l'écran inutilisable, sans même un bouton pour le rouvrir
   // (la barre de surimpression n'existe pas dans ces deux états).
   const collapsed = !!view && !incoming && panelCollapsed();
+  // Le tchat n'existe que si le canal existe : compte sans texte, appel qui
+  // n'a pas encore de session (sonnerie entrante), correspondant qui l'a
+  // refusé — dans tous ces cas la sidebar reste celle d'avant.
+  const chat = chatChannel(view) !== null && !chatRefused();
 
   return el(`
     <div class="screen-call ${collapsed ? "panel-collapsed" : ""}">
@@ -182,26 +188,39 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                    </div>`
             }
           </div>
-          <div class="calllog">
-            <div class="calllog-head">
-              <span>${esc(t("history.title"))}</span>
-              ${
-                history.length
-                  ? `<button class="linkbtn" data-act="clear-history">${esc(t("history.clear"))}</button>`
-                  : ""
-              }
-            </div>
-            <div class="calllog-list">
-              ${
-                history.length
-                  ? history.map((e, i) => historyRow(e, i)).join("")
-                  : `<p class="calllog-empty">${esc(t("history.empty"))}</p>`
-              }
-            </div>
-          </div>
-          <div class="chat-strip">
-            ${ICONS.chat}<span>${esc(t("chat.strip"))}</span>
-          </div>
+          ${
+            // l'historique quitte la sidebar dès qu'il y a un appel : il n'a
+            // rien à dire pendant qu'on parle, et la place revient au tchat
+            view
+              ? ""
+              : `<div class="calllog">
+                   <div class="calllog-head">
+                     <span>${esc(t("history.title"))}</span>
+                     ${
+                       history.length
+                         ? `<button class="linkbtn" data-act="clear-history">${esc(
+                             t("history.clear"),
+                           )}</button>`
+                         : ""
+                     }
+                   </div>
+                   <div class="calllog-list">
+                     ${
+                       history.length
+                         ? history.map((e, i) => historyRow(e, i)).join("")
+                         : `<p class="calllog-empty">${esc(t("history.empty"))}</p>`
+                     }
+                   </div>
+                 </div>`
+          }
+          ${chat && view ? chatHead(ICONS.chat) + chatPane(callerName(view)) : ""}
+          ${
+            // hors appel, le tchat n'a pas lieu d'être : il naît avec le canal
+            // de données et s'en va avec lui (§4.9)
+            view
+              ? ""
+              : `<div class="chat-strip">${ICONS.chat}<span>${esc(t("chat.strip"))}</span></div>`
+          }
           <div class="sidefoot">
             <span>${esc(t("prefs.fontSize"))}</span>
             <span class="fontsize">

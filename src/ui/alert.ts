@@ -26,13 +26,15 @@
  * chaque notification de la machine).
  */
 
-import { startRing, stopRing } from "./ring.js";
+import { ringOnce, startRing, stopRing } from "./ring.js";
 import { setTitleOverride } from "./title.js";
 import { t } from "../i18n/index.js";
+import type { MsgKey } from "../i18n/types.js";
 
 export interface IncomingAlert {
   caller: string;
-  video: boolean;
+  /** Le média offert, tel que la notification système l'annonce. */
+  kind: "audio" | "video" | "text";
   /**
    * Flash plein écran — réglage du compte (`AccountConfig.flashAlert`).
    * Seul ce canal est débrayable : les autres ne perturbent pas l'écran
@@ -40,6 +42,13 @@ export interface IncomingAlert {
    */
   flash: boolean;
 }
+
+/** Ce que la notification système annonce, selon le média offert. */
+const NOTIF: Record<IncomingAlert["kind"], MsgKey> = {
+  audio: "alert.notifAudio",
+  video: "alert.notifVideo",
+  text: "alert.notifText",
+};
 
 /** Période du clignotement titre/favicon, alignée sur celle du flash CSS. */
 const BLINK_MS = 1200;
@@ -128,7 +137,7 @@ function notify(a: IncomingAlert): void {
   try {
     // `silent` : le retour sonore est déjà assuré par la sonnerie de l'app
     notification = new Notification(t("alert.notifTitle"), {
-      body: t(a.video ? "alert.notifVideo" : "alert.notifAudio", { caller: a.caller }),
+      body: t(NOTIF[a.kind], { caller: a.caller }),
       tag: "trix-incoming",
       requireInteraction: true,
       silent: true,
@@ -199,6 +208,45 @@ export function startIncomingAlert(a: IncomingAlert): void {
   keepScreenOn();
   notify(a);
   startRing();
+}
+
+/** Durée du cadre d'une alerte ponctuelle : un battement, pas une sonnerie. */
+const PULSE_MS = 1200;
+
+let pulse: HTMLElement | null = null;
+let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Alerte **en cours de session** : le `BEL` du texte temps réel (T.140 §8.3,
+ * docs/CONCEPTION.md §4.9). Le correspondant appelle l'attention de
+ * quelqu'un qui a peut-être quitté l'écran — d'où le réemploi des canaux de
+ * l'appel entrant, en un seul battement : cadre, salve, vibration.
+ *
+ * Deux différences avec la sonnerie : elle ne se répète pas, et elle
+ * s'efface toute seule. Pendant une sonnerie d'appel entrant, elle se tait
+ * complètement : tous ces canaux sont déjà pris, et ils disent quelque
+ * chose de plus urgent.
+ */
+export function pulseAlert(flash = true): void {
+  if (active) return;
+
+  if (flash) {
+    if (pulseTimer !== null) clearTimeout(pulseTimer);
+    if (!pulse) {
+      pulse = document.createElement("div");
+      pulse.className = "callflash";
+      pulse.setAttribute("aria-hidden", "true");
+      document.body.append(pulse);
+    }
+    pulseTimer = setTimeout(() => {
+      pulse?.remove();
+      pulse = null;
+      pulseTimer = null;
+    }, PULSE_MS);
+  }
+
+  if (typeof navigator.vibrate === "function") navigator.vibrate(200);
+  ringOnce();
 }
 
 export function stopIncomingAlert(): void {

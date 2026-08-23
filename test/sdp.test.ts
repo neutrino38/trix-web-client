@@ -59,10 +59,28 @@ describe("offeredMedia", () => {
     });
   });
 
-  it("les lignes m= autres qu'audio/vidéo sont ignorées", () => {
+  it("un canal de données seul est un appel texte, pas un appel audio", () => {
     expect(
       offeredMedia(sdp("m=application 5000 UDP/DTLS/SCTP webrtc-datachannel", "a=sendrecv")),
+    ).toEqual({ audio: false, video: false });
+    // la section m=text des passerelles dit la même chose
+    expect(offeredMedia(sdp("m=text 60000 TCP/WSS t140"))).toEqual({
+      audio: false,
+      video: false,
+    });
+  });
+
+  it("le texte ne masque pas la parole : l'audio l'emporte sur le canal", () => {
+    expect(
+      offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "m=application 5000 UDP/DTLS/SCTP webrtc-datachannel")),
     ).toEqual({ audio: true, video: false });
+  });
+
+  it("un canal de données rejeté (port 0) ne fait pas un appel texte", () => {
+    expect(offeredMedia(sdp("m=application 0 UDP/DTLS/SCTP webrtc-datachannel"))).toEqual({
+      audio: true,
+      video: false,
+    });
   });
 
   it("offre absente ou illisible : audio par défaut", () => {
@@ -177,8 +195,47 @@ describe("unsupportedOffer", () => {
     expect(unsupportedOffer(offer)).toBeNull();
   });
 
-  it("une offre sans flux audio ni vidéo n'est pas un appel", () => {
-    const offer = sdp("m=application 9 UDP/DTLS/SCTP webrtc-datachannel");
-    expect(unsupportedOffer(offer)).toContain("m=audio/m=video");
+  /**
+   * L'appel texte seul (§4.9) : le SDP n'a qu'une section `m=application`,
+   * et c'est un appel — à condition que ce poste sache ouvrir ce lien-là.
+   */
+  describe("appel texte seul", () => {
+    const TEXTE_DC = [
+      ...head,
+      "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+      "a=ice-ufrag:F7g3",
+      "a=ice-pwd:x9cl",
+      "a=fingerprint:sha-256 AA:BB",
+      "a=sctp-port:5000",
+    ].join("\r\n");
+
+    it("un canal de données est un appel pour qui transporte le texte ainsi", () => {
+      expect(unsupportedOffer(TEXTE_DC, "datachannel")).toBeNull();
+    });
+
+    it("mais pas pour un poste qui ne transporte pas le texte", () => {
+      expect(unsupportedOffer(TEXTE_DC)).toContain("m=audio/m=video");
+      expect(unsupportedOffer(TEXTE_DC, "none")).toContain("m=audio/m=video");
+    });
+
+    it("ni pour un poste qui n'en transporte pas cette forme-là", () => {
+      expect(unsupportedOffer(TEXTE_DC, "websocket")).toContain("m=audio/m=video");
+    });
+
+    it("une offre texte seul reste jugée sur ICE et DTLS", () => {
+      const nu = sdp("m=application 9 UDP/DTLS/SCTP webrtc-datachannel");
+      expect(unsupportedOffer(nu, "datachannel")).toBe("ICE, DTLS");
+    });
+
+    it("la section m=text d'une passerelle vaut pour le transport WebSocket", () => {
+      const offer = [
+        ...head,
+        "m=text 60000 TCP/WSS t140",
+        "a=ice-ufrag:F7g3",
+        "a=fingerprint:sha-256 AA:BB",
+      ].join("\r\n");
+      expect(unsupportedOffer(offer, "websocket")).toBeNull();
+      expect(unsupportedOffer(offer, "datachannel")).toContain("m=audio/m=video");
+    });
   });
 });
