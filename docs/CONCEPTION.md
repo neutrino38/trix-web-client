@@ -726,6 +726,36 @@ bulle vivante est vide refusionne donc la bulle figée précédente. Nous sommes
 tolérants en réception et simples en émission — nous n'en produisons jamais, puisque
 la bulle locale est close par Entrée.
 
+#### Où le fil se pose : à la place de la vidéo
+
+**Un appel qui n'a pas d'image donne sa scène au texte.** En audio + texte comme en
+texte seul, le centre de l'écran n'aurait qu'un rectangle noir à montrer : le fil y
+passe, à la taille de la fenêtre, et la barre de commandes média le coiffe. Un panneau
+latéral de 300 px conviendrait à un accessoire ; dans ces appels, le texte est le canal
+principal — souvent le seul.
+
+L'appel vidéo garde l'image au centre et le fil sur le côté : panneau latéral sur
+bureau, replié sous l'image sur mobile. **La bascule vaut en cours d'appel** — ajouter
+la caméra rend la scène à l'image, la retirer la rend au fil — et ne coûte rien : le
+modèle vit hors du DOM, seule sa projection change de place.
+
+Ce qui en découle, et qui se voit :
+
+- la barre de commandes **coiffe** le fil au lieu de flotter dessus : en surimpression
+  elle couvrirait le composeur, et en bas le clavier virtuel l'emporterait hors de
+  l'écran avec Raccrocher. Elle garde le fond sombre de la scène, qui est ce qui rend
+  ses boutons blancs lisibles ;
+- l'élément média distant **reste** dans la page, invisible : c'est lui qui porte le son
+  de l'appel, et le haut-parleur le coupe. Les vu-mètres le suivent dans le bandeau,
+  couchés à sa hauteur — un appel qu'on lit reste un appel qu'on entend ;
+- le double-clic n'y bascule pas le plein écran : sur un fil de texte, il sélectionne
+  un mot ;
+- pendant la sonnerie entrante, la scène ne change pas : la popup est le seul
+  interlocuteur, et l'on n'écrit pas à quelqu'un dont on n'a pas encore pris l'appel ;
+- un appel **texte seul** garde sa scène même quand le distant refuse le texte : la
+  remarque du fil dit pourquoi cet appel ne mènera nulle part, là où l'écran noir de
+  l'appel audio ne dirait rien.
+
 #### Le champ de saisie, et la règle des deux secondes
 
 L'utilisateur écrit dans un champ ordinaire : flèches, corrections au milieu,
@@ -754,6 +784,26 @@ le reste** (§6) : effacer l'historique efface donc aussi les conversations. La 
 d'historique gagne une bulle « T », à côté du parchemin de la trace SIP et de la loupe
 du bilan média (§5.3, §5.4), qui rouvre la conversation en lecture seule avec
 « Copier » et « Exporter ».
+
+**Gardé sans condition, contrairement au carnet et au bilan.** Ces deux-là ne sont
+écrits que si la trace était cochée : ce sont des pièces de mise au point. La
+conversation, elle, est ce que deux personnes se sont dit — elle rejoint la ligne dès
+que quelqu'un a écrit un caractère, et rien d'autre ne l'y fait entrer : un appel où
+le lien s'est ouvert et refermé sans un mot ne laisse pas de bulle « T ».
+
+**Comment le fil arrive jusqu'à la ligne.** Il est décodé et tenu par le panneau, et
+la machine ne sait rien du texte échangé ; elle en reçoit un **lecteur**, injecté à la
+composition (`main.ts`) au même titre que le coffre et le port. Au moment où le bloc
+d'appel rend la main, la machine l'appelle : l'écran n'a pas encore été re-rendu, donc
+le panneau tient encore le fil de l'appel qui vient de finir. C'est le seul point où
+l'écran et la machine se rencontrent, et il est déclaré.
+
+**Ce qui est scellé** (`sip/transcript.ts`) : la bulle vivante de chaque côté est close
+là où l'appel s'est arrêté, l'ensemble est **recopié** — le panneau écrit dans ses runs
+en place, et le coffre chiffre plus tard —, et un fil trop long perd son **début**, avec
+une remarque qui le dit. Une conversation se lit par la fin, et cinquante appels vivent
+dans le même coffre, réécrit à chaque appel : le plafond est là pour qu'une
+conversation-fleuve n'emporte pas l'historique avec elle.
 
 L'export est du **WebVTT**, calé sur le début de la communication et non sur l'heure
 du jour : le fichier se pose tel quel sur un enregistrement de l'appel. Une bulle
@@ -833,8 +883,14 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
   l'interface n'en connaît aucun ; `sip/rttsip.ts` branche les deux sur la session —
   le WebSocket par l'événement `sdp`, qu'il est seul à toucher, le canal de données
   par la connexion pair-à-pair, sans une ligne de SDP.
+- `sip/transcript.ts` — le modèle des bulles, **sans DOM** : c'est lui que la ligne
+  d'historique emporte, et le coffre n'a donc pas à importer un écran. Il porte aussi
+  le scellement du fil en fin d'appel — bulles vivantes closes, copie, plafond.
 - `ui/screens/call/chat.ts` — le panneau : en-tête, fil, bulles, composeur.
-- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle.
+- `ui/chatdialog.ts` — la relecture d'une conversation passée, depuis la bulle « T »
+  de sa ligne d'historique : même `<dialog>` que le carnet, et le fil rendu par le
+  même code que pendant l'appel.
+- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle. **Pas encore écrit.**
 
 **Pas d'émulateur de terminal.** `xterm.js` est la seule bibliothèque sérieuse du
 domaine, et elle ne convient pas : elle rend une grille monospace de dimensions fixes

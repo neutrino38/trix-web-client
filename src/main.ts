@@ -3,6 +3,7 @@ import { PhoneMachine, type PhoneInstance } from "./machines/phone.js";
 import { CallBlock } from "./machines/call.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
+import { chatTranscript } from "./ui/screens/call/chat.js";
 import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
@@ -33,6 +34,10 @@ const phone = PhoneMachine.start({
   args: {
     store: createBrowserStore(),
     sip: createJsSipPort(),
+    // la conversation de l'appel qui se termine, lue au panneau au moment
+    // où la machine range sa ligne d'historique (§4.9) : c'est ici, et
+    // nulle part ailleurs, que l'écran et la machine se rencontrent
+    transcript: chatTranscript,
   },
 });
 

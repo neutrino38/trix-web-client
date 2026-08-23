@@ -23,6 +23,7 @@ import type {
 import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
+import type { ChatItem } from "../sip/transcript.js";
 import { computeHa1 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
@@ -35,6 +36,14 @@ export interface PhoneCtx {
   /** Injectés via start({ args }) — jamais recréés par la machine. */
   store: SecureStore;
   sip: SipPort;
+  /**
+   * La conversation de l'appel qui se termine, à consigner dans sa ligne
+   * d'historique (§4.9). Injecté comme les deux précédents : le fil est
+   * décodé et tenu par le panneau de tchat, et la machine n'a pas à
+   * connaître un écran pour le ranger. Rend un fil vide par défaut — un
+   * hôte qui n'affiche pas de tchat n'en consigne pas.
+   */
+  transcript: () => ChatItem[];
   config: AccountConfig | null;
   handle: SipHandle | null;
   /**
@@ -160,6 +169,22 @@ function statsOf(ctx: PhoneCtx): { stats?: MediaStats } {
   return stats ? { stats } : {};
 }
 
+/**
+ * La conversation du même appel. Elle ne vient pas de la session, elle :
+ * le fil se décode et s'affiche dans le panneau (§4.9), et la machine ne
+ * sait rien du texte échangé — elle en reçoit un **lecteur**, branché à
+ * la composition comme le coffre et le port (`main.ts`). Rien à consigner
+ * quand personne n'a écrit : la bulle « T » n'apparaît alors pas.
+ *
+ * Le moment est le bon : le bloc a rendu la main, l'écran n'a pas encore
+ * été re-rendu, donc le panneau tient encore le fil de l'appel qui vient
+ * de finir.
+ */
+function chatOf(ctx: PhoneCtx): { chat?: ChatItem[] } {
+  const items = ctx.transcript();
+  return items.length > 0 ? { chat: items } : {};
+}
+
 function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
   const info = ctx.pendingCall;
   if (!info || !ctx.config) return;
@@ -182,6 +207,8 @@ function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
     ...traceOf(ctx),
     // et ce que le média a donné pendant ce temps-là (§5.4)
     ...statsOf(ctx),
+    // la conversation, s'il y en a eu une (§4.9) — sans condition, elle
+    ...chatOf(ctx),
   };
   ctx.history = recent([entry, ...ctx.history]);
   void ctx.store.saveHistory(accountKey(ctx.config), ctx.history).catch(() => {});
@@ -282,6 +309,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
   context: () => ({
     store: null as unknown as SecureStore,
     sip: null as unknown as SipPort,
+    transcript: () => [],
     config: null,
     handle: null,
     lastError: null,

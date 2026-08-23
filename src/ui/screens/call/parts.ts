@@ -22,6 +22,7 @@ import { hideToast, showToast } from "../../toast.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
 import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
+import { CHAT_LOG_ICON, showChatDialog } from "../../chatdialog.js";
 import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
@@ -309,23 +310,36 @@ export function historyRow(entry: CallLogEntry, index: number): string {
     ${entry.media.video ? HISTORY_CAM : ""}
     <span class="when">${esc(fmtWhen(entry.startedAt))}</span>
     <span class="detail">${esc(detail)}</span>
-    ${
-      // le parchemin n'apparaît que si l'appel a gardé sa trace : la case
-      // était cochée pendant qu'il avait lieu (§5.3)
-      entry.trace?.length
-        ? `<button class="tracebtn" data-act="trace" data-i="${index}"
-             title="${esc(t("trace.open"))}" aria-label="${esc(t("trace.open"))}">${SCROLL_ICON}</button>`
-        : ""
-    }
-    ${
-      // et la loupe si le média a été mesuré pendant ce temps-là (§5.4) :
-      // même case, mais un appel sans flux n'a rien à montrer
-      entry.stats
-        ? `<button class="statsbtn" data-act="stats" data-i="${index}"
-             title="${esc(t("stats.open"))}" aria-label="${esc(t("stats.open"))}">${LENS_ICON}</button>`
-        : ""
-    }
+    ${rowButtons(entry, index)}
   </div>`;
+}
+
+/**
+ * Ce que la ligne d'historique donne à rouvrir, dans un même coin : la
+ * bulle « T » de la conversation (§4.9), le parchemin de la trace SIP
+ * (§5.3) et la loupe du bilan média (§5.4). Chacune n'apparaît que si
+ * l'appel a gardé de quoi la remplir — et une ligne qui n'en porte aucune
+ * garde toute sa largeur pour son motif.
+ *
+ * La conversation vient en tête parce que c'est la seule des trois qui
+ * parle de ce qui a été dit ; les deux autres parlent de la mécanique.
+ */
+function rowButtons(entry: CallLogEntry, index: number): string {
+  const one = (act: string, cls: string, label: MsgKey, icon: string): string =>
+    `<button class="${cls}" data-act="${act}" data-i="${index}"
+             title="${esc(t(label))}" aria-label="${esc(t(label))}">${icon}</button>`;
+  const btns = [
+    // sans condition, elle : le fil rejoint l'historique dès que quelqu'un
+    // a écrit, que la trace ait été cochée ou non
+    entry.chat?.length ? one("chat-log", "chatlogbtn", "chat.log.open", CHAT_LOG_ICON) : "",
+    // le parchemin n'apparaît que si l'appel a gardé sa trace : la case
+    // était cochée pendant qu'il avait lieu (§5.3)
+    entry.trace?.length ? one("trace", "tracebtn", "trace.open", SCROLL_ICON) : "",
+    // et la loupe si le média a été mesuré pendant ce temps-là (§5.4) :
+    // même case, mais un appel sans flux n'a rien à montrer
+    entry.stats ? one("stats", "statsbtn", "stats.open", LENS_ICON) : "",
+  ].filter((b) => b !== "");
+  return btns.length > 0 ? `<span class="rowbtns">${btns.join("")}</span>` : "";
 }
 
 export function fmtChrono(startedAt: number): string {
@@ -500,6 +514,11 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   on('[data-act="stats"]', (elem) => {
     const entry = phone.context.history[Number(elem.dataset.i)];
     if (entry) showStatsDialog(entry);
+  });
+  // bulle « T » : la conversation de cet appel, en lecture seule (§4.9)
+  on('[data-act="chat-log"]', (elem) => {
+    const entry = phone.context.history[Number(elem.dataset.i)];
+    if (entry) showChatDialog(entry);
   });
   if (targetInput && !view) {
     // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler

@@ -8,6 +8,7 @@
 import type { CallMedia } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
+import type { ChatItem } from "../sip/transcript.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
 import { parseRttTransport, type RttTransport } from "../sip/rtt.js";
 import { rawMsg, type Msg } from "../i18n/types.js";
@@ -89,6 +90,16 @@ export interface CallLogEntry {
    * celles des versions précédentes.
    */
   stats?: MediaStats;
+  /**
+   * La conversation en texte temps réel de l'appel, telle qu'elle s'est
+   * affichée (§4.9) — bulles des deux côtés, remarques du fil, horodatage
+   * de chacune. Gardée sans condition, contrairement au carnet et au
+   * bilan : ce n'est pas une trace de mise au point mais ce que les deux
+   * personnes se sont dit ; elle est chiffrée avec le reste, et vider
+   * l'historique l'efface donc aussi. Absente des appels où personne n'a
+   * écrit — et de ceux des versions précédentes.
+   */
+  chat?: ChatItem[];
 }
 
 export interface SecureStore {

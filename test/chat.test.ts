@@ -21,7 +21,10 @@ import {
   chatStateLine,
   chatThread,
   chatThreadHtml,
+  chatTranscript,
   chatHead,
+  chatOnStage,
+  chatStage,
   chatType,
   CHAT_PANE_ID,
   type ChatBubble,
@@ -29,6 +32,7 @@ import {
 } from "../src/ui/screens/call/chat.js";
 import { overlayBar } from "../src/ui/screens/call/overlay.js";
 import type { CallView } from "../src/machines/events.js";
+import type { CallSession } from "../src/sip/port.js";
 import { T140 } from "../src/sip/t140.js";
 import { useLocale } from "../src/i18n/index.js";
 
@@ -190,6 +194,29 @@ describe("les deux côtés du fil", () => {
   });
 });
 
+describe("ce que l'historique garde", () => {
+  it("le fil de l'appel, bulle vivante close au raccrochage", () => {
+    chatReceive("je vous entends mal");
+    chatType("oui, je vous lis");
+    const kept = chatTranscript();
+    expect(kept.filter((i) => i.kind === "bubble").map((b) => bubbleText(b))).toEqual([
+      "je vous entends mal",
+      "oui, je vous lis",
+    ]);
+    // le panneau, lui, les tient encore pour vivantes : ce qui part au
+    // coffre est une copie close, pas le modèle
+    expect(kept.every((i) => i.kind === "note" || i.endedAt !== null)).toBe(true);
+    expect(bubbles().every((b) => b.endedAt === null)).toBe(true);
+  });
+
+  it("rien d'un appel où personne n'a écrit", () => {
+    chatLink("open");
+    chatLink("closed");
+    expect(chatThread().length).toBeGreaterThan(0); // des remarques, pas des messages
+    expect(chatTranscript()).toEqual([]);
+  });
+});
+
 describe("le gabarit", () => {
   it("le panneau est une région, jamais masquée : rien ne la rouvrirait", () => {
     const pane = chatPane("Bob");
@@ -231,5 +258,95 @@ describe("le gabarit", () => {
     });
     expect(withChat).toContain('data-act="chat"');
     expect(withChat).toContain(`aria-controls="${CHAT_PANE_ID}"`);
+  });
+});
+
+/**
+ * **Le tchat à la place de la vidéo** (§4.9). La règle tient à une chose : un
+ * appel qui n'a pas d'image n'a rien à mettre au centre de l'écran, et le fil
+ * y va. Ce qui se casse sans qu'un type ne bronche : un appel vidéo dont la
+ * scène passerait au texte, une sonnerie entrante où l'on écrirait à
+ * quelqu'un dont on n'a pas pris l'appel, et un appel texte seul qui perdrait
+ * son écran le jour où le distant refuse le texte.
+ */
+describe("le tchat sur la scène", () => {
+  /** Un appel dont la session porte un canal de texte — le canal suffit ici. */
+  const callOf = (media: { audio: boolean; video: boolean }, state = "connected"): CallView =>
+    ({
+      state,
+      direction: "outgoing",
+      target: "sip:bob@example.fr",
+      displayName: null,
+      offered: media,
+      media,
+      micMuted: false,
+      selfViewHidden: false,
+      videoPending: false,
+      videoAsked: false,
+      dtmfSent: "",
+      notice: null,
+      connectedAt: Date.now(),
+      endedBy: null,
+      session: { rtt: () => ({}) } as unknown as CallSession,
+    }) as CallView;
+
+  it("prend la scène quand l'appel n'a pas d'image", () => {
+    expect(chatOnStage(callOf({ audio: true, video: false }))).toBe(true);
+    expect(chatOnStage(callOf({ audio: false, video: false }))).toBe(true);
+  });
+
+  it("la rend à l'image dès que l'appel porte la vidéo", () => {
+    expect(chatOnStage(callOf({ audio: true, video: true }))).toBe(false);
+  });
+
+  it("pas pendant la sonnerie entrante : la popup est le seul interlocuteur", () => {
+    expect(chatOnStage(callOf({ audio: true, video: false }, "ringing_in"))).toBe(false);
+  });
+
+  it("pas d'appel, pas de canal, pas de scène", () => {
+    expect(chatOnStage(null)).toBe(false);
+    const view = callOf({ audio: true, video: false });
+    expect(chatOnStage({ ...view, session: null })).toBe(false);
+  });
+
+  it("texte refusé : l'appel audio retrouve sa scène, l'appel texte garde la sienne", () => {
+    chatLink("closed"); // fermé sans s'être jamais ouvert : le distant n'en a pas voulu
+    expect(chatOnStage(callOf({ audio: true, video: false }))).toBe(false);
+    // un appel texte seul n'a rien d'autre à montrer, et la remarque du fil
+    // dit pourquoi il ne mènera nulle part
+    expect(chatOnStage(callOf({ audio: false, video: false }))).toBe(true);
+  });
+
+  it("la scène porte le fil, la barre reçue, et le son de l'appel", () => {
+    const html = chatStage({ peer: "Bob", bar: "<div class=\"overlaybar\"></div>", meters: true });
+    expect(html).toContain(`id="${CHAT_PANE_ID}"`);
+    expect(html).toContain('class="overlaybar"');
+    // l'élément média distant reste : c'est lui qui joue le son
+    expect(html).toContain('class="remote" data-ref="remote"');
+    expect(html).toContain('data-ref="vu-remote"');
+    // pas de zone de plein écran : sur un fil de texte, le double-clic
+    // sélectionne un mot, il ne bascule pas l'écran
+    expect(html).not.toContain('data-ref="videozone"');
+  });
+
+  it("pas de vu-mètres quand l'appel ne porte pas de son", () => {
+    const html = chatStage({ peer: "Bob", bar: "", meters: false });
+    expect(html).not.toContain('data-ref="vu-remote"');
+  });
+
+  /**
+   * La vidéo ajoutée ou retirée en cours d'appel déplace le fil — scène ou
+   * panneau — et chaque place le réécrit **depuis le modèle**. C'est ce qui
+   * fait qu'une renégociation ne coûte ni une bulle ni une phrase en cours
+   * de frappe : les deux gabarits rendent le même fil et le même brouillon.
+   */
+  it("la bascule ne perd ni le fil ni la phrase en cours", () => {
+    chatLink("open");
+    chatReceive("bonjour, je vous entends mal");
+    chatType("je vous lis très bien");
+    for (const html of [chatStage({ peer: "Bob", bar: "", meters: true }), chatPane("Bob")]) {
+      expect(html).toContain("bonjour, je vous entends mal");
+      expect(html).toContain("je vous lis très bien");
+    }
   });
 });

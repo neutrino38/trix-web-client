@@ -221,6 +221,20 @@ const messages: Translation = {
   "chat.note.refused": "لا يدعم هذا المراسِل النصّ الفوري",
   "chat.note.alert": "وصل تنبيه",
 
+  "chat.log.open": "قراءة محادثة هذه المكالمة",
+  "chat.log.title": "المحادثة — {target}",
+  "chat.log.count.zero": "لا رسائل",
+  "chat.log.count.one": "رسالة واحدة",
+  "chat.log.count.two": "رسالتان",
+  "chat.log.count.few": "{n} رسائل",
+  "chat.log.count.many": "{n} رسالة",
+  "chat.log.count.other": "{n} رسالة",
+  "chat.log.copy": "نسخ",
+  "chat.log.copied": "تمّ النسخ",
+  "chat.log.copyFailed": "تعذّر النسخ",
+  "chat.log.close": "إغلاق",
+  "chat.log.cut": "بداية المحادثة غير محفوظة",
+
   // ---------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------

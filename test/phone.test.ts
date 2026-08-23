@@ -17,6 +17,7 @@ import type {
 } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
+import type { ChatItem } from "../src/sip/transcript.js";
 import { computeHa1 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 
@@ -159,6 +160,8 @@ async function bootTo(
   state: string,
   initial: AccountConfig | null,
   history: CallLogEntry[] = [],
+  /** Le fil du tchat, que l'hôte branche sur le panneau (voir `main.ts`). */
+  transcript: () => ChatItem[] = () => [],
 ): Promise<{
   phone: PhoneInstance;
   sip: FakeSip;
@@ -166,7 +169,7 @@ async function bootTo(
 }> {
   const { store, box } = fakeStore(initial, history);
   const sip = new FakeSip();
-  const phone = PhoneMachine.start({ args: { store, sip } });
+  const phone = PhoneMachine.start({ args: { store, sip, transcript } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
   if (state === "home") return { phone, sip, box };
   phone.send({ type: "ui:useAccount" });
@@ -943,6 +946,32 @@ describe("PhoneMachine — historique d'appels", () => {
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.context.history[0]!.stats).toBeUndefined();
+  });
+
+  it("la conversation est consignée avec la ligne — et absente si personne n'a écrit", async () => {
+    let thread: ChatItem[] = [
+      {
+        kind: "bubble",
+        id: 1,
+        side: "them",
+        runs: [{ text: "je vous entends mal", attrs: {} }],
+        startedAt: 1,
+        endedAt: 2,
+      },
+    ];
+    const { phone, sip } = await bootTo("ready", CFG, [], () => thread);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: false, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history[0]!.chat).toHaveLength(1);
+
+    // appel sans texte, ou personne n'a rien écrit : la ligne ne porte rien
+    // — c'est ce qui décide de la bulle « T » dans l'historique
+    thread = [];
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    expect(phone.context.history[0]!.chat).toBeUndefined();
   });
 
   it("ui:clearHistory vide la liste et la persistance", async () => {

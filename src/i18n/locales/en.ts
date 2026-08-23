@@ -202,6 +202,17 @@ const messages: Translation = {
   "chat.note.refused": "This correspondent does not take real-time text",
   "chat.note.alert": "Alert received",
 
+  /** Reading a past conversation back from the call log (§4.9). */
+  "chat.log.open": "Read this call's conversation",
+  "chat.log.title": "Conversation — {target}",
+  "chat.log.count.one": "{n} message",
+  "chat.log.count.other": "{n} messages",
+  "chat.log.copy": "Copy",
+  "chat.log.copied": "Copied",
+  "chat.log.copyFailed": "Copy refused. Sorry about that",
+  "chat.log.close": "Close",
+  "chat.log.cut": "Start of the conversation not kept",
+
   // ---------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------

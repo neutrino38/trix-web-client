@@ -240,8 +240,12 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
       sur la palette du thème**, différentiel d'émission en graphèmes (`sip/t140.ts`)
 - [x] Panneau de tchat : une bulle vivante par côté, champ de saisie et règle des deux
       secondes, alerte `BEL` sur les canaux de la phase 3, défilement jamais imposé
-      (`ui/screens/call/chat.ts`) — bureau à la place de l'historique, mobile sous la vidéo
-- [ ] Historique des conversations (chiffré avec le compte) et export WebVTT
+      (`ui/screens/call/chat.ts`) — appel sans image : le fil prend la place de la vidéo ;
+      appel vidéo : sidebar sur bureau, sous l'image sur mobile
+- [x] Historique des conversations : le fil rejoint la ligne d'appel, chiffré avec le
+      compte, et se relit depuis sa bulle « T » avec « Copier » (`sip/transcript.ts`,
+      `ui/chatdialog.ts`)
+- [ ] Export WebVTT de la conversation (`ui/subtitles.ts`)
 
 ### Phase 5 (future) : Tauri
 - [ ] Option d'embarquement Tauri + paquet Ubuntu — **reportée**, contraintes en `CONCEPTION.md` §8

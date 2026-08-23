@@ -210,6 +210,16 @@ const messages: Translation = {
   "chat.note.refused": "この相手はリアルタイムテキストに対応していません",
   "chat.note.alert": "注意喚起を受信しました",
 
+  "chat.log.open": "この通話の会話を読み返す",
+  "chat.log.title": "会話 — {target}",
+  "chat.log.count.one": "{n} 件のメッセージ",
+  "chat.log.count.other": "{n} 件のメッセージ",
+  "chat.log.copy": "コピー",
+  "chat.log.copied": "コピーしました",
+  "chat.log.copyFailed": "コピーできませんでした",
+  "chat.log.close": "閉じる",
+  "chat.log.cut": "会話の冒頭は保存されていません",
+
   // ---------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------

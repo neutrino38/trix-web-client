@@ -203,6 +203,17 @@ const messages = {
   "chat.note.refused": "Ce correspondant ne prend pas le texte temps réel",
   "chat.note.alert": "Alerte reçue",
 
+  /** Relecture de la conversation depuis l'historique (§4.9). */
+  "chat.log.open": "Relire la conversation de cet appel",
+  "chat.log.title": "Conversation — {target}",
+  "chat.log.count.one": "{n} message",
+  "chat.log.count.other": "{n} messages",
+  "chat.log.copy": "Copier",
+  "chat.log.copied": "Copié",
+  "chat.log.copyFailed": "Copie refusée",
+  "chat.log.close": "Fermer",
+  "chat.log.cut": "Début de la conversation non conservé",
+
   // ---------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------

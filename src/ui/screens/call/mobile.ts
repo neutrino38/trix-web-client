@@ -25,8 +25,10 @@ import {
   chatChannel,
   chatHead,
   chatMobileOpen,
+  chatOnStage,
   chatPane,
   chatRefused,
+  chatStage,
 } from "./chat.js";
 import { statsPill } from "./stats.js";
 import {
@@ -61,7 +63,11 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   // le tchat n'existe que si le canal existe (§4.9) ; déplié, il prend la
   // place que la vidéo lui cède — ce n'est pas une couche de plus
   const chat = chatChannel(view) !== null && !chatRefused();
-  const chatOpen = chat && chatMobileOpen();
+  // Un appel sans image lui donne l'écran entier (§4.9) : plus rien à
+  // céder, donc plus de pli — ni classe sur la racine, ni bouton dans la
+  // barre. Le fil est l'appel.
+  const stageChat = chatOnStage(view);
+  const chatOpen = chat && !stageChat && chatMobileOpen();
 
   return el(`
     <div class="screen-call mobile ${chatOpen ? "chat-open" : ""}">
@@ -79,6 +85,16 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
           )
         }
         <span class="spacer"></span>
+        ${
+          // Scène de texte : le chrono n'a plus d'image où se poser, il rejoint
+          // la barre haute — comme sur bureau. Le mettre dans le bandeau de
+          // commandes en aurait chassé Raccrocher hors de l'écran à 390 px.
+          stageChat && connected
+            ? `<span class="mchrono flat">${ICONS.clock}<span data-ref="chrono">${fmtChrono(
+                view.connectedAt ?? Date.now(),
+              )}</span></span>`
+            : ""
+        }
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
                 aria-label="${esc(t("action.settings"))}">${ICONS.settings}</button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="logout" ${view ? "disabled" : ""}
@@ -93,6 +109,16 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                <div class="call-overlay">${esc(callLabel("ringing_in"))}…<br>
                  <span class="target">${esc(displayTarget(view.target))}</span></div>
              </div>`
+          : view && stageChat
+          ? chatStage({
+              peer: callerName(view),
+              bar: overlayBar({ view, speakerMuted, withHangup: true }),
+              // pas de vu-mètres ici : à 390 px, cinq commandes et le rond
+              // rouge tiennent tout juste le bandeau. L'audio entrant se voit
+              // quand même — le haut-parleur s'allume dessus (`startVuMeters`)
+              meters: false,
+              dtmf: dtmfPad(view),
+            })
           : view
           ? `<div class="mvideo" data-ref="videozone">
                <video class="remote" data-ref="remote" autoplay playsinline></video>

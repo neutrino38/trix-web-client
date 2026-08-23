@@ -15,7 +15,7 @@ import { incomingDialog } from "./incoming.js";
 import { videoAskDialog } from "./videoask.js";
 import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
-import { chatChannel, chatHead, chatPane, chatRefused } from "./chat.js";
+import { chatChannel, chatHead, chatOnStage, chatPane, chatRefused, chatStage } from "./chat.js";
 import { statsPill } from "./stats.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
@@ -58,6 +58,10 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // n'a pas encore de session (sonnerie entrante), correspondant qui l'a
   // refusé — dans tous ces cas la sidebar reste celle d'avant.
   const chat = chatChannel(view) !== null && !chatRefused();
+  // Un appel sans image donne la scène au tchat (§4.9) : le fil passe au
+  // centre, et la sidebar n'en garde rien — un panneau vide à côté d'un fil
+  // plein serait la même conversation affichée deux fois.
+  const stageChat = chatOnStage(view);
 
   return el(`
     <div class="screen-call ${collapsed ? "panel-collapsed" : ""}">
@@ -100,7 +104,24 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
            ce que \`aria-modal\` ne dit qu'aux lecteurs d'écran -->
       <div class="callbody" ${incoming ? "inert" : ""}>
         <div class="stage">
-          <div class="video" data-ref="videozone">
+          ${
+            // `view &&` : la scène de texte suppose un appel, et c'est ce qui
+            // le dit au compilateur — `stageChat` seul le sait sans le prouver
+            view && stageChat
+              ? chatStage({
+                  peer: callerName(view),
+                  bar: overlayBar({
+                    view,
+                    speakerMuted,
+                    // pas de plein écran : il n'y a pas d'image à agrandir,
+                    // et le bouton serait grisé pour tout le monde
+                    withHangup: true,
+                    panel: { collapsed, controls: "call-panel" },
+                  }),
+                  meters: connected && view.media.audio,
+                  dtmf: dtmfPad(view),
+                })
+              : `<div class="video" data-ref="videozone">
             ${
               incoming
                 ? `<div class="call-overlay">${esc(callLabel("ringing_in"))}…<br>
@@ -151,7 +172,8 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                       ? `<span class="idle-msg">${esc(t("call.sleeping"))}</span>`
                       : `<span class="idle-msg">${esc(ready ? t("call.idle") : status.label)}</span>`
             }
-          </div>
+          </div>`
+          }
         </div>
         <div class="sidebar" id="call-panel" style="width:${width}px">
           ${panelHandle(width)}
@@ -213,7 +235,11 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                    </div>
                  </div>`
           }
-          ${chat && view ? chatHead(ICONS.chat) + chatPane(callerName(view)) : ""}
+          ${
+            // le tchat ne tient la sidebar que si la scène ne l'a pas pris :
+            // c'est le cas de l'appel vidéo, où l'image occupe le centre
+            chat && view && !stageChat ? chatHead(ICONS.chat) + chatPane(callerName(view)) : ""
+          }
           ${
             // hors appel, le tchat n'a pas lieu d'être : il naît avec le canal
             // de données et s'en va avec lui (§4.9)

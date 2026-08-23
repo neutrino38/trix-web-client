@@ -96,7 +96,9 @@ la langue servira à l'affichage.
 | `sip/rttsip.ts` | le branchement sur la session JsSIP, pour les deux transports |
 | `sip/rttws.ts` | le fil WebSocket des passerelles déployées (hors RFC 8865) |
 | `sip/t140.ts` | le codec, sans DOM : décodage du flux en événements, différentiel d'émission |
-| `ui/screens/call/chat.ts` | le panneau : modèle du fil, bulles, composeur, projection |
+| `sip/transcript.ts` | le modèle des bulles, et son scellement pour l'historique |
+| `ui/screens/call/chat.ts` | le panneau : fil, bulles, composeur, projection |
+| `ui/chatdialog.ts` | la relecture d'une conversation passée, depuis l'historique |
 
 États du lien, tels que l'interface les voit : `connecting`, `open`, `lost`, `closed`.
 
@@ -171,14 +173,32 @@ balisage.
   à chaque caractère. C'est la bulle **figée** qui est annoncée, une fois, par la région
   d'état de l'application.
 
-Bureau : le fil prend la sidebar sous les commandes d'appel, qui ne bougent pas ;
-**l'historique disparaît pendant l'appel** — à 300 px les deux ne tiennent pas côte à
-côte, et un historique n'a rien à dire pendant qu'on parle. Mobile : la vidéo cède la
-place basse au fil, et le bouton de la barre de surimpression la lui rend.
+**Où le fil se pose dépend de l'appel** (`chatOnStage`). Un appel sans image — audio +
+texte, ou texte seul — lui donne la **scène** : le fil occupe le centre de l'écran, à la
+place de la vidéo, et la barre de commandes média le coiffe au lieu de flotter dessus,
+là où elle couvrirait le composeur et où le clavier virtuel l'emporterait avec
+Raccrocher. L'élément média distant y reste, invisible : c'est lui qui porte le son.
+
+Un appel **vidéo** garde l'image au centre, et le fil revient sur le côté : la sidebar
+sous les commandes d'appel sur bureau — **l'historique disparaît pendant l'appel**, à
+300 px les deux ne tiennent pas côte à côte — et sous la vidéo sur mobile, le bouton de
+la barre de surimpression rendant la place à l'image. La bascule vaut en cours d'appel :
+ajouter la caméra rend la scène à l'image, la retirer la rend au fil.
+
+## Après l'appel
+
+Le fil rejoint la ligne d'historique de l'appel, **chiffré avec le reste du compte** —
+vider l'historique efface donc aussi les conversations. Sans condition, contrairement à
+la trace SIP et au bilan média : ce n'est pas une pièce de mise au point. Un appel où
+personne n'a écrit ne laisse rien.
+
+Ce qui est gardé est scellé en fin d'appel (`sip/transcript.ts`) : bulles vivantes
+closes, copie du modèle, et un plafond (32 000 caractères, 400 bulles) au-delà duquel
+c'est le **début** du fil qui tombe — une remarque en tête le dit. La ligne
+d'historique porte alors une bulle « T » qui rouvre la conversation en lecture seule,
+avec « Copier ».
 
 ## Ce qui reste à faire
 
-L'**historique** des conversations (le fil chiffré avec le reste du compte, relu depuis
-la bulle « T » de sa ligne) et l'**export en sous-titres** WebVTT (`ui/subtitles.ts`)
-décrits en §4.9 ne sont pas écrits : le fil quitte l'écran avec l'appel et n'est
-conservé nulle part.
+L'**export en sous-titres** WebVTT (`ui/subtitles.ts`) décrit en §4.9 n'est pas écrit :
+la conversation se relit et se copie, elle ne s'exporte pas encore.

@@ -203,6 +203,16 @@ const messages: Translation = {
   "chat.note.refused": "对方不支持实时文本",
   "chat.note.alert": "收到提醒",
 
+  "chat.log.open": "回看此次通话的对话",
+  "chat.log.title": "对话 — {target}",
+  "chat.log.count.one": "{n} 条消息",
+  "chat.log.count.other": "{n} 条消息",
+  "chat.log.copy": "复制",
+  "chat.log.copied": "已复制",
+  "chat.log.copyFailed": "复制被拒绝",
+  "chat.log.close": "关闭",
+  "chat.log.cut": "对话开头未保留",
+
   // ---------------------------------------------------------------------
   // Actions
   // ---------------------------------------------------------------------

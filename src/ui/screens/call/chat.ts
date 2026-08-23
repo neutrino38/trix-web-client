@@ -42,6 +42,15 @@ import {
   type T140Decoder,
   type T140Event,
 } from "../../../sip/t140.js";
+import {
+  bubbleText,
+  sealTranscript,
+  type ChatBubble,
+  type ChatItem,
+  type ChatNote,
+  type ChatRun,
+  type ChatSide,
+} from "../../../sip/transcript.js";
 import { el, esc } from "../../el.js";
 import { announce } from "../../announce.js";
 import { pulseAlert } from "../../alert.js";
@@ -71,35 +80,13 @@ const hasDom = (): boolean => typeof document !== "undefined";
 // Le modèle
 // ---------------------------------------------------------------------------
 
-export type ChatSide = "them" | "us";
-
-/** Un morceau de bulle sous un même jeu d'attributs. */
-export interface ChatRun {
-  text: string;
-  attrs: T140Attrs;
-  /** Marqueur de texte manquant (`U+FFFD`) : ce n'est pas de la frappe. */
-  lost?: boolean;
-}
-
-export interface ChatBubble {
-  kind: "bubble";
-  id: number;
-  side: ChatSide;
-  runs: ChatRun[];
-  startedAt: number;
-  /** `null` tant qu'elle est vivante ; l'instant du séparateur ensuite. */
-  endedAt: number | null;
-}
-
-/** Ce que le fil dit de lui-même : ouverture, coupure, alerte reçue. */
-export interface ChatNote {
-  kind: "note";
-  id: number;
-  key: MsgKey;
-  at: number;
-}
-
-export type ChatItem = ChatBubble | ChatNote;
+/**
+ * Le modèle des bulles vit dans `sip/transcript.ts` : c'est lui que la
+ * ligne d'historique emporte, et le coffre n'a pas à importer un écran
+ * (§4.9). Réexporté ici — le panneau reste l'endroit d'où on le regarde.
+ */
+export type { ChatBubble, ChatItem, ChatNote, ChatRun, ChatSide };
+export { bubbleText };
 
 interface ChatState {
   peer: string;
@@ -153,6 +140,13 @@ let pinned = true;
 let unseen = 0;
 
 export const chatThread = (): readonly ChatItem[] => chat.items;
+/**
+ * Le fil tel que l'historique le gardera : bulles vivantes closes, copie
+ * bornée, et rien du tout si personne n'a écrit (`sip/transcript.ts`).
+ * Lu par la machine au moment où l'appel se range — c'est `main.ts` qui
+ * les raccorde, le panneau n'en sait rien de plus.
+ */
+export const chatTranscript = (): ChatItem[] => sealTranscript(chat.items, Date.now());
 export const chatLinkState = (): RttState => chat.link;
 /**
  * Le lien est mort sans avoir jamais servi — le distant n'a pas voulu du
@@ -165,10 +159,6 @@ export const chatMobileOpen = (): boolean => mobileOpen;
 export const chatSent = (): string => chat.sent;
 /** Ce que le champ doit montrer : la frappe, nettoyée de ce qu'une bulle ne porte pas. */
 export const chatDraft = (): string => chat.draft;
-
-export function bubbleText(b: ChatBubble): string {
-  return b.runs.map((r) => r.text).join("");
-}
 
 // ---------------------------------------------------------------------------
 // Écritures dans le modèle
@@ -464,6 +454,32 @@ export function chatChannel(view: CallView | null): RttChannel | null {
   return view?.session?.rtt() ?? null;
 }
 
+/**
+ * **Le tchat prend-il la place de la vidéo ?** Oui dès que l'appel n'a pas
+ * d'image : en audio + texte comme en texte seul, la scène n'aurait qu'un
+ * rectangle noir à montrer, et le fil est ce que l'on regarde. Il passe
+ * donc au centre, à la taille de la fenêtre, et la barre de commandes
+ * média le coiffe au lieu de flotter sur une image absente.
+ *
+ * Un appel vidéo lui reprend la scène : le tchat retourne au panneau
+ * latéral (bureau) ou sous l'image (mobile). La bascule vaut **en cours
+ * d'appel** — ajouter la caméra rend la scène à l'image, la retirer la
+ * rend au fil — et ne coûte rien : le modèle vit hors du DOM.
+ *
+ * Pendant la sonnerie entrante, non : la scène est `inert` derrière la
+ * popup, et l'on n'écrit pas à quelqu'un dont on n'a pas encore pris
+ * l'appel.
+ */
+export function chatOnStage(view: CallView | null): boolean {
+  if (!view || view.state === "ringing_in" || view.media.video) return false;
+  if (chatChannel(view) === null) return false;
+  // Un appel **texte seul** garde sa scène même si le distant a refusé le
+  // texte : il n'y a rien d'autre à mettre à l'écran, et la remarque du
+  // fil dit pourquoi cet appel ne mènera nulle part. Un appel audio, lui,
+  // a toujours sa scène d'appel audio à retrouver.
+  return !chatRefused() || !view.media.audio;
+}
+
 function attrStyle(run: ChatRun): string {
   const css: string[] = [];
   if (run.attrs.color) css.push(`color:${run.attrs.color}`);
@@ -504,9 +520,9 @@ function hash(text: string): string {
   return (h >>> 0).toString(36);
 }
 
-function bubbleHtml(b: ChatBubble): string {
+function bubbleHtml(b: ChatBubble, peer: string): string {
   const live = b.endedAt === null;
-  const who = b.side === "them" ? chat.peer : t("chat.you");
+  const who = b.side === "them" ? peer : t("chat.you");
   // « en cours de frappe » ne se dit que du correspondant : sous notre propre
   // bulle, c'est la ligne d'état du champ qui dit ce qui part, et le redire
   // ici serait un commentaire de notre propre main
@@ -531,13 +547,20 @@ function noteHtml(n: ChatNote): string {
   )}</div>`;
 }
 
-function itemHtml(item: ChatItem): string {
-  return item.kind === "note" ? noteHtml(item) : bubbleHtml(item);
+function itemHtml(item: ChatItem, peer: string): string {
+  return item.kind === "note" ? noteHtml(item) : bubbleHtml(item, peer);
 }
 
-/** Le fil entier, tel qu'un premier rendu l'écrit. */
-export function chatThreadHtml(): string {
-  return chat.items.map(itemHtml).join("");
+/**
+ * Le fil entier, tel qu'un premier rendu l'écrit — et tel que la relecture
+ * d'un appel passé le réécrit, depuis les items gardés au coffre et le nom
+ * que porte sa ligne d'historique (`ui/chatdialog.ts`).
+ */
+export function chatThreadHtml(
+  items: readonly ChatItem[] = chat.items,
+  peer: string = chat.peer,
+): string {
+  return items.map((i) => itemHtml(i, peer)).join("");
 }
 
 /** L'état du lien, dit à qui écrit : une pastille et une phrase. */
@@ -617,6 +640,58 @@ export function chatPane(peer: string): string {
     </div>`;
 }
 
+/** Ce que la scène reçoit du gabarit qui l'appelle — bureau ou mobile. */
+export interface ChatStageCtx {
+  /** Nom du correspondant, tel que les bulles le portent. */
+  peer: string;
+  /** La barre de commandes média, composée par le gabarit (`overlayBar`). */
+  bar: string;
+  /** Vu-mètres : l'appel porte le son, et il est établi. */
+  meters: boolean;
+  /** Le pavé DTMF, qui se pose sur le fil comme il se posait sur l'image. */
+  dtmf?: string;
+}
+
+/**
+ * **Le tchat à la place de la vidéo** (voir `chatOnStage`) : un bandeau de
+ * commandes, puis le fil et son champ sur toute la scène.
+ *
+ * Trois choix s'y lisent.
+ *
+ * **La barre de commandes coiffe le fil au lieu de flotter dessus.** En
+ * surimpression, elle couvrirait le composeur ; en bas, le clavier virtuel
+ * la pousserait hors de l'écran avec Raccrocher. Elle garde son fond sombre
+ * de scène — ses boutons sont blancs, et c'est ce qui les rend lisibles.
+ *
+ * **L'élément vidéo distant reste**, quoique invisible : c'est lui qui joue
+ * le son de l'appel (`attachMedia`), et le haut-parleur le coupe. Un appel
+ * texte seul n'y attache rien, ce qui ne coûte rien non plus.
+ *
+ * **Pas de `videozone`.** Le plein écran s'attrape au double-clic sur la
+ * scène vidéo ; sur un fil de texte, le double-clic sélectionne un mot — il
+ * ne doit pas basculer l'écran. Le bouton, lui, n'est pas de la partie :
+ * les gabarits ne le demandent pas ici, et il serait désactivé de toute
+ * façon, faute d'image à agrandir.
+ */
+export function chatStage(ctx: ChatStageCtx): string {
+  return `<div class="chat-stage">
+      <div class="stage-bar">
+        ${ctx.bar}
+        ${
+          ctx.meters
+            ? `<div class="vumeters" aria-hidden="true">
+                 <span class="bar" data-ref="vu-remote" style="height:4%"></span>
+                 <span class="bar" data-ref="vu-local" style="height:4%"></span>
+               </div>`
+            : ""
+        }
+      </div>
+      <video class="remote" data-ref="remote" autoplay playsinline></video>
+      ${chatPane(ctx.peer)}
+      ${ctx.dtmf ?? ""}
+    </div>`;
+}
+
 // ---------------------------------------------------------------------------
 // Projection : du modèle vers la page
 // ---------------------------------------------------------------------------
@@ -643,7 +718,7 @@ function paint(): void {
     const cur = list.children[i] as HTMLElement | undefined;
     const sig = signature(item);
     if (cur?.dataset.sig === sig) continue;
-    const node = el(itemHtml(item));
+    const node = el(itemHtml(item, chat.peer));
     if (cur) list.replaceChild(node, cur);
     else list.append(node);
   }
