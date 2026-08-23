@@ -187,6 +187,8 @@ const messages: Translation = {
   "mode.audio.button": "الاتصال بالصوت",
   "mode.video.label": "مكالمة فيديو",
   "mode.video.button": "الاتصال بالفيديو",
+  "mode.text.label": "مكالمة نصية",
+  "mode.text.button": "الاتصال بالنص",
   "chat.strip": "الدردشة — ستتوفّر في المرحلة 4",
 
   // ---------------------------------------------------------------------

@@ -315,12 +315,13 @@ export function createJsSipPort(): SipPort {
           bindSession(session, sendCall);
           // le texte se greffe avant que le premier SDP ne soit rédigé :
           // `ua.call()` a lancé la négociation, elle n'est pas encore
-          // arrivée à l'offre (getUserMedia d'abord)
+          // arrivée à l'offre (getUserMedia d'abord). C'est nous qui
+          // offrons, donc nous qui créons le canal de données (RFC 8865 §5)
           return wrapSession(
             session,
             book,
             mediaControl(session, sendCall),
-            openRttFor(cfg.rtt, session),
+            openRttFor(cfg.rtt, session, "offer"),
           );
         },
       };
@@ -427,8 +428,9 @@ function wrapIncoming(
       control = mediaControl(session, send);
       // le texte se greffe avant `answer()` : c'est là que JsSIP présente
       // l'offre distante, dont il faut retirer la section texte avant que
-      // le navigateur ne la voie
-      const rtt = openRttFor(cfg.rtt, session);
+      // le navigateur ne la voie — et c'est là que naît la connexion
+      // pair-à-pair, sur laquelle le canal de données du distant arrivera
+      const rtt = openRttFor(cfg.rtt, session, "answer");
       // le carnet ne s'ouvre qu'ici, jamais à l'arrivée de l'INVITE : un
       // second appel refusé « occupé » n'est pas écouté, et n'a donc pas de
       // carnet à voler à la communication en cours. L'INVITE, lui, est déjà

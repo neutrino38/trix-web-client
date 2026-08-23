@@ -2,10 +2,13 @@
  * Texte en temps réel (TTR) : **le tuyau, et rien d'autre**
  * (docs/CONCEPTION.md §4.9).
  *
- * Ce module ne connaît pas T.140 — il ne sait pas ce qu'est un retour
- * arrière, un séparateur de ligne ou une signature de session. Il
- * transporte un flux de caractères, dans les deux sens, et laisse le codec
- * (`sip/t140.ts`) et le panneau (`ui/screens/call/chat.ts`) l'interpréter.
+ * Ce module ne connaît de T.140 qu'une chose, le retour arrière — et
+ * seulement parce qu'il détient le tampon d'émission, donc qu'il est le
+ * seul à savoir si le caractère effacé est encore rattrapable ou déjà
+ * parti. Le reste — séparateurs de ligne, signature de session, mise en
+ * valeur — ne lui dit rien : il transporte un flux de caractères, dans
+ * les deux sens, et laisse le codec (`sip/t140.ts`) et le panneau
+ * (`ui/screens/call/chat.ts`) l'interpréter.
  * La frontière est la même qu'entre `sip/port.ts` et les machines : au
  * dessus, personne ne sait par où le texte passe.
  *
@@ -107,6 +110,15 @@ export interface RttChannel {
    * immédiatement (§4.9, « le tampon d'émission adaptatif »).
    */
   send(text: string): void;
+  /**
+   * Erases the last character of the outgoing stream.
+   *
+   * What is still buffered never leaves: it is dropped, and no backspace
+   * is sent. Only what has already gone out costs a `U+0008`. Sending one
+   * for a character the peer never saw would erase one of its own — the
+   * likeliest bug of a real-time text implementation.
+   */
+  backspace(count?: number): void;
   /** Envoie sans attendre ce qui est en tampon — fin de ligne, collage, raccrochage. */
   flush(): void;
   /** Ferme le lien pour de bon ; ce qui restait en tampon part si le fil est encore ouvert. */
@@ -176,6 +188,20 @@ const PENDING_MAX = 4000;
 const segmenter =
   typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter() : null;
 
+/** T.140 backspace: one character erased, wherever the erasing happens. */
+const BACKSPACE = "\u0008";
+
+/**
+ * The last character of a string, in the T.140 sense — one grapheme, so
+ * that an emoji or a combining mark goes in one piece, as §8.2 requires
+ * of an erasure.
+ */
+function lastGrapheme(text: string): string | null {
+  if (text === "") return null;
+  const units = segmenter ? [...segmenter.segment(text)].map((s) => s.segment) : Array.from(text);
+  return units.at(-1) ?? null;
+}
+
 /**
  * Découpe en messages d'au plus `max` unités, **sans couper un
  * caractère** : les frontières sont celles des graphèmes (émoji, lettres
@@ -236,6 +262,21 @@ export function rttChannel(transport: RttTransport, connect: RttWireFactory): Rt
     for (const chunk of chunkText(out)) wire.send(chunk);
   };
 
+  /** Sends the burst, or waits a little longer for the next keystroke. */
+  const arm = (): void => {
+    if (state !== "open") return;
+    if (pending.length >= BURST) {
+      flush();
+      return;
+    }
+    if (timer === null) {
+      timer = setTimeout(() => {
+        timer = null;
+        flush();
+      }, RTT_HOLD_MS);
+    }
+  };
+
   const hooks: RttWireHooks = {
     text(chunk) {
       if (chunk === "") return;
@@ -278,17 +319,18 @@ export function rttChannel(transport: RttTransport, connect: RttWireFactory): Rt
       if (closed || text === "" || state === "closed") return;
       // fil rompu : on garde, mais pas indéfiniment
       if (pending.length < PENDING_MAX) pending += text;
-      if (state !== "open") return;
-      if (pending.length >= BURST) {
-        flush();
-        return;
+      arm();
+    },
+
+    backspace(count = 1) {
+      if (closed || state === "closed") return;
+      for (let i = 0; i < count; i++) {
+        const last = lastGrapheme(pending);
+        // a backspace already queued cannot be taken back, only added to
+        if (last !== null && last !== BACKSPACE) pending = pending.slice(0, -last.length);
+        else if (pending.length < PENDING_MAX) pending += BACKSPACE;
       }
-      if (timer === null) {
-        timer = setTimeout(() => {
-          timer = null;
-          flush();
-        }, RTT_HOLD_MS);
-      }
+      arm();
     },
 
     flush,

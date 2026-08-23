@@ -13,6 +13,7 @@ import type { PhoneInstance } from "../../../machines/phone.js";
 import type { CallView } from "../../../machines/events.js";
 import type { CallLogEntry } from "../../../storage/store.js";
 import type { CallMedia } from "../../../sip/port.js";
+import type { RttTransport } from "../../../sip/rtt.js";
 import type { AccountConfig } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
@@ -97,8 +98,13 @@ export const ICONS_OFF = {
 /**
  * Registre des modes d'appel proposés par le menu du bouton Appeler.
  * Le mode choisi est retenu (localStorage) et le bouton principal en
- * prend le libellé. Les modes exotiques à venir (vidéo sans son, texte
- * seul…) s'ajoutent ici — le reste de la chaîne transporte `media`.
+ * prend le libellé. Les modes exotiques à venir (vidéo sans son…)
+ * s'ajoutent ici — le reste de la chaîne transporte `media`.
+ *
+ * L'**appel texte** n'y est proposé que si le compte transporte le texte
+ * (§4.9) : sans lui, ce serait un appel sans rien. Il ne demande ni micro
+ * ni caméra — donc aucune autorisation au navigateur, ce qui compte pour
+ * qui n'a rien à dire à un microphone.
  */
 interface CallModeDef {
   id: string;
@@ -124,21 +130,30 @@ const CALL_MODE_KEYS = [
     icon: ICONS.cam,
     media: { audio: true, video: true },
   },
+  {
+    id: "text",
+    label: "mode.text.label",
+    buttonLabel: "mode.text.button",
+    icon: ICONS.chat,
+    media: { audio: false, video: false },
+  },
 ] as const satisfies readonly { id: string; label: MsgKey; buttonLabel: MsgKey; icon: string; media: CallMedia }[];
 
-/** Les modes proposés, libellés dans la langue courante. */
-export function callModes(): CallModeDef[] {
-  return CALL_MODE_KEYS.map((m) => ({
-    id: m.id,
-    label: t(m.label),
-    buttonLabel: t(m.buttonLabel),
-    icon: m.icon,
-    media: m.media,
-  }));
+/** Les modes proposés par le compte, libellés dans la langue courante. */
+export function callModes(rtt?: RttTransport): CallModeDef[] {
+  return CALL_MODE_KEYS.filter((m) => m.id !== "text" || (rtt !== undefined && rtt !== "none")).map(
+    (m) => ({
+      id: m.id,
+      label: t(m.label),
+      buttonLabel: t(m.buttonLabel),
+      icon: m.icon,
+      media: m.media,
+    }),
+  );
 }
 
-export function currentMode(): CallModeDef {
-  const modes = callModes();
+export function currentMode(rtt?: RttTransport): CallModeDef {
+  const modes = callModes(rtt);
   return modes.find((m) => m.id === getCallModeId()) ?? modes[0]!;
 }
 
@@ -341,7 +356,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       targetInput.focus();
       return;
     }
-    phone.send({ type: "ui:call", target, media: currentMode().media });
+    phone.send({ type: "ui:call", target, media: currentMode(cfg.rtt).media });
   };
   if (targetInput && !view) {
     targetInput.addEventListener("input", () => {
@@ -364,8 +379,8 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   const fillMenu = (): void => {
     if (!modeMenu) return;
     modeMenu.replaceChildren(
-      ...callModes().map((m) => {
-        const selected = m.id === currentMode().id;
+      ...callModes(cfg?.rtt).map((m) => {
+        const selected = m.id === currentMode(cfg?.rtt).id;
         const item = el(
           `<button role="menuitemradio" aria-checked="${selected}"
                    class="${selected ? "selected" : ""}">

@@ -173,6 +173,8 @@ const messages: Translation = {
   "mode.audio.button": "发起语音通话",
   "mode.video.label": "视频通话",
   "mode.video.button": "发起视频通话",
+  "mode.text.label": "文字通话",
+  "mode.text.button": "发起文字通话",
   "chat.strip": "聊天 — 第 4 阶段推出",
 
   // ---------------------------------------------------------------------

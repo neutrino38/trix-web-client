@@ -1,8 +1,13 @@
 /**
- * Le branchement du texte sur WebSocket dans la signalisation
- * (docs/CONCEPTION.md §4.9).
+ * Le branchement du texte dans la signalisation (docs/CONCEPTION.md §4.9),
+ * pour les deux transports — mais ils n'y ont rien en commun.
  *
- * Tout tient en une phrase : **la section `m=text` est ajoutée à ce qui
+ * Le **canal de données** (RFC 8865) ne demande rien à la signalisation :
+ * il se greffe sur la connexion pair-à-pair avant que la première offre
+ * ne soit rédigée, et DCEP annonce son sous-protocole dans le média. Pas
+ * une ligne de SDP n'est lue ni écrite pour lui.
+ *
+ * Le **WebSocket**, lui, tient en une phrase : **la section `m=text` est ajoutée à ce qui
  * part, et retirée de ce qui arrive avant que le navigateur ne la voie.**
  * Chrome ne connaît pas `m=text 60000 TCP/WSS t140` ; une description
  * distante qui en porte une est refusée par `setRemoteDescription`, et une
@@ -23,10 +28,11 @@
  * Le rôle (appelant, appelé) n'entre pas en ligne de compte : ces quatre
  * cas le décrivent déjà, re-INVITE compris.
  *
- * Le canal, lui, **existe dès le début de l'appel** et reste le même
- * jusqu'à la fin : ce qui est tapé pendant la sonnerie attend dans son
- * tampon, et son état (`connecting`, `open`, `closed`) dit à l'interface
- * où en est le lien sans qu'elle ait à guetter un objet qui apparaît.
+ * Dans les deux cas, le canal **existe dès le début de l'appel** et reste
+ * le même jusqu'à la fin : ce qui est tapé pendant la sonnerie attend dans
+ * son tampon, et son état (`connecting`, `open`, `lost`, `closed`) dit à
+ * l'interface où en est le lien sans qu'elle ait à guetter un objet qui
+ * apparaît.
  */
 
 import {
@@ -37,6 +43,7 @@ import {
   type RttWireHooks,
 } from "./rtt.js";
 import { openWsWire, stripTextSection, withTextOverWs, wsUrlFromSdp } from "./rttws.js";
+import { openDcWire } from "./rttdc.js";
 
 /** Ce que le négociateur a besoin de savoir d'une session JsSIP, et rien de plus. */
 export interface SdpSession {
@@ -54,6 +61,21 @@ export interface SdpEvent {
   sdp: string;
 }
 
+/**
+ * What the data channel transport needs of a session: the peer
+ * connection, as soon as JsSIP has one. `connection` is already there on
+ * an outgoing call — `ua.call()` builds it before the offer is written —
+ * and comes with the `peerconnection` event on an incoming one, fired
+ * before the remote description is set.
+ */
+export interface PeerSession {
+  connection?: RTCPeerConnection | null;
+  on(event: "peerconnection", listener: (e: { peerconnection: RTCPeerConnection }) => void): void;
+}
+
+/** Which side we are on, and so who creates the T.140 channel. */
+export type RttRole = "offer" | "answer";
+
 export interface RttNegotiation {
   /** Le lien texte de l'appel, du premier INVITE au raccrochage. */
   channel: RttChannel;
@@ -68,7 +90,7 @@ export interface RttNegotiation {
  */
 function deferredWire(hooks: RttWireHooks): {
   wire: RttWire;
-  open(url: string): void;
+  open(make: (hooks: RttWireHooks) => RttWire): void;
   giveUp(): void;
 } {
   let inner: RttWire | null = null;
@@ -84,9 +106,9 @@ function deferredWire(hooks: RttWireHooks): {
         inner = null;
       },
     },
-    open(url) {
+    open(make) {
       if (closed || inner) return;
-      inner = openWsWire(url, hooks);
+      inner = make(hooks);
     },
     /** Le distant n'a pas voulu du texte : le lien ne s'ouvrira pas. */
     giveUp() {
@@ -140,7 +162,7 @@ export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
     if (found !== null) {
       if (url === null) {
         url = found;
-        deferred?.open(found);
+        deferred?.open((hooks) => openWsWire(found, hooks));
       }
       return;
     }
@@ -159,14 +181,59 @@ export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
 }
 
 /**
+ * Binds the data channel transport to a session — RFC 8865.
+ *
+ * **Not one line of SDP is read or written here.** The channel is created
+ * on the peer connection itself, before the first offer is written, and
+ * DCEP carries the `t140` subprotocol in the media. Which is also why the
+ * channel is opened with the call rather than when the user asks for
+ * text: a data channel created mid-call on a connection that has no
+ * `m=application` section triggers a renegotiation, hence a re-INVITE,
+ * hence a possible SIP glare — for a feature the user believes is local.
+ * An open, silent channel costs nothing.
+ *
+ * The role is the one the call gives it and never changes: the caller
+ * writes the offer that establishes the SCTP association, so the caller
+ * creates the channel. Should the far end create one too, `sip/rttdc.ts`
+ * settles it on the channel id, for as long as the session lasts.
+ */
+export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNegotiation {
+  let deferred: ReturnType<typeof deferredWire> | null = null;
+
+  const channel = rttChannel("datachannel", (hooks) => {
+    deferred = deferredWire(hooks);
+    return deferred.wire;
+  });
+
+  const start = (pc: RTCPeerConnection): void => {
+    deferred?.open((hooks) => openDcWire(pc, role, hooks));
+  };
+  if (session.connection) start(session.connection);
+  else session.on("peerconnection", (e) => start(e.peerconnection));
+
+  return {
+    channel,
+    close() {
+      channel.close();
+    },
+  };
+}
+
+/**
  * Le lien texte que le compte demande, branché sur la session — `null`
  * quand il n'y a rien à brancher.
  *
  * `none` ne touche à rien : aucun écouteur `sdp` n'est même posé, et
  * l'appel se négocie exactement comme avant l'existence de ce réglage.
- * `datachannel` a son fil (`sip/rttdc.ts`) mais pas encore sa
- * négociation — il ne branche donc rien non plus, pour l'instant.
+ * `datachannel` n'en pose pas davantage : il ne touche qu'à la connexion
+ * pair-à-pair, jamais au SDP.
  */
-export function openRttFor(transport: RttTransport, session: SdpSession): RttNegotiation | null {
-  return transport === "websocket" ? negotiateRttOverWs(session) : null;
+export function openRttFor(
+  transport: RttTransport,
+  session: SdpSession & PeerSession,
+  role: RttRole,
+): RttNegotiation | null {
+  if (transport === "websocket") return negotiateRttOverWs(session);
+  if (transport === "datachannel") return negotiateRttOverDc(session, role);
+  return null;
 }

@@ -167,6 +167,64 @@ describe("rttChannel — tampon d'émission", () => {
     expect(rec.states).toEqual(["open", "lost", "open"]);
   });
 
+  it("effacer ce qui est encore en tampon n'envoie aucun retour arrière", () => {
+    const rec = recorder();
+    const ch = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    rec.hooks.state("open");
+
+    ch.send("abc");
+    ch.backspace();
+    ch.flush();
+    // le « c » n'est jamais parti : envoyer un U+0008 effacerait le « b »
+    // chez le correspondant
+    expect(rec.sent).toEqual(["ab"]);
+  });
+
+  it("effacer ce qui est déjà parti envoie un retour arrière", () => {
+    const rec = recorder();
+    const ch = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    rec.hooks.state("open");
+
+    ch.send("abc");
+    ch.flush();
+    ch.backspace();
+    ch.flush();
+    expect(rec.sent).toEqual(["abc", "\u0008"]);
+
+    // deux effacements de suite valent deux retours arrière : le premier
+    // n'est pas rattrapable non plus
+    ch.backspace(2);
+    ch.flush();
+    expect(rec.sent).toEqual(["abc", "\u0008", "\u0008\u0008"]);
+  });
+
+  it("un caractère composé s'efface d'un seul coup", () => {
+    const rec = recorder();
+    const ch = listening(rttChannel("websocket", fakeWire(rec)), rec);
+
+    // fil pas encore ouvert : tout attend, donc tout reste rattrapable
+    ch.send("a👩‍👩‍👧");
+    ch.backspace();
+    rec.hooks.state("open");
+    ch.flush();
+    // la famille part entière, pas une moitié de paire de substitution
+    expect(rec.sent).toEqual(["a"]);
+  });
+
+  it("effacer plus que ce qui attend part en retours arrière pour le reste", () => {
+    const rec = recorder();
+    const ch = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    rec.hooks.state("open");
+
+    ch.send("bonjour");
+    ch.flush();
+    ch.send("ab");
+    ch.backspace(4);
+    ch.flush();
+    // « ab » n'était pas parti, les deux effacements restants oui
+    expect(rec.sent).toEqual(["bonjour", "\u0008\u0008"]);
+  });
+
   it("un long collage est découpé, et rien ne se perd", () => {
     const rec = recorder();
     const ch = listening(rttChannel("websocket", fakeWire(rec)), rec);
@@ -392,6 +450,7 @@ describe("fil WebSocket", () => {
   });
 });
 
+
 // ---------------------------------------------------------------------
 // Le fil canal de données
 // ---------------------------------------------------------------------
@@ -409,6 +468,8 @@ class FakeChannel {
   constructor(
     readonly label: string,
     readonly protocol: string,
+    /** Attribué par SCTP : pair pour le client DTLS, impair pour le serveur. */
+    readonly id: number | null = null,
   ) {}
 
   open(): void {
@@ -422,71 +483,104 @@ class FakeChannel {
 
   close(): void {
     this.closed = true;
+    this.readyState = "closed";
+    this.onclose?.();
+  }
+
+  /** Le canal tombe — le distant l'a fermé, ou le transport a lâché. */
+  drop(): void {
+    this.readyState = "closed";
+    this.onclose?.();
   }
 }
 
-/** Une connexion pair-à-pair réduite à l'ouverture d'un canal. */
+/** Une connexion pair-à-pair réduite à ce que le fil en utilise. */
 class FakeConnection {
   created: FakeChannel[] = [];
-  listeners: ((ev: { channel: FakeChannel }) => void)[] = [];
+  lastInit: { ordered?: boolean; protocol?: string } = {};
+  connectionState = "connected";
+  /** L'identifiant du prochain canal créé ici. */
+  nextId = 0;
+
+  private channelWatchers: ((ev: { channel: FakeChannel }) => void)[] = [];
+  private stateWatchers: (() => void)[] = [];
 
   createDataChannel(label: string, init: { ordered?: boolean; protocol?: string }): FakeChannel {
-    const dc = new FakeChannel(label, init.protocol ?? "");
+    const dc = new FakeChannel(label, init.protocol ?? "", this.nextId);
+    this.nextId += 2;
     this.created.push(dc);
     this.lastInit = init;
     return dc;
   }
 
-  lastInit: { ordered?: boolean; protocol?: string } = {};
-
-  addEventListener(_type: string, fn: (ev: { channel: FakeChannel }) => void): void {
-    this.listeners.push(fn);
+  addEventListener(type: string, fn: (ev: never) => void): void {
+    if (type === "datachannel") this.channelWatchers.push(fn as (ev: { channel: FakeChannel }) => void);
+    else this.stateWatchers.push(fn as () => void);
   }
 
-  removeEventListener(_type: string, fn: (ev: { channel: FakeChannel }) => void): void {
-    this.listeners = this.listeners.filter((l) => l !== fn);
+  removeEventListener(type: string, fn: (ev: never) => void): void {
+    if (type === "datachannel") this.channelWatchers = this.channelWatchers.filter((l) => l !== fn);
+    else this.stateWatchers = this.stateWatchers.filter((l) => l !== fn);
+  }
+
+  /** Combien d'écouteurs la connexion porte — zéro veut dire « on l'a lâchée ». */
+  get watchers(): number {
+    return this.channelWatchers.length + this.stateWatchers.length;
   }
 
   /** Le distant ouvre un canal de son côté. */
   incoming(dc: FakeChannel): void {
-    for (const fn of this.listeners) fn({ channel: dc });
+    for (const fn of this.channelWatchers) fn({ channel: dc });
+  }
+
+  /** La connexion change d'état — perte du réseau, reprise, raccrochage. */
+  becomes(state: string): void {
+    this.connectionState = state;
+    for (const fn of this.stateWatchers) fn();
   }
 }
 
 const asPc = (pc: FakeConnection): RTCPeerConnection => pc as unknown as RTCPeerConnection;
 
+/** Le canal de données de l'appel, du côté demandé. */
+function dcChannel(pc: FakeConnection, role: "offer" | "answer", rec: Recorder): RttChannel {
+  return listening(openRtt({ transport: "datachannel", connection: asPc(pc), role }), rec);
+}
+
 describe("fil canal de données", () => {
   it("l'offrant crée un canal t140 fiable et ordonné, et signe la session", () => {
     const rec = recorder();
     const pc = new FakeConnection();
-    const ch = listening(openRtt({ transport: "datachannel", connection: asPc(pc), role: "offer" }), rec);
+    const ch = dcChannel(pc, "offer", rec);
 
     const dc = pc.created[0]!;
     expect(dc.label).toBe(T140_CHANNEL);
     expect(dc.protocol).toBe(T140_CHANNEL);
     expect(pc.lastInit.ordered).toBe(true);
-    // ni maxRetransmits ni maxPacketLifeTime : le canal doit rester fiable
+    // ni maxRetransmits ni maxPacketLifeTime : RFC 8865 §4.1 les interdit
     expect(pc.lastInit).not.toHaveProperty("maxRetransmits");
     expect(pc.lastInit).not.toHaveProperty("maxPacketLifeTime");
+    expect(pc.lastInit).not.toHaveProperty("id");
+    expect(pc.lastInit).not.toHaveProperty("negotiated");
 
     dc.open();
-    expect(dc.sent).toEqual(["﻿"]); // la signature ouvre le flux
+    expect(dc.sent).toEqual(["\uFEFF"]); // la signature ouvre le flux
     expect(ch.state()).toBe("open");
 
     ch.send("bonjour");
-    expect(dc.sent).toEqual(["﻿", "bonjour"]);
+    expect(dc.sent).toEqual(["\uFEFF", "bonjour"]);
   });
 
   it("le répondant adopte le canal du distant, et ignore les autres", () => {
     const rec = recorder();
     const pc = new FakeConnection();
-    const ch = listening(openRtt({ transport: "datachannel", connection: asPc(pc), role: "answer" }), rec);
+    const ch = dcChannel(pc, "answer", rec);
     expect(pc.created).toEqual([]);
 
-    pc.incoming(new FakeChannel("fichiers", "bindl"));
+    pc.incoming(new FakeChannel("fichiers", "bindl", 1));
     expect(ch.state()).toBe("connecting");
 
-    const dc = new FakeChannel(T140_CHANNEL, T140_CHANNEL);
+    const dc = new FakeChannel(T140_CHANNEL, T140_CHANNEL, 3);
     pc.incoming(dc);
     dc.open();
     expect(ch.state()).toBe("open");
@@ -495,14 +589,122 @@ describe("fil canal de données", () => {
     expect(rec.received).toEqual(["bonsoir"]);
   });
 
-  it("un canal fermé par le distant ne se reprend pas : SCTP ne perd rien en route", () => {
+  it("collision : le plus petit identifiant gagne, et le texte en vol ne se perd pas", () => {
     const rec = recorder();
     const pc = new FakeConnection();
-    const ch = listening(openRtt({ transport: "datachannel", connection: asPc(pc), role: "offer" }), rec);
-    const dc = pc.created[0]!;
+    pc.nextId = 2;
+    const ch = dcChannel(pc, "offer", rec);
+    const mine = pc.created[0]!;
+    mine.open();
+    ch.send("déjà parti");
+    ch.flush();
+
+    // le distant a créé le sien : les deux extrémités voient les deux
+    // identifiants, et retiennent le même canal
+    const theirs = new FakeChannel(T140_CHANNEL, T140_CHANNEL, 1);
+    pc.incoming(theirs);
+    expect(mine.closed).toBe(true);
+
+    // ce que le distant avait écrit sur le canal perdant arrive encore
+    mine.onmessage?.({ data: "en vol" });
+    expect(rec.received).toEqual(["en vol"]);
+
+    theirs.open();
+    ch.send("la suite");
+    ch.flush();
+    // rien n'est retransmis sur le canal retenu : la signature, puis la suite
+    expect(theirs.sent).toEqual(["\uFEFF", "la suite"]);
+    expect(pc.created.length).toBe(1);
+  });
+
+  it("collision : notre canal l'emporte quand son identifiant est le plus petit", () => {
+    const rec = recorder();
+    const pc = new FakeConnection();
+    const ch = dcChannel(pc, "offer", rec);
+    const mine = pc.created[0]!;
+    mine.open();
+
+    const theirs = new FakeChannel(T140_CHANNEL, T140_CHANNEL, 1);
+    pc.incoming(theirs);
+    expect(theirs.closed).toBe(true);
+    expect(mine.closed).toBe(false);
+
+    ch.send("bonjour");
+    ch.flush();
+    expect(mine.sent).toEqual(["\uFEFF", "bonjour"]);
+    expect(ch.state()).toBe("open");
+  });
+
+  it("un canal perdu est rouvert par l'offrant, et rien n'est retransmis", () => {
+    const rec = recorder();
+    const pc = new FakeConnection();
+    const ch = dcChannel(pc, "offer", rec);
+    const first = pc.created[0]!;
+    first.open();
+    ch.send("avant la coupure");
+    ch.flush();
+
+    first.drop();
+    expect(rec.states).toContain("lost");
+    expect(pc.created.length).toBe(2);
+
+    // ce qui est tapé pendant la coupure attend : il n'est jamais parti
+    ch.send("pendant");
+    const second = pc.created[1]!;
+    second.open();
+    ch.flush();
+
+    expect(ch.state()).toBe("open");
+    expect(second.sent).toEqual(["\uFEFF", "pendant"]);
+    // le distant a écrit dans le vide : le fil le montre (T.140)
+    expect(rec.received).toEqual(["\uFFFD"]);
+  });
+
+  it("le répondant ne recrée jamais rien : il attend le canal du distant", () => {
+    const rec = recorder();
+    const pc = new FakeConnection();
+    const ch = dcChannel(pc, "answer", rec);
+    const dc = new FakeChannel(T140_CHANNEL, T140_CHANNEL, 1);
+    pc.incoming(dc);
     dc.open();
 
-    dc.onclose?.();
+    dc.drop();
+    expect(pc.created).toEqual([]);
+    expect(ch.state()).toBe("lost");
+
+    // le distant rouvre : le lien reprend, marqueur de perte à l'appui
+    const again = new FakeChannel(T140_CHANNEL, T140_CHANNEL, 3);
+    pc.incoming(again);
+    again.open();
+    expect(ch.state()).toBe("open");
+    expect(rec.received).toEqual(["\uFFFD"]);
+  });
+
+  it("une connexion rompue puis rétablie retrouve son canal", () => {
+    const rec = recorder();
+    const pc = new FakeConnection();
+    const ch = dcChannel(pc, "offer", rec);
+    pc.created[0]!.open();
+
+    // l'association SCTP est détruite : rien à rouvrir tant que la
+    // connexion n'est pas revenue
+    pc.becomes("failed");
+    expect(ch.state()).toBe("lost");
+    expect(pc.created.length).toBe(1);
+
+    pc.becomes("connected");
+    expect(pc.created.length).toBe(2);
+    pc.created[1]!.open();
+    expect(ch.state()).toBe("open");
+  });
+
+  it("une connexion fermée ferme le lien pour de bon", () => {
+    const rec = recorder();
+    const pc = new FakeConnection();
+    const ch = dcChannel(pc, "offer", rec);
+    pc.created[0]!.open();
+
+    pc.becomes("closed");
     expect(ch.state()).toBe("closed");
     expect(pc.created.length).toBe(1);
   });
@@ -510,11 +712,11 @@ describe("fil canal de données", () => {
   it("fermer le canal détache l'écoute et ferme le fil", () => {
     const rec = recorder();
     const pc = new FakeConnection();
-    const ch = listening(openRtt({ transport: "datachannel", connection: asPc(pc), role: "answer" }), rec);
-    expect(pc.listeners.length).toBe(1);
+    const ch = dcChannel(pc, "answer", rec);
+    expect(pc.watchers).toBe(2); // le canal du distant, et l'état de la connexion
 
     ch.close();
-    expect(pc.listeners).toEqual([]);
+    expect(pc.watchers).toBe(0);
     expect(ch.state()).toBe("closed");
   });
 });

@@ -188,6 +188,8 @@ const messages: Translation = {
   "mode.audio.button": "Appeler en audio",
   "mode.video.label": "Appel vidéo",
   "mode.video.button": "Appeler en vidéo",
+  "mode.text.label": "Appel texte",
+  "mode.text.button": "Appeler en texte",
   "chat.strip": "Clavardage — pour placoter, en phase 4",
 
   // ---------------------------------------------------------------------

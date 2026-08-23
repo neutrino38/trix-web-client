@@ -1,82 +1,111 @@
 /**
- * Texte en temps réel **sur canal de données WebRTC** — RFC 8865, la
- * cible : c'est ce que parlent les clients T.140 standards, et cela ne
- * demande aucune passerelle.
+ * Real-time text over a **WebRTC data channel** — RFC 8865.
  *
- * Le canal est **fiable et ordonné** (ni `maxRetransmits` ni
- * `maxPacketLifeTime`), de sous-protocole `t140` : la redondance de
- * RFC 4103 n'a pas lieu d'être ici, SCTP garantit déjà la livraison et
- * l'ordre. La signature de session `U+FEFF` ouvre le flux, comme la norme
- * le demande — le récepteur la consomme sans jamais l'afficher (c'est
- * l'affaire du codec, pas du tuyau).
+ * The channel is reliable and ordered, subprotocol `t140`, negotiated
+ * in-band through DCEP. Neither `maxRetransmits` nor `maxPacketLifeTime`
+ * is ever set — RFC 8865 §4.1 forbids both on a T.140 channel — and no
+ * `id` is imposed. Nothing here reads or writes SDP: the channel rides
+ * the SCTP association the call already carries, so opening it costs no
+ * renegotiation.
  *
- * L'offrant crée le canal, le répondant attend celui d'en face
- * (RFC 8865 §5) : d'où le rôle passé à l'ouverture. Rien d'autre ne les
- * distingue.
+ * The offering side creates the channel, the answering side waits for
+ * `ondatachannel` (RFC 8865 §5). Should both ends create one anyway, the
+ * channel with the lowest `id` wins and the other is dropped: both ends
+ * see both ids and reach the same verdict. Until then text is read from
+ * every t140 channel, so the tie costs no character — and nothing is ever
+ * re-sent (RFC 8865 §5.4).
+ *
+ * A channel lost mid-call is reopened by the side that created it, and
+ * the local stream gets a missing text marker: what the peer wrote during
+ * the outage is gone for good.
  */
 
 import type { RttWire, RttWireHooks } from "./rtt.js";
 
-/** Label et sous-protocole du canal — les deux valent `t140` (RFC 8865 §5). */
+/** Label and subprotocol of the channel — both are `t140` (RFC 8865 §5). */
 export const T140_CHANNEL = "t140";
 
-/** Signature de session T.140, écrite en tête du flux émis. */
+/** T.140 session signature, written at the head of the stream. */
 const SESSION_BOM = "\uFEFF";
 
-/**
- * Débit annoncé dans le SDP (`a=fmtp:… cps=30`), rappelé ici pour que la
- * valeur ne se perde pas entre le module qui l'écrit et celui qui la
- * respecte : trente caractères par seconde, la vitesse d'une frappe
- * soutenue.
- */
-export const T140_CPS = 30;
+/** Missing text marker, inserted when a lost channel comes back. */
+const LOSS_MARKER = "\uFFFD";
+
+/** How many times a lost channel is reopened before giving up for good. */
+const MAX_REOPEN = 10;
+
+const isLive = (dc: RTCDataChannel): boolean =>
+  dc.readyState === "connecting" || dc.readyState === "open";
 
 /**
- * Ouvre le fil sur la connexion pair-à-pair de l'appel. La fermeture du
- * canal est **définitive** : SCTP ne perd pas de message en route, un
- * canal qui se ferme est un canal que le distant a fermé — ou une
- * connexion qui n'existe plus. Il n'y a donc rien à reprendre, à la
- * différence du WebSocket.
+ * Opens the wire on the call's peer connection. `role` says who creates
+ * the channel: the side that writes the offer establishing the SCTP
+ * association, never the other one.
  */
 export function openDcWire(
   connection: RTCPeerConnection,
   role: "offer" | "answer",
   hooks: RttWireHooks,
 ): RttWire {
-  let channel: RTCDataChannel | null = null;
+  /** Every adopted t140 channel: text is read from all, written to one. */
+  const channels = new Set<RTCDataChannel>();
+  const signed = new WeakSet<RTCDataChannel>();
+  let elected: RTCDataChannel | null = null;
   let closed = false;
+  let reopens = 0;
+  /** A channel was lost: whatever comes next follows a gap in the stream. */
+  let interrupted = false;
 
-  /** Branche le canal, qu'on vienne de le créer ou de le recevoir. */
+  /**
+   * Lets a channel go without mistaking it for a loss. `onmessage` stays
+   * on: SCTP still delivers what the peer wrote before it went away.
+   */
+  const detach = (dc: RTCDataChannel): void => {
+    dc.onopen = null;
+    dc.onclose = null;
+    dc.onerror = null;
+  };
+
+  const elect = (): void => {
+    if (closed) return;
+    const live = [...channels].filter(isLive);
+    if (live.length > 1) {
+      // an id is only assigned once SCTP is up, and comparing a missing
+      // one would split the verdict between the two ends
+      if (live.some((dc) => dc.id === null || dc.id === undefined)) return;
+      live.sort((a, b) => a.id! - b.id!);
+      for (const loser of live.splice(1)) {
+        channels.delete(loser);
+        detach(loser);
+        loser.close();
+      }
+    }
+
+    elected = live[0] ?? null;
+    if (elected === null || elected.readyState !== "open") return;
+    if (!signed.has(elected)) {
+      signed.add(elected);
+      elected.send(SESSION_BOM); // the signature opens the stream, before any character
+    }
+    if (interrupted) {
+      interrupted = false;
+      hooks.text(LOSS_MARKER);
+    }
+    hooks.state("open");
+  };
+
   const adopt = (dc: RTCDataChannel): void => {
-    channel = dc;
-    dc.onopen = () => {
-      // la signature ouvre le flux : elle part avant tout caractère,
-      // donc avant que le canal ne se déclare ouvert à son hôte
-      dc.send(SESSION_BOM);
-      hooks.state("open");
-    };
+    channels.add(dc);
     dc.onmessage = (ev: MessageEvent) => {
       if (typeof ev.data === "string") hooks.text(ev.data);
     };
-    dc.onclose = () => {
-      channel = null;
-      if (!closed) hooks.state("closed");
-    };
-    // une erreur sur un canal fiable ne laisse rien à reprendre
-    dc.onerror = () => {
-      if (!closed) hooks.state("closed");
-    };
+    dc.onopen = elect;
+    dc.onclose = () => lost(dc);
+    dc.onerror = () => lost(dc);
+    elect();
   };
 
-  /** Le canal du distant, reconnu à son sous-protocole (à défaut, son label). */
-  const onDataChannel = (ev: RTCDataChannelEvent): void => {
-    if (channel !== null) return;
-    const dc = ev.channel;
-    if (dc.protocol !== T140_CHANNEL && dc.label !== T140_CHANNEL) return;
-    adopt(dc);
-  };
-
-  if (role === "offer") {
+  const create = (): void => {
     try {
       adopt(
         connection.createDataChannel(T140_CHANNEL, {
@@ -85,23 +114,85 @@ export function openDcWire(
         }),
       );
     } catch {
-      // connexion déjà fermée : l'appel continue, sans texte
+      // connection already gone: the call goes on, without text
       hooks.state("closed");
     }
-  } else {
-    connection.addEventListener("datachannel", onDataChannel);
-  }
+  };
+
+  const lost = (dc: RTCDataChannel): void => {
+    if (closed || !channels.has(dc)) return;
+    channels.delete(dc);
+    detach(dc);
+    if (dc === elected) elected = null;
+    interrupted = true;
+    recover();
+  };
+
+  const recover = (): void => {
+    if (closed) return;
+    elect();
+    if (elected !== null) return;
+
+    hooks.state("lost");
+    const state = connection.connectionState;
+    if (state === "closed") {
+      hooks.state("closed");
+      return;
+    }
+    // `failed` tore the SCTP association down; a channel created now would
+    // go nowhere. We wait for the connection to come back — an ICE restart
+    // keeps the DTLS transport, and the channel is created again then.
+    if (state === "failed") return;
+    if (role !== "offer") return; // the answering side never creates one
+    if (reopens >= MAX_REOPEN) {
+      hooks.state("closed");
+      return;
+    }
+    reopens++;
+    create();
+  };
+
+  /** The peer's channel, recognised by its subprotocol (its label failing that). */
+  const onDataChannel = (ev: RTCDataChannelEvent): void => {
+    const dc = ev.channel;
+    if (dc.protocol !== T140_CHANNEL && dc.label !== T140_CHANNEL) return;
+    adopt(dc);
+  };
+
+  const onConnectionState = (): void => {
+    if (closed) return;
+    const state = connection.connectionState;
+    if (state === "closed") {
+      hooks.state("closed");
+      return;
+    }
+    // the association is gone and `onclose` does not always follow
+    if (state === "failed") {
+      for (const dc of [...channels]) lost(dc);
+      return;
+    }
+    if (state === "connected" && interrupted && elected === null) recover();
+  };
+
+  connection.addEventListener("datachannel", onDataChannel);
+  connection.addEventListener("connectionstatechange", onConnectionState);
+  if (role === "offer") create();
 
   return {
     send(text) {
-      // l'état du canal peut avoir une microtâche de retard sur le nôtre
-      if (channel?.readyState === "open") channel.send(text);
+      // the wrapping channel's state can be a microtask behind ours
+      if (elected?.readyState === "open") elected.send(text);
     },
     close() {
       closed = true;
       connection.removeEventListener("datachannel", onDataChannel);
-      channel?.close();
-      channel = null;
+      connection.removeEventListener("connectionstatechange", onConnectionState);
+      for (const dc of channels) {
+        detach(dc);
+        dc.close();
+      }
+      channels.clear();
+      elected = null;
     },
   };
 }

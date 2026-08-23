@@ -180,6 +180,8 @@ const messages: Translation = {
   "mode.audio.button": "音声で発信する",
   "mode.video.label": "ビデオ通話",
   "mode.video.button": "ビデオで発信する",
+  "mode.text.label": "テキスト通話",
+  "mode.text.button": "テキストで発信する",
   "chat.strip": "チャット — フェーズ 4 で提供",
 
   // ---------------------------------------------------------------------

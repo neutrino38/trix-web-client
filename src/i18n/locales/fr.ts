@@ -172,6 +172,8 @@ const messages = {
   "mode.audio.button": "Appeler en audio",
   "mode.video.label": "Appel vidéo",
   "mode.video.button": "Appeler en vidéo",
+  "mode.text.label": "Appel texte",
+  "mode.text.button": "Appeler en texte",
   "chat.strip": "Tchat — disponible en phase 4",
 
   // ---------------------------------------------------------------------

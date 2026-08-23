@@ -631,10 +631,77 @@ raison de s'ouvrir avant le premier caractère d'un correspondant pressé.
 Ce qui est commun aux deux vit au-dessus des fils : tampon d'émission **300 ms**
 (500 ms au maximum, ce qui rejoint le « 0,5 s » de T.140 §6.1.1), envoi immédiat au
 delà de quatre caractères en attente, découpage des salves **sur des frontières de
-graphèmes**, file d'attente qui survit à une rupture. Ce qui les sépare tient à la
-nature du fil : le WebSocket se reconnecte (dix essais, une seconde) et insère
-`U+FFFD` à la reprise, puisque du texte distant a manqué ; un canal de données fermé
-est fermé — SCTP ne perd rien en route.
+graphèmes**, file d'attente qui survit à une rupture, et reprise du fil après une
+coupure — dix essais espacés d'une seconde pour le WebSocket, une recréation du canal
+pour le data channel. Dans les deux cas la reprise insère un `U+FFFD` dans le flux
+reçu : du texte distant a manqué, et la norme veut que cela se voie. **Rien de ce qui
+est parti n'est jamais réémis** (RFC 8865 §5.4) ; ce qui attendait dans le tampon,
+lui, n'était pas parti — il part à la reprise.
+
+**Le retour arrière est la seule chose que le canal sache de T.140**, et il faut qu'il
+la sache : lui seul détient le tampon, donc lui seul peut dire si le caractère effacé
+est encore rattrapable. Effacer ce qui attend encore ne coûte rien et n'émet rien ;
+effacer ce qui est déjà parti coûte un `U+0008`. Confondre les deux produit un double
+effacement chez le correspondant — c'est le bug le plus probable d'une implémentation
+de texte temps réel, et `RttChannel.backspace()` est ce qui l'empêche.
+
+**Il n'y a pas de plafond de débit.** RFC 8865 §5.3 recommande d'annoncer un `cps` et
+de s'y tenir en moyenne sur dix secondes ; nous ne l'appliquons pas, et c'est assumé :
+à trente caractères par seconde, un collage de deux cents caractères s'étalerait sur
+sept secondes, ce qui est intenable pour l'utilisateur et sans bénéfice pour un canal
+qui n'a aucun mal à les absorber. Le tampon de 300 ms suffit à ne pas mitrailler le
+fil.
+
+#### Le canal de données : qui l'ouvre, et ce qu'il devient quand il tombe
+
+**C'est l'offrant qui crée le canal**, jamais le répondant (RFC 8865 §5) — sans quoi,
+deux Trix qui s'appellent en ouvriraient deux et le texte se dédoublerait. Dans un
+appel, l'offrant est l'appelant.
+
+Le canal est créé **à l'établissement de l'appel**, pas au moment où l'utilisateur
+ouvre le panneau de tchat. Une fois la section `m=application` présente et
+l'association SCTP montée, ouvrir un canal de plus se fait en DCEP, dans le média,
+sans renégociation ; le créer en cours d'appel sur une connexion qui n'en porte aucun
+déclencherait au contraire un `negotiationneeded`, donc un re-INVITE, donc un risque
+de 491 pour une fonction que l'utilisateur croit locale. Un canal ouvert et silencieux
+ne coûte rien.
+
+**Filet de sécurité.** Si le distant en crée un malgré tout, deux canaux `t140`
+coexistent : on garde celui dont l'**identifiant est le plus petit** et on ferme
+l'autre. Les deux extrémités voient les deux identifiants et concluent pareil. Pendant
+l'arbitrage, le texte est lu sur **tous** les canaux — un caractère en vol sur le
+perdant n'est pas perdu pour autant — mais n'est émis que sur celui qui a été retenu.
+Le filet reste actif toute la session : le rôle ne change pas, mais un distant
+capricieux, si.
+
+**La perte de canal est le cas nominal en mobilité, pas une curiosité.** Un
+redémarrage ICE conserve le transport DTLS et le canal survit ; un passage de la
+connexion à `failed` ou l'expiration d'une allocation TURN détruit l'association SCTP
+et emporte tout. La détection est branchée sur `connectionstatechange` et sur la
+fermeture du canal, jamais sur un délai d'inactivité. L'offrant recrée alors le canal
+— dix fois au plus — dès que la connexion est revenue.
+
+**Un appel texte seul est un appel comme un autre.** Une `RTCPeerConnection` qui ne
+porte qu'un canal de données est le cas de base de WebRTC : le SDP n'a qu'une section
+`m=application`, et c'est valide. Aucun `getUserMedia`, donc **aucune demande
+d'autorisation micro** — ce qui compte pour un utilisateur sourd, à qui on n'a pas à
+réclamer un microphone pour écrire. Le mode « appel texte » n'apparaît au menu du
+bouton Appeler que si le compte transporte le texte. Rien dans l'état de l'appel ne
+dépend d'un flux média : « établi » vient du 200 OK, pas d'une `MediaStream`. Le
+maintien de la connexion sans RTP est l'affaire des couches basses — consentement ICE,
+allocation TURN, HEARTBEAT SCTP (RFC 8865 §6) : aucun keepalive applicatif n'est
+ajouté. Enfin, l'affichage du texte reçu est piloté par `onmessage` et **jamais par un
+temporisateur** : Chrome aligne les timers d'un onglet caché sur une seconde, ce qui
+dépasserait le plafond de 500 ms.
+
+**Ce qui n'est pas négocié.** Direction, langue et débit se transportent, dans la
+norme, en SDP (`a=dcsa`, RFC 8864) — ce à quoi nous ne touchons pas (voir
+[ADR 0001](architecture/0001-t140-hors-sdp.md)). En pair à pair, cela n'a aucune
+conséquence : les deux extrémités sont le même logiciel, et les défauts de la RFC
+(`sendrecv`, pas de préférence de langue) sont exacts. En mode passerelle, ces
+paramètres devraient arriver par une signalisation applicative que Trix n'a pas
+aujourd'hui : `recvonly` et les préférences de langue ne sont donc pas gérés, et
+aucun canal de contrôle applicatif n'a été inventé pour les porter.
 
 #### Le fil : une seule bulle vivante par côté
 
@@ -754,9 +821,10 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
 - `sip/rtt.ts` — le canal : contrat commun (`RttChannel`), tampon 300 ms, découpage des
   messages, file d'attente, abonnement, et la fabrique qui choisit le fil ;
   `sip/rttws.ts` (retouches SDP et socket des passerelles) et `sip/rttdc.ts` (RFC 8865,
-  signature de session) sont les deux fils, et l'interface n'en connaît aucun ;
-  `sip/rttsip.ts` branche le premier sur la signalisation — c'est le seul module qui
-  touche à l'événement `sdp`.
+  signature de session, arbitrage et reprise du canal) sont les deux fils, et
+  l'interface n'en connaît aucun ; `sip/rttsip.ts` branche les deux sur la session —
+  le WebSocket par l'événement `sdp`, qu'il est seul à toucher, le canal de données
+  par la connexion pair-à-pair, sans une ligne de SDP.
 - `ui/screens/call/chat.ts` — le panneau : onglets, fil, bulles, composeur.
 - `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle.
 

@@ -122,7 +122,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                </div>
                <div class="splitbtn" data-ref="splitbtn">
                  <button class="btn call" data-act="call" ${ready ? "" : "disabled"}>
-                   ${currentMode().icon} ${currentMode().buttonLabel}
+                   ${currentMode(cfg?.rtt).icon} ${currentMode(cfg?.rtt).buttonLabel}
                  </button>
                  <button class="btn caret" data-act="call-menu" ${ready ? "" : "disabled"}
                          aria-label="${esc(t("call.chooseMode"))}" aria-expanded="false">▾</button>

@@ -172,6 +172,8 @@ const messages: Translation = {
   "mode.audio.button": "Start audio call",
   "mode.video.label": "Video call",
   "mode.video.button": "Start video call",
+  "mode.text.label": "Text call",
+  "mode.text.button": "Start text call",
   "chat.strip": "Chat — coming in phase 4, weather permitting",
 
   // ---------------------------------------------------------------------

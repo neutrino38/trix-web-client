@@ -12,13 +12,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { negotiateRttOverWs, openRttFor, type SdpEvent } from "../src/sip/rttsip.js";
 import type { RttState } from "../src/sip/rtt.js";
+import { T140_CHANNEL } from "../src/sip/rttdc.js";
 
-/** Une session JsSIP réduite à son événement `sdp`. */
+/** La connexion pair-à-pair, réduite à l'ouverture d'un canal de données. */
+class FakePc {
+  created: { label: string; protocol: string }[] = [];
+
+  createDataChannel(label: string, init: { protocol?: string }): unknown {
+    const dc = {
+      label,
+      protocol: init.protocol ?? "",
+      readyState: "connecting",
+      id: 0,
+      onopen: null,
+      onclose: null,
+      onerror: null,
+      onmessage: null,
+      send() {},
+      close() {},
+    };
+    this.created.push(dc);
+    return dc;
+  }
+
+  addEventListener(): void {}
+  removeEventListener(): void {}
+}
+
+/** Une session JsSIP réduite à ce que les deux transports lui demandent. */
 class FakeSession {
   private listeners: ((e: SdpEvent) => void)[] = [];
+  readonly pc = new FakePc();
 
-  on(_event: "sdp", listener: (e: SdpEvent) => void): void {
-    this.listeners.push(listener);
+  get connection(): RTCPeerConnection {
+    return this.pc as unknown as RTCPeerConnection;
+  }
+
+  on(_event: "sdp" | "peerconnection", listener: (e: never) => void): void {
+    this.listeners.push(listener as (e: SdpEvent) => void);
   }
 
   /** Combien d'écouteurs la session porte — zéro veut dire « on n'y touche pas ». */
@@ -220,16 +251,29 @@ describe("négociation du texte sur WebSocket", () => {
 
   it("« aucun » ne touche à rien : ni lien, ni écouteur, ni SDP modifié", () => {
     const session = new FakeSession();
-    expect(openRttFor("none", session)).toBeNull();
+    expect(openRttFor("none", session, "offer")).toBeNull();
     expect(session.watchers).toBe(0);
     // le SDP sort tel qu'il est entré : l'appel se négocie comme avant
     expect(session.sdp("local", "offer", LOCAL_OFFER)).toBe(LOCAL_OFFER);
   });
 
-  it("le canal de données n'est pas encore négocié : rien n'est branché", () => {
+  it("le canal de données ne touche pas au SDP : il ouvre son canal, et c'est tout", () => {
     const session = new FakeSession();
-    expect(openRttFor("datachannel", session)).toBeNull();
+    const nego = openRttFor("datachannel", session, "offer");
+
+    expect(nego).not.toBeNull();
+    // aucun écouteur `sdp` : l'offre part telle que le navigateur l'a écrite
     expect(session.watchers).toBe(0);
+    expect(session.pc.created.map((dc) => [dc.label, dc.protocol])).toEqual([
+      [T140_CHANNEL, T140_CHANNEL],
+    ]);
+  });
+
+  it("le canal de données côté répondant ne crée rien et n'écrit rien", () => {
+    const session = new FakeSession();
+    openRttFor("datachannel", session, "answer");
+    expect(session.watchers).toBe(0);
+    expect(session.pc.created).toEqual([]);
   });
 
   it("le texte reçu remonte au canal, et la fin d'appel ferme le socket", () => {
