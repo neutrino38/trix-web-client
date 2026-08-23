@@ -1,0 +1,11 @@
+{
+  "sip_server": "wss://sip.example.com:8443/ws",
+  "sip_domain": "example.com",
+  "stun_server": "stun.example.com:3478",
+  "turn_server": "turn.example.com:5349",
+  "turn_username": "trix",
+  "turn_password": "change-me",
+  "turn_tls": true,
+  "realtime_text": "user_choice",
+  "debug_activated": "yes"
+}

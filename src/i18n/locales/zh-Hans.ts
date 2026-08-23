@@ -73,6 +73,7 @@ const messages: Translation = {
   "config.uri": "SIP 地址",
   "config.uriPlaceholder": "sip:alice@example.com",
   "config.uriHint": "带不带“sip:”前缀都可以。域名同时用作认证域（realm）。",
+  "config.uriHintDomain": "此处只接受 {domain} 域的地址。该域名同时用作认证域（realm）。",
   "config.displayName": "您的姓名",
   "config.authToggle": "认证用户名（与 {user} 不同时填写）",
   "config.authUserDefault": "地址中的用户名部分",
@@ -282,6 +283,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "panel.aria": "侧边栏",
   "panel.showChat": "显示聊天",
+  "panel.show": "显示侧边栏",
   "panel.hide": "隐藏侧边栏",
   "panel.handleAria": "侧边栏宽度",
   "panel.handleTitle": "拖动可加宽侧边栏 — 最多占屏幕宽度的 33%",
@@ -386,6 +388,7 @@ const messages: Translation = {
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
   // ---------------------------------------------------------------------
   "error.invalidUri": "SIP 地址无效（应为 用户@域名）",
+  "error.wrongDomain": "该地址必须属于 {domain} 域",
   "error.passwordRequired": "请输入密码",
   "error.saveFailed": "无法保存：{detail}",
   "error.invalidProxy": "代理服务器名称无效 — 请检查 WSS 地址",

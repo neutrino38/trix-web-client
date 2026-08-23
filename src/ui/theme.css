@@ -161,6 +161,12 @@ body {
    hauteur disponible et poussait hors écran, sans défilement possible, tout
    ce qui n'y tenait pas. */
 .config-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6rem 2.4rem; align-items: start; }
+/* Deux colonnes quand le déploiement a emporté celle du milieu — traversée
+   de NAT et transport du texte imposés (src/deployment.ts). Le formulaire se
+   resserre avec elle : trois gouttières pour deux colonnes laisseraient un
+   vide à droite plutôt qu'une mise en page. */
+.config-cols.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.screen-config form:has(.cols-2) { width: min(800px, 92vw); }
 /* min-width: 0 — sans quoi un placeholder large élargit sa colonne */
 .config-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
 /* deux colonnes quand trois seraient étriquées, puis une seule : des
@@ -170,10 +176,15 @@ body {
   .screen-config form { width: min(800px, 92vw); }
 }
 @media (max-width: 800px) {
-  .config-cols { grid-template-columns: 1fr; }
-  .screen-config form { width: min(400px, 90vw); }
+  .config-cols, .config-cols.cols-2 { grid-template-columns: 1fr; }
+  .screen-config form, .screen-config form:has(.cols-2) { width: min(400px, 90vw); }
 }
 .screen-config h2 { font-size: 1.15rem; font-weight: 600; }
+/* Emplacement du bandeau d'erreur, réécrit sur place à chaque validation
+   refusée (screens/config.ts). `display: contents` : le bandeau reste un
+   enfant direct du formulaire pour la mise en page, et l'emplacement vide
+   n'ajoute pas une gouttière de plus en haut du formulaire. */
+.error-slot { display: contents; }
 /* deux sections : le compte (chiffré, appliqué à la validation) et les
    réglages locaux (immédiats) — la colonne suffit à les séparer */
 .screen-config h3 {

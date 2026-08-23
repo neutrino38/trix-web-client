@@ -34,14 +34,24 @@
  */
 
 import { recordFsm, recordPacket } from "./record.js";
+import { deployment } from "../deployment.js";
 
 const KEY = "trix-siptrace";
 
 const TAG = "[trix]";
 
-/** La trace est-elle demandée ? Éteinte par défaut : elle est verbeuse. */
+/**
+ * La trace est-elle demandée ? Éteinte par défaut : elle est verbeuse.
+ *
+ * Le déploiement a le dernier mot (`config.json`, `debug_activated: "no"`) :
+ * il n'y a alors pas de case à cocher dans les paramètres, et ce réglage
+ * reste éteint quoi qu'en dise `localStorage` — une trace laissée allumée
+ * avant le déploiement du fichier ne doit pas survivre à l'interdiction.
+ * Comme tout ce qui passe par ici est aussi proposé au carnet de l'appel,
+ * c'est du même coup la fin des paquets SIP dans l'historique.
+ */
 export function sipTraceEnabled(): boolean {
-  return localStorage.getItem(KEY) === "on";
+  return deployment().debug && localStorage.getItem(KEY) === "on";
 }
 
 /** Effet immédiat : les sockets déjà ouverts consultent ce réglage à chaque paquet. */

@@ -75,6 +75,9 @@ const messages: Translation = {
   "config.uriPlaceholder": "sip:alice@exemple.qc.ca",
   "config.uriHint":
     "Avec ou sans le préfixe « sip: ». Le domaine sert de royaume (realm) pour l'authentification.",
+  /** Domaine imposé par le déploiement (`config.json`) : c'est le seul accepté. */
+  "config.uriHintDomain":
+    "Seules les adresses du domaine {domain} sont acceptées ici. Ce domaine sert de royaume (realm) pour l'authentification.",
   "config.displayName": "Votre nom",
   "config.authToggle": "Identifiant d'authentification (s'il diffère de {user})",
   "config.authUserDefault": "l'utilisateur de l'adresse",
@@ -298,6 +301,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "panel.aria": "Panneau latéral",
   "panel.showChat": "Afficher le clavardage",
+  "panel.show": "Afficher le panneau latéral",
   "panel.hide": "Cacher le panneau latéral",
   "panel.handleAria": "Largeur du panneau",
   "panel.handleTitle": "Étirez le panneau — 33 % de la largeur au maximum",
@@ -401,6 +405,7 @@ const messages: Translation = {
   // Erreurs des automates — ici, on parle clair et net
   // ---------------------------------------------------------------------
   "error.invalidUri": "Adresse SIP invalide (attendu : utilisateur@domaine)",
+  "error.wrongDomain": "Cette adresse doit être du domaine {domain}",
   "error.passwordRequired": "Mot de passe requis",
   "error.saveFailed": "Sauvegarde impossible : {detail}",
   "error.invalidProxy": "Nom du proxy invalide — vérifiez l'adresse WSS",

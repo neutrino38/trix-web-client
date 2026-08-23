@@ -75,6 +75,8 @@ const messages: Translation = {
   "config.uri": "عنوان SIP",
   "config.uriPlaceholder": "sip:alice@example.fr",
   "config.uriHint": "مع البادئة «sip:» أو من دونها. ويُستخدم النطاق مجالَ مصادقة (realm).",
+  "config.uriHintDomain":
+    "لا تُقبَل هنا إلا العناوين ضمن النطاق {domain}. ويُستخدم هذا النطاق مجالَ مصادقة (realm).",
   "config.displayName": "اسمك",
   "config.authToggle": "معرّف المصادقة (إن اختلف عن {user})",
   "config.authUserDefault": "اسم المستخدم في العنوان",
@@ -304,6 +306,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "panel.aria": "اللوحة الجانبية",
   "panel.showChat": "إظهار الدردشة",
+  "panel.show": "إظهار اللوحة الجانبية",
   "panel.hide": "إخفاء اللوحة الجانبية",
   "panel.handleAria": "عرض اللوحة",
   "panel.handleTitle": "اسحب لتوسيع اللوحة — حتى 33٪ من عرض الشاشة",
@@ -418,6 +421,7 @@ const messages: Translation = {
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
   // ---------------------------------------------------------------------
   "error.invalidUri": "عنوان SIP غير صالح (المتوقَّع: user@domain)",
+  "error.wrongDomain": "يجب أن يكون هذا العنوان ضمن النطاق {domain}",
   "error.passwordRequired": "كلمة المرور مطلوبة",
   "error.saveFailed": "تعذّر الحفظ: {detail}",
   "error.invalidProxy": "اسم الوسيط غير صالح — تحقّق من عنوان WSS",

@@ -30,7 +30,7 @@ SSH_PORT=${SSH_PORT:-}                   # port ssh, sinon celui par défaut
 SSH_OPTS=${SSH_OPTS:-}                   # options ssh supplémentaires
 SSH_MUX=${SSH_MUX:-1}                    # 1 = une seule connexion ssh partagée
 REMOTE_SUDO=${REMOTE_SUDO:-0}            # 1 = écrire via sudo sur le serveur
-DELETE=${DELETE:-0}                      # 1 = purger aussi hors assets/ (voir --delete)
+DELETE=${DELETE:-0}                      # 1 = purger aussi hors assets/, sauf config.json
 DRY_RUN=${DRY_RUN:-0}                    # 1 = simuler le transfert
 SKIP_BUILD=${SKIP_BUILD:-0}              # 1 = déployer dist/ tel quel
 POST_DEPLOY_CMD=${POST_DEPLOY_CMD:-}     # commande à lancer sur le serveur après
@@ -46,7 +46,7 @@ Options :
   --user COMPTE      Compte ssh               (ou TARGET_USER)
   --port PORT        Port ssh                 (ou SSH_PORT)
   --sudo             Écrire via sudo côté serveur       (REMOTE_SUDO=1)
-  --delete           Purger aussi les fichiers hors assets/ (DELETE=1)
+  --delete           Purger aussi les fichiers hors assets/, config.json excepté (DELETE=1)
   --dry-run          Simuler, ne rien écrire            (DRY_RUN=1)
   --skip-build       Déployer dist/ sans reconstruire   (SKIP_BUILD=1)
   --post-cmd CMD     Commande lancée sur le serveur à la fin
@@ -212,8 +212,11 @@ if command -v rsync >/dev/null; then
 
   if [[ $DELETE == 1 ]]; then
     # Au-delà des assets : tout fichier du site absent de dist/ disparaît.
+    # Sauf config.json — la configuration de déploiement appartient au site,
+    # pas au build (docs/utilisation/deploiement.md) ; la purger déconfigurerait
+    # le client à chaque mise à jour.
     info "Purge du reste de $TARGET_DIR (--delete)…"
-    rsync "${rsync_args[@]}" --delete dist/ "$cible_ssh:$TARGET_DIR/"
+    rsync "${rsync_args[@]}" --delete --exclude=config.json dist/ "$cible_ssh:$TARGET_DIR/"
   fi
 elif command -v scp >/dev/null; then
   avert "rsync est absent, repli sur scp."

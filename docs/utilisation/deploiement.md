@@ -49,6 +49,70 @@ autorise n'importe quel hôte en WebSocket sécurisé.
    - `/etc/pki/tls/private/trix.example.com.key` contient la clé privée. Mettez-la en
      mode `0600` et propriété `root`.
 
+## Préconfigurer le client : `config.json`
+
+Trix lit au démarrage un fichier `config.json` **posé à côté de `index.html`**, dans la
+racine du site. Il n'est pas dans le build : c'est la configuration de *votre*
+installation, pas celle du dépôt, et une mise à jour du client ne l'écrase pas.
+
+Ce fichier fixe ce que vos utilisateurs n'ont pas à choisir. Chaque réglage qu'il impose
+**disparaît de l'écran des paramètres** : un champ qu'on ne peut pas changer n'a pas à
+être lu.
+
+**Le fichier est facultatif.** Absent, illisible ou mal formé, Trix se comporte
+exactement comme sans lui — le formulaire complet est affiché. Chaque clé est
+indépendante : n'écrivez que celles que vous voulez imposer.
+
+Un gabarit complet est fourni : [`config/config.json.example`](../../config/config.json.example).
+
+```json
+{
+  "sip_server": "wss://sip.example.com:8443/ws",
+  "sip_domain": "example.com",
+  "stun_server": "stun.example.com:3478",
+  "turn_server": "turn.example.com:5349",
+  "turn_username": "trix",
+  "turn_password": "change-me",
+  "turn_tls": true,
+  "realtime_text": "user_choice",
+  "debug_activated": "yes"
+}
+```
+
+| Clé | Effet |
+| --- | --- |
+| `sip_server` | Le proxy SIP (`wss://…` ou `ws://…`). Le champ « Serveur SIP » disparaît des paramètres. Une valeur sans schéma WebSocket est ignorée : mieux vaut un champ visible qu'un proxy injoignable et invisible. |
+| `sip_domain` | Le domaine SIP. Le champ « Adresse SIP » part prérempli à `user@domaine`, et **seule** une adresse de ce domaine est acceptée. |
+| `stun_server` | L'hôte STUN (`hôte` ou `hôte:port`, schéma `stun:` toléré). |
+| `turn_server`, `turn_username`, `turn_password`, `turn_tls` | Le relais TURN. Sans identifiant **et** mot de passe, le relais est ignoré : TURN n'a pas de mode anonyme. |
+| `realtime_text` | `"none"`, `"websocket"`, `"datachannel"` ou `"user_choice"`. Les trois premières valeurs imposent le transport et retirent le menu ; `"user_choice"` le laisse. Avec `"none"`, toute mention du tchat quitte l'interface. |
+| `debug_activated` | `"no"` retire la case « Trace SIP » et éteint la trace, y compris pour qui l'avait laissée allumée. Toute autre valeur, ou l'absence de clé, laisse la case. |
+
+Quelques conséquences à connaître :
+
+- **La colonne « Traversée de NAT » part d'un bloc.** Elle disparaît dès que le fichier
+  parle de STUN ou de TURN — même pour dire qu'il n'y en a pas (`"stun_server": ""`).
+  N'en imposer qu'un laisserait une demi-section à remplir.
+- **Un compte déjà enregistré est réaligné** sur le proxy, les serveurs ICE et le
+  transport texte imposés, à la relecture. En revanche, un compte enregistré sur un
+  **autre domaine** que `sip_domain` est écarté et l'utilisateur reconfigure le sien :
+  son empreinte de mot de passe (HA1) a été calculée avec l'ancien domaine comme
+  *realm*, et rien ne peut la rattraper.
+- **Le mot de passe TURN y est en clair**, comme dans toute configuration WebRTC servie
+  à un navigateur. Ce fichier est public : n'y mettez aucun secret que vous ne
+  distribueriez pas à vos utilisateurs.
+- **Il ne doit pas être mis en cache.** Les deux configurations fournies s'en chargent,
+  au même titre qu'`index.html`.
+
+Installez-le à la main, une fois :
+
+```sh
+sudo install -m 0644 config/config.json.example /var/www/trix/config.json
+sudo vi /var/www/trix/config.json
+```
+
+`deploy.sh` ne le transfère pas et ne le supprime pas, `--delete` compris.
+
 ## Déployer avec `deploy.sh`
 
 Le script [`deploy.sh`](../../deploy.sh) enchaîne les deux étapes précédentes : il construit
@@ -141,3 +205,6 @@ pouvez alors la remplacer par `listen 443 ssl;` plus une ligne `http2 on;`.
   variable vient d'une `map`, et tous les en-têtes restent déclarés au niveau `server`.
 - WebRTC exige un contexte sécurisé. Sans HTTPS valide, le navigateur refuse l'accès à la
   caméra et au micro.
+- `config.json` est servi tel quel, sans cache. Vérifiez-le après chaque modification :
+  `curl -s https://trix.example.com/config.json | python3 -m json.tool`. Une virgule en
+  trop et Trix repart en formulaire complet, sans rien signaler à l'utilisateur.

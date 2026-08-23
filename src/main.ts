@@ -11,14 +11,25 @@ import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
 import { traceCallStates } from "./sip/trace.js";
 import { initI18n, onLocaleChange } from "./i18n/index.js";
+import { loadDeployment } from "./deployment.js";
 
 applyPrefs();
 
-// Langue de l'interface, **avant** toute construction d'écran : `t()` est
+// Deux chargements à faire avant le premier écran, et un seul aller-retour
+// pour les deux — ils ne se doivent rien.
+//
+// La langue de l'interface, **avant** toute construction d'écran : `t()` est
 // synchrone, le chargement du dictionnaire ne l'est pas. L'attendre ici est
-// la seule façon qu'aucun écran ne se rende à moitié traduit. Top-level
-// await : Vite le sert nativement en ESM, et le premier rendu suit.
-await initI18n();
+// la seule façon qu'aucun écran ne se rende à moitié traduit.
+//
+// La configuration de déploiement (`config.json`, src/deployment.ts) pour la
+// même raison, et une de plus : la machine la lit dès l'amorçage pour
+// réaligner le compte enregistré sur ce que l'exploitant impose. La lire
+// après aurait laissé passer un rendu — et un enregistrement — sur l'ancien
+// proxy. Absente, illisible : Trix se comporte comme sans elle.
+//
+// Top-level await : Vite le sert nativement en ESM, et le premier rendu suit.
+await Promise.all([initI18n(), loadDeployment()]);
 
 watchGlobalErrors();
 

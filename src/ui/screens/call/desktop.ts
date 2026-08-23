@@ -242,8 +242,11 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           }
           ${
             // hors appel, le tchat n'a pas lieu d'être : il naît avec le canal
-            // de données et s'en va avec lui (§4.9)
-            view
+            // de données et s'en va avec lui (§4.9). Un compte qui ne
+            // transporte pas de texte n'en a même pas la promesse à afficher
+            // — c'est le cas d'un déploiement `realtime_text: "none"`, où
+            // plus rien de l'interface ne parle de tchat.
+            view || cfg?.rtt === "none"
               ? ""
               : `<div class="chat-strip">${ICONS.chat}<span>${esc(t("chat.strip"))}</span></div>`
           }

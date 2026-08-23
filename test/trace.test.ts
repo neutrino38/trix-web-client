@@ -17,6 +17,7 @@ import {
   type TraceSink,
 } from "../src/sip/trace.js";
 import { openCallTrace, resetCallTraces } from "../src/sip/record.js";
+import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
 
 /** localStorage minimal : le réglage de la trace y vit. */
 function stubStorage(): void {
@@ -72,6 +73,25 @@ describe("réglage de la trace", () => {
     expect(sipTraceEnabled()).toBe(true);
     setSipTrace(false);
     expect(sipTraceEnabled()).toBe(false);
+  });
+
+  it("reste éteinte quand le déploiement l'interdit, même déjà allumée", () => {
+    // `debug_activated: "no"` dans config.json : la case n'existe plus dans
+    // les paramètres, et un réglage laissé allumé avant ne doit pas survivre
+    setSipTrace(true);
+    setDeployment({ ...OPEN_DEPLOYMENT, debug: false });
+    expect(sipTraceEnabled()).toBe(false);
+
+    const { socket, sent } = fakeSocket();
+    const { sink, lines } = fakeSink();
+    traceSocket(socket, sink);
+    socket.send(REGISTER);
+    expect(sent).toEqual([REGISTER]); // le paquet part quand même
+    expect(lines).toEqual([]); // mais rien n'en est dit
+
+    setDeployment(OPEN_DEPLOYMENT);
+    expect(sipTraceEnabled()).toBe(true);
+    setSipTrace(false);
   });
 });
 

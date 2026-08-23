@@ -26,6 +26,7 @@ import {
 } from "../../prefs.js";
 import { esc } from "../../el.js";
 import { isRtl, t } from "../../../i18n/index.js";
+import { deployment } from "../../../deployment.js";
 
 /** Rectangle avec une colonne sur le bord : le panneau lui-même (maquette
  * 1b/1c). Le dessin est celui de la lecture latine ; le CSS le retourne en
@@ -45,9 +46,14 @@ export function panelIcon(collapsed: boolean): string {
  * Ce que fait le bouton **maintenant**. Replié, il montre le tchat : c'est le
  * contenu du panneau pendant un appel (D3 — l'historique, lui, reste réservé
  * au hors-appel, faute de place à 300 px).
+ *
+ * Sauf sur un déploiement sans texte (`config.json`, `realtime_text: "none"`),
+ * où il n'y a pas de tchat à promettre : le bouton dit alors simplement ce
+ * qu'il fait, rouvrir le panneau.
  */
 export function panelToggleLabel(collapsed: boolean): string {
-  return t(collapsed ? "panel.showChat" : "panel.hide");
+  if (!collapsed) return t("panel.hide");
+  return t(deployment().rtt === "none" ? "panel.show" : "panel.showChat");
 }
 
 /**

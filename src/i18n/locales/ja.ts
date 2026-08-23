@@ -68,6 +68,8 @@ const messages: Translation = {
   "config.uriPlaceholder": "sip:alice@example.jp",
   "config.uriHint":
     "「sip:」は付けても付けなくてもかまいません。ドメインは認証のレルムを兼ねます。",
+  "config.uriHintDomain":
+    "ここでは {domain} ドメインのアドレスだけを受け付けます。このドメインは認証のレルムを兼ねます。",
   "config.displayName": "お名前",
   "config.authToggle": "認証ユーザー名（{user} と異なる場合）",
   "config.authUserDefault": "アドレスのユーザー部分",
@@ -289,6 +291,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "panel.aria": "サイドパネル",
   "panel.showChat": "チャットを表示する",
+  "panel.show": "サイドパネルを表示する",
   "panel.hide": "サイドパネルを隠す",
   "panel.handleAria": "パネルの幅",
   "panel.handleTitle": "ドラッグしてパネルを広げます — 画面幅の 33 % まで",
@@ -393,6 +396,7 @@ const messages: Translation = {
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
   // ---------------------------------------------------------------------
   "error.invalidUri": "SIP アドレスが不正です（形式：ユーザー@ドメイン）",
+  "error.wrongDomain": "このアドレスは {domain} ドメインのものである必要があります",
   "error.passwordRequired": "パスワードを入力してください",
   "error.saveFailed": "保存できませんでした：{detail}",
   "error.invalidProxy": "プロキシー名が不正です — WSS アドレスを確認してください",

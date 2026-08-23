@@ -7,8 +7,9 @@ import { setSipTrace, sipTraceEnabled } from "../../sip/trace.js";
 import type { SuspectField } from "../../machines/events.js";
 import { langPicker, wireLangPicker } from "../langpicker.js";
 import { t } from "../../i18n/index.js";
-import type { MsgKey } from "../../i18n/types.js";
+import type { Msg, MsgKey } from "../../i18n/types.js";
 import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
+import { deployment } from "../../deployment.js";
 
 /**
  * État de la permission de notification — le seul canal d'alerte qui traverse
@@ -54,36 +55,156 @@ const RTT_LABELS: Record<RttTransport, { label: MsgKey; desc: MsgKey }> = {
   datachannel: { label: "config.rttDc", desc: "config.rttDcDesc" },
 };
 
+/**
+ * Le bandeau d'erreur du formulaire et son code technique, réécrits sur
+ * place après une validation refusée.
+ *
+ * Sur place, et non par un re-rendu : un refus laisse la machine dans le
+ * même état (`stay`), et l'écran ne se reconstruit pas — ce qui est heureux,
+ * puisqu'il effacerait la saisie en cours (ui/app.ts). Sans cette réécriture,
+ * une adresse hors du domaine imposé ou un mot de passe manquant seraient
+ * refusés sans un mot à l'écran.
+ */
+function errorSlot(err: Msg | null, code: string | null): string {
+  return `${err ? `<div class="error-banner" role="alert">${esc(t(err))}</div>` : ""}${
+    code ? `<span class="error-code">${esc(code)}</span>` : ""
+  }`;
+}
+
+/**
+ * Le userpart proposé quand le déploiement impose le domaine : le champ
+ * part de `user@domaine` et cette moitié-là est sélectionnée à la prise de
+ * focus. C'est la seule chose qui reste à saisir, autant la désigner.
+ */
+const URI_USER = "user";
+
 export function renderConfig(phone: PhoneInstance): HTMLElement {
   const cfg = phone.context.config;
   const saving = phone.state === "saving";
   const err = phone.context.lastError;
   const errCode = phone.context.lastErrorCode;
   const suspect = phone.context.suspectFields;
-  // "Mot de passe requis" (validation locale) ne vise que le mot de passe
-  const inv = (f: SuspectField): string => (suspect === f ? " class=\"invalid\"" : "");
+  // "Mot de passe requis" (validation locale) ne vise que le mot de passe.
+  // `data-suspect` reste sur le champ : c'est par lui que le surlignage se
+  // repose après un échec, sans re-rendre l'écran (`refreshError`).
+  const inv = (f: SuspectField): string =>
+    ` data-suspect="${f}"${suspect === f ? ' class="invalid"' : ""}`;
   const turn = cfg?.ice.turn ?? null;
+  /**
+   * Ce que l'exploitant a fixé dans `config.json` (src/deployment.ts) :
+   * chaque réglage imposé **disparaît** d'ici plutôt que de s'afficher
+   * grisé. Un champ qu'on ne peut pas changer n'a pas à être lu, et un
+   * formulaire qui n'en montre que la moitié se remplit deux fois plus
+   * vite. La machine, elle, ne lit pas davantage ces champs : ce qui suit
+   * est de l'affichage, pas de la sécurité (machines/phone.ts).
+   */
+  const dep = deployment();
+  // La colonne du milieu porte deux sections indépendantes ; elle ne
+  // disparaît que lorsque le déploiement les a prises toutes les deux.
+  const natCol = dep.ice === null || dep.rtt === null;
+  const uriValue = cfg
+    ? `${cfg.username}@${cfg.domain}`
+    : dep.domain
+      ? `${URI_USER}@${dep.domain}`
+      : "";
+  const uriUser = cfg?.username ?? (dep.domain ? URI_USER : t("config.authUserDefault"));
+
+  /**
+   * La traversée de NAT, en entier ou pas du tout : STUN et TURN sont
+   * fournis ensemble par l'opérateur, et n'en imposer qu'un laisserait une
+   * demi-section à remplir. Le déploiement qui en parle les prend donc tous
+   * les deux, et la section s'en va (src/deployment.ts).
+   */
+  const natSection = dep.ice
+    ? ""
+    : `          <h3>${esc(t("config.section.nat"))}</h3>
+          <p class="section-hint">${esc(t("config.natHint"))}</p>
+          <div class="field">
+            <label for="f-stun">${esc(t("config.stun"))}</label>
+            <input id="f-stun" name="stun" autocomplete="off" placeholder="${esc(t("config.stunPlaceholder"))}"
+                   value="${cfg?.ice.stun ? esc(cfg.ice.stun) : ""}"${inv("stun")}>
+            <span class="hint">${esc(t("config.stunHint"))}</span>
+          </div>
+          <div class="field">
+            <label for="f-turn">${esc(t("config.turn"))}</label>
+            <input id="f-turn" name="turn" autocomplete="off" placeholder="${esc(t("config.turnPlaceholder"))}"
+                   value="${turn ? esc(turn.host) : ""}"${inv("turn")}>
+            <span class="hint">${esc(t("config.turnHint"))}</span>
+          </div>
+          <div class="field">
+            <label for="f-turn-user">${esc(t("config.turnUser"))}</label>
+            <input id="f-turn-user" name="turnUsername" autocomplete="off"
+                   value="${turn ? esc(turn.username) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
+          </div>
+          <div class="field">
+            <label for="f-turn-pass">${esc(t("config.turnPass"))}</label>
+            <input id="f-turn-pass" name="turnPassword" type="password" autocomplete="off"
+                   placeholder="${turn ? esc(t("config.passwordSet")) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
+            ${turn ? `<span class="hint">${esc(t("config.turnPassKeep"))}</span>` : ""}
+          </div>
+          <div class="field">
+            <label class="checkline" for="f-turn-tls">
+              <input type="checkbox" id="f-turn-tls" name="turnTls"
+                     ${turn?.tls ? "checked" : ""} ${turn ? "" : "disabled"}>
+              <span><b>${esc(t("config.turnTlsLabel"))}</b>${esc(t("config.turnTlsDesc"))}</span>
+            </label>
+            <span class="hint">${esc(t("config.turnTlsHint"))}</span>
+          </div>
+          <div class="note">${esc(t("config.turnNote"))}</div>`;
+
+  /**
+   * Le transport du texte : imposé, il n'y a plus de choix à offrir — et
+   * quand c'est `none` qui est imposé, il n'y a plus de texte du tout,
+   * donc plus une mention du tchat nulle part (§4.9).
+   */
+  const rttSection = dep.rtt !== null ? "" : `          <!-- Le texte en temps réel voyage par un tuyau que la plateforme
+               de l'opérateur choisit : il est ici, avec les autres réglages
+               de transport, et non avec les réglages d'affichage. -->
+          <h3>${esc(t("config.section.rtt"))}</h3>
+          <p class="section-hint">${esc(t("config.rttHint"))}</p>
+          <fieldset class="field">
+            <legend class="field-title">${esc(t("config.rttTransport"))}</legend>
+            <div class="radio-col">
+              ${RTT_TRANSPORTS.map(
+                (id) => `<label class="radio">
+                          <input type="radio" name="rtt" value="${id}"
+                                 ${(cfg?.rtt ?? DEFAULT_RTT_TRANSPORT) === id ? "checked" : ""}>
+                          <span><b>${esc(t(RTT_LABELS[id].label))}</b>${esc(
+                            t(RTT_LABELS[id].desc),
+                          )}</span>
+                        </label>`,
+              ).join("")}
+            </div>
+            <span class="hint">${esc(t("config.rttNote"))}</span>
+          </fieldset>`;
 
   const node = el(`
     <div class="screen-config">
       <form novalidate>
         <h2>${esc(t("config.title"))}</h2>
-        ${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
-        ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
-        <div class="config-cols">
+        <div class="error-slot" data-ref="errslot">${errorSlot(err, errCode)}</div>
+        <div class="config-cols${natCol ? "" : " cols-2"}">
         <section class="config-col">
         <h3>${esc(t("config.section.account"))}</h3>
-        <div class="field">
+        ${
+          // serveur imposé : ni champ ni mention — l'adresse du proxy est
+          // une affaire d'exploitation, pas une préférence
+          dep.proxy
+            ? ""
+            : `<div class="field">
           <label for="f-proxy">${esc(t("config.proxy"))}</label>
           <input id="f-proxy" name="proxy" required placeholder="${esc(t("config.proxyPlaceholder"))}"
                  value="${cfg ? esc(cfg.proxy) : ""}"${inv("proxy")}>
-        </div>
+        </div>`
+        }
         <div class="field">
           <label for="f-uri">${esc(t("config.uri"))}</label>
           <input id="f-uri" name="uri" required autocomplete="username"
                  placeholder="${esc(t("config.uriPlaceholder"))}"
-                 value="${cfg ? esc(`${cfg.username}@${cfg.domain}`) : ""}"${inv("credentials")}>
-          <span class="hint">${esc(t("config.uriHint"))}</span>
+                 value="${esc(uriValue)}"${inv("credentials")}>
+          <span class="hint">${esc(
+            dep.domain ? t("config.uriHintDomain", { domain: dep.domain }) : t("config.uriHint"),
+          )}</span>
         </div>
         <div class="field">
           <label for="f-display">${esc(t("config.displayName"))}</label>
@@ -95,7 +216,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
             <span>${t("config.authToggle", {
               // le userpart est un fragment HTML : il se met à jour tout seul
               // à la saisie de l'adresse, sans réécrire la phrase autour
-              user: `<b data-ref="userpart">${esc(cfg?.username ?? t("config.authUserDefault"))}</b>`,
+              user: `<b data-ref="userpart">${esc(uriUser)}</b>`,
             })}</span>
           </label>
           <input id="f-auth" name="authUsername" autocomplete="off"
@@ -112,64 +233,12 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
 
         </section>
 
-        <section class="config-col">
-        <h3>${esc(t("config.section.nat"))}</h3>
-        <p class="section-hint">${esc(t("config.natHint"))}</p>
-        <div class="field">
-          <label for="f-stun">${esc(t("config.stun"))}</label>
-          <input id="f-stun" name="stun" autocomplete="off" placeholder="${esc(t("config.stunPlaceholder"))}"
-                 value="${cfg?.ice.stun ? esc(cfg.ice.stun) : ""}"${inv("stun")}>
-          <span class="hint">${esc(t("config.stunHint"))}</span>
-        </div>
-        <div class="field">
-          <label for="f-turn">${esc(t("config.turn"))}</label>
-          <input id="f-turn" name="turn" autocomplete="off" placeholder="${esc(t("config.turnPlaceholder"))}"
-                 value="${turn ? esc(turn.host) : ""}"${inv("turn")}>
-          <span class="hint">${esc(t("config.turnHint"))}</span>
-        </div>
-        <div class="field">
-          <label for="f-turn-user">${esc(t("config.turnUser"))}</label>
-          <input id="f-turn-user" name="turnUsername" autocomplete="off"
-                 value="${turn ? esc(turn.username) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
-        </div>
-        <div class="field">
-          <label for="f-turn-pass">${esc(t("config.turnPass"))}</label>
-          <input id="f-turn-pass" name="turnPassword" type="password" autocomplete="off"
-                 placeholder="${turn ? esc(t("config.passwordSet")) : ""}" ${turn ? "" : "disabled"}${inv("turn")}>
-          ${turn ? `<span class="hint">${esc(t("config.turnPassKeep"))}</span>` : ""}
-        </div>
-        <div class="field">
-          <label class="checkline" for="f-turn-tls">
-            <input type="checkbox" id="f-turn-tls" name="turnTls"
-                   ${turn?.tls ? "checked" : ""} ${turn ? "" : "disabled"}>
-            <span><b>${esc(t("config.turnTlsLabel"))}</b>${esc(t("config.turnTlsDesc"))}</span>
-          </label>
-          <span class="hint">${esc(t("config.turnTlsHint"))}</span>
-        </div>
-        <div class="note">${esc(t("config.turnNote"))}</div>
-
-        <!-- Le texte en temps réel voyage par un tuyau que la plateforme
-             de l'opérateur choisit : il est ici, avec les autres réglages
-             de transport, et non avec les réglages d'affichage. -->
-        <h3>${esc(t("config.section.rtt"))}</h3>
-        <p class="section-hint">${esc(t("config.rttHint"))}</p>
-        <fieldset class="field">
-          <legend class="field-title">${esc(t("config.rttTransport"))}</legend>
-          <div class="radio-col">
-            ${RTT_TRANSPORTS.map(
-              (id) => `<label class="radio">
-                        <input type="radio" name="rtt" value="${id}"
-                               ${(cfg?.rtt ?? DEFAULT_RTT_TRANSPORT) === id ? "checked" : ""}>
-                        <span><b>${esc(t(RTT_LABELS[id].label))}</b>${esc(
-                          t(RTT_LABELS[id].desc),
-                        )}</span>
-                      </label>`,
-            ).join("")}
-          </div>
-          <span class="hint">${esc(t("config.rttNote"))}</span>
-        </fieldset>
-
-        </section>
+        ${
+          // les deux sections de cette colonne peuvent partir séparément ;
+          // la colonne elle-même ne disparaît que quand il ne reste rien
+          natCol ? `<section class="config-col">${natSection}${rttSection}
+        </section>` : ""
+        }
 
         <section class="config-col">
         <h3>${esc(t("config.section.alerts"))}</h3>
@@ -203,17 +272,23 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         ${langPicker()}
         <span class="hint">${esc(t("lang.hint"))}</span>
 
-        <!-- Le diagnostic ferme la colonne des réglages locaux : il n'a rien
-             à voir avec le compte, ne s'enregistre pas, et n'intéresse qu'un
-             dépannage en cours. -->
-        <h3>${esc(t("config.section.diag"))}</h3>
+        ${
+          // Le diagnostic ferme la colonne des réglages locaux : il n'a rien
+          // à voir avec le compte, ne s'enregistre pas, et n'intéresse qu'un
+          // dépannage en cours. Le déploiement peut le retirer d'un mot
+          // (`debug_activated: "no"`) : la trace est alors éteinte pour de
+          // bon, la proposer serait mentir (sip/trace.ts).
+          dep.debug
+            ? `<h3>${esc(t("config.section.diag"))}</h3>
         <div class="field">
           <label class="checkline" for="f-siptrace">
             <input type="checkbox" id="f-siptrace" ${sipTraceEnabled() ? "checked" : ""}>
             <span><b>${esc(t("config.traceLabel"))}</b>${esc(t("config.traceDesc"))}</span>
           </label>
           <span class="hint">${esc(t("config.traceHint"))}</span>
-        </div>
+        </div>`
+            : ""
+        }
         </section>
         </div>
         <div class="form-actions">
@@ -231,19 +306,24 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const authToggle = form.querySelector("#f-auth-toggle") as HTMLInputElement;
   const authInput = form.querySelector("#f-auth") as HTMLInputElement;
   const flashToggle = form.querySelector("#f-flash") as HTMLInputElement;
-  const turnInput = form.querySelector("#f-turn") as HTMLInputElement;
+  // Champs que le déploiement peut avoir emportés : ils se cherchent, ils
+  // ne s'affirment pas. `null` ici n'est pas un écran cassé, c'est un
+  // réglage qui ne se discute plus.
+  const turnInput = form.querySelector<HTMLInputElement>("#f-turn");
   // identifiants et TLS n'ont de sens qu'avec un serveur TURN : ils suivent le champ
   const turnDeps = [
-    form.querySelector("#f-turn-user") as HTMLInputElement,
-    form.querySelector("#f-turn-pass") as HTMLInputElement,
-    form.querySelector("#f-turn-tls") as HTMLInputElement,
+    form.querySelector<HTMLInputElement>("#f-turn-user"),
+    form.querySelector<HTMLInputElement>("#f-turn-pass"),
+    form.querySelector<HTMLInputElement>("#f-turn-tls"),
   ];
-  const turnTls = turnDeps[2]!;
+  const turnTls = turnDeps[2];
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
+    // un champ absent rend la chaîne vide : c'est ce que la machine attend
+    // pour « rien saisi », et elle prendra de toute façon la valeur imposée
     const v = (name: string): string =>
-      (form.querySelector(`[name="${name}"]`) as HTMLInputElement).value.trim();
+      form.querySelector<HTMLInputElement>(`[name="${name}"]`)?.value.trim() ?? "";
     const password = v("password");
     const turnPass = v("turnPassword");
     const authUsername = authToggle.checked ? v("authUsername") : "";
@@ -261,15 +341,28 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         turn: v("turn"),
         turnUsername: v("turnUsername"),
         turnPassword: turnPass === "" ? null : turnPass,
-        turnTls: turnTls.checked,
+        turnTls: turnTls?.checked ?? false,
         rtt: (rtt?.value as RttTransport | undefined) ?? DEFAULT_RTT_TRANSPORT,
       },
     });
+    // refusée, la soumission laisse la machine où elle est : c'est ici, et
+    // nulle part ailleurs, que l'écran apprend pourquoi
+    refreshError();
   });
 
-  turnInput.addEventListener("input", () => {
+  /** Repose le bandeau et le surlignage sur ce que la machine vient de dire. */
+  function refreshError(): void {
+    const slot = form.querySelector('[data-ref="errslot"]')!;
+    slot.innerHTML = errorSlot(phone.context.lastError, phone.context.lastErrorCode);
+    const bad = phone.context.suspectFields;
+    for (const field of form.querySelectorAll<HTMLElement>("[data-suspect]")) {
+      field.classList.toggle("invalid", field.dataset.suspect === bad);
+    }
+  }
+
+  turnInput?.addEventListener("input", () => {
     const off = turnInput.value.trim() === "";
-    for (const dep of turnDeps) dep.disabled = off;
+    for (const field of turnDeps) if (field) field.disabled = off;
   });
 
   authToggle.addEventListener("change", () => {
@@ -295,8 +388,8 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   // la trace n'est pas un champ du formulaire : elle ne part pas chez le
   // registrar et ne doit pas attendre l'enregistrement pour s'allumer —
   // le socket relit ce réglage à chaque paquet
-  const traceToggle = node.querySelector("#f-siptrace") as HTMLInputElement;
-  traceToggle.addEventListener("change", () => setSipTrace(traceToggle.checked));
+  const traceToggle = node.querySelector<HTMLInputElement>("#f-siptrace");
+  traceToggle?.addEventListener("change", () => setSipTrace(traceToggle.checked));
 
   // la mention « si différent de … » suit le userpart de l'URI en cours de saisie
   const uriInput = form.querySelector("#f-uri") as HTMLInputElement;
@@ -305,13 +398,22 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
     const parsed = parseSipUri(uriInput.value);
     userpartRef.textContent = parsed?.username ?? t("config.authUserDefault");
   });
+  // Domaine imposé, champ encore au gabarit : la prise de focus sélectionne
+  // `user` pour qu'il suffise de taper par-dessus. Le domaine, lui, ne se
+  // retape pas — et il ne serait pas accepté autrement (machines/phone.ts).
+  if (!cfg && dep.domain) {
+    uriInput.addEventListener("focus", () => {
+      if (uriInput.value === uriValue) uriInput.setSelectionRange(0, URI_USER.length);
+    });
+  }
   node
     .querySelector('[data-act="cancel"]')!
     .addEventListener("click", () => phone.send({ type: "ui:cancelConfig" }));
   wireLangPicker(node);
-  // le surlignage s'efface dès que l'utilisateur corrige le champ
-  for (const input of node.querySelectorAll("input.invalid")) {
-    input.addEventListener("input", () => input.classList.remove("invalid"), { once: true });
+  // le surlignage s'efface dès que l'utilisateur corrige le champ — et il
+  // peut revenir à la soumission suivante, d'où l'écoute permanente
+  for (const input of node.querySelectorAll("[data-suspect]")) {
+    input.addEventListener("input", () => input.classList.remove("invalid"));
   }
   return node;
 }

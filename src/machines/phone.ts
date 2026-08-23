@@ -30,6 +30,7 @@ import { CallBlock } from "./call.js";
 import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { parseIceForm } from "../sip/ice.js";
 import { parseRttTransport } from "../sip/rtt.js";
+import { deployment, pinAccount } from "../deployment.js";
 import { msg, type Msg } from "../i18n/types.js";
 
 export interface PhoneCtx {
@@ -233,6 +234,11 @@ function isCredentialsError(statusCode: number | undefined): boolean {
 /** Validation + HA1 du formulaire, partagé par configuring et reconfiguring. */
 function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: PhoneCtx) {
   const f = ev.form;
+  // ce que l'exploitant impose (`config.json`) : le formulaire n'en montre
+  // pas les champs, et cette fonction n'en lit pas la saisie — un formulaire
+  // trafiqué ne peut donc pas placer le compte ailleurs que sur ce
+  // déploiement
+  const dep = deployment();
   const parsed = parseSipUri(f.uri);
   if (!parsed) {
     ctx.lastError = msg("error.invalidUri");
@@ -240,6 +246,14 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     return stay("URI invalide");
   }
   const { username, domain } = parsed;
+  // le domaine imposé n'est pas une valeur par défaut : une adresse d'un
+  // autre domaine ne s'enregistrerait sur rien ici, autant le dire au lieu
+  // de la corriger en douce
+  if (dep.domain !== null && domain !== dep.domain) {
+    ctx.lastError = msg("error.wrongDomain", { domain: dep.domain });
+    ctx.suspectFields = "credentials";
+    return stay("domaine imposé");
+  }
   const authUsername = f.authUsername?.trim() || null;
   // le HA1 dépend de l'identité d'authentification effective et du realm (= domaine)
   const authId = authUsername ?? username;
@@ -256,25 +270,31 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     return stay("mot de passe manquant");
   }
   // serveurs ICE : optionnels, mais une saisie fautive ne doit pas être
-  // enregistrée en silence — l'appel échouerait plus tard, sans explication
-  const ice = parseIceForm(f, ctx.config?.ice ?? null);
-  if (!ice.ok) {
-    ctx.lastError = ice.error;
-    ctx.suspectFields = ice.field;
-    return stay("serveur ICE invalide");
+  // enregistrée en silence — l'appel échouerait plus tard, sans explication.
+  // Imposés par le déploiement, il n'y a rien à valider : ils ne viennent
+  // pas du formulaire.
+  let ice = dep.ice;
+  if (!ice) {
+    const parsedIce = parseIceForm(f, ctx.config?.ice ?? null);
+    if (!parsedIce.ok) {
+      ctx.lastError = parsedIce.error;
+      ctx.suspectFields = parsedIce.field;
+      return stay("serveur ICE invalide");
+    }
+    ice = parsedIce.ice;
   }
   ctx.config = {
-    proxy: f.proxy,
+    proxy: dep.proxy ?? f.proxy,
     domain,
     displayName: f.displayName,
     username,
     authUsername,
     ha1,
     flashAlert: f.flashAlert,
-    ice: ice.ice,
+    ice,
     // rien à valider : le choix vient d'un bouton radio, et une valeur
     // inconnue (compte migré, formulaire trafiqué) retombe sur le défaut
-    rtt: parseRttTransport(f.rtt),
+    rtt: dep.rtt ?? parseRttTransport(f.rtt),
   };
   return goto("saving");
 }
@@ -338,8 +358,14 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       },
       on: {
         "task:loadConfig": (ev, ctx) => {
-          ctx.config = ev.ok ? ev.value.config : null;
-          ctx.history = ev.ok ? recent(ev.value.history) : [];
+          // le compte relu passe par le déploiement avant d'être adopté :
+          // proxy, serveurs ICE et transport texte imposés écrasent ce qui
+          // avait été enregistré, et un compte d'un autre domaine que le
+          // domaine imposé est écarté — son HA1 a été calculé sur ce
+          // domaine-là (§6), rien ne peut le rattraper ici
+          const loaded = ev.ok ? ev.value.config : null;
+          ctx.config = loaded ? pinAccount(loaded) : null;
+          ctx.history = ev.ok && ctx.config ? recent(ev.value.history) : [];
           return goto("home", ctx.config ? "compte trouvé" : "aucun compte");
         },
       },

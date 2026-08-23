@@ -60,6 +60,9 @@ const messages: Translation = {
   "config.uriPlaceholder": "sip:alice@example.com",
   "config.uriHint":
     "With or without the “sip:” prefix. The domain doubles as the authentication realm.",
+  /** Domain pinned by the deployment (`config.json`): the only one accepted. */
+  "config.uriHintDomain":
+    "Only addresses in the {domain} domain are accepted here. That domain doubles as the authentication realm.",
   "config.displayName": "Your name",
   "config.authToggle": "Authentication username (if different from {user})",
   "config.authUserDefault": "the user part of the address",
@@ -282,6 +285,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "panel.aria": "Side panel",
   "panel.showChat": "Show chat",
+  "panel.show": "Show side panel",
   "panel.hide": "Hide side panel",
   "panel.handleAria": "Panel width",
   "panel.handleTitle": "Drag to widen the panel — 33% of the width, and not a pixel more",
@@ -386,6 +390,7 @@ const messages: Translation = {
   // State machine errors
   // ---------------------------------------------------------------------
   "error.invalidUri": "Invalid SIP address (expected user@domain)",
+  "error.wrongDomain": "This address must be in the {domain} domain",
   "error.passwordRequired": "Password required",
   "error.saveFailed": "Could not save: {detail}",
   "error.invalidProxy": "Invalid proxy name — check the WSS address",

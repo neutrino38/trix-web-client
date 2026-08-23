@@ -4,7 +4,7 @@
  * fsl-typescript). L'amorçage (task loadConfig) est asynchrone : les
  * tests attendent l'état `home` avec vi.waitFor.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
 import type { AccountConfig, CallLogEntry, SecureStore } from "../src/storage/store.js";
 import type {
@@ -20,6 +20,7 @@ import type { MediaStats } from "../src/sip/stats.js";
 import type { ChatItem } from "../src/sip/transcript.js";
 import { computeHa1 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
+import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
 
 const CFG: AccountConfig = {
   proxy: "wss://sip.example.fr:8443/ws",
@@ -192,6 +193,90 @@ describe("PhoneMachine — amorçage", () => {
     phone.send({ type: "ui:useAccount" });
     expect(phone.state).toBe("home");
     expect(sip.started).toHaveLength(0);
+  });
+});
+
+describe("PhoneMachine — configuration imposée par le déploiement", () => {
+  // `config.json` est un état de module : chaque cas repose l'ardoise, sans
+  // quoi le suivant hériterait d'un proxy imposé qu'il n'a pas demandé
+  afterEach(() => setDeployment(OPEN_DEPLOYMENT));
+
+  const FORM = {
+    proxy: "wss://saisi.example.fr/ws",
+    uri: "alice@example.fr",
+    displayName: CFG.displayName,
+    authUsername: null,
+    password: "secret123",
+    flashAlert: true,
+    stun: "stun.saisi.fr",
+    turn: "",
+    turnUsername: "",
+    turnPassword: null,
+    turnTls: false,
+    rtt: "websocket",
+  } as const;
+
+  it("le compte relu prend le proxy, les serveurs ICE et le transport imposés", async () => {
+    setDeployment({
+      proxy: "wss://impose.example.fr/ws",
+      domain: null,
+      ice: { stun: "stun.impose.fr", turn: null },
+      rtt: "datachannel",
+      debug: true,
+    });
+    const { phone, sip } = await bootTo("connecting", CFG);
+    expect(phone.context.config).toEqual({
+      ...CFG,
+      proxy: "wss://impose.example.fr/ws",
+      ice: { stun: "stun.impose.fr", turn: null },
+      rtt: "datachannel",
+    });
+    // et c'est bien ce compte-là que l'UA reçoit, pas celui du coffre
+    expect(sip.started[0]!.proxy).toBe("wss://impose.example.fr/ws");
+  });
+
+  it("un compte d'un autre domaine que le domaine imposé est écarté", async () => {
+    setDeployment({ ...OPEN_DEPLOYMENT, domain: "autre.example.fr" });
+    const { phone } = await bootTo("home", CFG);
+    // son HA1 a été calculé sur example.fr : le réécrire ne l'authentifierait
+    // sur rien, l'accueil repart donc sur « nouveau compte »
+    expect(phone.context.config).toBeNull();
+    expect(phone.context.history).toEqual([]);
+  });
+
+  it("une adresse hors du domaine imposé est refusée, on reste sur le formulaire", async () => {
+    setDeployment({ ...OPEN_DEPLOYMENT, domain: "impose.example.fr" });
+    const { phone, box } = await bootTo("home", null);
+    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:saveConfig", form: { ...FORM } });
+    expect(phone.state).toBe("configuring");
+    expect(phone.context.lastError).toEqual({
+      key: "error.wrongDomain",
+      vars: { domain: "impose.example.fr" },
+    });
+    expect(phone.context.suspectFields).toBe("credentials");
+    expect(box.saved).toBeNull();
+  });
+
+  it("ce que le formulaire dit des réglages imposés est ignoré", async () => {
+    setDeployment({
+      proxy: "wss://impose.example.fr/ws",
+      domain: "example.fr",
+      ice: { stun: "stun.impose.fr", turn: null },
+      rtt: "datachannel",
+      debug: true,
+    });
+    const { phone, box } = await bootTo("home", null);
+    phone.send({ type: "ui:configure" });
+    // un formulaire trafiqué peut porter ces champs : la machine ne les lit pas
+    phone.send({ type: "ui:saveConfig", form: { ...FORM } });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(box.saved).toEqual({
+      ...CFG,
+      proxy: "wss://impose.example.fr/ws",
+      ice: { stun: "stun.impose.fr", turn: null },
+      rtt: "datachannel",
+    });
   });
 });
 

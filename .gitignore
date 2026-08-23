@@ -9,3 +9,6 @@ dist/
 
 # Réglages de déploiement propres à la machine
 deploy.env
+# config.json d'essai posé dans public/ : c'est la configuration d'un site,
+# pas celle du dépôt (config/config.json.example en donne le gabarit)
+public/config.json

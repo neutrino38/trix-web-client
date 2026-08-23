@@ -54,6 +54,7 @@ Principes :
 ```
 src/
   main.ts                 # bootstrap, détection config, start(PhoneMachine)
+  deployment.ts           # config.json : ce que l'exploitant impose (§2.1)
   machines/
     phone.ts              # PhoneMachine (cycle de vie app + REGISTER)
     call.ts               # CallBlock (bloc de service : l'appel)
@@ -82,6 +83,48 @@ src/
   debug/
     observability.ts      # export toMermaid(), logger de transitions
 ```
+
+### 2.1 Configuration de déploiement — `config.json`
+
+Un fichier **lu en HTTP au démarrage, jamais embarqué** : `src/deployment.ts` le
+récupère à côté d'`index.html`, avant le premier rendu (`main.ts`, en parallèle du
+dictionnaire de langue). Il appartient à l'exploitant, pas au build — une mise à
+jour du client ne le remplace pas. Le mode d'emploi, côté serveur, est dans
+[docs/utilisation/deploiement.md](utilisation/deploiement.md).
+
+Il fixe ce que la plateforme décide déjà : proxy SIP, domaine SIP, serveurs
+STUN/TURN, transport du texte temps réel, existence même de la trace SIP. Chaque
+réglage imposé **disparaît de l'écran des paramètres** au lieu de s'y afficher
+grisé : un champ qu'on ne peut pas changer n'a pas à être lu, et le formulaire se
+remplit d'autant plus vite.
+
+Trois règles tiennent le module :
+
+1. **Absent, illisible ou mal formé n'est pas une erreur.** On retombe sur le
+   déploiement *ouvert* — Trix exactement comme sans le fichier. Un exploitant qui
+   se trompe de clé retrouve le formulaire entier, jamais un client à moitié
+   configuré.
+2. **Chaque clé est indépendante.** Imposer le domaine ne dit rien du proxy. Ce que
+   le fichier ne dit pas, l'utilisateur le choisit encore.
+3. **L'imposé l'emporte sur l'enregistré.** Un compte relu du coffre passe par
+   `pinAccount()` avant d'être adopté : le champ masqué ne peut donc pas contredire
+   en silence le compte réellement utilisé.
+
+Une seule chose que l'alignement ne rattrape pas : un compte enregistré sur un
+**autre domaine** que le domaine imposé. Son HA1 a été calculé avec ce domaine-là
+comme *realm* (§6) ; réécrire le domaine laisserait une empreinte qui n'authentifie
+rien. Ce compte est donc écarté, et l'utilisateur reconfigure le sien — ce qu'il
+devrait faire de toute façon pour obtenir un HA1 utilisable.
+
+La validation ne relève pas de l'écran. `saveConfig` (PhoneMachine) ne lit pas les
+champs imposés et refuse une adresse hors du domaine imposé : un formulaire trafiqué
+depuis la console ne place pas le compte ailleurs que sur ce déploiement.
+
+`debug_activated: "no"` mérite une mention à part : la clé ne masque pas seulement la
+case, elle éteint `sipTraceEnabled()` (§5.2) quoi qu'en dise `localStorage`. Comme
+tout ce qui passe par là est aussi proposé au carnet de l'appel (§5.3), c'est du même
+coup la fin des paquets SIP dans l'historique — y compris pour qui avait laissé la
+trace allumée avant que le fichier n'arrive.
 
 ## 3. Conventions d'événements
 

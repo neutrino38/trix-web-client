@@ -58,6 +58,9 @@ const messages = {
   "config.uriPlaceholder": "sip:alice@example.fr",
   "config.uriHint":
     "Avec ou sans le préfixe « sip: ». Le domaine sert de realm pour l'authentification.",
+  /** Domaine imposé par le déploiement (`config.json`) : c'est le seul accepté. */
+  "config.uriHintDomain":
+    "Seules les adresses du domaine {domain} sont acceptées ici. Ce domaine sert de realm pour l'authentification.",
   "config.displayName": "Votre nom",
   /** `{user}` est un fragment HTML (le userpart en gras, suivi à la saisie). */
   "config.authToggle": "Identifiant d'authentification (si différent de {user})",
@@ -284,6 +287,7 @@ const messages = {
   // ---------------------------------------------------------------------
   "panel.aria": "Panneau latéral",
   "panel.showChat": "Afficher le tchat",
+  "panel.show": "Afficher le panneau latéral",
   "panel.hide": "Masquer le panneau latéral",
   "panel.handleAria": "Largeur du panneau",
   "panel.handleTitle": "Élargir le panneau — 33 % de la largeur au maximum",
@@ -387,6 +391,7 @@ const messages = {
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
   // ---------------------------------------------------------------------
   "error.invalidUri": "Adresse SIP invalide (attendu : utilisateur@domaine)",
+  "error.wrongDomain": "Cette adresse doit être du domaine {domain}",
   "error.passwordRequired": "Mot de passe requis",
   "error.saveFailed": "Sauvegarde impossible : {detail}",
   "error.invalidProxy": "Nom du proxy invalide — vérifiez l'adresse WSS",
