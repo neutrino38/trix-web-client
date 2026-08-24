@@ -933,7 +933,10 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
 - `ui/chatdialog.ts` — la relecture d'une conversation passée, depuis la bulle « T »
   de sa ligne d'historique : même `<dialog>` que le carnet, et le fil rendu par le
   même code que pendant l'appel.
-- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle. **Pas encore écrit.**
+- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle : entrées triées par
+  début (le fil, lui, est dans l'ordre des figeages), recouvrements gardés, remarques du
+  fil en `NOTE` horodatées, et `&`, `<`, `>` échappés. Le téléchargement lui-même est la
+  seule ligne qui touche le document, tout le reste se vérifie sans navigateur.
 
 **Pas d'émulateur de terminal.** `xterm.js` est la seule bibliothèque sérieuse du
 domaine, et elle ne convient pas : elle rend une grille monospace de dimensions fixes
@@ -1272,6 +1275,7 @@ pour des identifiants SIP). La meilleure approximation :
 
 ```ts
 interface AccountConfig {
+  id: string;           // identifiant opaque du compte, tiré à sa création — jamais émis sur le réseau
   proxy: string;        // wss://…
   domain: string;
   displayName: string;
@@ -1282,12 +1286,61 @@ interface AccountConfig {
   ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
   rtt: RttTransport;    // texte en temps réel (§4.9) — aucun (défaut), WebSocket, ou canal de données
 }
+/** Ce que le coffre contient, en un seul enregistrement chiffré. */
+interface Vault {
+  accounts: AccountConfig[];   // dans l'ordre d'affichage ; deux au plus (voir ci-dessous)
+  activeId: string | null;     // celui qui s'enregistre — un seul à la fois
+}
 interface SecureStore {
-  load(): Promise<AccountConfig | null>;
-  save(cfg: AccountConfig): Promise<void>;
+  load(): Promise<Vault>;                     // coffre vide si rien n'est enregistré
+  save(vault: Vault): Promise<void>;
   clear(): Promise<void>;
+  loadHistory(id: string): Promise<CallLogEntry[]>;   // clé : l'identifiant, non l'adresse
+  saveHistory(id: string, entries: CallLogEntry[]): Promise<void>;
 }
 ```
+
+### Deux comptes (ADR 0002)
+
+Le coffre tient une **liste** et l'identifiant de celui qui est actif. L'interface en
+propose deux au plus ; le stockage et `PhoneMachine` n'en savent rien, ils manipulent
+une liste — le jour où la limite bouge, elle bouge à un endroit.
+
+**Un seul compte enregistré à la fois.** C'est déjà l'invariant de `PhoneMachine`
+(§4.1) : l'UA SIP ne vit que dans `connecting → registering → ready → in_call →
+unregistering`, et toute sortie passe par `stopSip()`. Changer de compte emprunte ce
+chemin — arrêter l'UA, repartir en `connecting` avec l'autre configuration. Il n'y a
+pas de second UA à faire cohabiter, et **la bascule est interdite dès qu'un appel est
+en cours**, de la première sonnerie au raccroché : le bouton est grisé comme le sont
+Paramètres et Se déconnecter, et `CallBlock` consomme l'événement sans effet s'il lui
+parvient malgré tout.
+
+**L'historique est nommé par l'identifiant du compte, non par son adresse.** Corriger
+une adresse mal saisie ne fait donc pas disparaître le journal d'appels, et deux
+comptes de même adresse sur deux proxys différents ne peuvent pas partager le leur —
+que le formulaire refuse par ailleurs deux fois la même adresse.
+
+**Le compte édité n'est pas le compte actif.** `PhoneMachine` porte un `ctx.editing` :
+l'identifiant de celui que le formulaire modifie, `null` pour une création. Toute la
+validation s'y adosse — au premier chef la conservation du HA1 quand le mot de passe
+est laissé vide, qui, adossée au compte *actif*, attribuerait au compte au repos
+l'empreinte de l'autre.
+
+**Migration.** Le compte enregistré sous l'ancienne forme (clé `account`) devient au
+premier démarrage le premier de la liste, et l'actif ; son historique est recopié de
+`history:<user@domaine>` vers `history:<id>`, puis les deux anciennes clés sont
+effacées — sans quoi un compte supprimé plus tard laisserait son HA1 chiffré dans la
+base, sous une clé que plus personne ne lit. L'opération est idempotente et ne perd pas
+le compte existant si elle est interrompue.
+
+**Portée de l'étanchéité.** Un compte ne voit jamais les appels, les identifiants ni
+les réglages de l'autre. Le cloisonnement est **fonctionnel, pas cryptographique** : la
+clé AES-GCM reste unique pour l'origine, ce qui déchiffre un compte déchiffre l'autre —
+c'est la limite 3 ci-dessus, que le second compte n'aggrave pas. Restent communs aux
+deux, et hors du coffre, les réglages du navigateur : thème, langue, taille de police,
+largeur du panneau, mode d'appel par défaut, trace SIP, permission de notification.
+Aucun ne porte de donnée identifiante ; ce qui appartient au compte — flash, serveurs
+ICE, transport du texte temps réel — est dans `AccountConfig` et y reste.
 
 `SecureStore` est le **point d'abstraction pour Tauri** : une future implémentation
 `tauriStore` (trousseau OS via `tauri-plugin-keyring`/stronghold — libsecret/GNOME Keyring

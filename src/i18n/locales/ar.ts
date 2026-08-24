@@ -234,7 +234,10 @@ const messages: Translation = {
   "chat.log.copy": "نسخ",
   "chat.log.copied": "تمّ النسخ",
   "chat.log.copyFailed": "تعذّر النسخ",
+  "chat.log.export": "تصدير",
+  "chat.log.exportFailed": "تعذّر التصدير",
   "chat.log.close": "إغلاق",
+  "chat.log.vttBase": "الأوقات محسوبة من بداية المكالمة — مكالمة {at}.",
   "chat.log.cut": "بداية المحادثة غير محفوظة",
 
   // ---------------------------------------------------------------------

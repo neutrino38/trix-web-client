@@ -219,7 +219,10 @@ const messages: Translation = {
   "chat.log.copy": "コピー",
   "chat.log.copied": "コピーしました",
   "chat.log.copyFailed": "コピーできませんでした",
+  "chat.log.export": "書き出す",
+  "chat.log.exportFailed": "書き出せませんでした",
   "chat.log.close": "閉じる",
+  "chat.log.vttBase": "時刻は通話開始からの経過時間 — {at} の通話。",
   "chat.log.cut": "会話の冒頭は保存されていません",
 
   // ---------------------------------------------------------------------

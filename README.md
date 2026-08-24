@@ -109,8 +109,10 @@ Full steps, required modules and per-distribution paths:
 - [x] Phase 4 (DTMF) — 12-key keypad over the video stage, physical keyboard, local
       tone feedback, and an on-screen echo of the tones that actually went out
       (RFC 4733: a DTMF is neither heard here nor carried by any SIP packet)
-- [ ] Phase 4 (chat) — chat over the WebRTC data channel
-- [ ] Phase 5 (future) — Tauri packaging
+- [x] Phase 4 (chat) — chat over the WebRTC data channel, total conversation
+      experience (adding / removing audioi or video from a call)
+- [ ] Phase 5 - configuration by config.json, multiple account
+- [ ] Phase 6 - Instant Messaging. Converged call history and IM, presence handling
 
 ## Observability
 

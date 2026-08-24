@@ -211,7 +211,10 @@ const messages: Translation = {
   "chat.log.copy": "复制",
   "chat.log.copied": "已复制",
   "chat.log.copyFailed": "复制被拒绝",
+  "chat.log.export": "导出",
+  "chat.log.exportFailed": "导出被拒绝",
   "chat.log.close": "关闭",
+  "chat.log.vttBase": "时间自通话接通起计算 — {at} 的通话。",
   "chat.log.cut": "对话开头未保留",
 
   // ---------------------------------------------------------------------

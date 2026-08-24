@@ -213,7 +213,10 @@ const messages: Translation = {
   "chat.log.copy": "Copy",
   "chat.log.copied": "Copied",
   "chat.log.copyFailed": "Copy refused. Sorry about that",
+  "chat.log.export": "Export",
+  "chat.log.exportFailed": "Export refused",
   "chat.log.close": "Close",
+  "chat.log.vttBase": "Times counted from the start of the communication — call of {at}.",
   "chat.log.cut": "Start of the conversation not kept",
 
   // ---------------------------------------------------------------------
