@@ -50,6 +50,12 @@
   .frame .callflash,
   .frame .incoming-veil { position: absolute; }
 
+  /* les carnets sont ouverts par `showModal()` dans l'app (voile, piège à focus,
+     Échap) ; la maquette les rend `open` pour montrer leur contenu, dans le cadre
+     et sur un fond assombri qui tient lieu de `::backdrop` */
+  .frame.dlg { background: var(--video-bg); display: grid; place-items: center; padding: 1.5rem; }
+  .frame.dlg dialog[open] { position: static; max-height: 100%; }
+
   /* ---- flux média simulés (l'app pose de vrais <video>) ---- */
   .fake-remote {
     position: absolute; inset: 0;
@@ -91,6 +97,9 @@
     <button data-target="s-m-dial">7 · Composer</button>
     <button data-target="s-m-live">8 · En communication</button>
     <button data-target="s-m-in">9 · Appel entrant</button>
+    <span class="group">Diagnostic</span>
+    <button data-target="s-trace">10 · Carnet SIP</button>
+    <button data-target="s-stats">11 · Bilan média</button>
   </nav>
 
   <!-- ================= 1 · ACCUEIL ================= -->
@@ -101,11 +110,24 @@
           <img src="../../public/trix-icon.svg" width="200" height="200" alt="" aria-hidden="true">
           <h1>Trix Communicator</h1>
           <div class="tagline">Webphone conversation totale</div>
+          <div class="version">Version 0.3.0</div>
         </div>
         <div class="actions">
-          <button class="btn primary">Utiliser le compte</button>
+          <button class="btn primary">Utiliser ce compte</button>
           <span class="account-hint">Alice Martin — alice@example.fr</span>
           <button class="btn">Configurer un nouveau compte</button>
+          <div class="field lang-picker">
+            <label for="f-lang-home">Langue de l'interface</label>
+            <select id="f-lang-home">
+              <option selected>Automatique — Français</option>
+              <option lang="en">English</option>
+              <option lang="fr">Français</option>
+              <option lang="fr-CA">Québécois</option>
+              <option lang="ja">日本語</option>
+              <option lang="zh-Hans">简体中文</option>
+              <option lang="ar">العربية</option>
+            </select>
+          </div>
         </div>
         <a class="fsl-badge" href="https://github.com/neutrino38/finite-state-language/"
            target="_blank" rel="noopener noreferrer"
@@ -115,9 +137,14 @@
         </a>
       </div>
     </div></div>
-    <p class="caption">« Utiliser le compte » (et le rappel du compte) n'apparaît que si une
+    <p class="caption">« Utiliser ce compte » (et le rappel du compte) n'apparaît que si une
        configuration est déjà stockée ; sinon « Configurer un nouveau compte » devient le bouton
-       principal. L'icône définitive accompagne un titre en <b>texte</b> : le mot-marque de
+       principal. Le <b>numéro de version</b> vient de <code>package.json</code> : c'est la
+       première chose qu'on demande à qui signale une anomalie, et le seul écran où l'on est sûr
+       qu'il sera passé. La <b>langue</b> se choisit ici, avant tout le reste — c'est le seul
+       endroit où l'on passe forcément avant d'avoir un compte à configurer ; les paramètres la
+       reprennent, pour qui n'y revient plus.
+       L'icône définitive accompagne un titre en <b>texte</b> : le mot-marque de
        <code>trix-logo.svg</code> est peint en violet foncé et deviendrait illisible en thème
        sombre, qu'aucune règle CSS ne peut atteindre à l'intérieur d'une image. Le crédit
        « Powered by FSL » renvoie au framework d'orchestration. Dans l'application les images
@@ -226,6 +253,32 @@
             </div>
             <span class="hint">« Système » suit le réglage clair/sombre de votre appareil.</span>
           </fieldset>
+          <div class="field lang-picker">
+            <label for="f-lang">Langue de l'interface</label>
+            <select id="f-lang">
+              <option selected>Automatique — Français</option>
+              <option lang="en">English</option>
+              <option lang="fr">Français</option>
+              <option lang="fr-CA">Québécois</option>
+              <option lang="ja">日本語</option>
+              <option lang="zh-Hans">简体中文</option>
+              <option lang="ar">العربية</option>
+            </select>
+          </div>
+          <span class="hint">« Automatique » suit la langue de votre navigateur.</span>
+
+          <h3>Diagnostic</h3>
+          <div class="field">
+            <label class="checkline" for="f-siptrace">
+              <input type="checkbox" id="f-siptrace" checked>
+              <span><b>Tracer les échanges SIP</b> — chaque paquet envoyé et reçu, et les états
+                traversés par l'appel, sont imprimés dans la console du navigateur</span>
+            </label>
+            <span class="hint">Effet immédiat, même en pleine communication : ouvrez la console
+              (F12) pour lire les paquets. Chaque appel garde aussi le sien avec sa ligne
+              d'historique, chiffré, jusqu'à ce que vous l'effaciez. Ils portent votre adresse SIP
+              et celle de vos correspondants — retirez-les d'un rapport de bug public.</span>
+          </div>
           </section>
           </div>
           <div class="form-actions">
@@ -238,11 +291,15 @@
     <p class="caption">Le compte est décrit par une <b>adresse SIP</b> unique (utilisateur + domaine)
        et non par deux champs séparés. L'identifiant d'authentification n'est saisissable qu'une fois
        coché ; la mention « si différent de … » suit l'adresse en cours de frappe.
-       <b>Deux colonnes</b> — la coupure sépare ce qui appartient au compte (chiffré, appliqué à la
+       <b>Trois colonnes</b> — la coupure sépare ce qui appartient au compte (chiffré, appliqué à la
        validation) de ce qui appartient au navigateur (immédiat) ; le flash visuel fait exception :
        il est du côté « alertes » mais reste enregistré avec le compte, et l'aide du champ le dit.
-       Une seule colonne en dessous de 800 px. En cas d'échec d'enregistrement, le formulaire revient
-       avec une bannière d'erreur, le code SIP en petit, et le champ fautif surligné.</p>
+       La troisième colonne se ferme sur le <b>diagnostic</b>, qui n'a rien à voir avec le compte,
+       ne s'enregistre pas, et n'intéresse qu'un dépannage en cours : la même case commande la trace
+       en console, le carnet gardé avec la ligne d'historique (écran 10) et les statistiques média
+       (écran 11). Une seule colonne en dessous de 800 px. En cas d'échec d'enregistrement, le
+       formulaire revient avec une bannière d'erreur, le code SIP en petit, et le champ fautif
+       surligné.</p>
   </section>
 
   <!-- ================= 3 · APPEL (PRÊT) ================= -->
@@ -266,7 +323,10 @@
               <span class="idle-msg">Aucun appel en cours — saisissez une adresse SIP</span>
             </div>
           </div>
-          <div class="sidebar">
+          <div class="sidebar" id="call-panel-a" style="width:300px">
+            <div class="panel-handle" tabindex="0" role="separator" aria-orientation="vertical"
+                 aria-label="Largeur du panneau" aria-valuenow="300" aria-valuemin="300" aria-valuemax="440"
+                 title="Élargir le panneau — 33 % de la largeur au maximum"><span></span></div>
             <div class="call-controls">
               <div class="field">
                 <label for="f-target">Adresse SIP</label>
@@ -290,7 +350,8 @@
                   </button>
                 </div>
               </div>
-              <div class="calllog">
+            </div>
+            <div class="calllog">
               <div class="calllog-head">
                 <span>Historique</span>
                 <button class="linkbtn">Effacer</button>
@@ -299,15 +360,18 @@
                 <div class="calllog-row answered" title="bob@example.fr — Répondu">
                   <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
                   <span class="who">bob@example.fr</span>
-                  <svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                  <svg class="icon cam" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                   <span class="when">14:32</span>
                   <span class="detail">4 min 37 s — raccroché par vous</span>
+                  <button class="tracebtn" title="Voir la trace SIP de cet appel" aria-label="Voir la trace SIP de cet appel"><svg class="icon scroll" viewBox="0 0 24 24"><path d="M6 3h11a3 3 0 0 1 3 3v1h-4v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zm0 2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h6.2A3 3 0 0 1 12 18V6a3 3 0 0 1 .2-1H6zm11 0a1 1 0 0 0-1 1v1h2V6a1 1 0 0 0-1-1zM7 8h4v2H7V8zm0 4h4v2H7v-2z"/></svg></button>
+                  <button class="statsbtn" title="Statistiques média de cet appel" aria-label="Statistiques média de cet appel"><svg class="icon lens" viewBox="0 0 24 24"><path d="M10.5 3a7.5 7.5 0 1 0 4.55 13.46l4.24 4.25 1.42-1.42-4.25-4.24A7.5 7.5 0 0 0 10.5 3zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11z"/></svg></button>
                 </div>
                 <div class="calllog-row missed" title="carol@example.fr — Manqué">
                   <svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>
                   <span class="who">carol@example.fr</span>
                   <span class="when">12:05</span>
                   <span class="detail">Manqué</span>
+                  <button class="tracebtn" title="Voir la trace SIP de cet appel" aria-label="Voir la trace SIP de cet appel"><svg class="icon scroll" viewBox="0 0 24 24"><path d="M6 3h11a3 3 0 0 1 3 3v1h-4v11a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3zm0 2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h6.2A3 3 0 0 1 12 18V6a3 3 0 0 1 .2-1H6zm11 0a1 1 0 0 0-1 1v1h2V6a1 1 0 0 0-1-1zM7 8h4v2H7V8zm0 4h4v2H7v-2z"/></svg></button>
                 </div>
                 <div class="calllog-row answered" title="carol@example.fr — Répondu">
                   <svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>
@@ -355,8 +419,12 @@
        principal (« Appeler en audio » / « Appeler en vidéo ») ; l'appel ne part que par le bouton.
        Les commandes média n'existent plus ici : elles ne s'affichent qu'en appel, posées sur la
        scène vidéo (écran 4).
-       L'historique (chiffré, par compte) tient la place du tchat de la maquette phase 0 : un clic
-       sur une ligne rappelle le correspondant. Le pied ne garde que la taille du texte — le seul
+       L'historique (chiffré, par compte, 50 lignes au plus) tient la place du tchat de la maquette
+       phase 0 : un clic sur une ligne rappelle le correspondant. Deux boutons n'y apparaissent que
+       si l'appel a eu lieu <b>trace SIP cochée</b> : le <b>parchemin</b> rouvre son carnet de
+       paquets (écran 10), la <b>loupe</b> son bilan média (écran 11) — ici sur les deux premières
+       lignes. La <b>poignée</b> du bord gauche du panneau le redimensionne, à la souris comme aux
+       flèches du clavier. Le pied ne garde que la taille du texte — le seul
        réglage qu'on ajuste en cours de conversation ; notifications et thème ont rejoint les
        paramètres. Le chrono a quitté la sidebar pour la barre d'en-tête, où il n'apparaît qu'en
        communication (écran 4).</p>
@@ -369,7 +437,29 @@
         <div class="topbar">
           <span class="logo"><img src="../../public/trix-icon.svg" width="38" height="38" alt="" aria-hidden="true"><span>Trix</span></span>
           <span class="pill"><span class="dot ok"></span> Enregistré</span>
-          <span class="pill"><span class="dot live"></span> En communication — bob@example.fr</span>
+          <span class="livewrap">
+            <button type="button" class="pill livepill" aria-expanded="true" aria-controls="media-stats"
+                    title="Statistiques média de cet appel"><span class="dot live"></span>
+              En communication — bob@example.fr</button>
+            <div class="mediastats" id="media-stats" role="group" aria-label="Statistiques média">
+              <table class="mediastats-table">
+                <caption>Statistiques média <span class="unit">moyenne sur 10 s</span></caption>
+                <thead><tr><td></td><th scope="col">Reçu</th><th scope="col">Émis</th></tr></thead>
+                <tbody>
+                  <tr class="kind"><th scope="colgroup" colspan="3">Audio</th></tr>
+                  <tr><th scope="row">Codec</th><td>opus <span class="unit">48 kHz</span></td><td>opus <span class="unit">48 kHz</span></td></tr>
+                  <tr><th scope="row">Débit</th><td>38,4 kbit/s</td><td>41,2 kbit/s</td></tr>
+                  <tr><th scope="row">Perte</th><td><strong class="hot">6,3 %</strong></td><td>0,2 %</td></tr>
+                  <tr class="kind"><th scope="colgroup" colspan="3">Vidéo</th></tr>
+                  <tr><th scope="row">Codec</th><td>VP8</td><td>VP8</td></tr>
+                  <tr><th scope="row">Débit</th><td>612 kbit/s</td><td>734 kbit/s</td></tr>
+                  <tr><th scope="row">Perte</th><td>1,1 %</td><td>0,0 %</td></tr>
+                </tbody>
+              </table>
+              <p class="mediastats-foot"><span>Aller-retour 48 ms</span><span>La perte à l'émission
+                est celle que rapportent les comptes rendus de réception du correspondant.</span></p>
+            </div>
+          </span>
           <span class="chrono"><svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg><span>00:04:37</span></span>
           <span class="spacer"></span>
           <button class="iconbtn inactive" disabled title="Paramètres (indisponible en appel)" aria-label="Paramètres">
@@ -459,7 +549,15 @@
       </div>
     </div></div>
     <p class="caption">État <code>in_call / connected</code>. Le bouton d'appel devient Raccrocher,
-       l'adresse est figée, le chrono tourne. Les vu-mètres (distant / local, WebAudio) courent sur
+       l'adresse est figée, le chrono tourne. <b>Trace SIP cochée</b>, la pastille « En
+       communication » devient un bouton qui découvre les <b>statistiques média</b> — montrées ici
+       ouvertes : codec, débit et perte de chaque sens, sur une fenêtre glissante de 10 s, jamais la
+       moyenne de l'appel (une minute parfaite ne doit pas masquer les dix secondes qui coupent).
+       Découverte et non info-bulle : le survol la montre, le focus clavier aussi, et le clic la
+       fixe — une donnée qui ne s'obtient qu'à la souris n'existe pas pour une partie des
+       utilisateurs, et il n'y a pas de survol au doigt. Le chiffre porte la donnée à lui seul ; le
+       rouge des 6,3 % ne fait que la renforcer. Case décochée, la pastille redevient une pastille
+       et rien n'est prélevé. Les vu-mètres (distant / local, WebAudio) courent sur
        toute la hauteur de la scène ; quand le correspondant parle, le bouton haut-parleur s'allume
        en vert — indice visuel de son entrant, utile quand on ne l'entend pas. Les commandes média
        sont <b>en surimpression sur la scène</b>, dans la même barre que la vue mobile. Règle d'état :
@@ -602,7 +700,8 @@
                 <label for="f-target3">Appelant</label>
                 <input id="f-target3" value="bob@example.fr" disabled>
               </div>
-              <div class="calllog">
+            </div>
+            <div class="calllog">
               <div class="calllog-head">
                 <span>Historique</span>
                 <button class="linkbtn">Effacer</button>
@@ -711,7 +810,8 @@
                 </button>
                 <button class="btn caret" disabled aria-label="Choisir le mode d'appel" aria-expanded="false">▾</button>
               </div>
-              <div class="calllog">
+            </div>
+            <div class="calllog">
               <div class="calllog-head"><span>Historique</span></div>
               <div class="calllog-list">
                 <p class="calllog-empty">Aucun appel enregistré</p>
@@ -846,8 +946,9 @@
                   <button class="iconbtn toggled" title="Masquer le clavier DTMF" aria-label="Clavier DTMF" aria-expanded="true" aria-controls="call-dtmf"><svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg></button>
                 </div>
                 <button class="hangup-round" data-act="hangup" aria-label="Raccrocher"><svg class="icon" viewBox="0 0 24 24" style="transform:rotate(135deg)"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></button>
-              </div>
           </div>
+        </div>
+      </div>
     </div></div>
     <p class="caption">En appel, l'adresse et l'historique disparaissent : la vidéo prend tout
        l'écran, le chrono est incrusté en haut à gauche, le self-view en haut à droite (portrait),
@@ -906,6 +1007,172 @@
        formats. Cet écran montre le cas de l'offre <b>sans vidéo</b> : une seule réponse est
        proposée, et le sur-titre dit laquelle. Sur mobile s'ajoutent la vibration et le
        <i>wake lock</i> — un écran éteint ne flashe pas.</p>
+  </section>
+
+  <!-- ================= 10 · CARNET SIP D'UN APPEL ================= -->
+  <section id="s-trace" class="screen">
+    <div class="frame-scroll"><div class="frame dlg">
+      <dialog class="trace-dialog" open>
+        <div class="trace-head">
+          <div>
+            <h2>Trace SIP — bob@example.fr</h2>
+            <p class="trace-sub">14:32 — 7 paquets</p>
+          </div>
+          <div class="trace-actions">
+            <button class="linkbtn">Copier</button>
+            <button class="linkbtn">Fermer</button>
+          </div>
+        </div>
+        <div class="trace-body">
+          <details class="trace-line sip out">
+            <summary>
+              <span class="at">14:32:04.118</span>
+              <span class="way" aria-label="émis">→</span>
+              <span class="head">INVITE sip:bob@example.fr SIP/2.0</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK7712043
+To: &lt;sip:bob@example.fr&gt;
+From: "Alice Martin" &lt;sip:alice@example.fr&gt;;tag=1n0k4vq2sb
+CSeq: 1 INVITE
+Content-Type: application/sdp
+
+v=0
+o=- 3874927110 2 IN IP4 127.0.0.1
+m=audio 51372 UDP/TLS/RTP/SAVPF 111 0 8
+m=video 51374 UDP/TLS/RTP/SAVPF 96 97</pre>
+          </details>
+          <details class="trace-line sip in">
+            <summary>
+              <span class="at">14:32:04.263</span>
+              <span class="way" aria-label="reçu">←</span>
+              <span class="head">SIP/2.0 100 Trying</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK7712043
+CSeq: 1 INVITE</pre>
+          </details>
+          <details class="trace-line sip in">
+            <summary>
+              <span class="at">14:32:04.902</span>
+              <span class="way" aria-label="reçu">←</span>
+              <span class="head">SIP/2.0 180 Ringing</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK7712043
+To: &lt;sip:bob@example.fr&gt;;tag=8f2a1c
+CSeq: 1 INVITE</pre>
+          </details>
+          <div class="trace-line fsm">
+            <span class="at">14:32:04.905</span>
+            <span class="head">sip:progress: (CallBlock/dialing) → (CallBlock/ringing) "180/183"</span>
+          </div>
+          <details class="trace-line sip in">
+            <summary>
+              <span class="at">14:32:09.441</span>
+              <span class="way" aria-label="reçu">←</span>
+              <span class="head">SIP/2.0 200 OK</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK7712043
+To: &lt;sip:bob@example.fr&gt;;tag=8f2a1c
+CSeq: 1 INVITE
+Content-Type: application/sdp
+
+v=0
+o=- 1082 2 IN IP4 127.0.0.1
+m=audio 49170 UDP/TLS/RTP/SAVPF 111
+m=video 49172 UDP/TLS/RTP/SAVPF 96</pre>
+          </details>
+          <div class="trace-line fsm">
+            <span class="at">14:32:09.448</span>
+            <span class="head">sip:accepted: (CallBlock/ringing) → (CallBlock/connected)</span>
+          </div>
+          <details class="trace-line sip out">
+            <summary>
+              <span class="at">14:32:09.452</span>
+              <span class="way" aria-label="émis">→</span>
+              <span class="head">ACK sip:bob@192.0.2.44:5060 SIP/2.0</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK3390881
+CSeq: 1 ACK</pre>
+          </details>
+          <details class="trace-line sip out">
+            <summary>
+              <span class="at">14:36:46.207</span>
+              <span class="way" aria-label="émis">→</span>
+              <span class="head">BYE sip:bob@192.0.2.44:5060 SIP/2.0</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK5510227
+CSeq: 2 BYE</pre>
+          </details>
+          <div class="trace-line fsm">
+            <span class="at">14:36:46.210</span>
+            <span class="head">ui:hangup: (CallBlock/connected) → (CallBlock/hangingup)</span>
+          </div>
+          <details class="trace-line sip in">
+            <summary>
+              <span class="at">14:36:46.389</span>
+              <span class="way" aria-label="reçu">←</span>
+              <span class="head">SIP/2.0 200 OK</span>
+            </summary>
+            <pre>Via: SIP/2.0/WSS 4l1c3.invalid;branch=z9hG4bK5510227
+CSeq: 2 BYE</pre>
+          </details>
+        </div>
+      </dialog>
+    </div></div>
+    <p class="caption">Le <b>carnet</b> d'un appel, rouvert par le parchemin de sa ligne
+       d'historique. C'est la console, mais après coup : mêmes lignes, même ordre, et le corps d'un
+       paquet se déplie d'un clic comme un groupe de la console. L'intérêt n'est pas de voir les
+       paquets, ni de voir la machine bouger, mais de les voir <b>l'un entre les autres</b> — un 180
+       sans passage en <code>ringing</code> ne se remarque sur aucune des deux traces prise seule.
+       Un <code>&lt;dialog&gt;</code> natif : Échap, piège à focus, inertie du fond et retour du
+       focus sont acquis, plutôt que réimplémentés de travers. Le contenu est du protocole, donc
+       toujours latin et aligné à gauche, même en interface arabe. Le carnet n'existe que si la case
+       « Tracer les échanges SIP » était cochée <b>pendant</b> l'appel ; il est chiffré avec le reste
+       de l'historique — un paquet porte les adresses des deux correspondants et la description de
+       leurs médias. Un appel très long est coupé (200 lignes ou 64 ko), et la coupure le dit.</p>
+  </section>
+
+  <!-- ================= 11 · BILAN MÉDIA D'UN APPEL ================= -->
+  <section id="s-stats" class="screen">
+    <div class="frame-scroll"><div class="frame dlg">
+      <dialog class="stats-dialog" open>
+        <div class="stats-head">
+          <div>
+            <h2>Statistiques média — bob@example.fr</h2>
+            <p class="stats-sub">14:32</p>
+          </div>
+          <div class="stats-actions">
+            <button class="linkbtn">Copier</button>
+            <button class="linkbtn">Fermer</button>
+          </div>
+        </div>
+        <div class="stats-body mediastats">
+          <table class="mediastats-table">
+            <caption>Statistiques média <span class="unit">moyenne mesurée sur 4 min 37 s</span></caption>
+            <thead><tr><td></td><th scope="col">Reçu</th><th scope="col">Émis</th></tr></thead>
+            <tbody>
+              <tr class="kind"><th scope="colgroup" colspan="3">Audio</th></tr>
+              <tr><th scope="row">Codec</th><td>opus <span class="unit">48 kHz</span></td><td>opus <span class="unit">48 kHz</span></td></tr>
+              <tr><th scope="row">Débit</th><td>39,8 kbit/s</td><td>40,6 kbit/s</td></tr>
+              <tr><th scope="row">Perte</th><td>1,4 %</td><td>0,3 %</td></tr>
+              <tr class="kind"><th scope="colgroup" colspan="3">Vidéo</th></tr>
+              <tr><th scope="row">Codec</th><td>VP8</td><td>VP8</td></tr>
+              <tr><th scope="row">Débit</th><td>648 kbit/s</td><td>701 kbit/s</td></tr>
+              <tr><th scope="row">Perte</th><td>0,6 %</td><td>0,1 %</td></tr>
+            </tbody>
+          </table>
+          <p class="mediastats-foot"><span>Aller-retour 52 ms</span><span>La perte à l'émission est
+            celle que rapportent les comptes rendus de réception du correspondant.</span></p>
+        </div>
+      </dialog>
+    </div></div>
+    <p class="caption">Le <b>bilan</b> du même appel, rouvert par la loupe de sa ligne d'historique.
+       Même tableau que l'encart de la pastille (écran 4) — c'est la même chose qu'on regarde, sur
+       une autre durée : la moyenne de l'appel entier au lieu des dix dernières secondes. Le
+       distinguer n'est pas cosmétique : 2 % de perte sur dix secondes et 2 % sur un quart d'heure ne
+       racontent pas la même conversation, et le sous-titre du tableau le dit à chaque fois.
+       « Copier » met le tout en texte tabulé, prêt à coller dans un ticket ; refusé (contexte non
+       sécurisé, permission), le tableau reste sélectionnable et rien n'est perdu. Comme le carnet,
+       le bilan n'existe que si la case était cochée pendant l'appel.</p>
   </section>
 </div>
 
