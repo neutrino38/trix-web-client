@@ -32,6 +32,7 @@ function view(over: Partial<CallView> = {}): CallView {
     peerPaused: false,
     dtmfSent: "",
     notice: null,
+    earlyMedia: { audio: false, video: false, text: false },
     connectedAt: Date.now(),
     endedBy: null,
     session: null,

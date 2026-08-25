@@ -18,6 +18,8 @@ import type { AccountConfig, StoredAccount } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
 import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
+import { startRingback, stopRingback } from "../../ring.js";
+import { audioLevel, barHeight } from "../../vumeter.js";
 import { hideToast, showToast } from "../../toast.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
@@ -59,11 +61,28 @@ export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "
 const CALL_LABEL_KEY: Record<CallView["state"], MsgKey> = {
   dialing: "call.dialing",
   ringing: "call.ringing",
+  /**
+   * Le réseau parle avant le décrochage : ce libellé est le seul endroit
+   * où cela existe pour qui n'entend pas. Le raisonnement est celui des
+   * DTMF (§4.8) — un son que l'application ne montre pas n'a pas eu lieu.
+   */
+  early_media: "call.earlyMedia",
   ringing_in: "call.ringingIn",
   answering: "call.answering",
   connected: "call.connected",
   hangingup: "call.hangingup",
 };
+
+/**
+ * Faut-il produire le retour d'appel local ? Oui pendant la sonnerie, et
+ * encore en média précoce tant que celui-ci n'apporte pas de son (ADR 0003,
+ * §4 — F.703 §6.1.2). Séparée du câblage parce que c'est une règle, et
+ * qu'une règle se relit sans navigateur.
+ */
+export function ringbackNeeded(view: CallView): boolean {
+  if (view.state === "ringing") return true;
+  return view.state === "early_media" && !view.earlyMedia.audio;
+}
 
 export function callLabel(state: CallView["state"]): string {
   return t(CALL_LABEL_KEY[state]);
@@ -609,6 +628,21 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     stopIncomingAlert();
   }
 
+  // --- retour d'appel sortant ----------------------------------------------
+  // F.703 §6.1.2 : la progression de l'appel s'annonce à l'appelant par des
+  // signaux visuels **et** sonores. « Sonnerie » est le visuel ; le son est
+  // produit ici, faute de quoi l'appelant n'entendrait rien du tout — un
+  // appel SIP ne transporte aucun média avant le 200 OK.
+  //
+  // Sauf en `early_media`, où le réseau émet déjà (RFC 3960) — et c'est
+  // **son audio à lui** qui commande, pas le simple fait qu'il émette :
+  // une annonce en langue des signes ou en texte temps réel ne remplit
+  // aucun silence, et couper la tonalité laisserait l'appelant croire que
+  // la ligne est morte. La condition tient donc en une phrase : on sonne
+  // tant que rien de sonore n'arrive.
+  if (view?.direction === "outgoing" && ringbackNeeded(view)) startRingback();
+  else stopRingback();
+
   // --- message fugace -------------------------------------------------------
   // L'écran est reconstruit à chaque notification de la machine : c'est le
   // numéro d'ordre, et lui seul, qui distingue un message neuf d'un rendu de
@@ -760,34 +794,12 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 }
 
 // ---------------------------------------------------------------------------
-// Vu-mètres : analyse du flux audio distant et local (WebAudio), UI pure.
+// Vu-mètres : les deux barres de la scène, et le flash du haut-parleur.
+// La mesure elle-même vit dans `ui/vumeter.ts` — l'autotest hors appel s'en
+// sert aussi, et deux analyseurs sur le même flux ne mesureraient pas mieux.
 // ---------------------------------------------------------------------------
 
-let audioCtx: AudioContext | null = null;
-const analysers = new WeakMap<MediaStream, AnalyserNode>();
 let vuRaf: number | null = null;
-
-function analyserFor(stream: MediaStream): AnalyserNode | null {
-  if (stream.getAudioTracks().length === 0) return null;
-  const existing = analysers.get(stream);
-  if (existing) return existing;
-  audioCtx ??= new AudioContext();
-  const an = audioCtx.createAnalyser();
-  an.fftSize = 256;
-  audioCtx.createMediaStreamSource(stream).connect(an);
-  analysers.set(stream, an);
-  return an;
-}
-
-function level(an: AnalyserNode, buf: Uint8Array<ArrayBuffer>): number {
-  an.getByteTimeDomainData(buf);
-  let sum = 0;
-  for (const v of buf) {
-    const d = (v - 128) / 128;
-    sum += d * d;
-  }
-  return Math.sqrt(sum / buf.length); // RMS 0..1
-}
 
 /** Seuil de détection de parole (RMS) et durée de maintien du flash. */
 const SPEECH_RMS = 0.015;
@@ -804,7 +816,6 @@ function startVuMeters(
   // le haut-parleur clignote sur l'audio entrant, même sans vu-mètres à l'écran
   const speakerBtn = node.querySelector('[data-act="speaker"]') as HTMLElement | null;
   if (!remoteBar && !localBar && !speakerBtn) return;
-  const buf = new Uint8Array(256);
   let lastSpeech = 0;
 
   const tick = (): void => {
@@ -817,11 +828,10 @@ function startVuMeters(
       [self, localBar],
     ] as const) {
       const stream = video?.srcObject instanceof MediaStream ? video.srcObject : null;
-      const an = stream ? analyserFor(stream) : null;
-      const rms = an ? level(an, buf) : 0;
+      const rms = audioLevel(stream);
       // le plancher est en pixels (min-height CSS) : la barre court sur
       // toute la hauteur de la scène, un plancher en % y serait énorme
-      if (bar) bar.style.height = `${Math.min(100, Math.round(rms * 260))}%`;
+      if (bar) bar.style.height = `${barHeight(rms)}%`;
       if (video === remote && speakerBtn) {
         // maintien court : sinon le flash strobe entre deux syllabes
         if (rms > SPEECH_RMS) lastSpeech = Date.now();

@@ -164,7 +164,13 @@ describe("négociation du texte sur WebSocket", () => {
     expect(channel.state()).toBe("open");
   });
 
-  it("le texte tapé pendant la sonnerie part à l'ouverture du socket", () => {
+  /**
+   * Le tampon du canal survit à l'attente d'un fil : c'est ce qui rend une
+   * reprise de lien indolore en pleine conversation. L'écran, lui, ne
+   * laisse pas taper avant le décrochage (`call/chat.ts`) — mais la règle
+   * est là-haut, et le tuyau, lui, ne connaît pas l'état de l'appel.
+   */
+  it("ce qui attend dans le tampon part à l'ouverture du socket, signature en tête", () => {
     const session = new FakeSession();
     const { channel } = negotiateRttOverWs(session);
     session.sdp("local", "offer", LOCAL_OFFER);
@@ -175,7 +181,9 @@ describe("négociation du texte sur WebSocket", () => {
 
     session.sdp("remote", "answer", REMOTE_ANSWER);
     FakeSocket.instances[0]!.open();
-    expect(FakeSocket.instances[0]!.sent).toEqual(["bonjour"]);
+    // la signature de session ouvre le flux — et le chemin retour de la
+    // passerelle — avant le premier caractère
+    expect(FakeSocket.instances[0]!.sent).toEqual(["\uFEFF", "bonjour"]);
   });
 
   it("appelé : la section est retirée de l'offre, et rendue à sa place dans la réponse", () => {

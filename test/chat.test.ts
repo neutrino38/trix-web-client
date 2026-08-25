@@ -97,6 +97,23 @@ describe("le fil reçu", () => {
   });
 });
 
+/**
+ * **L'annonce précoce s'affiche.** Un serveur qui joue un fichier sous-titré
+ * après un 183 envoie du T.140 avant que quiconque ait décroché : la
+ * connexion pair-à-pair est déjà établie, le canal avec elle. Pour une
+ * personne sourde, ce texte *est* l'annonce — le taire au motif que l'appel
+ * n'est pas établi reviendrait à ne rien recevoir du tout.
+ */
+describe("texte reçu avant le décrochage", () => {
+  it("le fil montre l'annonce, et la saisie reste fermée", () => {
+    chatReceive("Toutes nos lignes sont occupées.");
+    expect(texts()).toEqual(["Toutes nos lignes sont occupées."]);
+    const pane = chatPane("Bob", false);
+    expect(pane).toContain("Toutes nos lignes sont occupées.");
+    expect(pane).toMatch(/<textarea[^>]*disabled/s);
+  });
+});
+
 describe("ce que le correspondant écrit ne devient jamais du balisage", () => {
   it("échappe le texte reçu dans le fil", () => {
     chatReceive("<img src=x onerror=alert(1)>");
@@ -225,6 +242,24 @@ describe("le gabarit", () => {
     expect(pane.slice(0, pane.indexOf(">"))).not.toContain("hidden");
   });
 
+  /**
+   * Avant le décrochage — sonnerie, et surtout média précoce, où une
+   * annonce en texte temps réel peut déjà arriver (RFC 3960) — le fil se
+   * **lit** mais ne s'écrit pas : ce qu'on taperait n'aurait pas de
+   * destinataire, et partirait d'un bloc au décrochage.
+   */
+  it("avant le décrochage : le fil se lit, la saisie est fermée", () => {
+    chatLink("open");
+    const early = chatPane("Bob", false);
+    expect(early).toMatch(/<textarea[^>]*disabled/s);
+    expect(early).toContain("Lecture seule tant que l'appel n'est pas décroché");
+    // le fil lui-même reste une région ordinaire : rien n'y est masqué
+    expect(early).toContain('role="log"');
+
+    const live = chatPane("Bob");
+    expect(live).not.toMatch(/<textarea[^>]*disabled/s);
+  });
+
   it("l'en-tête porte la pastille du lien, suivie par la projection", () => {
     chatLink("open");
     expect(chatHead("<svg/>")).toContain('class="dot live" data-ref="chat-dot"');
@@ -247,6 +282,7 @@ describe("le gabarit", () => {
       peerPaused: false,
       dtmfSent: "",
       notice: null,
+      earlyMedia: { audio: false, video: false, text: false },
       connectedAt: Date.now(),
       endedBy: null,
       session: null,

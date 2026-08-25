@@ -94,7 +94,19 @@ export interface CallNotice {
  * tenir à jour. C'est ce que l'UI lit pour rendre l'écran d'appel.
  */
 export interface CallView {
-  state: "dialing" | "ringing" | "ringing_in" | "answering" | "connected" | "hangingup";
+  /**
+   * `early_media` est l'attente d'une réponse, comme `ringing`, mais le
+   * réseau y envoie déjà du son (RFC 3960) : c'est ce qui décide du
+   * silence du retour d'appel local (`ui/ring.ts`, F.703 §6.1.2).
+   */
+  state:
+    | "dialing"
+    | "ringing"
+    | "early_media"
+    | "ringing_in"
+    | "answering"
+    | "connected"
+    | "hangingup";
   direction: CallDirection;
   target: string;
   /** Nom affiché de l'appelant (entrant), s'il en porte un. */
@@ -140,6 +152,16 @@ export interface CallView {
   dtmfSent: string;
   /** Dernier message fugace à afficher, s'il y en a eu un. */
   notice: CallNotice | null;
+  /**
+   * En `early_media` : **ce que le réseau émet déjà**, avant le décrochage
+   * (RFC 3960). Les trois médias, parce qu'un accueil peut être parlé,
+   * signé ou écrit — et c'est ce détail qui décide du retour d'appel local
+   * (`ui/ring.ts`) : une annonce en langue des signes ou en texte
+   * n'apporte aucun son, la tonalité doit donc continuer.
+   *
+   * `NO_MEDIA` dans tous les autres états.
+   */
+  earlyMedia: CallMedia;
   /** Timestamp du 200 OK ; l'UI en dérive le chrono. */
   connectedAt: number | null;
   /** Qui a mis fin à l'appel, connu à partir de hangingup/fin de session. */

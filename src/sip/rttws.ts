@@ -154,6 +154,20 @@ const RETRY_DELAY_MS = 1000;
 const LOSS_MARKER = "\uFFFD";
 
 /**
+ * Signature de session T.140, écrite en tête du flux sortant — comme le
+ * canal de données le fait sur le sien (`sip/rttdc.ts`).
+ *
+ * Elle part **dès l'ouverture du socket**, avant tout caractère et avant
+ * même le décrochage : c'est un octet qui ne dit rien et qui ouvre le
+ * chemin du retour. La passerelle apprend par lui où renvoyer le texte du
+ * distant — le *latching* dont dépend, en média précoce, l'arrivée d'une
+ * annonce en texte temps réel (RFC 3960). Attendre le premier caractère
+ * tapé reviendrait à faire dépendre la réception de l'émission, et pour un
+ * appel où l'on n'écrit pas, à ne jamais rien recevoir.
+ */
+const SESSION_BOM = "\uFEFF";
+
+/**
  * Ouvre le fil. La reconnexion est **silencieuse pour le canal** : il ne
  * voit que `lost` puis `open` — sauf que la reprise insère un `U+FFFD`
  * dans le flux reçu, parce que du texte distant a très probablement été
@@ -182,6 +196,15 @@ export function openWsWire(url: string, hooks: RttWireHooks): RttWire {
 
     ws.onopen = () => {
       retries = 0;
+      // la signature ouvre le flux, et le chemin retour avec lui — y
+      // compris sur un socket rouvert après coupure, dont la passerelle a
+      // pu perdre l'association
+      try {
+        ws.send(SESSION_BOM);
+      } catch {
+        // socket refermé dans l'intervalle : `onclose` suit, la reprise
+        // s'en chargera
+      }
       if (interrupted) {
         interrupted = false;
         hooks.text(LOSS_MARKER);

@@ -123,6 +123,41 @@ export interface RttChannel {
   flush(): void;
   /** Ferme le lien pour de bon ; ce qui restait en tampon part si le fil est encore ouvert. */
   close(): void;
+  /**
+   * **Le texte tapé part-il ?** Faux avant le décrochage, et c'est le port
+   * qui en décide — lui seul voit passer le 200 OK.
+   *
+   * Un canal peut être grand ouvert bien avant que quiconque ait répondu :
+   * en média précoce (RFC 3960), la connexion pair-à-pair s'établit sur la
+   * réponse provisoire, le canal de données avec elle, et un serveur peut
+   * déjà nous envoyer les sous-titres de l'annonce qu'il joue. **Ce qui
+   * arrive s'affiche** ; ce qu'on écrirait, non : il n'y a personne au bout
+   * pour le lire, et le mettre en tampon le ferait partir d'un bloc au
+   * décrochage — sur la conversation de quelqu'un d'autre si l'appel a été
+   * dévié entre-temps.
+   *
+   * Suspendu, le canal **jette** ce qu'on lui donne au lieu de l'accumuler,
+   * et ne touche ni à ce qu'il reçoit, ni à ce que le fil entretient de son
+   * côté (la signature de session répétée reste envoyée).
+   */
+  setSending(on: boolean): void;
+  /**
+   * Combien de fois du texte a **manqué** depuis le début de l'appel —
+   * l'unité de mesure que T.140 §5.3.2.3 donne à la qualité du texte, et
+   * la seule que ce niveau puisse observer honnêtement.
+   *
+   * Ce sont les marqueurs `U+FFFD` du flux entrant (RFC 8865 §5.4), et ils
+   * ont deux provenances qu'il n'y a aucune raison de distinguer ici : le
+   * fil en insère un à chaque reprise de canal (`rttdc.ts`, `rttws.ts`), et
+   * le distant — ou la passerelle qui traduit son RTP — en envoie un pour
+   * chaque trou qu'il constate de son côté. Dans les deux cas, du texte a
+   * été perdu en route, et c'est ce que le compteur dit.
+   *
+   * Il compte **tout ce qui arrive**, y compris ce qui est arrivé avant que
+   * le panneau de tchat ne soit ouvert : le canal vit avec l'appel, le
+   * panneau non.
+   */
+  missingText(): number;
 }
 
 /** Ce à quoi le canal se raccorde, une fois la signalisation faite. */
@@ -192,6 +227,13 @@ const segmenter =
 const BACKSPACE = "\u0008";
 
 /**
+ * Missing text marker (T.140 §5.3.2.3, RFC 8865 §5.4). Declared here, like
+ * the backspace above: this module counts these, it does not read them —
+ * interpreting the stream is the codec's job (`sip/t140.ts`).
+ */
+const LOSS_MARKER = "\uFFFD";
+
+/**
  * The last character of a string, in the T.140 sense — one grapheme, so
  * that an emoji or a combining mark goes in one piece, as §8.2 requires
  * of an erasure.
@@ -243,6 +285,10 @@ export function rttChannel(transport: RttTransport, connect: RttWireFactory): Rt
   const listeners = new Set<RttEvents>();
   /** Ce qui est arrivé avant le premier abonné — jamais perdu, juste en retard. */
   let backlog = "";
+  /** Marqueurs de texte manquant reçus (T.140 §5.3.2.3) — voir `missingText`. */
+  let missing = 0;
+  /** Le texte tapé part-il ? Voir `setSending` — faux avant le décrochage. */
+  let sending = true;
 
   const cancelTimer = (): void => {
     if (timer !== null) {
@@ -280,6 +326,9 @@ export function rttChannel(transport: RttTransport, connect: RttWireFactory): Rt
   const hooks: RttWireHooks = {
     text(chunk) {
       if (chunk === "") return;
+      // compté ici et nulle part ailleurs : c'est le seul point par lequel
+      // tout ce qui arrive passe, panneau ouvert ou non
+      for (const unit of chunk) if (unit === LOSS_MARKER) missing += 1;
       if (listeners.size === 0) {
         backlog += chunk;
         return;
@@ -303,6 +352,18 @@ export function rttChannel(transport: RttTransport, connect: RttWireFactory): Rt
   return {
     transport,
     state: () => state,
+    missingText: () => missing,
+
+    setSending(on) {
+      if (on === sending) return;
+      sending = on;
+      // ce qui a été tapé pendant la suspension ne part pas après coup :
+      // c'est tout l'intérêt de l'avoir suspendu
+      if (!on) {
+        cancelTimer();
+        pending = "";
+      }
+    },
 
     listen(events) {
       listeners.add(events);
@@ -316,14 +377,14 @@ export function rttChannel(transport: RttTransport, connect: RttWireFactory): Rt
     },
 
     send(text) {
-      if (closed || text === "" || state === "closed") return;
+      if (closed || !sending || text === "" || state === "closed") return;
       // fil rompu : on garde, mais pas indéfiniment
       if (pending.length < PENDING_MAX) pending += text;
       arm();
     },
 
     backspace(count = 1) {
-      if (closed || state === "closed") return;
+      if (closed || !sending || state === "closed") return;
       for (let i = 0; i < count; i++) {
         const last = lastGrapheme(pending);
         // a backspace already queued cannot be taken back, only added to

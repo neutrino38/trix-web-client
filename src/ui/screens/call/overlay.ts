@@ -295,8 +295,14 @@ export function overlayBar(ctx: OverlayCtx): string {
     : "";
 
   if (!ctx.compact) {
-    return `<div class="overlaybar">
+    // La Pause est **hors de la pastille sur les deux gabarits** : c'est
+    // l'axe 2 (D6), et il ne se confond avec les commandes média sur aucun
+    // écran. Ce que D8 réserve au mobile est le remaniement pastille /
+    // feuille, pas l'existence du geste — un bureau sans Pause laisserait
+    // sans recours quelqu'un à qui l'on sonne à la porte.
+    return `<div class="overlaybar ${ctx.view.paused ? "dimmed" : ""}">
               <div class="overlay-pill">${cmds.map(button).join("")}</div>
+              ${pauseButton(view)}
               ${hangup}
             </div>`;
   }

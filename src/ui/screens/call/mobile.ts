@@ -126,6 +126,8 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
               // rouge tiennent tout juste le bandeau. L'audio entrant se voit
               // quand même — le haut-parleur s'allume dessus (`startVuMeters`)
               meters: false,
+              // avant le décrochage, le fil se lit mais ne s'écrit pas
+              writable: view.state === "connected",
               dtmf: dtmfPad(view),
               // la scène de texte a aussi son bandeau : un appel qu'on lit
               // reste un appel dont on émet le son (§4.9)
@@ -227,6 +229,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
 function mobileChat(view: CallView): string {
   return `<div class="mchat">
       ${chatHead(ICONS.chat)}
-      ${chatPane(callerName(view))}
+      ${chatPane(callerName(view), view.state === "connected")}
     </div>`;
 }

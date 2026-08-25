@@ -33,7 +33,14 @@
  */
 
 import type { CallSession } from "../../../sip/port.js";
-import { STATS_WINDOW_MS, type Flow, type MediaKind, type MediaStats } from "../../../sip/stats.js";
+import {
+  STATS_WINDOW_MS,
+  SYNC_LIMIT_MS,
+  type Flow,
+  type MediaKind,
+  type MediaStats,
+  type TextFlow,
+} from "../../../sip/stats.js";
 import type { CallLogEntry } from "../../../storage/store.js";
 import { formatNumber, formatTime, t } from "../../../i18n/index.js";
 import { sipTraceEnabled } from "../../../sip/trace.js";
@@ -154,6 +161,41 @@ function kindRows(kind: MediaKind, flows: Record<"recv" | "sent", Flow> | null):
 }
 
 /**
+ * Le texte a sa ligne, comme les deux autres médias (ADR 0003, D1) — mais
+ * une seule, et dans la colonne « Reçu » seulement : ce qui manque se
+ * constate à l'arrivée, et T.140 §5.3.2.3 ne donne pas d'autre unité de
+ * mesure au texte que ces trous-là. Rien à dire dans la colonne « Émis » :
+ * SCTP et WebSocket sont fiables, et ce qu'une passerelle perd ensuite en
+ * RTP, personne ne le rapporte.
+ */
+function textRows(text: TextFlow | null): string {
+  if (!text) return "";
+  const value = String(text.missing);
+  return `<tr class="kind"><th scope="colgroup" colspan="3">${esc(t("stats.text"))}</th></tr>
+    <tr><th scope="row">${esc(t("stats.missing"))}</th>
+      <td>${text.missing > 0 ? `<strong class="hot">${esc(value)}</strong>` : esc(value)}</td>
+      <td>${DASH}</td></tr>`;
+}
+
+/**
+ * L'écart audio / vidéo, quand les deux flux sont là pour le mesurer.
+ *
+ * Il est **signé**, et le signe est l'information utile pour qui dépanne :
+ * le son en avance sur l'image ne se corrige pas comme le contraire. Au
+ * delà de 100 ms (`SYNC_LIMIT_MS`), la lecture labiale décroche et la
+ * langue des signes devient pénible — F.703 §5.2.2 : la valeur est alors
+ * mise en avant, comme une perte qui s'entend.
+ */
+function syncText(syncMs: number): string {
+  return t("stats.ms", { n: formatNumber(syncMs, 0) });
+}
+
+function syncCell(syncMs: number): string {
+  const value = esc(syncText(syncMs));
+  return Math.abs(syncMs) >= SYNC_LIMIT_MS ? `<strong class="hot">${value}</strong>` : value;
+}
+
+/**
  * Sur quoi portent les chiffres : les dix dernières secondes pendant
  * l'appel, la durée mesurée de l'appel entier depuis l'historique. Le
  * distinguer n'est pas cosmétique — 2 % de perte sur dix secondes et 2 %
@@ -177,7 +219,7 @@ function scopeLabel(scope: StatsScope, spanMs: number): string {
  */
 export function statsCardHtml(stats: MediaStats | null, scope: StatsScope = "live"): string {
   if (stats === null) return `<p class="mediastats-msg">${esc(t("stats.pending"))}</p>`;
-  if (!stats.audio && !stats.video) {
+  if (!stats.audio && !stats.video && !stats.text) {
     return `<p class="mediastats-msg">${esc(t("stats.none"))}</p>`;
   }
   const rtt =
@@ -186,6 +228,14 @@ export function statsCardHtml(stats: MediaStats | null, scope: StatsScope = "liv
       : `<span>${esc(t("stats.rtt"))} ${esc(
           t("stats.ms", { n: formatNumber(stats.rttMs, 0) }),
         )}</span>`;
+  // ni audio ni vidéo : c'est ce qui les relie, sa place est le pied de
+  // l'encart, à côté de l'aller-retour
+  const sync =
+    stats.syncMs === null
+      ? ""
+      : `<span title="${esc(t("stats.syncHint", { n: SYNC_LIMIT_MS }))}">${esc(
+          t("stats.sync"),
+        )} ${syncCell(stats.syncMs)}</span>`;
   return `<table class="mediastats-table">
       <caption>${esc(t("stats.title"))} <span class="unit">${esc(
         scopeLabel(scope, stats.spanMs),
@@ -193,9 +243,11 @@ export function statsCardHtml(stats: MediaStats | null, scope: StatsScope = "liv
       <thead><tr><td></td>
         <th scope="col">${esc(t("stats.recv"))}</th>
         <th scope="col">${esc(t("stats.sent"))}</th></tr></thead>
-      <tbody>${kindRows("audio", stats.audio)}${kindRows("video", stats.video)}</tbody>
+      <tbody>${kindRows("audio", stats.audio)}${kindRows("video", stats.video)}${textRows(
+        stats.text,
+      )}</tbody>
     </table>
-    <p class="mediastats-foot">${rtt}<span>${esc(t("stats.lossNote"))}</span></p>`;
+    <p class="mediastats-foot">${rtt}${sync}<span>${esc(t("stats.lossNote"))}</span></p>`;
 }
 
 /**
@@ -225,8 +277,15 @@ export function statsAsText(entry: CallLogEntry): string {
     row(t("stats.bitrate"), rateText);
     row(t("stats.loss"), lossText);
   }
+  if (stats.text) {
+    lines.push(t("stats.text"));
+    lines.push([t("stats.missing"), String(stats.text.missing), ""].join("\t"));
+  }
   if (stats.rttMs !== null) {
     lines.push(`${t("stats.rtt")} ${t("stats.ms", { n: formatNumber(stats.rttMs, 0) })}`);
+  }
+  if (stats.syncMs !== null) {
+    lines.push(`${t("stats.sync")} ${syncText(stats.syncMs)}`);
   }
   lines.push(t("stats.lossNote"));
   return lines.join("\n");

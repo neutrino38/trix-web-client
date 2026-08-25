@@ -125,6 +125,8 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                     panel: { collapsed, controls: "call-panel" },
                   }),
                   meters: connected && view.media.audio,
+                  // avant le décrochage, le fil se lit mais ne s'écrit pas
+                  writable: connected,
                   dtmf: dtmfPad(view),
                   banner: `${peerPauseNotice(view)}${pauseBanner(view)}`,
                 })
@@ -247,7 +249,9 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           ${
             // le tchat ne tient la sidebar que si la scène ne l'a pas pris :
             // c'est le cas de l'appel vidéo, où l'image occupe le centre
-            chat && view && !stageChat ? chatHead(ICONS.chat) + chatPane(callerName(view)) : ""
+            chat && view && !stageChat
+              ? chatHead(ICONS.chat) + chatPane(callerName(view), connected)
+              : ""
           }
           ${
             // hors appel, le tchat n'a pas lieu d'être : il naît avec le canal

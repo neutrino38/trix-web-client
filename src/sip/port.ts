@@ -18,7 +18,7 @@ import {
   type MediaFailure,
 } from "./mediaerror.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
-import type { RttChannel } from "./rtt.js";
+import type { RttChannel, RttTransport } from "./rtt.js";
 import { openRttFor, type RttNegotiation } from "./rttsip.js";
 import { sipTraceEnabled, traceNote } from "./trace.js";
 
@@ -71,6 +71,20 @@ export function sameMedia(a: CallMedia, b: CallMedia): boolean {
   return a.audio === b.audio && a.video === b.video && a.text === b.text;
 }
 
+/** Cette combinaison porte-t-elle quoi que ce soit ? */
+export function anyMedia(m: CallMedia): boolean {
+  return m.audio || m.video || m.text;
+}
+
+/**
+ * L'union de deux combinaisons : ce que les deux portent ensemble. Sert au
+ * média précoce, qui s'ajoute d'une réponse provisoire à la suivante sans
+ * jamais se retirer (`machines/call.ts`, état `early_media`).
+ */
+export function mergeMedia(a: CallMedia, b: CallMedia): CallMedia {
+  return { audio: a.audio || b.audio, video: a.video || b.video, text: a.text || b.text };
+}
+
 /**
  * Retirer ce média laisserait-il l'appel sans rien ? F.703 §5.3.1 autorise
  * l'audio à être temporairement interrompu, **pourvu qu'au moins un autre
@@ -96,7 +110,16 @@ export type SipOriginator = "local" | "remote" | "system";
 
 /** Événements d'une session d'appel, envoyés au bloc CallBlock. */
 export type CallSipEvent =
-  | { type: "sip:progress" }
+  /**
+   * Réponse provisoire (180, 183). `media` porte ce que sa description de
+   * session déclare actif — **les trois médias**, et pas seulement le son
+   * (RFC 3960) : un accueil peut arriver en parole, en langue des signes
+   * ou en texte temps réel, et pour le public de Trix les deux derniers
+   * sont même les plus vraisemblables. `NO_MEDIA` quand la réponse ne
+   * porte pas de SDP — le 180 ordinaire, où rien n'est émis avant le
+   * décrochage.
+   */
+  | { type: "sip:progress"; media: CallMedia }
   | { type: "sip:accepted" }
   | { type: "sip:confirmed" }
   | { type: "sip:ended"; cause: string; originator?: SipOriginator }
@@ -394,7 +417,7 @@ export function createJsSipPort(): SipPort {
             mediaConstraints: { audio: media.audio, video: media.video },
             pcConfig,
           });
-          bindSession(session, sendCall);
+          bindSession(session, sendCall, cfg.rtt);
           // le contrôle média naît avant le lien texte — son écouteur `sdp`
           // doit passer avant celui du texte — mais il a besoin de savoir si
           // le texte est négocié : d'où la fonction, résolue plus tard
@@ -415,7 +438,12 @@ export function createJsSipPort(): SipPort {
 type Session = ReturnType<JsSIP.UA["call"]>;
 
 /** Seul point de traduction des événements d'une session JsSIP en événements de machine. */
-function bindSession(session: Session, send: (ev: CallSipEvent) => void): void {
+function bindSession(
+  session: Session,
+  send: (ev: CallSipEvent) => void,
+  /** Le transport texte du compte : sans lui, une section texte précoce ne se reconnaît pas. */
+  carries: RttTransport,
+): void {
   // ce que le navigateur a refusé, capté avant que JsSIP ne le réduise à
   // « WebRTC Error » : le dernier échec vu accompagne la fin de session
   let failure: MediaFailure | null = null;
@@ -423,7 +451,11 @@ function bindSession(session: Session, send: (ev: CallSipEvent) => void): void {
     failure = f;
   });
 
-  session.on("progress", () => send({ type: "sip:progress" }));
+  // `e` n'est pas typé par JsSIP sur cet événement (l'écouteur y est une
+  // union de signatures) : c'est `earlyMediaOf` qui en tire ce qu'il faut
+  session.on("progress", (e: unknown) =>
+    send({ type: "sip:progress", media: earlyMediaOf(e, carries) }),
+  );
   session.on("accepted", () => send({ type: "sip:accepted" }));
   session.on("confirmed", () => send({ type: "sip:confirmed" }));
   session.on("ended", (e) =>
@@ -511,7 +543,7 @@ function wrapIncoming(
     offered,
     offerProblem: problem,
     listen(send) {
-      bindSession(session, send);
+      bindSession(session, send, cfg.rtt);
       let rtt: RttNegotiation | null = null;
       control = mediaControl(session, send, () => rtt?.negotiated() ?? false);
       // le texte se greffe avant `answer()` : c'est là que JsSIP présente
@@ -551,6 +583,27 @@ function causeOf(e: unknown): string {
 function originatorOf(e: unknown): SipOriginator | undefined {
   const o = (e as { originator?: unknown }).originator;
   return o === "local" || o === "remote" || o === "system" ? o : undefined;
+}
+
+/**
+ * Ce que la réponse provisoire décrit comme actif — le **média précoce**
+ * de RFC 3960, lu exactement comme une réponse finale : un 183 (ou un 180)
+ * porteur d'un SDP décrit des flux qui commencent *avant* le décrochage.
+ *
+ * Les trois médias sont lus, et c'est le fond de l'affaire : le réseau peut
+ * répondre en parole, mais aussi en **langue des signes** ou en **texte
+ * temps réel** — un accueil de service d'urgence, une annonce d'opérateur
+ * accessible. Ne regarder que l'audio reviendrait à dire « il ne se passe
+ * rien » à celui-là même à qui l'on parle.
+ *
+ * Sans corps, il n'y a rien sur le fil : `NO_MEDIA`, et non le repli
+ * « audio seul » que `answeredMedia` applique à un SDP illisible — un 180
+ * n'est pas une description muette, c'est l'absence de description.
+ */
+function earlyMediaOf(e: unknown, carries: RttTransport): CallMedia {
+  const body = (e as { response?: { body?: unknown } | null }).response?.body;
+  if (typeof body !== "string" || body.trim() === "") return NO_MEDIA;
+  return answeredMedia(body, carries);
 }
 
 /** Code SIP de la réponse finale (486, 603…) quand l'échec vient du distant. */
@@ -606,6 +659,44 @@ interface MediaControl {
   setPaused(on: boolean): void;
   /** Pause : tout ce que j'émets s'arrête, sans que rien ne parte sur le fil. */
   setPaused(on: boolean): void;
+  /**
+   * **Muet tant que personne n'a décroché.** Les pistes émises sont
+   * désactivées (`track.enabled = false`) : ce qui part est alors du
+   * **noir et du silence**, et non plus rien.
+   *
+   * La nuance est tout l'intérêt du geste. `replaceTrack(null)` — la Pause
+   * — cesse d'émettre : plus un paquet RTP, donc plus rien qui entretienne
+   * l'ouverture du NAT, et l'annonce que le réseau nous joue en média
+   * précoce n'aurait aucun chemin pour revenir. Une piste désactivée, elle,
+   * continue de produire des trames noires et du silence : le flux tient,
+   * la conversation n'a pas commencé.
+   *
+   * Ce qu'on y gagne est de la vie privée, et elle n'est pas théorique : un
+   * 183 avec SDP établit la connexion pair-à-pair comme le ferait un
+   * 200 OK. Sans cela, un serveur qui joue une annonce entend la pièce et
+   * voit son occupant avant que quiconque ait décroché.
+   *
+   * Le silence est levé au décrochage, et à ce seul moment (`sip:accepted`).
+   */
+  setSilent(on: boolean): void;
+  /**
+   * **L'image locale, pour l'auto-vue** : un clone de la piste émise, avec
+   * son propre `enabled`.
+   *
+   * Il existe parce que le silence d'avant le décrochage rendrait l'auto-vue
+   * noire — un `<video>` branché sur une piste désactivée n'affiche rien —
+   * et que se cadrer juste avant de parler est exactement ce qu'on fait à ce
+   * moment-là. Même caméra, même source : aucun second capteur n'est ouvert.
+   *
+   * Rendu tel quel pour l'audio : le vu-mètre local doit rester à zéro tant
+   * que rien ne part, sans quoi il promettrait une voix qui n'arrive nulle
+   * part.
+   *
+   * Le miroir tient la source pour son propre compte : il s'éteint avec la
+   * piste qu'il copie, et avec l'appel. C'est le contrôle média qui le sait
+   * — lui seul suit la vie des capteurs.
+   */
+  mirror(track: MediaStreamTrack): MediaStreamTrack;
   /** Fin d'appel : les capteurs que nous avons allumés s'éteignent avec lui. */
   release(): void;
 }
@@ -693,6 +784,25 @@ export function mediaControl(
   const own: Partial<Record<MediaKind, MediaStreamTrack>> = {};
   /** Médias refusés dans la prochaine réponse SDP (réponse audio à une offre A/V). */
   const refusing = new Set<MediaKind>();
+  /**
+   * Rien de réel ne part encore : voir `setSilent`. Vrai jusqu'au
+   * décrochage — c'est le port qui le lève, seul endroit d'où l'on voit
+   * passer le 200 OK.
+   */
+  let silent = false;
+  /**
+   * Pose (ou lève) le silence sur les pistes émises. Réappliqué à chaque
+   * fois que la connexion bouge : les pistes n'existent pas encore quand
+   * l'appel est placé — `getUserMedia` puis l'offre viennent après —, et
+   * une piste qui apparaîtrait après coup émettrait la pièce.
+   */
+  const applySilence = (): void => {
+    if (!pc) return;
+    for (const kind of MEDIA_KINDS) {
+      const track = transceiverOf(pc, kind)?.sender.track;
+      if (track) track.enabled = !silent;
+    }
+  };
   /** Dernier résultat publié — on ne signale que les changements. */
   let published: CallMedia | null = null;
   /**
@@ -721,8 +831,17 @@ export function mediaControl(
    * le bandeau plein écran dit assez clairement ce qui se passe.
    */
   const held: Partial<Record<MediaKind, MediaStreamTrack>> = {};
+  /** Les clones de l'auto-vue, par piste copiée — voir `mirror`. */
+  const mirrors = new Map<MediaStreamTrack, MediaStreamTrack>();
   let paused = false;
   let pc: RTCPeerConnection | null = null;
+
+  /** Éteint le miroir d'une piste, s'il en avait un : il tient la source. */
+  const stopMirror = (track: MediaStreamTrack | null | undefined): void => {
+    if (!track) return;
+    mirrors.get(track)?.stop();
+    mirrors.delete(track);
+  };
 
   /**
    * Éteint le capteur qui alimentait l'appel — le nôtre comme celui que
@@ -741,14 +860,19 @@ export function mediaControl(
       // appelé sur `failed`, donc après que JsSIP a fermé la sienne, et
       // `replaceTrack` y lève un InvalidStateError qui n'apprend rien.
       track.stop();
+      // le clone de l'auto-vue tient la même caméra pour son compte :
+      // l'oublier laisserait le voyant allumé après le retrait de la vidéo
+      stopMirror(track);
       if (conn && conn.signalingState !== "closed") {
         void tr.sender.replaceTrack(null).catch(() => {});
       }
     }
+    stopMirror(own[kind]);
     own[kind]?.stop();
     delete own[kind];
     // une pause en cours tient une piste hors du sender : elle ne doit pas
     // survivre au média qui vient de quitter l'appel
+    stopMirror(held[kind]);
     held[kind]?.stop();
     delete held[kind];
   };
@@ -761,7 +885,11 @@ export function mediaControl(
    */
   const watch = (conn: RTCPeerConnection): void => {
     pc = conn;
+    applySilence();
     conn.addEventListener("signalingstatechange", () => {
+      // les pistes apparaissent avec la première offre, bien après l'appel :
+      // le silence les rattrape ici, quel que soit l'état atteint
+      applySilence();
       if (conn.signalingState !== "stable" || resuming) return;
       const media = negotiatedMedia(conn, textNegotiated());
       // un média est sorti de l'appel : son capteur n'a plus de raison de
@@ -1057,8 +1185,29 @@ export function mediaControl(
         }
       }
     },
+    setSilent(on) {
+      silent = on;
+      applySilence();
+    },
+    mirror(track) {
+      // l'audio ne se clone pas : voir le contrat
+      if (track.kind !== "video") return track;
+      const known = mirrors.get(track);
+      if (known && known.readyState === "live") return known;
+      const copy = track.clone();
+      // `clone()` recopie `enabled` : copier une piste rendue muette avant
+      // le décrochage donnerait un miroir noir — et il le resterait, le
+      // décrochage ne réactivant que la piste du sender
+      copy.enabled = true;
+      mirrors.set(track, copy);
+      return copy;
+    },
     release() {
       for (const kind of MEDIA_KINDS) stopSending(pc, kind);
+      // filet : un miroir dont la piste d'origine n'est plus dans aucun
+      // transceiver n'aurait rien pour l'éteindre
+      for (const copy of mirrors.values()) copy.stop();
+      mirrors.clear();
     },
   };
 }
@@ -1109,15 +1258,19 @@ interface RtcSessionLike {
  * cocher la case en pleine communication fait démarrer la mesure, sans que
  * l'appel s'en aperçoive. Décochée, aucun `getStats()` n'est demandé.
  */
-function collectStats(session: RtcSessionLike) {
+function collectStats(session: RtcSessionLike, rtt: RttNegotiation | null) {
   const media = createCallStats();
   const timer = setInterval(() => {
     if (session.isEnded()) return clearInterval(timer);
     if (!sipTraceEnabled()) return;
+    // le texte ne passe pas par RTP : son compteur ne sort pas de
+    // `getStats()` mais du canal lui-même (T.140 §5.3.2.3), et il est lu au
+    // même relevé pour que les deux mesures parlent de la même seconde
+    const missing = rtt?.channel.missingText() ?? null;
     // getStats() sans sélecteur : le rapport entier, celui que sip/stats.ts
     // sait réduire aux quatre sens qui nous intéressent
     void session.connection?.getStats().then(
-      (report) => media.push(report),
+      (report) => media.push(report, Date.now(), missing),
       () => {
         // connexion fermée entre deux relevés : le suivant s'arrêtera sur
         // `isEnded()`, il n'y a rien à rattraper
@@ -1147,7 +1300,27 @@ function wrapSession(
   control: MediaControl,
   rtt: RttNegotiation | null,
 ): CallSession {
-  const media = collectStats(session);
+  const media = collectStats(session, rtt);
+  /**
+   * **Rien de réel ne part avant le décrochage** — ni son, ni image, ni
+   * texte tapé. Le média précoce (RFC 3960) établit la connexion
+   * pair-à-pair aussi sûrement qu'un 200 OK : sans cette précaution, un
+   * serveur qui joue une annonce entendrait la pièce et verrait son
+   * occupant pendant qu'elle passe.
+   *
+   * Ce qui part quand même est ce qui **entretient le chemin** : des trames
+   * noires, du silence, et la signature de session T.140 répétée
+   * (`sip/rttdc.ts`). Sans ce filet de paquets sortants, aucune passerelle
+   * ne saurait où renvoyer l'annonce — et un accueil sous-titré arriverait
+   * dans le vide.
+   *
+   * `accepted` est émis des deux côtés : par le 200 OK reçu pour un appel
+   * sortant, par `answer()` pour un entrant. C'est donc bien « quelqu'un a
+   * décroché », et non « nous avons appelé ».
+   */
+  control.setSilent(true);
+  rtt?.channel.setSending(false);
+
   // la caméra que nous avons ouverte survivrait au dialogue : JsSIP ne
   // referme que le flux qu'il a demandé lui-même
   session.on("ended", control.release);
@@ -1200,7 +1373,8 @@ function wrapSession(
           const lTracks = pc
             .getSenders()
             .map((s) => s.track)
-            .filter((t): t is MediaStreamTrack => t !== null);
+            .filter((t): t is MediaStreamTrack => t !== null)
+            .map(control.mirror);
           if (lTracks.length) local.srcObject = new MediaStream(lTracks);
         }
       };

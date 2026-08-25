@@ -46,6 +46,7 @@ function view(over: Partial<CallView> = {}): CallView {
     peerPaused: false,
     dtmfSent: "",
     notice: null,
+    earlyMedia: { audio: false, video: false, text: false },
     connectedAt: Date.now(),
     endedBy: null,
     session: null,
@@ -209,6 +210,16 @@ describe("le bouton Pause", () => {
     expect(bar({ state: "dialing" })).toMatch(/data-act="pause"[^>]*disabled/s);
   });
 
+  it("média précoce : les deux boutons média sont inertes", () => {
+    // rien ne change de média avant le décrochage — il n'y a pas encore de
+    // dialogue où poser un re-INVITE, et l'offre en vol est celle à
+    // laquelle le distant répond (machines/call.ts, `awaitingAnswer`)
+    const html = bar({ state: "early_media" });
+    expect(html).toMatch(/data-act="toggle-audio"[^>]*disabled/s);
+    expect(html).toMatch(/data-act="toggle-video"[^>]*disabled/s);
+    expect(html).toMatch(/data-act="pause"[^>]*disabled/s);
+  });
+
   it("dit son état : pressé, allumé, et le libellé passe à « Reprendre »", () => {
     const paused = bar({ paused: true });
     expect(paused).toMatch(/data-act="pause"[^>]*aria-pressed="true"/s);
@@ -323,7 +334,17 @@ describe("le bureau ne change pas", () => {
     expect(html).not.toContain('data-ref="sheet"');
   });
 
-  it("n'a pas de bouton Pause : l'axe 2 est le geste de la barre mobile", () => {
-    expect(desktop()).not.toContain('data-act="pause"');
+  /**
+   * **La Pause, elle, existe sur les deux gabarits.** Ce que D8 réserve au
+   * mobile est le remaniement pastille / feuille, pas le geste : F.703
+   * §6.2.4 exige que tout participant puisse suspendre ce qu'il émet, et la
+   * norme ne connaît pas la largeur des écrans. Elle reste **hors de la
+   * pastille** ici comme là-bas — c'est l'axe 2 (D6), et il ne se confond
+   * avec les commandes média sur aucun écran.
+   */
+  it("garde la Pause, hors de la pastille", () => {
+    const html = desktop();
+    expect(html).toContain('data-act="pause"');
+    expect(pill(html)).not.toContain("pause");
   });
 });

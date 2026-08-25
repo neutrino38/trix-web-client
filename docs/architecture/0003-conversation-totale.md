@@ -270,6 +270,15 @@ menu déroulant : atteignable au pouce, lisible, et annonçable — `aria-expand
 « ⋯ », région étiquetée, fermeture à l'échappement et sur toute action. **Le bureau ne
 change pas** : la sidebar a la place.
 
+Ce qui ne change pas au bureau est la **répartition** — pastille contre feuille —, et
+rien d'autre. La Pause est un geste, pas une adaptation à l'étroitesse : F.703 §6.2.4
+exige que tout participant puisse suspendre ce qu'il émet, et la norme ne connaît pas
+la largeur des écrans. Elle est donc rendue dans les deux gabarits, hors de la
+pastille dans les deux — c'est l'axe 2 de D6, et il ne se confond avec les commandes
+média sur aucun écran. *(Écrit après coup : CT-4 l'avait comprise comme une fonction
+mobile, et un bureau sans Pause obligeait à raccrocher pour se retirer un instant —
+exactement ce que le §6.2.4 cherche à éviter.)*
+
 *Variantes écartées :* le défilement horizontal de la pastille (aucune affordance
 visible, RGAA), et la réduction des cibles sous 44 px (pour un public âgé ou à
 motricité réduite, non — 24 px est le plancher WCAG 2.5.8, pas une cible).
@@ -293,20 +302,24 @@ média est un non, pas une fin d'appel.
 
 ## 4. Ce que la norme demande et que Trix ne fait pas encore
 
-Relevé fait en confrontant F.703 au code, hors du périmètre du plan initial :
+Relevé fait en confrontant F.703 au code, hors du périmètre du plan initial. **Les
+quatre premiers points ont été livrés en CT-5** ; ce qu'ils ont donné est décrit à
+la phase correspondante (§5), et les paragraphes ci-dessous restent tels qu'ils ont
+été écrits, comme relevé d'origine.
 
-- **§6.1.2 — retour d'appel sonore.** L'appelant voit « Sonnerie… », il n'entend rien
+- **§6.1.2 — retour d'appel sonore.** *(livré, CT-5)* L'appelant voit « Sonnerie… »,
+  il n'entend rien
   tant que le distant n'envoie pas de média précoce. La norme demande *visible **et**
   sonore*. `ui/ring.ts` a déjà le nécessaire ; il manque une tonalité locale sur
   `sip:progress`, arrêtée dès qu'un flux distant arrive.
-- **§5.3.2.3 — la qualité du texte a une unité de mesure**, et c'est celle de T.140 :
+- **§5.3.2.3 — la qualité du texte a une unité de mesure** *(livré, CT-5)*, et c'est celle de T.140 :
   caractères corrompus, caractères perdus, marqueurs de texte manquant. `rttdc.ts`
   insère déjà un `U+FFFD` à chaque reprise de canal — il suffit de les compter et de
   les porter dans les statistiques et l'historique.
-- **§5.2.2 — l'écart audio / vidéo n'est pas mesuré.** Le seuil de 100 ms est celui de
+- **§5.2.2 — l'écart audio / vidéo n'est pas mesuré.** *(livré, CT-5)* Le seuil de 100 ms est celui de
   la langue des signes et de la lecture labiale : c'est *la* métrique du public de
   Trix, et `stats.ts` mesure tout sauf elle.
-- **§4.4 note — pas d'autotest hors appel.** *« Il devrait être possible de mettre un
+- **§4.4 note — pas d'autotest hors appel.** *(livré, CT-5)* *« Il devrait être possible de mettre un
   terminal hors ligne en autotest »* : un « tester mon micro et ma caméra » dans les
   réglages, avec aperçu et vu-mètre. Découvrir un micro muet pendant l'appel est le
   scénario que la norme cherche justement à éviter.
@@ -379,6 +392,45 @@ tomber.
 Les quatre points actionnables du §4 : retour d'appel sonore, compteur de texte perdu, écart
 audio / vidéo dans les statistiques avec le seuil de 100 ms, autotest micro / caméra
 hors appel. Indépendants les uns des autres, livrables séparément.
+
+**Livrée.** Ce que la mise en œuvre a ajouté au plan, et qui n'était pas prévu ici :
+
+1. **Le retour d'appel a demandé un état, pas un drapeau.** Le silence à observer
+   quand le réseau parle déjà (média précoce, RFC 3960) est une situation qui dure,
+   qu'on ne quitte que par le décrochage ou la fin de l'appel : c'est la définition
+   d'un état, et il s'appelle `early_media`. Écrit en drapeau, il aurait été un état
+   caché — irréversible, publié, lu par l'écran, mais absent du diagramme.
+2. **Le SDP précoce se lit pour les trois médias.** Un accueil peut arriver en
+   parole, en langue des signes ou en texte temps réel, et pour le public de Trix
+   les deux derniers sont les plus vraisemblables. D'où `CallView.earlyMedia`, qui
+   porte une `CallMedia` et non un booléen : la tonalité locale se tait quand du
+   **son** arrive, et continue quand l'annonce est signée ou écrite — sans quoi
+   l'appelant croirait la ligne morte. C'est le même raisonnement que D1, appliqué à
+   un état où l'appel n'existe pas encore.
+3. **Rien ne se décide — ni ne s'émet — avant le décrochage.** Les commandes média et
+   la Pause sont sans effet en `ringing` comme en `early_media` : pas de dialogue
+   confirmé où poser un re-INVITE (RFC 3261 §14.1), et l'offre en vol est celle à
+   laquelle le distant répond. Le texte se lit mais ne s'écrit pas, et ce qu'on
+   taperait est **jeté** plutôt que mis en tampon — il partirait d'un bloc au
+   décrochage, sur la conversation de quelqu'un d'autre si l'appel a été dévié.
+
+   Surtout, les pistes émises sont **désactivées** jusqu'au décrochage : ce qui part
+   est du noir et du silence. Une réponse provisoire porteuse d'un SDP établit la
+   connexion pair-à-pair aussi sûrement qu'un 200 OK ; sans cette précaution, un
+   serveur qui joue une annonce entendrait la pièce et verrait son occupant pendant
+   qu'elle passe. Désactiver, et non détacher (`replaceTrack(null)`, la Pause) : le
+   flux doit continuer de couler, parce que c'est lui qui **tient le NAT ouvert** —
+   sans paquet sortant, aucune passerelle ne sait où renvoyer l'annonce. Le texte
+   fait de même avec sa signature de session : envoyée à l'ouverture du socket
+   WebSocket, répétée toutes les 5 s sur le canal de données tant que rien d'autre ne
+   part. C'est le seul caractère de T.140 qui ne veut rien dire, et un appel où l'on
+   n'écrit pas ne recevrait jamais rien si l'on attendait la première frappe.
+
+   L'auto-vue reste vivante par un clone de la piste : on se cadre juste avant de
+   parler, et c'est le seul moment où cela sert.
+4. **Le texte a gagné sa ligne dans le bilan média**, avec sa propre unité de mesure
+   (T.140 §5.3.2.3) et un seul sens, la réception. C'est D1 jusque dans l'encart de
+   diagnostic.
 
 ### Phase CT-6 — Ajouter le texte en cours d'appel (optionnelle)
 

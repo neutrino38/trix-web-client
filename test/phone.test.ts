@@ -22,6 +22,7 @@ import type {
   SipEvent,
   SipPort,
 } from "../src/sip/port.js";
+import { NO_MEDIA } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 import type { ChatItem } from "../src/sip/transcript.js";
@@ -794,7 +795,7 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
     expect(sip.calls).toEqual([{ target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } }]);
     expect(phone.context.call?.state).toBe("dialing");
 
-    sip.sendCall({ type: "sip:progress" });
+    sip.sendCall({ type: "sip:progress", media: NO_MEDIA });
     expect(phone.context.call?.state).toBe("ringing");
     sip.sendCall({ type: "sip:accepted" });
     expect(phone.context.call?.state).toBe("connected");
@@ -1076,7 +1077,9 @@ describe("PhoneMachine — historique d'appels", () => {
         sent: { codec: "opus", clockRate: 48000, kbps: 31, loss: 0.02 },
       },
       video: null,
+      text: null,
       rttMs: 42,
+      syncMs: null,
       spanMs: 133_000,
     };
     sip.sendCall({ type: "sip:accepted" });

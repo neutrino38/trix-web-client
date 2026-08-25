@@ -643,7 +643,7 @@ fieldset.field { border: none; }
 .pause-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--orange) 30%, transparent); }
 .pause-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .pause-btn .icon { width: 22px; height: 22px; }
-/* en place et inerte jusqu'à CT-4, qui lui donnera son effet */
+/* grisée hors communication : il n'y a rien à suspendre avant le décrochage */
 .pause-btn:disabled { opacity: 0.45; cursor: default; }
 
 /* ---------- la Pause, telle qu'elle se voit (call/pause.ts) ---------- */
@@ -960,6 +960,45 @@ fieldset.field { border: none; }
 .stats-head h2 { font-size: 0.95rem; overflow-wrap: anywhere; }
 .stats-sub { font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
 .stats-actions { flex: none; display: flex; gap: 0.9rem; }
+/* ---------------------------------------------------------------------------
+   Autotest micro / caméra (ui/selftest.ts) : même cadre que le bilan média,
+   une scène vidéo et une barre de niveau horizontale.
+   --------------------------------------------------------------------------- */
+.selftest-dialog {
+  width: min(420px, 92vw); padding: 0;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
+}
+.selftest-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
+.selftest-body { padding: 0.85rem 1rem 1rem; display: grid; gap: 0.7rem; }
+.selftest-stage {
+  position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden;
+  background: #000; display: grid; place-items: center;
+}
+/* sans caméra, la scène n'a rien à montrer : elle se réduit au message */
+.selftest-dialog.no-video .selftest-stage { aspect-ratio: auto; background: var(--bg-soft, transparent); }
+.selftest-dialog.no-video .selftest-video { display: none; }
+.selftest-video {
+  width: 100%; height: 100%; object-fit: cover;
+  /* miroir : on se regarde comme dans une glace, jamais à l'envers */
+  transform: scaleX(-1);
+}
+.selftest-msg {
+  position: absolute; margin: 0; padding: 0.6rem 0.8rem; text-align: center;
+  font-size: 0.8rem; color: var(--ink); background: var(--panel);
+  border-radius: 8px; max-width: 90%;
+}
+.selftest-dialog.no-video .selftest-msg { position: static; background: none; }
+.selftest-vu {
+  height: 10px; border-radius: 999px; background: var(--border); overflow: hidden;
+}
+.selftest-vu .bar { display: block; height: 100%; background: var(--ok, #36AD45); transition: width 60ms linear; }
+.selftest-hint { font-size: 0.78rem; color: var(--ink-soft); }
+.selftest-devices { display: grid; gap: 0.25rem; font-size: 0.78rem; }
+.selftest-row { display: flex; justify-content: space-between; gap: 0.8rem; }
+.selftest-kind { color: var(--ink-soft); }
+.selftest-device { overflow-wrap: anywhere; text-align: right; }
+
 /* le corps réemploie l'encart : mêmes classes, sans le cadre flottant */
 .stats-body.mediastats {
   position: static; width: auto; max-width: none;

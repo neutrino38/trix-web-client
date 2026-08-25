@@ -38,7 +38,7 @@ import type {
   SipHandle,
   SipOriginator,
 } from "../sip/port.js";
-import { MEDIA_KINDS, isLastMedia } from "../sip/port.js";
+import { MEDIA_KINDS, NO_MEDIA, anyMedia, isLastMedia, mergeMedia, sameMedia } from "../sip/port.js";
 import type { CallDirection } from "../storage/store.js";
 import { msg, rawMsg, type Msg, type MsgKey } from "../i18n/types.js";
 import type { CallNotice, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
@@ -98,6 +98,14 @@ export interface CallData {
   paused: boolean;
   /** Le correspondant s'est mis en pause : ses pistes se sont tues. */
   peerPaused: boolean;
+  /**
+   * Ce que le réseau émet **avant le décrochage** (RFC 3960), lu dans le
+   * SDP des réponses provisoires : les trois médias, parce qu'un accueil
+   * peut être parlé, signé ou écrit. `NO_MEDIA` tant qu'aucune réponse
+   * provisoire n'a décrit de flux — l'état `early_media` est justement
+   * celui où ce n'est plus le cas.
+   */
+  earlyMedia: CallMedia;
   /** Média proposé par le distant, en attente de la décision de l'utilisateur. */
   mediaOffer: MediaOffer | null;
   /** Ce que cette offre ajouterait — de quoi nommer le média dans la question. */
@@ -128,6 +136,7 @@ type CallStateName =
   | "initial_state"
   | "dialing"
   | "ringing"
+  | "early_media"
   | "ringing_in"
   | "answering"
   | "connected"
@@ -152,6 +161,7 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
     mediaAsked: data.mediaOffer !== null ? data.offerAdds : null,
     dtmfSent: data.dtmfSent,
     notice: data.notice,
+    earlyMedia: data.earlyMedia,
     connectedAt: data.connectedAt,
     endedBy: data.endedBy,
     session: data.session,
@@ -404,6 +414,61 @@ function changed(before: CallMedia, after: CallMedia): MediaKind[] {
 const DTMF_KEPT = 32;
 
 /**
+ * Ce que les deux temps de l'attente d'une réponse partagent — `ringing`
+ * et `early_media`. Du point de vue du protocole, ils sont le même état :
+ * l'INVITE a reçu une réponse provisoire et attend la finale. Ce qui les
+ * sépare est ce que l'appelant **entend** pendant ce temps, et cela ne
+ * regarde que l'écran (ADR 0003, §4 — F.703 §6.1.2).
+ *
+ * `from` est l'état d'où l'on scelle : c'est lui qui sera publié en
+ * dernier, et l'historique n'a pas à confondre un appel resté sans
+ * réponse avec un appel où le réseau a répondu quelque chose.
+ */
+function awaitingAnswer(from: "ringing" | "early_media"): CallOn {
+  return {
+    ...interruptions("canceled"),
+    /**
+     * **Rien ne change de média avant le décrochage**, et cela est dit ici
+     * plutôt que laissé au hasard d'un événement sans destinataire.
+     *
+     * L'appel n'est pas encore un appel : il n'y a pas de dialogue établi
+     * où poser un re-INVITE (RFC 3261 §14.1 le réserve à un dialogue
+     * confirmé), et l'offre partie avec l'INVITE est celle à laquelle le
+     * distant est en train de répondre — la changer sous lui n'aurait pas
+     * de sens. L'écran dit la même chose de son côté : les deux boutons
+     * média sont désactivés hors communication (`call/overlay.ts`).
+     *
+     * La Pause est refusée pour la même raison, à l'envers : il n'y a rien
+     * à suspendre tant que rien n'est établi.
+     */
+    "ui:toggleMedia": () => undefined,
+    "ui:togglePause": () => undefined,
+    "sip:accepted": () => goto("connected", "200 OK"),
+    "sip:failed": (ev, ctx, fx) => {
+      sealed(from, endedBy(ev.originator), ctx, fx);
+      fx.sbbReturn("rejected", { reason: failReason(ev) });
+    },
+    "sip:ended": (ev, ctx, fx) => {
+      sealed(from, endedBy(ev.originator), ctx, fx);
+      fx.sbbReturn("canceled", { reason: rawMsg(ev.cause) });
+    },
+    "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", msg("reason.hungUp"), "CANCEL"),
+  };
+}
+
+/**
+ * Le délai de garde de l'appel sortant est écoulé : personne ne décrochera,
+ * on annule et on rapporte. Seul le corps est partagé — le `delay` reste
+ * écrit dans chaque état, faute de quoi le diagramme perd l'arête et une
+ * garde qui n'apparaît plus nulle part ne se relit plus (§4.5).
+ */
+function giveUp(from: "ringing" | "early_media", ctx: CallHost, fx: CallFx): void {
+  fx.data.session?.terminate();
+  sealed(from, "local", ctx, fx);
+  fx.sbbReturn("rejected", { reason: msg("reason.noAnswer") });
+}
+
+/**
  * Ce que les trois états de la communication partagent — `connected` et
  * les deux temps d'une renégociation. L'appel ne change pas de nature
  * parce qu'une offre est en vol : on raccroche, on compose un DTMF et on
@@ -524,6 +589,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
     paused: false,
     peerPaused: false,
     mediaPending: false,
+    earlyMedia: NO_MEDIA,
     mediaOffer: null,
     offerAdds: [] as MediaKind[],
     dtmfSent: "",
@@ -600,7 +666,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
       },
       on: {
         ...interruptions("canceled"),
-        "sip:progress": () => goto("ringing", "180/183"),
+        "sip:progress": (ev, _ctx, fx) => {
+          if (!anyMedia(ev.media)) return goto("ringing", "180");
+          fx.data.earlyMedia = ev.media;
+          return goto("early_media", "183 + SDP");
+        },
         "sip:accepted": () => goto("connected", "200 OK"),
         "sip:failed": (ev, ctx, fx) => {
           sealed("dialing", endedBy(ev.originator), ctx, fx);
@@ -620,28 +690,84 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         publish("ringing", ctx, fx.data);
       },
       on: {
-        ...interruptions("canceled"),
-        "sip:progress": () => undefined, // 180 répétés
-        "sip:accepted": () => goto("connected", "200 OK"),
-        "sip:failed": (ev, ctx, fx) => {
-          sealed("ringing", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("rejected", { reason: failReason(ev) });
+        ...awaitingAnswer("ringing"),
+        // un 183 porteur de SDP, après le 180 : le réseau se met à parler
+        "sip:progress": (ev, _ctx, fx) => {
+          if (!anyMedia(ev.media)) return undefined;
+          fx.data.earlyMedia = ev.media;
+          return goto("early_media", "183 + SDP");
         },
-        "sip:ended": (ev, ctx, fx) => {
-          sealed("ringing", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("canceled", { reason: rawMsg(ev.cause) });
-        },
-        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", msg("reason.hungUp"), "CANCEL"),
       },
+      // 90 s : le Timer C de RFC 3261 §16.6, la limite qu'un proxy applique
+      // de toute façon à une transaction INVITE. Le délai est écrit ici, en
+      // clair, et non derrière une constante : c'est de cette ligne que le
+      // diagramme tire son arête (§4.5)
       after: {
         delay: 90_000,
-        then: (ctx, fx) => {
-          fx.data.session?.terminate();
-          sealed("ringing", "local", ctx, fx);
-          fx.sbbReturn("rejected", { reason: msg("reason.noAnswer") });
-        },
+        then: (ctx, fx) => giveUp("ringing", ctx, fx),
       },
       meta: { callState: "ringing" },
+    },
+
+    /**
+     * **Le réseau parle avant le décrochage** (RFC 3960) : une réponse
+     * provisoire a porté une description de session, et du son arrive déjà
+     * — la sonnerie de l'opérateur, une annonce (« votre correspondant
+     * n'est pas joignable »), un serveur vocal. Les pistes reçues sont
+     * branchées sur l'élément distant dès qu'elles arrivent
+     * (`sip/port.ts`, `attachMedia`) : cela s'entend.
+     *
+     * Rien ne distingue cet état de `ringing` du point de vue du protocole
+     * — mêmes réponses attendues, même délai de garde. Ce qu'il porte est
+     * ce que l'écran doit en faire : **se taire**. Le retour d'appel que
+     * Trix produit localement (F.703 §6.1.2, `ui/ring.ts`) couvrirait ce
+     * que le réseau a déjà à dire, et deux tonalités qui se répondent
+     * valent moins qu'une.
+     *
+     * On n'en revient pas : un 180 sans SDP qui suivrait n'interrompt pas
+     * le flux précoce, il cesse seulement de le décrire. Repasser en
+     * `ringing` rallumerait la tonalité par-dessus.
+     *
+     * **Ce que l'on émet pendant ce temps**, et qui n'est pas un choix :
+     * les flux audio et vidéo sortants sont ouverts dès l'établissement de
+     * la connexion pair-à-pair, avant le décrochage. C'est ce qui perce le
+     * NAT — sans paquet sortant, aucune passerelle ne sait où renvoyer le
+     * média, et l'annonce précoce n'arriverait jamais. Le texte fait la
+     * même chose avec sa signature de session, qui ne dit rien
+     * (`sip/rttws.ts`). Ce n'est donc pas un état où l'on peut promettre
+     * que rien ne part ; c'est un état où rien de ce qui part n'a été
+     * *décidé* — d'où l'interdiction de toucher aux médias jusqu'au
+     * décrochage (`awaitingAnswer`), et la saisie de texte fermée à
+     * l'écran (`call/chat.ts`).
+     */
+    early_media: {
+      enter(ctx, fx) {
+        publish("early_media", ctx, fx.data);
+      },
+      on: {
+        ...awaitingAnswer("early_media"),
+        /**
+         * Réponses provisoires suivantes : le média précoce **s'ajoute**,
+         * il ne se retire pas. Un 180 sans SDP après un 183 qui en portait
+         * un n'interrompt aucun flux, il cesse seulement de le décrire ; et
+         * une annonce qui passe de la parole à la langue des signes est un
+         * média de plus, pas un média à la place.
+         */
+        "sip:progress": (ev, ctx, fx) => {
+          const merged = mergeMedia(fx.data.earlyMedia, ev.media);
+          if (sameMedia(merged, fx.data.earlyMedia)) return undefined;
+          fx.data.earlyMedia = merged;
+          publish("early_media", ctx, fx.data);
+          return undefined;
+        },
+      },
+      // le délai de garde repart de l'entrée dans cet état : une annonce
+      // du réseau est une progression, pas une attente qui s'éternise
+      after: {
+        delay: 90_000,
+        then: (ctx, fx) => giveUp("early_media", ctx, fx),
+      },
+      meta: { callState: "early_media" },
     },
 
     /**

@@ -22,7 +22,7 @@ import type {
   RejectReason,
   SipHandle,
 } from "../src/sip/port.js";
-import { MEDIA_KINDS } from "../src/sip/port.js";
+import { MEDIA_KINDS, NO_MEDIA } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 
@@ -194,7 +194,7 @@ describe("CallBlock — appel sortant", () => {
     expect(call.sbb?.block).toBe("CallBlock");
     expect(call.sbb?.state).toBe("dialing");
 
-    box.sendCall({ type: "sip:progress" });
+    box.sendCall({ type: "sip:progress", media: NO_MEDIA });
     expect(call.sbb?.state).toBe("ringing");
     box.sendCall({ type: "sip:accepted" });
     expect(call.sbb?.state).toBe("connected");
@@ -221,7 +221,7 @@ describe("CallBlock — appel sortant", () => {
   it("échec en sonnerie : rejected avec cause et code SIP", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle);
-    box.sendCall({ type: "sip:progress" });
+    box.sendCall({ type: "sip:progress", media: NO_MEDIA });
     box.sendCall({ type: "sip:failed", cause: "Rejected", statusCode: 603 });
     expect(outcome(call)).toEqual({
       type: "call:rejected",
@@ -243,7 +243,7 @@ describe("CallBlock — appel sortant", () => {
     try {
       const { handle, box } = fakeHandle();
       const call = startCall(handle);
-      box.sendCall({ type: "sip:progress" });
+      box.sendCall({ type: "sip:progress", media: NO_MEDIA });
       await vi.advanceTimersByTimeAsync(90_000);
       expect(box.session.terminated).toBeGreaterThanOrEqual(1);
       expect(outcome(call)).toEqual({
@@ -253,6 +253,104 @@ describe("CallBlock — appel sortant", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * Le média précoce (RFC 3960) est un état à part entière, et non un
+   * détail de la sonnerie : ce qu'il change est ce que l'appelant entend,
+   * et le vérifier tient à ce que le SDP d'une réponse provisoire soit lu
+   * **pour les trois médias**. Un accueil signé ou écrit est le cas normal
+   * du public de Trix, et il ne remplit aucun silence.
+   */
+  describe("média précoce", () => {
+    const AUDIO: CallMedia = { audio: true, video: false, text: false };
+    const SIGNED: CallMedia = { audio: false, video: true, text: false };
+
+    it("183 porteur de SDP : dialing → early_media, médias publiés", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.state).toBe("early_media");
+      expect(call.context.call?.earlyMedia).toEqual(AUDIO);
+    });
+
+    it("180 puis 183 : la sonnerie cède au média précoce", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: NO_MEDIA });
+      expect(call.sbb?.state).toBe("ringing");
+      box.sendCall({ type: "sip:progress", media: SIGNED });
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.earlyMedia).toEqual(SIGNED);
+    });
+
+    it("le média précoce s'ajoute et ne se retire pas", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: SIGNED });
+      // l'annonce se double de parole : les deux, et non l'un à la place
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      expect(call.context.call?.earlyMedia).toEqual({ audio: true, video: true, text: false });
+      // un 180 sans SDP n'interrompt aucun flux : il cesse de le décrire
+      box.sendCall({ type: "sip:progress", media: NO_MEDIA });
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.earlyMedia).toEqual({ audio: true, video: true, text: false });
+    });
+
+    it("décrochage depuis le média précoce : connected", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      box.sendCall({ type: "sip:accepted" });
+      expect(call.sbb?.state).toBe("connected");
+    });
+
+    it("annonce d'indisponibilité : le 480 qui suit ressort en rejected", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      box.sendCall({ type: "sip:failed", cause: "Unavailable", statusCode: 480 });
+      expect(outcome(call)).toEqual({
+        type: "call:rejected",
+        data: { reason: { key: "reason.sip", vars: { cause: "Unavailable", code: 480 } } },
+      });
+    });
+
+    it("les commandes média sont sans effet avant le décrochage", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      call.send({ type: "ui:toggleMedia", kind: "video" });
+      call.send({ type: "ui:toggleMedia", kind: "audio" });
+      call.send({ type: "ui:togglePause" });
+      // ni renégociation lancée, ni média changé, ni état quitté : il n'y a
+      // pas encore de dialogue où poser un re-INVITE, et l'offre en vol est
+      // celle à laquelle le distant est en train de répondre
+      expect(box.session.asked).toEqual([]);
+      expect(box.session.pauses).toEqual([]);
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
+      expect(call.context.call?.mediaPending).toBe(false);
+      expect(call.context.call?.paused).toBe(false);
+    });
+
+    it("le délai de garde de 90 s vaut aussi pour une annonce qui n'en finit pas", async () => {
+      vi.useFakeTimers();
+      try {
+        const { handle, box } = fakeHandle();
+        const call = startCall(handle);
+        box.sendCall({ type: "sip:progress", media: AUDIO });
+        await vi.advanceTimersByTimeAsync(90_000);
+        expect(box.session.terminated).toBeGreaterThanOrEqual(1);
+        expect(outcome(call)).toEqual({
+          type: "call:rejected",
+          data: { reason: { key: "reason.noAnswer" } },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("raccrochage sans confirmation JsSIP : answered forcé après 2 s", async () => {
@@ -1067,7 +1165,7 @@ describe("CallBlock — DTMF", () => {
   it("hors communication : la touche est consommée, rien n'est émis", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle);
-    box.sendCall({ type: "sip:progress" });
+    box.sendCall({ type: "sip:progress", media: NO_MEDIA });
     call.send({ type: "ui:dtmf", tone: "5" });
     expect(box.session.tones).toEqual([]);
     expect(call.sbb?.state).toBe("ringing");

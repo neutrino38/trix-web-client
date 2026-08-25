@@ -49,6 +49,8 @@ interface Recv {
   bytes: number;
   packets: number;
   lost: number;
+  /** Date de lecture estimée, en ms — ce dont sort l'écart audio / vidéo. */
+  playout?: number;
 }
 interface Sent {
   bytes: number;
@@ -80,6 +82,9 @@ function report(spec: Spec): StatsReportLike {
       bytesReceived: spec.audioIn.bytes,
       packetsReceived: spec.audioIn.packets,
       packetsLost: spec.audioIn.lost,
+      ...(spec.audioIn.playout === undefined
+        ? {}
+        : { estimatedPlayoutTimestamp: spec.audioIn.playout }),
     });
   }
   if (spec.audioOut) {
@@ -105,6 +110,9 @@ function report(spec: Spec): StatsReportLike {
       bytesReceived: spec.videoIn.bytes,
       packetsReceived: spec.videoIn.packets,
       packetsLost: spec.videoIn.lost,
+      ...(spec.videoIn.playout === undefined
+        ? {}
+        : { estimatedPlayoutTimestamp: spec.videoIn.playout }),
     });
   }
   if (spec.videoOut) {
@@ -417,6 +425,118 @@ describe("bilan de l'appel entier", () => {
   });
 });
 
+/**
+ * Le texte est le troisième média (ADR 0003, D1) et il ne se mesure pas
+ * comme les deux autres : ni débit ni taux de perte, mais les **marqueurs
+ * de texte manquant** de T.140 §5.3.2.3. Ce qui se vérifie ici est qu'ils
+ * suivent la même règle que tout le reste du module — un cumul relevé deux
+ * fois, dont seule la différence est publiée.
+ */
+/**
+ * L'écart audio / vidéo (F.703 §5.2.2) : la seule mesure de cet encart dont
+ * la valeur cible vient d'une norme, et celle qui compte le plus pour le
+ * public de Trix — au delà de 100 ms, la lecture labiale décroche et la
+ * langue des signes devient pénible (H-series Suppl. 1).
+ */
+describe("écart audio / vidéo", () => {
+  const both = (audioPlayout?: number, videoPlayout?: number): StatsReportLike =>
+    report({
+      audioIn: { bytes: 8000, packets: 50, lost: 0, playout: audioPlayout },
+      videoIn: { bytes: 90_000, packets: 300, lost: 0, playout: videoPlayout },
+    });
+
+  it("mesure la différence des dates de lecture, signe compris", () => {
+    const win = createStatsWindow();
+    win.push(both(1000, 1000), 0);
+    // le son joue 40 ms devant l'image
+    win.push(both(1040, 1000), 1000);
+    expect(win.read()?.syncMs).toBe(40);
+    // et l'inverse se lit à l'envers, ce qui ne se dépanne pas pareil
+    win.push(both(1000, 1150), 2000);
+    expect(win.read()?.syncMs).toBe(-150);
+  });
+
+  it("le bilan de l'appel garde le pire écart, pas celui de la dernière seconde", () => {
+    const media = createCallStats();
+    media.push(both(1000, 1000), 0);
+    media.push(both(1180, 1000), 1000); // l'image a décroché : 180 ms
+    media.push(both(1010, 1000), 2000); // tout est rentré dans l'ordre
+    // les dix dernières secondes disent l'instant…
+    expect(media.live()?.syncMs).toBe(10);
+    // …le bilan, lui, dit ce que l'appel a connu de pire
+    expect(media.summary()?.syncMs).toBe(180);
+  });
+
+  it("s'abstient plutôt que de rassurer à tort", () => {
+    const win = createStatsWindow();
+    // un appel audio seul n'a rien à synchroniser
+    win.push(report({ audioIn: { bytes: 0, packets: 0, lost: 0, playout: 1000 } }), 0);
+    expect(win.read()?.syncMs).toBeNull();
+    // navigateur qui ne rapporte pas le compteur : « — », et non zéro
+    win.reset();
+    win.push(both(), 0);
+    expect(win.read()?.syncMs).toBeNull();
+  });
+
+  it("le pied de l'encart le montre, et le met en avant au delà du seuil", () => {
+    // l'écart suppose les deux flux : un bilan qui le porte en a forcément
+    const flow = { codec: null, clockRate: null, kbps: 40, loss: 0 };
+    const stats = (syncMs: number): MediaStats => ({
+      audio: { recv: flow, sent: flow },
+      video: { recv: flow, sent: flow },
+      text: null,
+      rttMs: null,
+      syncMs,
+      spanMs: 10_000,
+    });
+    expect(statsCardHtml(stats(40))).toContain("Écart audio / vidéo");
+    expect(statsCardHtml(stats(40))).not.toContain('<strong class="hot">40');
+    // 100 ms : le seuil de F.703 §5.2.2, atteint et non dépassé, compte déjà
+    expect(statsCardHtml(stats(100))).toContain('<strong class="hot">100');
+    expect(statsCardHtml(stats(-140))).toContain('<strong class="hot">-140');
+  });
+});
+
+describe("texte manquant", () => {
+  it("la fenêtre publie la différence, pas le cumul de l'appel", () => {
+    const win = createStatsWindow();
+    win.push(report({ audioIn: { bytes: 0, packets: 0, lost: 0 } }), 0, 3);
+    win.push(report({ audioIn: { bytes: 8000, packets: 50, lost: 0 } }), 10_000, 5);
+    expect(win.read()?.text).toEqual({ missing: 2 });
+  });
+
+  it("un appel sans texte n'a pas de ligne de texte", () => {
+    const win = createStatsWindow();
+    win.push(report({ audioIn: { bytes: 0, packets: 0, lost: 0 } }), 0);
+    win.push(report({ audioIn: { bytes: 8000, packets: 50, lost: 0 } }), 1000);
+    expect(win.read()?.text).toBeNull();
+  });
+
+  it("le texte arrivé en cours d'appel compte à partir de son premier relevé", () => {
+    const win = createStatsWindow();
+    // premier relevé sans canal texte : le compteur n'existe pas encore
+    win.push(report({ audioIn: { bytes: 0, packets: 0, lost: 0 } }), 0);
+    win.push(report({ audioIn: { bytes: 8000, packets: 50, lost: 0 } }), 1000, 2);
+    expect(win.read()?.text).toEqual({ missing: 2 });
+  });
+
+  it("l'encart montre la ligne, et la met en avant quand il y a des trous", () => {
+    const stats: MediaStats = {
+      audio: null,
+      video: null,
+      text: { missing: 4 },
+      rttMs: null,
+      syncMs: null,
+      spanMs: 10_000,
+    };
+    const html = statsCardHtml(stats);
+    expect(html).toContain("Texte manquant");
+    expect(html).toContain('<strong class="hot">4</strong>');
+    // un appel texte seul a bien un bilan : ce n'est pas « aucun flux mesuré »
+    expect(html).not.toContain("Aucun flux");
+  });
+});
+
 describe("relecture depuis l'historique", () => {
   const STATS: MediaStats = {
     audio: {
@@ -424,7 +544,9 @@ describe("relecture depuis l'historique", () => {
       sent: { codec: "opus", clockRate: 48000, kbps: 31.8, loss: 0.06 },
     },
     video: null,
+    text: null,
     rttMs: 42,
+    syncMs: null,
     spanMs: 133_000,
   };
 

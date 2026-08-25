@@ -29,6 +29,8 @@ import type { CallSipEvent, MediaKind } from "../src/sip/port.js";
 class FakeTrack {
   muted = true; // une piste distante l'est tant que rien n'est arrivé
   stopped = false;
+  /** Désactivée, une piste émet du noir et du silence — et non plus rien. */
+  enabled = true;
   private listeners: Record<string, (() => void)[]> = {};
 
   constructor(readonly kind: string) {}
@@ -100,8 +102,13 @@ class FakePc {
     for (const t of this.transceivers) t.received.setMuted(!live);
   }
 
-  addEventListener(_e: string, fn: () => void): void {
-    this.listeners.push(fn);
+  /**
+   * Les écouteurs sont rangés par type, comme sur une vraie connexion :
+   * `signalingstatechange` et `track` n'ont ni la même signature ni le même
+   * moment, et les confondre ferait passer au second un événement vide.
+   */
+  addEventListener(type: string, fn: () => void): void {
+    if (type === "signalingstatechange") this.listeners.push(fn);
   }
 
   /**
@@ -546,5 +553,47 @@ describe("la pause du correspondant", () => {
     session.pc.peerSends(false);
     session.pc.transceivers[0]!.received.setMuted(true);
     expect(events).toHaveLength(1);
+  });
+});
+
+/**
+ * **Le silence d'avant le décrochage** (ADR 0003, CT-5). Une réponse
+ * provisoire porteuse d'un SDP établit la connexion pair-à-pair aussi
+ * sûrement qu'un 200 OK : sans précaution, un serveur qui joue une annonce
+ * entendrait la pièce et verrait son occupant pendant qu'elle passe.
+ *
+ * Ce qui se vérifie ici est la nuance qui fait tout : on **désactive** les
+ * pistes, on ne les détache pas. Une piste désactivée émet du noir et du
+ * silence — le flux tient, donc le NAT reste ouvert, donc l'annonce a un
+ * chemin pour revenir. `replaceTrack(null)`, la Pause, couperait ce chemin.
+ */
+describe("silence avant le décrochage", () => {
+  it("désactive les pistes émises sans les détacher", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.setSilent(true);
+    for (const tr of session.pc.transceivers) {
+      expect(tr.sent.enabled).toBe(false);
+      // la piste reste attachée : c'est elle qui produit le noir et le
+      // silence, et qui entretient le chemin du retour
+      expect(tr.sender.track).not.toBeNull();
+      expect(tr.sent.stopped).toBe(false);
+    }
+  });
+
+  it("le décrochage rend la parole et l'image", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.setSilent(true);
+    ctl.setSilent(false);
+    for (const tr of session.pc.transceivers) expect(tr.sent.enabled).toBe(true);
+  });
+
+  it("rattrape une piste apparue après coup : l'offre vient bien après l'appel", () => {
+    const { session, ctl } = control(["audio"]);
+    ctl.setSilent(true);
+    // la caméra rejoint la connexion pendant que ça sonne encore
+    const late = session.pc.transceivers[0]!;
+    late.sent.enabled = true;
+    session.pc.settle("have-local-offer");
+    expect(late.sent.enabled).toBe(false);
   });
 });

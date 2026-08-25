@@ -111,7 +111,17 @@ account; browser settings take effect immediately and stay on this device.
 | **System notifications** | Browser | Press **Enable notifications** to grant permission. Without it, Trix cannot alert you while the window is hidden or minimised. If the browser has blocked them, Trix says so — it cannot ask again itself, you have to re-enable them in the browser's site settings |
 | **Theme** | Browser | *System* (the default, following your device's light/dark setting), *Light* or *Dark* |
 | **Interface language** | Browser | Same picker as the home screen |
+| **Test my microphone and camera** | Browser | Opens a self-test that stays on this device — see below |
 | **Trace SIP messages** | Browser | Turns on the diagnostics described in [section 11](#11-diagnosing-a-call) |
+
+**Testing your microphone and camera.** The button opens a small window showing the
+picture you would send and a bar that moves with your voice, plus the names of the
+devices your browser picked. Nothing is sent anywhere and no sound is played back — the
+bar is what tells you the microphone works, whether or not you can hear it. If there is
+no camera, the microphone is tested on its own. If something is wrong, the window says
+what to do about it: allow access in the browser, plug a device in, or close the other
+application holding it. Better to find a silent microphone here than in the middle of a
+conversation.
 
 ## 6. Registration status
 
@@ -146,7 +156,23 @@ button.
 - **Clicking a history line** fills the address field, ready to call back.
 
 While the call is being set up, the stage shows *Calling…* then *Ringing…* with the
-address you dialled.
+address you dialled, and you hear a ringing tone — Trix produces it locally, because a
+SIP call carries no sound of its own before it is answered.
+
+- **If the other end plays something first** — an operator's ringing tone, a greeting, a
+  voice menu — the stage says *Network message* and Trix stops its own tone rather than
+  talking over it. The greeting may also arrive as **video** (sign language) or as
+  **real-time text**, in which case the tone keeps playing: nothing is filling the
+  silence, and you should not be left thinking the line is dead.
+- **A subtitled greeting shows up in the text panel.** A service that answers with a
+  recorded message can send its subtitles as real-time text before picking up; they
+  appear in the thread like any other message.
+- **Before the call is answered, nothing is changed and nothing real is sent.** The audio
+  and video buttons and Pause stay inactive, and the text panel can be read but not typed
+  into — there is no one at the other end yet to receive what you would write. Your
+  microphone and camera stay silent and black on the wire until someone answers, so a
+  machine playing a greeting never hears your room. You still see yourself in the
+  self-view: that picture is local.
 
 ## 8. During a call
 
@@ -252,6 +278,17 @@ give it keyboard focus, or click it — clicking pins it open — and it reveals
 bitrate and packet loss of each direction, for each of audio and video, plus the round
 trip time. The figures cover a **sliding 10-second window**, never the whole call: a
 perfect minute must not hide the ten seconds that broke up.
+
+Two more figures matter to accessibility and get their own place there:
+
+- **Missing text.** Real-time text has no bitrate worth reading; what counts is how often
+  text was lost. Each gap — whether the channel dropped here or the far end reports one of
+  its own — is counted and shown on the *Text* row.
+- **Audio / video skew**, the one figure with a target set by a standard: below 100 ms,
+  lip-reading and sign language stay comfortable (ITU-T F.703 §5.2.2). It is signed, so
+  you can tell sound running ahead of picture from sound running behind, and it is
+  highlighted past the threshold. A dash means it cannot be measured — an audio-only call,
+  or a browser that does not report it.
 
 **Two icons in the history**, on calls that took place with tracing on:
 

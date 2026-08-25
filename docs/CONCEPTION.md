@@ -249,6 +249,83 @@ raccrochage.
 - Chrono : timestamp de `sip:accepted` en contexte, la UI dérive l'affichage.
 - Flux média : `session.connection` (RTCPeerConnection) → attach `remoteVideo`/`localVideo`.
 
+#### Ça sonne : `ringing`, `early_media`, et le son que l'appelant entend
+
+F.703 §6.1.2 demande que la progression de l'appel soit annoncée à l'appelant par
+des signaux **visuels et sonores**. Le visuel existait ; le son, non — un appel SIP
+ne transporte rien avant le 200 OK, et « Sonnerie » s'affichait dans le silence.
+Le **retour d'appel** est donc produit localement (`ui/ring.ts`, 440 Hz, 1,5 s /
+3,5 s, la cadence du réseau français), plus discret que la sonnerie d'appel
+entrant : il confirme à une oreille déjà tournée vers l'écran, là où la sonnerie
+doit traverser une pièce.
+
+Sauf quand le réseau parle déjà. Une réponse provisoire porteuse d'un SDP décrit du
+**média précoce** (RFC 3960) : la sonnerie de l'opérateur, une annonce, un serveur
+vocal. Les pistes reçues sont branchées sur l'élément distant dès qu'elles arrivent
+(`attachMedia` écoute `track`), donc cela s'entend — et une tonalité locale
+par-dessus ne vaudrait pas mieux que deux personnes qui parlent en même temps.
+
+C'est un **état de la CallBlock**, `early_media`, et non un drapeau dans les
+données. Le distinguer coûte une ligne au diagramme et rend visible ce qui, écrit
+autrement, aurait été un état caché — il ne se quitte que par le décrochage ou la
+fin de l'appel, exactement comme `ringing`, dont il partage les transitions
+(`awaitingAnswer`) et le délai de garde de 90 s.
+
+Trois conséquences, et elles tiennent toutes à ce que Trix s'adresse d'abord à des
+personnes sourdes :
+
+- **Le SDP précoce est lu pour les trois médias**, jamais pour le seul audio. Un
+  accueil peut arriver en parole, en **langue des signes** ou en **texte temps
+  réel** — pour le public de Trix, les deux derniers sont même les plus
+  vraisemblables. `CallView.earlyMedia` porte le détail, et c'est lui qui décide :
+  le retour d'appel se tait quand le son arrive, et **continue** quand l'annonce est
+  signée ou écrite, faute de quoi l'appelant croirait la ligne morte.
+- **Le média précoce s'ajoute et ne se retire pas.** Un 180 sans SDP après un 183
+  qui en portait un n'interrompt aucun flux : il cesse seulement de le décrire.
+- **L'état se dit à l'écran** (« Message du réseau ») : un son que l'application ne
+  montre pas n'a pas eu lieu pour qui ne l'entend pas — c'est le raisonnement des
+  DTMF (§4.8).
+
+**Rien ne se décide avant le décrochage.** Les deux boutons média sont inertes et la
+machine consomme `ui:toggleMedia` et `ui:togglePause` sans effet : il n'y a pas
+encore de dialogue confirmé où poser un re-INVITE (RFC 3261 §14.1), et l'offre en
+vol est celle à laquelle le distant est en train de répondre. Le texte se **lit**
+mais ne s'écrit pas (`chatPane(peer, writable)`) : ce qu'on taperait n'a pas de
+destinataire, et le tampon du canal le ferait partir d'un bloc au décrochage.
+
+**Ce qui part n'est ni la pièce ni son occupant.** Les flux sortants sont bien
+ouverts — une réponse provisoire avec SDP établit la connexion pair-à-pair aussi
+sûrement qu'un 200 OK —, mais les pistes émises sont **désactivées** jusqu'au
+décrochage (`MediaControl.setSilent`) : ce qui circule est du noir et du silence.
+La nuance avec la Pause est tout l'intérêt du geste. `replaceTrack(null)` cesserait
+d'émettre, donc ne maintiendrait plus rien ouvert dans le NAT, et l'annonce que le
+réseau nous joue n'aurait aucun chemin pour revenir. Une piste désactivée continue de
+produire des trames : le flux tient, la conversation n'a pas commencé. Sans cela, un
+serveur en média précoce entendrait la pièce et verrait son occupant avant que
+quiconque ait décroché.
+
+L'auto-vue, elle, reste vivante : elle est branchée sur un **clone** de la piste —
+même caméra, même source, son propre `enabled` —, parce que se cadrer juste avant de
+parler est précisément ce qu'on fait à ce moment-là. Le vu-mètre local, lui, reste à
+zéro : rien ne part, il ne doit pas promettre le contraire. Le clone tient la source
+ouverte pour son compte, et s'arrête donc avec la session — c'est ce qui éteint le
+voyant de la caméra.
+
+Le texte suit la même règle avec ses moyens : le canal est ouvert, ce qui arrive
+s'affiche, ce qu'on taperait ne part pas et n'est pas mis en tampon
+(`RttChannel.setSending`) — il partirait d'un bloc au décrochage, sur la conversation
+de quelqu'un d'autre si l'appel a été dévié. Et le fil entretient son chemin comme
+les autres, par la **signature de session** : envoyée à l'ouverture du socket
+WebSocket (`sip/rttws.ts`), répétée toutes les 5 s sur le canal de données tant que
+rien d'autre ne part (`sip/rttdc.ts`, §4.9). Attendre la première frappe reviendrait
+à faire dépendre la réception de l'émission — et, pour un appel où l'on n'écrit pas,
+à ne jamais rien recevoir.
+
+**Ce que cela rend possible**, et qui est le cas d'usage, pas un cas limite : un
+service qui répond au 183 en jouant un fichier avec sa piste de sous-titres. La vidéo
+s'affiche, le texte arrive par le canal T.140 et se peint dans le fil comme n'importe
+quel message — avant le décrochage, dans un panneau qu'on lit sans pouvoir y écrire.
+
 ### 4.3 CallBlock — appel entrant (phase 3)
 
 Même bloc : `initial_state` est un aiguillage traversé sans attendre d'événement,
@@ -671,9 +748,14 @@ Une nuance, et elle est la seule à ne jamais confondre :
 - **l'état du lien** — `connecting`, `open`, `lost`, `closed` — reste porté par
   `RttChannel`, et lui seul.
 
-Sur canal de données, l'ouverture DCEP arrive après le 200 OK : un appel peut être
-`text: true` avec un canal encore `connecting`, et c'est un état normal. Confondre les
-deux ferait clignoter l'écran d'appel à chaque seconde de latence du réseau.
+Sur canal de données, l'ouverture DCEP suit l'**association SCTP**, donc
+l'établissement de la connexion pair-à-pair — et non le décrochage : une réponse
+provisoire porteuse d'un SDP (183, RFC 3960) l'établit tout aussi bien qu'un 200 OK,
+et le canal s'ouvre alors avant que quiconque ait répondu. Un appel peut donc être
+`text: true` avec un canal encore `connecting`, et c'est un état normal ; il peut
+aussi recevoir du texte avant d'être établi, et c'est un cas utile — voir le média
+précoce (§4.2). Confondre les deux ferait clignoter l'écran d'appel à chaque seconde
+de latence du réseau.
 
 Le texte n'est jamais un choix de l'appelant (ADR 0003, D2) : il est là si le compte le
 porte. Un appel audio devient alors le profil 3c de F.703, et un appel vidéo passe de
@@ -825,9 +907,16 @@ d'autorisation micro** — ce qui compte pour un utilisateur sourd, à qui on n'
 réclamer un microphone pour écrire. Le mode « appel texte » n'apparaît au menu du
 bouton Appeler que si le compte transporte le texte. Rien dans l'état de l'appel ne
 dépend d'un flux média : « établi » vient du 200 OK, pas d'une `MediaStream`. Le
-maintien de la connexion sans RTP est l'affaire des couches basses — consentement ICE,
-allocation TURN, HEARTBEAT SCTP (RFC 8865 §6) : aucun keepalive applicatif n'est
-ajouté. Enfin, l'affichage du texte reçu est piloté par `onmessage` et **jamais par un
+maintien de la connexion sans RTP est d'abord l'affaire des couches basses —
+consentement ICE, allocation TURN, HEARTBEAT SCTP (RFC 8865 §6). S'y ajoute un seul
+battement applicatif, et pour une raison précise : la **signature de session**
+répétée toutes les 5 s quand rien d'autre n'est parti (`sip/rttdc.ts`). SCTP roule sur
+DTLS, donc sur UDP, et une association de NAT ne survit qu'au trafic qui la traverse ;
+un appel qui sonne peut ne rien écrire pendant des minutes — c'est même le cas normal
+d'un accueil sous-titré, où le seul texte vient d'en face. Le caractère choisi est
+celui qui ne veut rien dire : le décodeur le consomme sans rien afficher, où qu'il
+apparaisse dans le flux (T.140 §6.2, `sip/t140.ts`). Une conversation en cours, elle,
+entretient son propre chemin et ne déclenche aucun battement. Enfin, l'affichage du texte reçu est piloté par `onmessage` et **jamais par un
 temporisateur** : Chrome aligne les timers d'un onglet caché sur une seconde, ce qui
 dépasserait le plafond de 500 ms.
 
@@ -1107,7 +1196,15 @@ alors sa propre ligne — comme lorsqu'une commande coupée y remonte — plutô
 rogner une cible sous 44 px. Pause et Raccrocher, eux, ne bougent pas.
 
 **Le bureau ne change pas** : la sidebar a la place, et sa barre reste ce qu'elle était
-— toutes les commandes dans la pastille, ni « ⋯ », ni feuille, ni Pause.
+— toutes les commandes dans la pastille, ni « ⋯ », ni feuille.
+
+**La Pause, en revanche, est des deux côtés.** Ce que la règle précédente réserve au
+mobile est le remaniement pastille / feuille, pas le geste lui-même : F.703 §6.2.4
+exige que tout participant puisse suspendre ce qu'il émet, et la norme ne connaît pas
+la largeur des écrans. Un bureau sans Pause laisserait sans recours quelqu'un à qui
+l'on sonne à la porte, et l'obligerait à raccrocher — ce que le §6.2.4 cherche
+précisément à éviter. Elle reste **hors de la pastille** dans les deux gabarits : c'est
+l'axe 2, et il ne se confond avec les commandes média sur aucun écran.
 
 #### La Pause : locale, instantanée, sans échec possible
 
@@ -1155,6 +1252,36 @@ exact, deux gestes de même forme sur le même axe ; le défilement horizontal d
 pastille (aucune affordance visible, RGAA) ; et la réduction des cibles sous 44 px
 (pour un public âgé ou à motricité réduite, non — 24 px est le plancher WCAG 2.5.8,
 pas une cible).
+
+### 4.11 Autotest micro et caméra (hors appel)
+
+F.703 §4.4, en note : *« il devrait être possible de mettre un terminal hors ligne
+en autotest »*. Ce que la norme cherche à éviter est le scénario le plus courant —
+découvrir un micro muet ou une caméra prise par une autre application **pendant**
+l'appel, c'est-à-dire quand on ne peut plus rien y faire et, pour une personne
+sourde, quand le correspondant ne peut même pas le lui dire.
+
+Un bouton dans les paramètres ouvre une modale (`ui/selftest.ts`) qui montre trois
+choses et rien de plus : l'image qu'on enverrait, le niveau du son qu'on enverrait,
+et le nom des périphériques que le navigateur a retenus.
+
+- **Aucune boucle de retour audio** : un haut-parleur qui rejouerait le micro
+  larsennerait et ne prouverait rien de plus. La barre de niveau suffit — elle est
+  d'ailleurs ce qu'une personne sourde peut lire, là où un retour sonore ne lui
+  dirait rien.
+- **Dégrader, jamais refuser** (§5.1.2.2) : sans caméra, la demande se replie sur
+  l'audio seul et le dit. Un refus de permission, lui, vaut pour les deux
+  périphériques et ne se redemande pas — le second refus effacerait le message du
+  premier.
+- Chaque échec dit **quoi faire** (autoriser dans le navigateur, brancher un
+  périphérique, fermer l'autre application) plutôt que ce qui a échoué ; une cause
+  inconnue rend le message du navigateur tel quel, seul texte qui nommera la vraie
+  raison dans un rapport de support.
+- Le test ne parle à personne : ni session, ni SIP, ni machine. Les pistes sont
+  arrêtées à la fermeture — une caméra qui resterait allumée derrière une modale
+  disparue serait pire que pas de test du tout.
+- La mesure de niveau est celle des vu-mètres de l'écran d'appel (`ui/vumeter.ts`) :
+  un seul `AudioContext` pour l'application, un analyseur par flux.
 
 ## 5. Intégration JsSIP
 
@@ -1326,7 +1453,9 @@ VIDÉO
 Codec           VP8           VP8
 Débit           560 kbit/s    480 kbit/s
 Perte           1,1 %         0,3 %
-Aller-retour 42 ms
+TEXTE
+Texte manquant  2             —
+Aller-retour 42 ms   Écart audio / vidéo 40 ms
 Perte à l'émission d'après les rapports de réception du correspondant.
 ```
 
@@ -1361,6 +1490,31 @@ Perte à l'émission d'après les rapports de réception du correspondant.
 - Rien ne traverse les machines pendant l'appel — un débit n'est pas un état du
   protocole, et le faire passer par le contexte redéclencherait un rendu complet de
   l'écran à chaque seconde.
+- **Le texte a sa ligne, et il ne se mesure pas comme les deux autres** (ADR 0003,
+  D1). Ni débit ni taux de perte : le texte ne passe pas par RTP, `getStats()` n'en
+  sait rien, et la question n'est de toute façon pas la même. T.140 §5.3.2.3 lui
+  donne son unité de mesure — caractères corrompus, caractères perdus, **marqueurs
+  de texte manquant** —, et c'est le troisième que l'on peut compter sans mentir :
+  chaque `U+FFFD` reçu est un trou constaté, qu'il vienne d'une reprise de canal
+  ici (`sip/rttdc.ts`, `sip/rttws.ts`) ou du distant qui signale le sien. Le canal
+  les compte tous, y compris ceux arrivés avant l'ouverture du panneau de tchat — il
+  vit avec l'appel, le panneau non (`RttChannel.missingText()`). Un seul sens, celui
+  de la réception : ce qui est parti d'ici, personne ne dit s'il est arrivé.
+- **L'écart audio / vidéo**, et c'est la seule valeur de cet encart dont la cible
+  vient d'une norme : F.703 §5.2.2 la veut sous 120 ms, de préférence sous 100 —
+  le seuil de la lecture labiale et de la langue des signes (H-series Suppl. 1).
+  Trix s'adresse d'abord à des personnes sourdes : un décalage que personne n'entend
+  rend l'image inutilisable. Il se lit sur `estimatedPlayoutTimestamp` des deux flux
+  entrants — la date à laquelle le navigateur estime jouer ce qu'il tient : deux
+  flux synchronisés jouent le même instant de capture, l'écart de ces dates *est* le
+  décalage. Il est **signé** (positif = son en avance), parce qu'un son en avance ne
+  se dépanne pas comme un son en retard, et il vaut `null` — « — », jamais zéro —
+  dès qu'il manque un des deux flux ou que le navigateur ne rapporte pas le
+  compteur. C'est un état, pas un cumul : il se lit sur un relevé, là où tout le
+  reste de l'encart est une différence entre deux — pendant l'appel, celui du
+  dernier ; sur le bilan d'un appel terminé, **le pire écart observé**, parce qu'un
+  instantané pris une seconde avant le raccrochage ne dirait rien des trois minutes
+  où l'image avait décroché.
 - Découverte, et non info-bulle : survol, focus et clic l'ouvrent, Échap et un clic
   ailleurs la ferment. Une donnée qui ne s'obtiendrait qu'à la souris n'existerait
   pas pour une partie des utilisateurs (RGAA 13.10), et il n'y a pas de survol au
