@@ -71,8 +71,18 @@ const LOSS_HOT = 0.05;
  * classe que ce gabarit donne à sa pastille : les deux vues n'habillent pas
  * leur barre haute pareil, seul le comportement est commun.
  */
+/**
+ * Y a-t-il un bilan média à montrer ? La condition de `statsPill`, nommée
+ * pour ceux qui doivent la poser ailleurs — la feuille du bas de la barre
+ * mobile y mène aussi (ADR 0003, D8), et une entrée qui n'ouvrirait rien ne
+ * vaudrait pas mieux qu'une entrée grisée.
+ */
+export function statsAvailable(connected: boolean): boolean {
+  return connected && sipTraceEnabled();
+}
+
 export function statsPill(inner: string, opts: { cls: string; connected: boolean }): string {
-  if (!opts.connected || !sipTraceEnabled()) return `<span class="${opts.cls}">${inner}</span>`;
+  if (!statsAvailable(opts.connected)) return `<span class="${opts.cls}">${inner}</span>`;
   return `<span class="livewrap" data-ref="livewrap">
     <button type="button" class="${opts.cls} livepill" data-ref="statsbtn"
             aria-expanded="false" aria-controls="media-stats"

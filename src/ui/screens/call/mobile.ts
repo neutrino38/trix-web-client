@@ -18,7 +18,7 @@ import type { CallView } from "../../../machines/events.js";
 import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
-import { videoAskDialog } from "./videoask.js";
+import { mediaAskDialog } from "./mediaask.js";
 import { dtmfPad } from "./dtmf.js";
 import {
   CHAT_PANE_ID,
@@ -30,7 +30,8 @@ import {
   chatRefused,
   chatStage,
 } from "./chat.js";
-import { statsPill } from "./stats.js";
+import { statsAvailable, statsPill } from "./stats.js";
+import { pauseBanner, peerPauseNotice } from "./pause.js";
 import {
   ICONS,
   callLabel,
@@ -114,12 +115,21 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
           : view && stageChat
           ? chatStage({
               peer: callerName(view),
-              bar: overlayBar({ view, speakerMuted, withHangup: true }),
+              bar: overlayBar({
+                view,
+                speakerMuted,
+                withHangup: true,
+                compact: true,
+                withStats: statsAvailable(connected),
+              }),
               // pas de vu-mètres ici : à 390 px, cinq commandes et le rond
               // rouge tiennent tout juste le bandeau. L'audio entrant se voit
               // quand même — le haut-parleur s'allume dessus (`startVuMeters`)
               meters: false,
               dtmf: dtmfPad(view),
+              // la scène de texte a aussi son bandeau : un appel qu'on lit
+              // reste un appel dont on émet le son (§4.9)
+              banner: `${peerPauseNotice(view)}${pauseBanner(view)}`,
             })
           : view
           ? `<div class="mvideo" data-ref="videozone">
@@ -141,11 +151,21 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                    : `<div class="call-overlay">${esc(callLabel(view.state))}…<br>
                         <span class="target">${esc(displayTarget(view.target))}</span></div>`
                }
+               ${peerPauseNotice(view)}
                ${dtmfPad(view)}
+               ${pauseBanner(view)}
                ${overlayBar({
                  view,
                  speakerMuted,
                  withHangup: true,
+                 // la barre mobile est celle des deux axes (ADR 0003, D6/D8) :
+                 // quatre icônes dans la pastille, le reste dans la feuille du
+                 // bas, la Pause et le raccrochage dehors
+                 compact: true,
+                 // le plein écran a du sens ici : c'est lui qui fait
+                 // disparaître la barre d'adresse du navigateur mobile
+                 withFullscreen: true,
+                 withStats: statsAvailable(connected),
                  ...(chat ? { chat: { open: chatOpen, controls: CHAT_PANE_ID } } : {}),
                })}
              </div>
@@ -196,7 +216,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
              </div>`
       }
       ${incoming ? incomingDialog(view) : ""}
-      ${view?.videoAsked ? videoAskDialog(view) : ""}
+      ${view?.mediaAsked !== null && view !== null ? mediaAskDialog(view) : ""}
     </div>`);
 }
 

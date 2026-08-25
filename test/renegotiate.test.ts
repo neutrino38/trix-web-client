@@ -1,0 +1,550 @@
+/**
+ * La négociation des médias en cours d'appel, côté port (ADR 0003, D5).
+ *
+ * Trois choses s'y jouent, et aucune n'est visible depuis le bloc :
+ *
+ * - **la symétrie** — le micro et la caméra suivent le même chemin, au
+ *   média près. Une asymétrie qui s'y installerait ramènerait le micro au
+ *   rang de sourdine, ce que D6 écarte ;
+ * - **le retour arrière** — un refus laisse la connexion en
+ *   `have-local-offer` ; sans le rollback, plus aucune renégociation ne
+ *   serait possible de tout l'appel ;
+ * - **le glare** — les deux bouts renégocient en même temps, le 491 tombe,
+ *   et l'on reprend **une** fois après un délai aléatoire (RFC 3261 §14.1).
+ *   S'entêter au-delà ferait boucler deux clients face à face, ce que le
+ *   délai seul n'empêche pas.
+ *
+ * Le tout avec une session et une connexion factices : ce qu'on éprouve est
+ * l'enchaînement, pas la pile WebRTC.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mediaControl } from "../src/sip/port.js";
+import type { CallSipEvent, MediaKind } from "../src/sip/port.js";
+
+/**
+ * Une piste, avec ce que la Pause en utilise : `muted` côté réception, et
+ * les deux événements qui le signalent.
+ */
+class FakeTrack {
+  muted = true; // une piste distante l'est tant que rien n'est arrivé
+  stopped = false;
+  private listeners: Record<string, (() => void)[]> = {};
+
+  constructor(readonly kind: string) {}
+
+  stop(): void {
+    this.stopped = true;
+  }
+
+  addEventListener(event: string, fn: () => void): void {
+    (this.listeners[event] ??= []).push(fn);
+  }
+
+  /** Le flux arrive, ou se tait : c'est ainsi qu'une pause distante se voit. */
+  setMuted(muted: boolean): void {
+    if (this.muted === muted) return;
+    this.muted = muted;
+    for (const fn of this.listeners[muted ? "mute" : "unmute"] ?? []) fn();
+  }
+}
+
+/** Un transceiver réduit à ce que le contrôle média lui demande. */
+class FakeTransceiver {
+  direction = "sendrecv";
+  currentDirection: string | null = "sendrecv";
+  readonly sender: {
+    track: MediaStreamTrack | null;
+    replaceTrack(t: MediaStreamTrack | null): Promise<void>;
+  };
+  readonly receiver: { track: MediaStreamTrack | null };
+  /** La piste que nous émettons, telle que le test la reconnaît. */
+  readonly sent: FakeTrack;
+  readonly received: FakeTrack;
+
+  constructor(readonly kind: MediaKind) {
+    this.sent = new FakeTrack(kind);
+    this.received = new FakeTrack(kind);
+    this.sender = {
+      track: this.sent as unknown as MediaStreamTrack,
+      replaceTrack: (t) => {
+        this.sender.track = t;
+        return Promise.resolve();
+      },
+    };
+    this.receiver = { track: this.received as unknown as MediaStreamTrack };
+  }
+}
+
+class FakePc {
+  signalingState = "stable";
+  private listeners: (() => void)[] = [];
+  readonly transceivers: FakeTransceiver[] = [];
+  /** Les retours arrière demandés — c'est eux qu'on compte. */
+  rollbacks = 0;
+
+  constructor(kinds: MediaKind[]) {
+    for (const k of kinds) this.transceivers.push(new FakeTransceiver(k));
+  }
+
+  getTransceivers(): RTCRtpTransceiver[] {
+    return this.transceivers as unknown as RTCRtpTransceiver[];
+  }
+
+  getReceivers(): RTCRtpReceiver[] {
+    return this.transceivers.map((t) => t.receiver) as unknown as RTCRtpReceiver[];
+  }
+
+  /** Le correspondant émet, ou se tait : les deux pistes ensemble. */
+  peerSends(live: boolean): void {
+    for (const t of this.transceivers) t.received.setMuted(!live);
+  }
+
+  addEventListener(_e: string, fn: () => void): void {
+    this.listeners.push(fn);
+  }
+
+  /**
+   * Asynchrone, comme la vraie : c'est ce qui décide de l'**ordre** des
+   * événements vus par le bloc. Le refus part sur-le-champ ; le retour à
+   * `stable` que le rollback provoque n'arrive qu'après, et republie
+   * l'appel tel qu'il était resté. Un faux synchrone inverserait les deux
+   * et ferait passer un test qui ment.
+   */
+  setLocalDescription(d: { type: string }): Promise<void> {
+    if (d.type !== "rollback") return Promise.resolve();
+    return Promise.resolve().then(() => {
+      this.rollbacks++;
+      this.settle("stable");
+    });
+  }
+
+  /** Passe la connexion dans un état de signalisation et prévient l'observateur. */
+  settle(state: string): void {
+    this.signalingState = state;
+    for (const l of this.listeners) l();
+  }
+
+  addTrack(): void {}
+}
+
+type Handlers = { succeeded(r: unknown): void; failed(r?: unknown): void };
+
+/** Une session JsSIP réduite à ce que `mediaControl` en utilise. */
+class FakeSession {
+  readonly pc: FakePc;
+  direction = "outgoing";
+  ready = true;
+  ended = false;
+  /** Les re-INVITE partis, dans l'ordre : c'est le compteur du glare. */
+  reinvites: Handlers[] = [];
+  private sdpListeners: ((e: { originator: string; type: string; sdp: string }) => void)[] = [];
+
+  constructor(kinds: MediaKind[] = ["audio"]) {
+    this.pc = new FakePc(kinds);
+  }
+
+  get connection(): RTCPeerConnection {
+    return this.pc as unknown as RTCPeerConnection;
+  }
+
+  isEnded(): boolean {
+    return this.ended;
+  }
+
+  isReadyToReOffer(): boolean {
+    return this.ready;
+  }
+
+  _sendReinvite(opts: { eventHandlers: Handlers }): void {
+    this.reinvites.push(opts.eventHandlers);
+    this.pc.signalingState = "have-local-offer";
+  }
+
+  _receiveReinvite(): void {}
+
+  on(event: string, listener: (e: never) => void): void {
+    if (event === "sdp") this.sdpListeners.push(listener as never);
+  }
+
+  /** Joue un passage de SDP et rend ce qui partira sur le fil. */
+  sdp(originator: "local" | "remote", type: "offer" | "answer", sdp: string): string {
+    const e = { originator, type, sdp };
+    for (const l of this.sdpListeners) l(e);
+    return e.sdp;
+  }
+}
+
+/** Le contrôle média branché sur une session factice, et ce qu'il émet. */
+function control(kinds: MediaKind[] = ["audio"], textNegotiated = false) {
+  const session = new FakeSession(kinds);
+  const events: CallSipEvent[] = [];
+  const ctl = mediaControl(
+    session as never,
+    (ev) => events.push(ev),
+    () => textNegotiated,
+  );
+  return { session, events, ctl };
+}
+
+/** Le capteur s'ouvre sans qu'aucun navigateur ne soit là pour le fournir. */
+function stubUserMedia(ok = true): void {
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getUserMedia: (c: Record<string, boolean>) => {
+        if (!ok) return Promise.reject(new Error("NotAllowedError"));
+        const kind = Object.keys(c)[0]!;
+        return Promise.resolve({
+          getTracks: () => [{ kind, stop: () => {} }],
+        });
+      },
+    },
+  });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  stubUserMedia();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("les deux médias suivent le même chemin", () => {
+  for (const kind of ["audio", "video"] as const) {
+    it(`retirer ${kind} : le transceiver passe inactive et le re-INVITE part`, () => {
+      const { session, ctl } = control(["audio", "video"]);
+      ctl.setMedia(kind, false);
+      expect(session.reinvites).toHaveLength(1);
+      expect(session.pc.transceivers.find((t) => t.kind === kind)!.direction).toBe("inactive");
+    });
+
+    it(`ajouter ${kind} : le capteur s'ouvre avant que l'offre ne parte`, async () => {
+      const { session, ctl } = control(["audio", "video"]);
+      ctl.setMedia(kind, true);
+      // le capteur s'ouvre de façon asynchrone : rien n'est parti avant
+      expect(session.reinvites).toHaveLength(0);
+      await vi.runAllTimersAsync();
+      expect(session.reinvites).toHaveLength(1);
+      expect(session.pc.transceivers.find((t) => t.kind === kind)!.direction).toBe("sendrecv");
+    });
+
+    it(`ajouter ${kind} avec un capteur refusé : rien ne part, et l'écran le dit`, async () => {
+      stubUserMedia(false);
+      const { session, events, ctl } = control(["audio", "video"]);
+      ctl.setMedia(kind, true);
+      await vi.runAllTimersAsync();
+      expect(session.reinvites).toHaveLength(0);
+      expect(events).toEqual([{ type: "sip:mediaRefused", by: "local" }]);
+    });
+  }
+
+  it("une renégociation déjà en vol est refusée sur place, sans seconde offre", () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    session.ready = false;
+    ctl.setMedia("video", false);
+    expect(session.reinvites).toHaveLength(0);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local" }]);
+  });
+});
+
+describe("le refus du distant", () => {
+  it("488 : le refus part d'abord, le retour arrière republie ensuite", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    session.reinvites[0]!.failed({ message: { status_code: 488 } });
+
+    // l'ordre compte : le bloc quitte `renegotiating` sur le refus, et le
+    // `mediaChanged` du retour arrière ne fait plus que confirmer ce que
+    // l'appel transportait déjà
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "remote", statusCode: 488 }]);
+    await vi.runAllTimersAsync();
+    expect(session.pc.rollbacks).toBe(1);
+    expect(events[1]).toEqual({
+      type: "sip:mediaChanged",
+      media: { audio: true, video: true, text: false },
+    });
+  });
+
+  /**
+   * Le refus poli : 200 OK, mais la réponse SDP désactive le flux. Sans ce
+   * rattrapage, l'écran dirait que la vidéo a été ajoutée alors que rien
+   * n'arrive.
+   */
+  it("200 OK dont la réponse désactive le flux : c'est un non, et il se dit", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    session.reinvites[0]!.succeeded({
+      body: ["v=0", "m=audio 5000 RTP/SAVPF 111", "m=video 5002 RTP/SAVPF 96", "a=inactive"].join(
+        "\r\n",
+      ),
+    });
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "remote" }]);
+  });
+
+  it("sans réponse du tout, ce n'est pas un refus du distant", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    session.reinvites[0]!.failed(undefined);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local", statusCode: undefined }]);
+    // et le retour arrière n'y ajoute aucun refus de plus
+    await vi.runAllTimersAsync();
+    expect(events.filter((e) => e.type === "sip:mediaRefused")).toHaveLength(1);
+  });
+});
+
+/**
+ * **Le glare** — RFC 3261 §14.1. Les deux bouts ont renégocié en même
+ * temps ; le 491 arrive ; on reprend une fois, après un délai aléatoire
+ * dont les bornes sont disjointes selon le rôle.
+ */
+describe("le 491 et sa reprise unique", () => {
+  it("reprend une fois, après un délai, et ne prévient l'écran de rien", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    session.reinvites[0]!.failed({ message: { status_code: 491 } });
+
+    // rien n'est encore reparti, et l'écran n'a pas été dérangé : l'appel
+    // n'a pas changé, il est seulement en train d'attendre
+    expect(session.reinvites).toHaveLength(1);
+    expect(events).toEqual([]);
+    await Promise.resolve();
+    expect(session.pc.rollbacks).toBe(1);
+
+    vi.advanceTimersByTime(4000);
+    expect(session.reinvites).toHaveLength(2);
+    expect(events).toEqual([]);
+  });
+
+  /**
+   * Le retour arrière ramène la connexion à `stable` : sans précaution,
+   * l'observateur y verrait un appel qui vient de perdre son média et
+   * l'annoncerait — un changement qui n'a pas eu lieu.
+   */
+  it("le retour arrière de la reprise n'annonce aucun changement de média", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    session.reinvites[0]!.failed({ message: { status_code: 491 } });
+    // le rollback ramène la connexion à `stable`, et l'observateur y verrait
+    // un appel qui vient de perdre son média : `resuming` l'en empêche
+    await Promise.resolve();
+    expect(events).toEqual([]);
+  });
+
+  it("un second 491 met fin aux tentatives : on ne boucle pas face à face", () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    session.reinvites[0]!.failed({ message: { status_code: 491 } });
+    vi.advanceTimersByTime(4000);
+    session.reinvites[1]!.failed({ message: { status_code: 491 } });
+    vi.advanceTimersByTime(10_000);
+
+    expect(session.reinvites).toHaveLength(2);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "remote", statusCode: 491 }]);
+  });
+
+  it("le distant a repris la main entre-temps : on renonce au lieu de le bousculer", () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    session.reinvites[0]!.failed({ message: { status_code: 491 } });
+    // sa négociation à lui a abouti pendant notre attente
+    session.ready = false;
+    vi.advanceTimersByTime(4000);
+
+    expect(session.reinvites).toHaveLength(1);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local" }]);
+  });
+
+  it("l'appel raccroché pendant l'attente : la reprise ne part pas", () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    session.reinvites[0]!.failed({ message: { status_code: 491 } });
+    session.ended = true;
+    vi.advanceTimersByTime(4000);
+
+    expect(session.reinvites).toHaveLength(1);
+    expect(events).toEqual([]);
+  });
+
+  /**
+   * Les deux bornes de RFC 3261 §14.1 sont **disjointes** — 0 à 2 s pour
+   * l'UAC, 2,1 à 4 s pour l'UAS — et c'est cela seul qui empêche les deux
+   * bouts de se recroiser à l'identique.
+   */
+  it("les bornes du délai dépendent du rôle dans le dialogue", () => {
+    for (const [direction, min, max] of [
+      ["outgoing", 0, 2000],
+      ["incoming", 2100, 4000],
+    ] as const) {
+      const { session, ctl } = control(["audio", "video"]);
+      session.direction = direction;
+      ctl.setMedia("video", false);
+      session.reinvites[0]!.failed({ message: { status_code: 491 } });
+
+      // juste avant la borne basse, rien n'est reparti
+      if (min > 0) {
+        vi.advanceTimersByTime(min - 1);
+        expect(session.reinvites).toHaveLength(1);
+      }
+      vi.advanceTimersByTime(max - Math.max(0, min - 1));
+      expect(session.reinvites).toHaveLength(2);
+    }
+  });
+});
+
+/**
+ * La réponse SDP qui retranche un média de l'offre. C'est ce qui permet de
+ * répondre « texte seul » à une offre audio + texte sans laisser l'appelant
+ * parler dans le vide (ADR 0003, D3).
+ */
+describe("refuser un média dans la réponse", () => {
+  it("réécrit la réponse locale, et elle seule", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.refuseMedia(["audio"]);
+    const sdp = ["v=0", "m=audio 5000 RTP/SAVPF 111", "a=sendrecv", ""].join("\r\n");
+
+    expect(session.sdp("local", "answer", sdp)).toContain("a=inactive");
+    // l'offre locale et tout ce qui vient du distant traversent inchangés
+    expect(session.sdp("local", "offer", sdp)).toContain("a=sendrecv");
+    expect(session.sdp("remote", "answer", sdp)).toContain("a=sendrecv");
+  });
+
+  it("les deux médias peuvent être retranchés ensemble", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.refuseMedia(["audio", "video"]);
+    const sdp = [
+      "v=0",
+      "m=audio 5000 RTP/SAVPF 111",
+      "a=sendrecv",
+      "m=video 5002 RTP/SAVPF 96",
+      "a=sendrecv",
+      "",
+    ].join("\r\n");
+    expect(session.sdp("local", "answer", sdp).match(/a=inactive/g)).toHaveLength(2);
+  });
+});
+
+/**
+ * **La Pause** (ADR 0003, D6 et D7). Ce qui s'y vérifie tient en une
+ * phrase : *rien ne part sur le fil*. C'est de là que vient toute sa
+ * valeur — pas de négociation, donc pas d'échec possible, donc un geste
+ * qu'on peut faire quand on sonne à la porte.
+ */
+describe("la Pause", () => {
+  it("lâche les deux émetteurs, et n'envoie rien du tout", () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setPaused(true);
+
+    for (const tr of session.pc.transceivers) expect(tr.sender.track).toBeNull();
+    // ni re-INVITE, ni événement : l'appel n'a pas changé
+    expect(session.reinvites).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  /**
+   * Les pistes ne sont **pas** arrêtées : la reprise doit être instantanée,
+   * et rouvrir un capteur prendrait du temps — voire échouerait, ce qu'un
+   * geste sans échec ne peut pas se permettre.
+   */
+  it("la reprise rattache les mêmes pistes, sans rien rouvrir", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    const before = session.pc.transceivers.map((t) => t.sender.track);
+    ctl.setPaused(true);
+    ctl.setPaused(false);
+
+    expect(session.pc.transceivers.map((t) => t.sender.track)).toEqual(before);
+    for (const tr of session.pc.transceivers) expect(tr.sent.stopped).toBe(false);
+    expect(session.reinvites).toEqual([]);
+  });
+
+  it("mise en pause deux fois : la seconde ne perd pas les pistes tenues", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    const before = session.pc.transceivers.map((t) => t.sender.track);
+    ctl.setPaused(true);
+    ctl.setPaused(true);
+    ctl.setPaused(false);
+    expect(session.pc.transceivers.map((t) => t.sender.track)).toEqual(before);
+  });
+
+  /**
+   * Un média peut quitter l'appel pendant la pause : sa piste ne doit pas
+   * survivre à la reprise — elle tiendrait le voyant du capteur allumé
+   * alors que plus personne ne la reçoit.
+   */
+  it("un média retiré pendant la pause ne revient pas à la reprise", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.setPaused(true);
+    ctl.setMedia("video", false);
+    ctl.setPaused(false);
+
+    const video = session.pc.transceivers.find((t) => t.kind === "video")!;
+    expect(video.sender.track).toBeNull();
+    expect(video.sent.stopped).toBe(true);
+    // l'audio, lui, revient comme si de rien n'était
+    const audio = session.pc.transceivers.find((t) => t.kind === "audio")!;
+    expect(audio.sender.track).toBe(audio.sent);
+  });
+
+  it("l'appel raccroché : la pause n'a plus d'objet", () => {
+    const { session, ctl } = control(["audio", "video"]);
+    session.ended = true;
+    ctl.setPaused(true);
+    for (const tr of session.pc.transceivers) expect(tr.sender.track).not.toBeNull();
+  });
+});
+
+/**
+ * **La pause du correspondant**, lue là où elle se voit : ses pistes se
+ * taisent, les nôtres passent `muted` en réception. Rien n'est passé par
+ * SIP, et c'est bien le principe — un client tiers, lui, verra une image
+ * gelée : dégradation acceptable (F.703 §8.3.5), pas un refus.
+ */
+describe("la pause du correspondant", () => {
+  it("toutes ses pistes se taisent d'un coup : c'est une pause, et elle se dit", () => {
+    const { session, events } = control(["audio", "video"]);
+    session.pc.peerSends(true); // l'appel s'établit, le flux arrive
+    session.pc.peerSends(false);
+
+    expect(events).toEqual([{ type: "sip:peerPaused", paused: true }]);
+    session.pc.peerSends(true);
+    expect(events).toEqual([
+      { type: "sip:peerPaused", paused: true },
+      { type: "sip:peerPaused", paused: false },
+    ]);
+  });
+
+  /**
+   * Une piste distante est `muted` **avant** d'avoir jamais rien reçu : au
+   * décroché, toutes le sont. Sans cette précaution, tout appel s'ouvrirait
+   * sur « le correspondant est en pause ».
+   */
+  it("le silence d'avant le premier flux n'est pas une pause", () => {
+    const { session, events } = control(["audio", "video"]);
+    // les pistes existent et sont muettes, mais rien n'est encore arrivé
+    for (const tr of session.pc.transceivers) tr.received.setMuted(true);
+    expect(events).toEqual([]);
+  });
+
+  /**
+   * Un seul flux muet sur deux est un incident réseau, pas un geste : le
+   * correspondant qui se retire coupe tout ce qu'il émet d'un coup, puisque
+   * c'est un seul bouton (D6).
+   */
+  it("un seul flux muet n'est pas une pause", () => {
+    const { session, events } = control(["audio", "video"]);
+    session.pc.peerSends(true);
+    session.pc.transceivers[0]!.received.setMuted(true);
+    expect(events).toEqual([]);
+  });
+
+  it("ne répète pas ce qu'elle a déjà dit", () => {
+    const { session, events } = control(["audio", "video"]);
+    session.pc.peerSends(true);
+    session.pc.peerSends(false);
+    session.pc.transceivers[0]!.received.setMuted(true);
+    expect(events).toHaveLength(1);
+  });
+});

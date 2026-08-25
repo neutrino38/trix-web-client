@@ -18,18 +18,23 @@
 
 import type { CallView } from "../../../machines/events.js";
 import { esc } from "../../el.js";
-import { ICONS, answerChoices, callKind, callerName, displayTarget } from "./parts.js";
+import { ICONS, answerChoices, callProfile, callerName, displayTarget } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
 /**
- * Sur-titre : le média offert, avant même le nom de l'appelant. C'est lui, et
- * lui seul, qui dit pourquoi tel bouton de réponse manque — la phrase
+ * Sur-titre : les médias offerts, avant même le nom de l'appelant. C'est lui,
+ * et lui seul, qui dit pourquoi tel bouton de réponse manque — la phrase
  * d'explication de la maquette (« l'offre contient audio + vidéo… ») parlait le
  * vocabulaire du SDP, pas celui de l'utilisateur. D'où sa taille, très
  * au-dessus des 10,5 px de la maquette.
+ *
+ * Les **trois** médias y passent depuis l'ADR 0003 : un appel qui porte le
+ * texte le dit, parce que c'est exactement ce qu'un usager sourd a besoin de
+ * savoir avant de décrocher — et parce que dire « appel audio » d'un appel
+ * audio + texte reviendrait à lui cacher son seul recours.
  */
 function kicker(view: CallView): string {
-  return t(`incoming.kicker.${callKind(view.offered)}`);
+  return t(`incoming.kicker.${callProfile(view.offered)}`);
 }
 
 /**

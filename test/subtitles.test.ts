@@ -29,7 +29,7 @@ function entry(chat?: ChatItem[]): CallLogEntry {
     target: "bob@example.fr",
     direction: "outgoing",
     outcome: "answered",
-    media: { audio: true, video: false },
+    media: { audio: true, video: false, text: false },
     startedAt: AT,
     connectedAt: CONNECTED,
     endedAt: AT + 300_000,

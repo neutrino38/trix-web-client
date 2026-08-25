@@ -246,13 +246,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Media controls
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "Microphone",
-  "ctrl.mic.mute": "Mute microphone",
-  "ctrl.mic.unmute": "Unmute microphone",
-  "ctrl.cam.aria": "Camera",
+  "ctrl.mic.aria": "Audio",
+  "ctrl.mic.add": "Add audio",
+  "ctrl.mic.remove": "Remove audio",
+  "ctrl.cam.aria": "Video",
   "ctrl.cam.add": "Add video",
   "ctrl.cam.remove": "Remove video",
-  "ctrl.cam.pending": "Changing media…",
+  "ctrl.media.pending": "Media change in progress…",
+  "ctrl.media.last": "Not possible: the call would carry nothing at all",
   "ctrl.selfview.aria": "Self-view",
   "ctrl.selfview.hide": "Hide self-view",
   "ctrl.selfview.show": "Show self-view",
@@ -267,6 +268,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "Hide chat",
   "ctrl.fullscreen": "Full screen",
   "ctrl.hangup": "Hang up",
+  "ctrl.pause": "Pause",
+  "ctrl.pause.aria": "Pause",
+  "ctrl.resume": "Resume",
+  "pause.banner": "You are paused",
+  "pause.hint": "Your microphone and image are stopped. Text keeps flowing.",
+  "pause.resume": "Resume",
+  "pause.peer": "{peer} is paused",
+  "ctrl.more": "More controls",
+  "sheet.title": "More call controls",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -281,10 +291,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Video requested mid-call
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} wants to add video",
-  "videoask.body": "Accepting will turn your camera on.",
-  "videoask.accept": "Accept video",
-  "videoask.reject": "Decline",
+  "mediaask.video.title": "{peer} would like to add video",
+  "mediaask.video.body": "Accepting will turn on your camera.",
+  "mediaask.video.accept": "Accept video",
+  "mediaask.audio.title": "{peer} would like to add audio",
+  "mediaask.audio.body": "Accepting will turn on your microphone.",
+  "mediaask.audio.accept": "Accept audio",
+  "mediaask.both.title": "{peer} would like to add audio and video",
+  "mediaask.both.body": "Accepting will turn on your microphone and camera.",
+  "mediaask.both.accept": "Accept both",
+  "mediaask.reject": "Decline",
 
   // ---------------------------------------------------------------------
   // Passing call messages
@@ -295,6 +311,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} removed video",
   "notice.videoDeclinedHere": "Video declined",
   "notice.videoUnavailable": "Video cannot be added right now",
+  "notice.audioDeclined": "{peer} did not accept audio",
+  "notice.audioRefused": "{peer} declines adding audio to this call",
+  "notice.audioAdded": "{peer} added audio",
+  "notice.audioRemoved": "{peer} removed audio",
+  "notice.audioDeclinedHere": "Audio declined",
+  "notice.audioUnavailable": "Cannot add audio right now",
   "notice.dtmfFailed": "Tone {tone} could not be sent",
 
   // ---------------------------------------------------------------------
@@ -319,6 +341,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "INCOMING VIDEO CALL",
   "incoming.kicker.audio": "INCOMING AUDIO CALL",
+  "incoming.kicker.audioText": "INCOMING AUDIO + TEXT CALL",
+  "incoming.kicker.videoText": "INCOMING VIDEO + TEXT CALL",
   "incoming.kicker.text": "INCOMING TEXT CALL",
   "incoming.answerVideo": "Answer with video",
   "incoming.answerAudio": "Answer with audio",

@@ -433,7 +433,7 @@ describe("relecture depuis l'historique", () => {
       target: "bob@example.fr",
       direction: "outgoing",
       outcome: "answered",
-      media: { audio: true, video: false },
+      media: { audio: true, video: false, text: false },
       startedAt: Date.UTC(2026, 0, 15, 12, 30, 5),
       connectedAt: Date.UTC(2026, 0, 15, 12, 30, 6),
       endedAt: Date.UTC(2026, 0, 15, 12, 32, 19),

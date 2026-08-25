@@ -10,11 +10,14 @@
  *   réellement accepté (`answeredMedia`). La règle est la même des deux
  *   côtés — un flux compte s'il a un port non nul et n'est pas déclaré
  *   `inactive` (RFC 4566 §5.7/§5.14, RFC 3264 §6) ;
- * - **refuser un flux vidéo** (`withoutVideo`) : répondre « audio seul » à
- *   une offre audio + vidéo, c'est *le dire dans la réponse*. Sans cela le
+ * - **refuser un flux** (`withoutMedia`) : répondre « audio seul » à une
+ *   offre audio + vidéo, c'est *le dire dans la réponse*. Sans cela le
  *   navigateur répond `recvonly` — il ne capte pas d'image mais accepte
  *   d'en recevoir — et l'appelant continue d'émettre la sienne, ce qui
- *   n'est pas ce que l'appelé a demandé.
+ *   n'est pas ce que l'appelé a demandé. La règle vaut pour les deux
+ *   médias depuis l'ADR 0003 : répondre « texte seul » à une offre
+ *   audio + texte pose exactement la même question, et laisserait sans
+ *   cela l'appelant parler dans le vide.
  *
  * S'y ajoute un **contrôle de recevabilité** de l'offre entrante
  * (`unsupportedOffer`) : ni un choix de codec ni une politique d'appel,
@@ -27,14 +30,11 @@
  * navigateur.
  */
 
-import type { CallMedia } from "./port.js";
+import type { CallMedia, MediaKind } from "./port.js";
 import type { RttTransport } from "./rtt.js";
 
 /** Offre illisible ou vide : on suppose de l'audio, le cas de très loin le plus courant. */
-const AUDIO_ONLY: CallMedia = { audio: true, video: false };
-
-/** Appel texte seul : ni micro ni caméra, et c'est un appel quand même (§4.9). */
-const TEXT_ONLY: CallMedia = { audio: false, video: false };
+const AUDIO_ONLY: CallMedia = { audio: true, video: false, text: false };
 
 type Direction = "sendrecv" | "sendonly" | "recvonly" | "inactive";
 
@@ -59,13 +59,18 @@ function textTransportOf(line: string): RttTransport | null {
 /**
  * Les médias qu'un SDP déclare actifs — commun à l'offre et à la réponse,
  * parce que la question est la même : ce flux est-il de la partie ?
+ *
+ * `carries` est le transport texte de ce poste (§4.9) : une section texte
+ * ne compte que si c'est **celle-là** qu'il sait ouvrir. Un `m=text` reçu
+ * par un compte en canal de données n'offre pas de texte ici, et un compte
+ * en `none` n'en voit jamais — d'où la valeur par défaut, qui laisse la
+ * lecture d'un SDP quelconque répondre sur les deux seuls médias que tout
+ * le monde partage.
  */
-function activeMedia(sdp: string | null | undefined): CallMedia {
+function activeMedia(sdp: string | null | undefined, carries: RttTransport = "none"): CallMedia {
   if (!sdp) return AUDIO_ONLY;
 
-  const active = { audio: false, video: false };
-  /** Un flux de texte actif : de quoi distinguer l'appel texte du silence. */
-  let text = false;
+  const active: CallMedia = { audio: false, video: false, text: false };
   // direction de session, appliquée aux flux qui n'en déclarent pas
   let sessionDir: Direction = "sendrecv";
   let inMedia = false;
@@ -75,8 +80,7 @@ function activeMedia(sdp: string | null | undefined): CallMedia {
 
   const flush = (): void => {
     if (!kind || port === "0" || (mediaDir ?? sessionDir) === "inactive") return;
-    if (kind === "text") text = true;
-    else active[kind] = true;
+    active[kind] = true;
   };
 
   for (const raw of sdp.split(/\r?\n/)) {
@@ -85,7 +89,7 @@ function activeMedia(sdp: string | null | undefined): CallMedia {
       flush();
       const [k, p] = line.slice(2).split(/\s+/);
       inMedia = true;
-      kind = k === "audio" || k === "video" ? k : textTransportOf(line) !== null ? "text" : null;
+      kind = k === "audio" || k === "video" ? k : textTransportOf(line) === carries ? "text" : null;
       port = p ?? "0";
       mediaDir = null;
     } else if (line.startsWith("a=")) {
@@ -99,10 +103,10 @@ function activeMedia(sdp: string | null | undefined): CallMedia {
   }
   flush();
 
-  if (active.audio || active.video) return active;
-  // du texte et rien d'autre : c'est un appel texte seul, pas une offre
-  // illisible — la nuance décide des boutons de réponse
-  return text ? TEXT_ONLY : AUDIO_ONLY;
+  // rien du tout : offre illisible, pas un appel silencieux. Du texte seul,
+  // en revanche, est bien un appel (§4.9) — et c'est ce que le profil 3a de
+  // F.703 §7.2 appelle « text telephone service »
+  return active.audio || active.video || active.text ? active : AUDIO_ONLY;
 }
 
 /**
@@ -121,37 +125,39 @@ export const offeredMedia = activeMedia;
 export const answeredMedia = activeMedia;
 
 /**
- * Le même SDP, sa vidéo déclarée `inactive` — la façon RFC 3264 §6.1 de
- * répondre « pas de vidéo » sans rejeter la m-line, qui reste donc
- * disponible pour une escalade ultérieure (ajout de la vidéo en cours
+ * Le même SDP, les médias nommés déclarés `inactive` — la façon RFC 3264
+ * §6.1 de répondre « pas ce flux-là » sans rejeter la m-line, qui reste
+ * donc disponible pour une escalade ultérieure (ajout du média en cours
  * d'appel, §4.4).
  *
- * Ne touche qu'aux sections `m=video` : les autres, audio comprise,
- * sortent inchangées, y compris leurs propres attributs de direction.
- * Une section vidéo qui n'en déclarait aucun s'en voit ajouter un — sans
- * quoi elle hériterait de la direction de session.
+ * Ne touche qu'aux sections nommées : les autres sortent inchangées, y
+ * compris leurs propres attributs de direction — et la section texte n'est
+ * jamais de la partie, puisque le texte ne se retire pas (ADR 0003, D4).
+ * Une section qui ne déclarait aucune direction s'en voit ajouter une —
+ * sans quoi elle hériterait de la direction de session.
  */
-export function withoutVideo(sdp: string): string {
+export function withoutMedia(sdp: string, kinds: readonly MediaKind[]): string {
   const eol = sdp.includes("\r\n") ? "\r\n" : "\n";
   const out: string[] = [];
-  let inVideo = false;
+  const muted = new Set<string>(kinds.map((k) => `m=${k}`));
+  let inside = false;
   let declared = false;
 
-  // la section vidéo se referme sur le m= suivant ou sur la fin du SDP :
-  // c'est là qu'on ajoute la direction si elle n'en portait pas
-  const closeVideo = (): void => {
-    if (inVideo && !declared) out.push("a=inactive");
-    inVideo = false;
+  // la section se referme sur le m= suivant ou sur la fin du SDP : c'est là
+  // qu'on ajoute la direction si elle n'en portait pas
+  const close = (): void => {
+    if (inside && !declared) out.push("a=inactive");
+    inside = false;
     declared = false;
   };
 
   for (const raw of sdp.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("m=")) {
-      closeVideo();
-      inVideo = line.startsWith("m=video");
+      close();
+      inside = muted.has(line.slice(0, line.indexOf(" ")));
     }
-    if (inVideo && directionOf(line)) {
+    if (inside && directionOf(line)) {
       // une seule direction par section : les suivantes disparaissent
       if (!declared) out.push("a=inactive");
       declared = true;
@@ -162,7 +168,7 @@ export function withoutVideo(sdp: string): string {
     if (line === "") continue;
     out.push(line);
   }
-  closeVideo();
+  close();
 
   return out.join(eol) + eol;
 }

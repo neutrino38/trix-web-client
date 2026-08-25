@@ -21,7 +21,7 @@ function entry(trace?: TraceLine[]): CallLogEntry {
     target: "bob@example.fr",
     direction: "outgoing",
     outcome: "answered",
-    media: { audio: true, video: false },
+    media: { audio: true, video: false, text: false },
     startedAt: AT,
     connectedAt: AT + 1000,
     endedAt: AT + 5000,

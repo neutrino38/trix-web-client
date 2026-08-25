@@ -15,6 +15,7 @@ import type {
 } from "../src/storage/store.js";
 import type {
   CallMedia,
+  MediaKind,
   CallSipEvent,
   IncomingCall,
   RejectReason,
@@ -100,22 +101,26 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
 
 class FakeCallSession {
   terminated = 0;
-  mic: boolean[] = [];
-  /** Les ajouts et retraits de vidéo demandés par re-INVITE. */
-  video: boolean[] = [];
+  /** Les ajouts et retraits de média demandés par re-INVITE, dans l'ordre. */
+  asked: { kind: MediaKind; on: boolean }[] = [];
   terminate(): void {
     this.terminated++;
-  }
-  setMicMuted(m: boolean): void {
-    this.mic.push(m);
   }
   tones: string[] = [];
   sendDtmf(tone: string): boolean {
     this.tones.push(tone);
     return true;
   }
-  setVideo(on: boolean): void {
-    this.video.push(on);
+  setMedia(kind: MediaKind, on: boolean): void {
+    this.asked.push({ kind, on });
+  }
+  /** Ce qui a été demandé pour un média donné — le raccourci des tests. */
+  askedFor(kind: MediaKind): boolean[] {
+    return this.asked.filter((a) => a.kind === kind).map((a) => a.on);
+  }
+  pauses: boolean[] = [];
+  setPaused(on: boolean): void {
+    this.pauses.push(on);
   }
   attachMedia(): void {}
   /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
@@ -170,7 +175,7 @@ class FakeSip implements SipPort {
 
 /** INVITE entrant factice, tel que le port le remettrait à la machine. */
 function fakeIncoming(
-  offered: CallMedia = { audio: true, video: false },
+  offered: CallMedia = { audio: true, video: false, text: false },
   offerProblem: string | null = null,
 ) {
   const session = new FakeCallSession();
@@ -784,9 +789,9 @@ describe("PhoneMachine — enregistrement", () => {
 describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
   it("ui:call : entrée dans CallBlock, vue publiée dans le contexte partagé", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     expect(phone.state).toBe("in_call");
-    expect(sip.calls).toEqual([{ target: "sip:bob@example.fr", media: { audio: true, video: false } }]);
+    expect(sip.calls).toEqual([{ target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } }]);
     expect(phone.context.call?.state).toBe("dialing");
 
     sip.sendCall({ type: "sip:progress" });
@@ -803,7 +808,7 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
 
   it("appel refusé : retour en ready avec callError (cause + code SIP)", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true, text: false } });
     expect(sip.calls[0]!.media.video).toBe(true);
     sip.sendCall({ type: "sip:failed", cause: "Busy", statusCode: 486 });
     expect(phone.state).toBe("ready");
@@ -815,7 +820,7 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
 
   it("raccrocher : consommé par le bloc, session terminée, retour ready", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     phone.send({ type: "ui:hangup" });
     expect(sip.session.terminated).toBe(1);
@@ -824,33 +829,41 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
     expect(phone.state).toBe("ready");
   });
 
-  it("sourdine micro : relayée, reflétée dans la vue", async () => {
+  /**
+   * L'audio entre et sort de l'appel comme la vidéo (ADR 0003, D5) : le
+   * bouton n'est plus une sourdine, c'est le second bouton de l'axe 1. Ce
+   * qui se vérifie ici est que la demande traverse bien PhoneMachine, le
+   * bloc et le port — le même chemin que la caméra, à l'identique.
+   */
+  it("retrait de l'audio pendant l'appel : re-INVITE relayé jusqu'à la session", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true, text: false } });
     sip.sendCall({ type: "sip:accepted" });
-    phone.send({ type: "ui:muteMic" });
-    expect(sip.session.mic).toEqual([true]);
-    expect(phone.context.call?.micMuted).toBe(true);
-    phone.send({ type: "ui:muteMic" });
-    expect(sip.session.mic).toEqual([true, false]);
+    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true, text: false } });
+    phone.send({ type: "ui:toggleMedia", kind: "audio" });
+    expect(sip.session.askedFor("audio")).toEqual([false]);
+    expect(phone.context.call?.mediaPending).toBe(true);
+    sip.sendCall({ type: "sip:mediaChanged", media: { audio: false, video: true, text: false } });
+    expect(phone.context.call?.media).toEqual({ audio: false, video: true, text: false });
+    expect(phone.context.call?.mediaPending).toBe(false);
   });
 
   it("retrait de la vidéo pendant l'appel : re-INVITE relayé jusqu'à la session", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true, text: false } });
     sip.sendCall({ type: "sip:accepted" });
-    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true } });
-    phone.send({ type: "ui:toggleVideo" });
-    expect(sip.session.video).toEqual([false]);
-    expect(phone.context.call?.videoPending).toBe(true);
-    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false } });
-    expect(phone.context.call?.media).toEqual({ audio: true, video: false });
-    expect(phone.context.call?.videoPending).toBe(false);
+    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true, text: false } });
+    phone.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(sip.session.askedFor("video")).toEqual([false]);
+    expect(phone.context.call?.mediaPending).toBe(true);
+    sip.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false, text: false } });
+    expect(phone.context.call?.media).toEqual({ audio: true, video: false, text: false });
+    expect(phone.context.call?.mediaPending).toBe(false);
   });
 
   it("Paramètres/Déconnexion pendant l'appel : consommés sans effet", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     phone.send({ type: "ui:logout" });
     phone.send({ type: "ui:backToSettings" });
     expect(phone.state).toBe("in_call");
@@ -859,7 +872,7 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
 
   it("enregistrement perdu pendant l'appel (403) : reg_failed à la fin de l'appel", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.send({ type: "sip:registrationFailed", cause: "Forbidden", statusCode: 403 });
     expect(phone.state).toBe("in_call"); // l'appel continue
@@ -872,7 +885,7 @@ describe("PhoneMachine — appel sortant (in_call + CallBlock)", () => {
 describe("PhoneMachine — appel entrant", () => {
   it("sip:incoming en ready : in_call, le bloc en sonnerie entrante", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    const { call } = fakeIncoming({ audio: true, video: true });
+    const { call } = fakeIncoming({ audio: true, video: true, text: false });
     sip.send({ type: "sip:incoming", call });
     expect(phone.state).toBe("in_call");
     expect(phone.context.call).toMatchObject({
@@ -880,19 +893,19 @@ describe("PhoneMachine — appel entrant", () => {
       direction: "incoming",
       target: "sip:bob@example.fr",
       displayName: "Bob Martin",
-      offered: { audio: true, video: true },
+      offered: { audio: true, video: true, text: false },
     });
   });
 
   it("réponse : médias relayés à la session, puis connected", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    const { call, box } = fakeIncoming({ audio: true, video: true });
+    const { call, box } = fakeIncoming({ audio: true, video: true, text: false });
     sip.send({ type: "sip:incoming", call });
-    phone.send({ type: "ui:answer", media: { audio: true, video: false } });
-    expect(box.answered).toEqual([{ audio: true, video: false }]);
+    phone.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
+    expect(box.answered).toEqual([{ audio: true, video: false, text: false }]);
     box.sendCall({ type: "sip:accepted" });
     expect(phone.context.call?.state).toBe("connected");
-    expect(phone.context.call?.media).toEqual({ audio: true, video: false });
+    expect(phone.context.call?.media).toEqual({ audio: true, video: false, text: false });
   });
 
   it("refus : retour en ready sans erreur affichée", async () => {
@@ -909,7 +922,7 @@ describe("PhoneMachine — appel entrant", () => {
     const { phone, sip } = await bootTo("ready", CFG);
     const first = fakeIncoming();
     sip.send({ type: "sip:incoming", call: first.call });
-    phone.send({ type: "ui:answer", media: { audio: true, video: false } });
+    phone.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
     first.box.sendCall({ type: "sip:accepted" });
 
     const second = fakeIncoming();
@@ -931,9 +944,9 @@ describe("PhoneMachine — appel entrant", () => {
 
   it("historique : entrant répondu, avec les médias acceptés", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    const { call, box } = fakeIncoming({ audio: true, video: true });
+    const { call, box } = fakeIncoming({ audio: true, video: true, text: false });
     sip.send({ type: "sip:incoming", call });
-    phone.send({ type: "ui:answer", media: { audio: true, video: false } });
+    phone.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
     box.sendCall({ type: "sip:accepted" });
     box.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.state).toBe("ready");
@@ -942,13 +955,13 @@ describe("PhoneMachine — appel entrant", () => {
       direction: "incoming",
       outcome: "answered",
       endedBy: "remote",
-      media: { audio: true, video: false },
+      media: { audio: true, video: false, text: false },
     });
   });
 
   it("offre inétablissable : refusée sans sonner, consignée, cause affichée", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    const bad = fakeIncoming({ audio: true, video: false }, "ICE, DTLS, SRTP (RTP/AVP)");
+    const bad = fakeIncoming({ audio: true, video: false, text: false }, "ICE, DTLS, SRTP (RTP/AVP)");
     sip.send({ type: "sip:incoming", call: bad.call });
 
     // l'écran n'a jamais montré d'appel : on est resté disponible
@@ -995,7 +1008,7 @@ describe("PhoneMachine — appel entrant", () => {
 describe("PhoneMachine — historique d'appels", () => {
   it("appel répondu : consigné avec durée et qui a raccroché (distant)", async () => {
     const { phone, sip, box } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: true, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.state).toBe("ready");
@@ -1006,7 +1019,7 @@ describe("PhoneMachine — historique d'appels", () => {
       direction: "outgoing",
       outcome: "answered",
       endedBy: "remote",
-      media: { audio: true, video: true },
+      media: { audio: true, video: true, text: false },
     });
     expect(entry!.connectedAt).not.toBeNull();
     await vi.waitFor(() =>
@@ -1016,7 +1029,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
   it("appel raccroché localement : endedBy = local", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     phone.send({ type: "ui:hangup" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "local" });
@@ -1025,7 +1038,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
   it("appel refusé : outcome failed, pas de endedBy (jamais établi)", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:failed", cause: "Busy", statusCode: 486, originator: "remote" });
     expect(phone.context.history[0]).toMatchObject({
       outcome: "failed",
@@ -1037,7 +1050,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
   it("le carnet de l'appel est consigné avec la ligne — et absent s'il est vide", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     // le port ouvre le carnet en plaçant l'appel : la session en cours est la sienne
     sip.session.traceLines = [
       { at: 1, kind: "sip", way: "out", head: "INVITE sip:bob@example.fr SIP/2.0", body: "…" },
@@ -1048,7 +1061,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
     // trace éteinte : le carnet est vide, et la ligne ne porte rien — c'est
     // ce qui décide de l'icône parchemin dans l'historique
-    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.context.history[0]!.trace).toBeUndefined();
@@ -1056,7 +1069,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
   it("le bilan média suit le même chemin que le carnet — et manque avec lui", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.session.statsSummary = {
       audio: {
         recv: { codec: "opus", clockRate: 48000, kbps: 32, loss: 0.01 },
@@ -1072,7 +1085,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
     // rien mesuré (trace éteinte, ou appel sans média) : la ligne ne porte
     // rien — c'est ce qui décide de l'icône loupe dans l'historique
-    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false, text: false } });
     sip.session.statsSummary = null;
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
@@ -1091,7 +1104,7 @@ describe("PhoneMachine — historique d'appels", () => {
       },
     ];
     const { phone, sip } = await bootTo("ready", CFG, [], () => thread);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: false, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: false, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.context.history[0]!.chat).toHaveLength(1);
@@ -1099,7 +1112,7 @@ describe("PhoneMachine — historique d'appels", () => {
     // appel sans texte, ou personne n'a rien écrit : la ligne ne porte rien
     // — c'est ce qui décide de la bulle « T » dans l'historique
     thread = [];
-    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.context.history[0]!.chat).toBeUndefined();
@@ -1107,7 +1120,7 @@ describe("PhoneMachine — historique d'appels", () => {
 
   it("ui:clearHistory vide la liste et la persistance", async () => {
     const { phone, sip, box } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
     expect(phone.context.history).toHaveLength(1);
@@ -1121,7 +1134,7 @@ describe("PhoneMachine — historique d'appels", () => {
       target: "carol@example.fr",
       direction: "outgoing",
       outcome: "answered",
-      media: { audio: true, video: false },
+      media: { audio: true, video: false, text: false },
       startedAt: 1,
       connectedAt: 2,
       endedAt: 3,
@@ -1141,7 +1154,7 @@ describe("PhoneMachine — historique d'appels", () => {
       target: `bob${i}@example.fr`,
       direction: "outgoing",
       outcome: "answered",
-      media: { audio: true, video: false },
+      media: { audio: true, video: false, text: false },
       startedAt: 60 - i,
       connectedAt: 60 - i,
       endedAt: 60 - i,
@@ -1161,7 +1174,7 @@ describe("PhoneMachine — historique d'appels", () => {
       target: `bob${i}@example.fr`,
       direction: "outgoing",
       outcome: "answered",
-      media: { audio: true, video: false },
+      media: { audio: true, video: false, text: false },
       startedAt: 50 - i,
       connectedAt: 50 - i,
       endedAt: 50 - i,
@@ -1169,7 +1182,7 @@ describe("PhoneMachine — historique d'appels", () => {
       reason: null,
     }));
     const { phone, sip } = await bootTo("ready", CFG, full);
-    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
 
@@ -1198,7 +1211,7 @@ describe("PhoneMachine — perte du proxy et veille", () => {
       expect(phone.context.lastErrorCode).toBe("WSS_LOST");
 
       // appeler est refusé dans cet état (l'UI grise le bouton)
-      phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+      phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
       expect(phone.state).toBe("reconnecting");
 
       await vi.advanceTimersByTimeAsync(10_000);
@@ -1238,7 +1251,7 @@ describe("PhoneMachine — perte du proxy et veille", () => {
 
   it("proxy perdu en appel : appel raccroché, consigné 'dropped', puis reconnexion", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     sip.send({ type: "sip:disconnected" });
     expect(sip.session.terminated).toBe(1); // raccrochage fait par le bloc
@@ -1290,7 +1303,7 @@ describe("PhoneMachine — perte du proxy et veille", () => {
 
   it("veille en appel : l'appel est raccroché puis on dort", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
     sip.sendCall({ type: "sip:accepted" });
     phone.send({ type: "sys:sleep" });
     expect(sip.session.terminated).toBe(1);

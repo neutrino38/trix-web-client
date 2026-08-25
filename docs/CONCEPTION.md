@@ -134,8 +134,8 @@ trace allumée avant que le fichier n'arrive.
 
 - `ui:*` — actions utilisateur : `ui:configure`, `ui:saveConfig`, `ui:useAccount`,
   `ui:call {target, video}`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:retry`,
-  `ui:muteMic`, `ui:toggleVideo`, `ui:answer {video}`, `ui:reject`, `ui:acceptVideo`,
-  `ui:rejectVideo`, `ui:dtmf {tone}`
+  `ui:toggleMedia {kind}`, `ui:togglePause`, `ui:answer {media}`, `ui:reject`,
+  `ui:acceptMedia`, `ui:rejectMedia`, `ui:dtmf {tone}`
 - `sip:*` — remontées JsSIP : `sip:connected`, `sip:disconnected`, `sip:registered`,
   `sip:unregistered`, `sip:registrationFailed {cause}`, `sip:newSession {session}`,
   `sip:progress`, `sip:accepted`, `sip:confirmed`, `sip:ended {cause}`, `sip:failed {cause}`
@@ -243,8 +243,8 @@ appel finit quand le dialogue finit. Les délais sont portés par les états —
 raccrochage.
 
 - `enter(dialing)` : `ua.call(uri, { mediaConstraints: { audio: true, video } , pcConfig })`.
-- En `connected` : `ui:muteMic` / `ui:toggleSelfView` = `stay()` + mutation du contexte +
-  action JsSIP (`session.mute()`) — pas de changement d'état. `ui:toggleVideo`, lui, engage
+- En `connected` : `ui:toggleSelfView` = `stay()` + mutation du contexte — pas de
+  changement d'état, et rien ne part sur le fil. `ui:toggleMedia`, lui, engage
   une renégociation et donc un état (§4.4).
 - Chrono : timestamp de `sip:accepted` en contexte, la UI dérive l'affichage.
 - Flux média : `session.connection` (RTCPeerConnection) → attach `remoteVideo`/`localVideo`.
@@ -278,10 +278,29 @@ par le même outcome — la ligne d'historique est la même — avec la cause en
 motif.
 
 Règles de réponse, dérivées de l'offre SDP de l'INVITE (`sip/sdp.ts` : un flux compte
-s'il a un port non nul et n'est pas `inactive`) :
-- vidéo proposée → boutons « Répondre en vidéo » **et** « Répondre en audio » ;
-- audio seul proposé → uniquement « Répondre en audio » ;
-- vidéo seule proposée → uniquement « Répondre en vidéo ».
+s'il a un port non nul et n'est pas `inactive`). Les **trois** médias de la
+conversation totale y entrent depuis l'ADR 0003 : un choix par média offert, du plus
+riche au plus sobre, et **jamais un sur-ensemble de l'offre** — l'appelé retranche,
+il n'ajoute pas (F.703 §8.1). Ajouter, cela se fait après, par re-INVITE (§4.4).
+
+| Offre reçue | Réponses proposées |
+|---|---|
+| A V T | A V T · A T · T |
+| A V | A V · A |
+| A T | A T · T |
+| V T | V T · T |
+| A | A |
+| V | V |
+| T | T |
+
+Le texte n'apparaît jamais **comme un choix** : il est dans toutes les réponses d'une
+ligne, ou dans aucune. C'est ce qui évite de proposer six boutons pour trois
+intentions — et ce qui garantit qu'on ne peut pas décrocher en retirant à quelqu'un
+son seul recours.
+
+Une offre texte n'est comptée que si le compte sait ouvrir **ce transport-là** (§4.9) :
+un `m=text` reçu par un compte en canal de données n'offre pas de texte, et répondre
+« oui » y serait promettre un lien qui ne s'ouvrira jamais.
 
 Côté port (`sip/port.ts`), l'INVITE arrive en `sip:incoming` avec un objet `IncomingCall`
 — identité, médias proposés, recevabilité de l'offre, `listen` / `answer(media)` /
@@ -359,18 +378,39 @@ l'unique endroit à adapter.
 
 ### 4.4 Négociation des médias en cours d'appel
 
-En conversation totale, la vidéo n'est pas une sourdine locale : elle est **dans**
-l'appel ou elle n'y est pas, et les deux correspondants voient la même chose. Trois
-conséquences, tenues par le port (`sip/port.ts`) et par trois états du bloc.
+En conversation totale, **ni l'audio ni la vidéo ne sont des sourdines locales** : un
+média est **dans** l'appel ou il n'y est pas, et les deux correspondants voient la même
+chose. F.703 §5.3.1 le prévoit noir sur blanc pour l'audio — il peut être temporairement
+interrompu, pourvu qu'un autre média reste présent — et §6.2.2 exige que le changement de
+mode soit permis dès que les deux terminaux en ont la capacité.
 
-**Répondre en audio à une offre vidéo, c'est le dire.** Laissé à lui-même, le
-navigateur répond `a=recvonly` sur la m-line vidéo — il ne capte pas d'image mais
-accepte d'en recevoir : l'appelé qui a choisi « Répondre en audio » verrait quand
-même son correspondant. Le port ferme donc le flux des deux côtés : le transceiver
-vidéo passe `inactive` dès `have-remote-offer` (les transceivers de l'offre existent,
-la réponse n'est pas encore écrite), et `sdp.withoutVideo()` garantit que la réponse
-partie sur le fil le dit aussi. La m-line n'est pas rejetée (port 0) mais désactivée :
-elle reste disponible pour une escalade ultérieure.
+Les deux médias suivent donc **un seul chemin**, paramétré par le média (ADR 0003, D5) :
+`setMedia(kind, on)` dans le port, `ui:toggleMedia {kind}` dans le bloc, et deux boutons
+strictement symétriques dans la pastille (§4.10). Se taire un instant sans rien changer à
+l'appel est un autre geste, sur un autre axe : la Pause, qui ne passe par aucune
+signalisation.
+
+**Le texte, lui, ne se retire jamais** (D4) — c'est le repli d'accessibilité, et le
+retirer reviendrait à pouvoir couper la parole à quelqu'un en un clic, sans qu'il puisse
+répondre. `MediaKind` ne le compte donc pas : ce type nomme les deux médias qui entrent
+et sortent, pas les trois que l'appel transporte.
+
+**On ne retire pas le dernier média.** Un appel qui ne transporte plus rien n'est pas un
+appel, c'est un dialogue SIP ouvert sur le vide. La règle vit dans une seule fonction,
+`isLastMedia()`, que le bloc consulte avant de lancer la renégociation ; l'interface ne
+fait qu'en griser le bouton. Écrite dans l'interface, elle serait à réécrire dans les deux
+gabarits — et à oublier dans un. Le texte y compte : retirer l'audio d'un appel
+audio + texte est permis, et c'est même le scénario que F.703 §4.5 décrit.
+
+**Répondre sans un média à une offre qui le propose, c'est le dire.** Laissé à lui-même,
+le navigateur répond `a=recvonly` sur la m-line — il ne capte rien mais accepte de
+recevoir : l'appelé qui a choisi « Répondre en audio » verrait quand même son
+correspondant, et celui qui a choisi « Répondre en texte » le laisserait parler dans le
+vide. Le port ferme donc le flux des deux côtés : le transceiver passe `inactive` dès
+`have-remote-offer` (les transceivers de l'offre existent, la réponse n'est pas encore
+écrite), et `sdp.withoutMedia()` garantit que la réponse partie sur le fil le dit aussi.
+La m-line n'est pas rejetée (port 0) mais désactivée : elle reste disponible pour une
+escalade ultérieure.
 
 **Ce que l'appel transporte se lit sur la connexion, pas sur l'intention.** Un seul
 observateur — le retour de `signalingState` à `stable` — recalcule les médias depuis
@@ -379,10 +419,27 @@ coup l'établissement et les renégociations, dans les deux sens. Le bloc compar
 résultat à ce qu'il avait demandé (`data.asked`) : la différence est exactement ce qui
 s'affiche — « Bob n'a pas accepté la vidéo ».
 
-**Ajouter ou retirer la vidéo est un re-INVITE.** L'icône de la caméra n'est plus une
-sourdine : elle envoie `ui:toggleVideo`, le port ouvre (ou ferme) la caméra puis
-renégocie, et le bloc attend l'issue en `renegotiating` — l'appel continue derrière,
-seule l'icône patiente. Deux détails de JsSIP méritent d'être écrits :
+**Ajouter ou retirer un média est un re-INVITE.** Le bouton envoie
+`ui:toggleMedia {kind}`, le port ouvre (ou ferme) le capteur puis renégocie, et le bloc
+attend l'issue en `renegotiating` — l'appel continue derrière, seules les icônes
+patientent.
+
+**Un seul verrou de renégociation, quel que soit le média.** Deux re-INVITE en vol sur la
+même boîte de dialogue, c'est un 491 garanti : `mediaPending` est donc un état de
+l'appel, pas du média, et les deux icônes attendent ensemble.
+
+**Le glare a une règle.** Les deux bouts qui renégocient en même temps produisent un
+491 Request Pending. RFC 3261 §14.1 : on reprend après un délai aléatoire — 0 à 2 s côté
+UAC, 2,1 à 4 s côté UAS, deux bornes **disjointes**, et c'est cela seul qui empêche les
+deux bouts de se recroiser à l'identique. **Une seule reprise**, puis on abandonne avec un
+avis ; s'entêter ferait boucler deux clients face à face, ce que le délai seul n'empêche
+pas. La reprise est absorbée dans le port : le bloc ne voit qu'une renégociation un peu
+plus longue. Le retour arrière qui la précède ramène la connexion à `stable`, et
+l'observateur y verrait un appel qui vient de perdre son média : un drapeau l'en empêche
+le temps de la reprise — sans quoi il éteindrait le capteur qu'on s'apprête à réoffrir, et
+annoncerait un changement qui n'a pas eu lieu.
+
+Deux détails de JsSIP méritent d'être écrits :
 
 - `renegotiate()` n'est pas utilisé : son gestionnaire d'échec **raccroche l'appel**
   (500 Media Renegotiation Failed). Un 488 n'est pas une fin d'appel, c'est un non.
@@ -390,18 +447,19 @@ seule l'icône patiente. Deux détails de JsSIP méritent d'être écrits :
   connexion d'aplomb (`setLocalDescription({type:"rollback"})`) — sans quoi elle
   resterait en `have-local-offer` et plus aucune renégociation ne serait possible.
 - le re-INVITE **reçu** est intercepté (`_receiveReinvite`) plutôt que traité par
-  l'événement public `reinvite`, qui ne se décide que sur-le-champ. Accepter la vidéo
-  allume une caméra : cela demande l'accord de son propriétaire, donc du temps. La
-  transaction serveur a déjà envoyé son 100 Trying, l'appelant patiente sans rien
-  faire expirer, et le bloc pose la question en `video_offer` — 200 OK si l'utilisateur
-  accepte, 488 Not Acceptable Here s'il refuse ou ne répond pas en 25 s. Ce qui ne
-  fait qu'ôter la vidéo, ou n'y touche pas, suit le chemin normal de JsSIP.
+  l'événement public `reinvite`, qui ne se décide que sur-le-champ. **Accepter un média
+  allume un capteur** — micro ou caméra, la question est la même : cela demande l'accord
+  de son propriétaire, donc du temps. La transaction serveur a déjà envoyé son
+  100 Trying, l'appelant patiente sans rien faire expirer, et le bloc pose la question
+  en `media_offer` — 200 OK si l'utilisateur accepte, 488 Not Acceptable Here s'il
+  refuse ou ne répond pas en 25 s. Ce qui ne fait qu'ôter un média, ou n'y touche pas,
+  suit le chemin normal de JsSIP.
 
 Les deux nouveaux états publient `connected` dans la vue : l'appel n'a pas changé de
-nature parce qu'une offre est en vol, et raccrocher, couper son micro ou masquer son
+nature parce qu'une offre est en vol, et raccrocher, composer un DTMF ou masquer son
 self-view y marchent comme partout ailleurs (`inCall()`, écrit une fois pour les trois).
 
-**Ce qui vient de se passer n'est pas un état.** Un refus de vidéo est un événement,
+**Ce qui vient de se passer n'est pas un état.** Un refus de média est un événement,
 pas une propriété de l'appel : l'afficher à demeure mentirait dès la seconde suivante.
 Le bloc le publie donc comme `CallView.notice`, numéro d'ordre compris — c'est lui, et
 non le texte, qui permet à l'écran de distinguer un message neuf d'un rendu de plus —
@@ -597,6 +655,30 @@ Le tchat de la phase 4 est celui de **l'appel** : il naît avec le canal de donn
 vit tant que la communication dure, et disparaît de l'écran quand elle se termine. La
 messagerie hors appel — événements, messages différés — est un autre composant, à
 concevoir plus tard ; rien ici ne doit lui fermer la porte.
+
+#### Le texte est un média (ADR 0003, D1)
+
+`CallMedia` porte les trois : `{ audio, video, text }`. Le texte n'est plus déduit de
+l'absence des deux autres — F.703 §7.2 le met sur la même ligne qu'eux dans son tableau
+de profils, et le type le fait aussi. C'est ce qui permet de distinguer un appel audio
+d'un appel audio + texte, et de le dire à l'écran d'appel entrant.
+
+Une nuance, et elle est la seule à ne jamais confondre :
+
+- **`media.text` dit que le texte est négocié**, c'est-à-dire que les deux bouts en ont
+  convenu dans la signalisation — `RttNegotiation.negotiated()`, lu sur l'URL annoncée
+  par le distant (WebSocket) ou sur l'association SCTP (canal de données) ;
+- **l'état du lien** — `connecting`, `open`, `lost`, `closed` — reste porté par
+  `RttChannel`, et lui seul.
+
+Sur canal de données, l'ouverture DCEP arrive après le 200 OK : un appel peut être
+`text: true` avec un canal encore `connecting`, et c'est un état normal. Confondre les
+deux ferait clignoter l'écran d'appel à chaque seconde de latence du réseau.
+
+Le texte n'est jamais un choix de l'appelant (ADR 0003, D2) : il est là si le compte le
+porte. Un appel audio devient alors le profil 3c de F.703, et un appel vidéo passe de
+la visiophonie (1b/1c) à la **conversation totale** (4a/4b) — le seul profil auquel la
+norme réserve ce nom.
 
 #### Ce que la norme donne, et ce qu'on en prend
 
@@ -953,6 +1035,126 @@ vient du comportement, pas d'une grille de caractères.
 
 Maquettes : `docs/mockups/tchat/` (canevas multi-planches, décodeur et champ de saisie
 exécutables).
+
+### 4.10 Les deux axes de la barre de commandes (ADR 0003)
+
+F.703 §6.2.4 exige *la fonction* — pouvoir empêcher temporairement son terminal
+d'émettre — jamais deux boutons, et elle **groupe l'audio et la vidéo dans la même
+phrase**. Le piège serait de poser côte à côte deux gestes de même forme dont l'un
+change l'appel et l'autre non : personne ne les distinguerait. D'où deux axes, et
+jamais deux gestes sur le même.
+
+| | Boutons média | Pause |
+|---|---|---|
+| Combien | deux, un par média | **un seul**, pour tout |
+| Où | dans la pastille | **hors de la pastille**, près du raccrochage |
+| Forme | rond, 44 px | carré arrondi, 52 px, cerclé d'ambre |
+| Ça parle de | l'appel | **moi** |
+| Ça change | la nature de l'appel, durablement | rien — l'instant d'une pause |
+| Ça se signale par | une icône barrée | **un bandeau plein écran** |
+| Sur le fil | un re-INVITE, qui peut être refusé | rien : instantané, jamais en échec |
+| Ce qu'il touche | ce que l'appel transporte | les deux émetteurs, et eux seuls |
+| Pour revenir | renégocier le média | un appui |
+
+Le mot « sourdine » ne figure plus dans l'interface, et l'événement `ui:muteMic` a
+disparu avec lui : le bouton du micro est devenu le second bouton de l'axe 1, celui qui
+fait entrer et sortir l'audio de l'appel. La fonction « me taire un instant », elle,
+revient sous la forme que la norme décrit — une fonction et un geste pour les deux
+médias ensemble.
+Le haut-parleur ne relève d'aucun des deux axes : c'est de la réception locale, hors
+du champ de la norme.
+
+#### La barre mobile : quatre commandes et une feuille
+
+Le diagnostic est arithmétique. Avec le texte, la pastille portait micro, caméra,
+self-view, haut-parleur, DTMF, tchat, plus le rond rouge — sept cibles, et la Pause en
+ajoute une : `8 × 44 + 7 × 6 + 16 = 410 px` à 44 px de cible (WCAG 2.5.5), pour un
+écran qui en fait 390, souvent 360.
+
+| | Contenu | Largeur |
+|---|---|---|
+| Pastille | **audio**, **vidéo**, **tchat** (ou haut-parleur si l'appel ne porte pas de texte), **⋯** | `4 × 44 + 3 × 6 + 16 = 210 px` |
+| Dehors | **Pause** (52 px), **Raccrocher** (56 px) | `108 px + 20 px d'écarts` |
+
+Dans la feuille : haut-parleur, self-view, DTMF, plein écran, statistiques. Quatre
+règles, et elles font tout le travail :
+
+1. **un état coupé ne se cache jamais** — toute commande dont l'état est *coupé*
+   (rouge) remonte dans la pastille. C'est aussi pourquoi la feuille ne contient que
+   des commandes locales et réversibles : rien de ce qui coupe un flux ne peut y
+   tomber, et le haut-parleur en est le seul membre capable de couper quoi que ce
+   soit. La promotion se fait dans le DOM, sans attendre un rendu : le haut-parleur ne
+   passe par aucune machine, donc rien ne re-rendrait l'écran ;
+2. **rien ne bouge sous le pouce pendant l'appel** — la répartition suit les médias de
+   l'appel, et ce qui la fait bouger est toujours un changement que l'utilisateur
+   vient de demander ou d'accepter (la vidéo qui entre rend la scène à l'image et fait
+   monter le tchat dans la pastille). La règle vise ce qui bougerait **sans qu'on ait
+   rien fait** ;
+3. **ni Raccrocher ni Pause n'entrent dans la feuille** — un geste d'urgence ne se
+   cherche pas, et un geste qui doit être instantané ne demande pas deux appuis ;
+4. **la feuille porte des libellés, pas des icônes seules** — la pastille est muette,
+   et Trix s'affiche en six langues. Le libellé est dans le balisage des deux côtés ;
+   c'est le CSS qui le tait dans la pastille, et c'est ce qui permet à une commande de
+   passer de l'une à l'autre sans être reconstruite.
+
+Une **feuille du bas** (icône + libellé, une ligne par commande), pas un menu
+déroulant : atteignable au pouce, lisible, et annonçable — `aria-expanded` sur le
+« ⋯ », région étiquetée, fermeture à l'échappement, au voile, et sur toute action.
+
+Sous 360 px, le budget ne tient plus sur une ligne : `4 × 44 + 52 + 56 = 284 px` de
+cibles incompressibles ne laissent pas 36 px pour tous les écarts. La pastille prend
+alors sa propre ligne — comme lorsqu'une commande coupée y remonte — plutôt que de
+rogner une cible sous 44 px. Pause et Raccrocher, eux, ne bougent pas.
+
+**Le bureau ne change pas** : la sidebar a la place, et sa barre reste ce qu'elle était
+— toutes les commandes dans la pastille, ni « ⋯ », ni feuille, ni Pause.
+
+#### La Pause : locale, instantanée, sans échec possible
+
+**Sur le fil : rien.** `replaceTrack(null)` sur les deux émetteurs, et c'est tout —
+aucune négociation, aucun aller-retour, aucun 488, aucun 491, donc **aucun échec
+possible**. C'est toute la valeur du geste : quelqu'un dont on sonne à la porte n'a pas
+le temps d'un aller-retour SIP. La mise en attente SIP (RFC 3264 §8.4) est écartée ; elle
+redeviendra utile le jour où il faudra transférer un appel, mais elle ne répond à aucun
+besoin actuel que la Pause ne couvre mieux.
+
+Cinq conséquences, et elles se tiennent :
+
+- **le correspondant continue de vivre** — il parle, il est vu, il écrit, et il reçoit
+  tout cela de son côté. Une mise en attente `sendonly` l'aurait suspendu lui aussi, pour
+  rien : le besoin est de me retirer, moi ;
+- **le texte n'est jamais coupé**, dans aucun sens. Même raison que pour son retrait :
+  une pause qui couperait le texte reviendrait, pour un usager sourd, à raccrocher sans le
+  dire — alors que c'est justement le média qui permet d'écrire « deux minutes ». La
+  garantie est structurelle : la Pause ne touche qu'aux deux émetteurs de la connexion
+  pair-à-pair, et le lien texte vit ailleurs (§4.9) ;
+- **les pistes ne sont pas arrêtées**, seulement détachées. La reprise doit être
+  instantanée, et rouvrir un capteur prendrait du temps — voire échouerait, ce qu'un geste
+  sans échec ne peut pas se permettre. Le voyant de la caméra reste donc allumé pendant la
+  pause : c'est le prix d'une reprise qui ne demande rien à personne, et le bandeau dit
+  assez clairement ce qui se passe ;
+- **le distant le voit, sans SIP.** Nos pistes arrêtées passent `muted` chez lui, et son
+  client affiche « Emmanuel est en pause » au lieu d'une image figée. C'est exactement
+  l'*avis explicite* que F.703 §6.2.4 réclame pour une vidéo suspendue, rendu par le
+  récepteur. Un client tiers verra une image gelée — dégradation acceptable (§8.3.5), pas
+  un refus. Symétriquement, Trix lit la pause du correspondant sur ses pistes devenues
+  muettes : **toutes** d'un coup, car un seul flux muet sur deux est un incident réseau et
+  non un geste. Une piste distante étant `muted` avant d'avoir jamais rien reçu, on ne
+  conclut à une pause qu'après avoir vu au moins un `unmute` — sans quoi tout appel
+  s'ouvrirait sur « le correspondant est en pause » ;
+- **impossible à oublier : le bandeau.** En pause, l'écran entier le dit, les commandes
+  média s'éteignent derrière, et « Reprendre » est le seul geste offert. C'est ce qui
+  supprime le « tu étais en sourdine », mieux qu'une icône rouge de 44 px qu'on cesse de
+  voir au bout de dix secondes. Raccrocher, lui, reste au même endroit et reste cliquable :
+  un geste d'urgence ne se suspend pas.
+
+Un **appel texte seul n'a pas de bouton Pause** : il n'y a rien à suspendre.
+
+*Variantes écartées :* une sourdine **par média** à côté de boutons média — le piège
+exact, deux gestes de même forme sur le même axe ; le défilement horizontal de la
+pastille (aucune affordance visible, RGAA) ; et la réduction des cibles sous 44 px
+(pour un public âgé ou à motricité réduite, non — 24 px est le plancher WCAG 2.5.8,
+pas une cible).
 
 ## 5. Intégration JsSIP
 

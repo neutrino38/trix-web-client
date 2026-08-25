@@ -262,13 +262,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "Micro",
-  "ctrl.mic.mute": "Fermer le micro",
-  "ctrl.mic.unmute": "Ouvrir le micro",
-  "ctrl.cam.aria": "Caméra",
+  "ctrl.mic.aria": "Audio",
+  "ctrl.mic.add": "Ajouter l'audio",
+  "ctrl.mic.remove": "Retirer l'audio",
+  "ctrl.cam.aria": "Vidéo",
   "ctrl.cam.add": "Ajouter la vidéo",
   "ctrl.cam.remove": "Enlever la vidéo",
-  "ctrl.cam.pending": "Changement de média en cours…",
+  "ctrl.media.pending": "Changement de média en cours…",
+  "ctrl.media.last": "Impossible : l'appel ne transporterait plus rien",
   "ctrl.selfview.aria": "Image de soi",
   "ctrl.selfview.hide": "Cacher l'image de soi",
   "ctrl.selfview.show": "Montrer l'image de soi",
@@ -283,6 +284,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "Masquer le clavardage",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
+  "ctrl.pause": "Mettre en pause",
+  "ctrl.pause.aria": "Pause",
+  "ctrl.resume": "Reprendre",
+  "pause.banner": "Vous êtes en pause",
+  "pause.hint": "Votre micro et votre image sont arrêtés. Le texte, lui, continue de passer.",
+  "pause.resume": "Reprendre",
+  "pause.peer": "{peer} est en pause",
+  "ctrl.more": "Autres commandes",
+  "sheet.title": "Autres commandes de l'appel",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -297,10 +307,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Vidéo demandée en cours d'appel
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} veut ajouter la vidéo",
-  "videoask.body": "Accepter va ouvrir ta caméra.",
-  "videoask.accept": "Accepter la vidéo",
-  "videoask.reject": "Refuser",
+  "mediaask.video.title": "{peer} souhaite ajouter la vidéo",
+  "mediaask.video.body": "Accepter allumera votre caméra.",
+  "mediaask.video.accept": "Accepter la vidéo",
+  "mediaask.audio.title": "{peer} souhaite ajouter l'audio",
+  "mediaask.audio.body": "Accepter allumera votre micro.",
+  "mediaask.audio.accept": "Accepter l'audio",
+  "mediaask.both.title": "{peer} souhaite ajouter l'audio et la vidéo",
+  "mediaask.both.body": "Accepter allumera votre micro et votre caméra.",
+  "mediaask.both.accept": "Accepter les deux",
+  "mediaask.reject": "Refuser",
 
   // ---------------------------------------------------------------------
   // Messages fugaces de l'appel
@@ -311,6 +327,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} a enlevé la vidéo",
   "notice.videoDeclinedHere": "Vidéo refusée",
   "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour l'instant",
+  "notice.audioDeclined": "{peer} n'a pas accepté l'audio",
+  "notice.audioRefused": "{peer} refuse d'ajouter l'audio à cet appel",
+  "notice.audioAdded": "{peer} a ajouté l'audio",
+  "notice.audioRemoved": "{peer} a retiré l'audio",
+  "notice.audioDeclinedHere": "Audio refusé",
+  "notice.audioUnavailable": "Impossible d'ajouter l'audio pour le moment",
   "notice.dtmfFailed": "La tonalité {tone} n'a pas pu être envoyée",
 
   // ---------------------------------------------------------------------
@@ -335,6 +357,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "APPEL VIDÉO ENTRANT",
   "incoming.kicker.audio": "APPEL AUDIO ENTRANT",
+  "incoming.kicker.audioText": "APPEL AUDIO + TEXTE ENTRANT",
+  "incoming.kicker.videoText": "APPEL VIDÉO + TEXTE ENTRANT",
   "incoming.kicker.text": "APPEL TEXTE ENTRANT",
   "incoming.answerVideo": "Répondre en vidéo",
   "incoming.answerAudio": "Répondre en audio",

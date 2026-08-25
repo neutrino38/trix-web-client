@@ -124,7 +124,7 @@ stateDiagram-v2
   state answering
   state connected
   state renegotiating
-  state video_offer
+  state media_offer
   state hangingup
   [*] --> initial_state
   initial_state --> dialing: enter (INVITE sortant)
@@ -144,19 +144,19 @@ stateDiagram-v2
   answering --> connected: sip:accepted (200 OK), sip:confirmed (ACK)
   answering --> [*]: sip:failed (call:missed), sip:ended (call:missed), after 30 s (call:missed)
   connected --> hangingup: sip:disconnected, sys:sleep, ui:hangup
-  connected --> connected: sip:mediaChanged (média inchangé), sip:mediaChanged, ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:muteMic, ui:toggleSelfView (self-view)
-  connected --> video_offer: sip:mediaOffer (le distant propose la vidéo)
-  connected --> renegotiating: ui:toggleVideo
+  connected --> connected: sip:mediaChanged (média inchangé), sip:mediaChanged, ui:toggleMedia (dernier média), ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:togglePause, sip:peerPaused, ui:toggleSelfView (self-view)
+  connected --> media_offer: sip:mediaOffer (le distant propose un média)
+  connected --> renegotiating: ui:toggleMedia
   connected --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
   renegotiating --> hangingup: sip:disconnected, sys:sleep, ui:hangup
-  renegotiating --> connected: sip:mediaChanged (vidéo refusée), sip:mediaChanged, sip:mediaRefused (refus), after 20 s (sans réponse)
-  renegotiating --> renegotiating: ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:muteMic, ui:toggleSelfView (self-view)
+  renegotiating --> connected: sip:mediaChanged, sip:mediaChanged (média négocié), sip:mediaRefused (refus), after 30 s (sans réponse)
+  renegotiating --> renegotiating: ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:togglePause, sip:peerPaused, ui:toggleSelfView (self-view)
   renegotiating --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
-  video_offer --> hangingup: sip:disconnected, sys:sleep, ui:hangup
-  video_offer --> connected: sip:mediaChanged (offre caduque), ui:rejectVideo (488), after 25 s (sans réponse)
-  video_offer --> video_offer: ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:muteMic, ui:toggleSelfView (self-view)
-  video_offer --> renegotiating: ui:acceptVideo (vidéo acceptée)
-  video_offer --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
+  media_offer --> hangingup: sip:disconnected, sys:sleep, ui:hangup
+  media_offer --> connected: sip:mediaChanged (offre caduque), ui:rejectMedia (488), after 25 s (sans réponse)
+  media_offer --> media_offer: ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:togglePause, sip:peerPaused, ui:toggleSelfView (self-view)
+  media_offer --> renegotiating: ui:acceptMedia
+  media_offer --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
   hangingup --> [*]: sip:ended (call:answered), sip:ended (call:dropped), sip:ended (call:missed), sip:ended (call:canceled), sip:failed (call:answered), sip:failed (call:dropped), sip:failed (call:missed), sip:failed (call:canceled), sip:disconnected (call:answered), sip:disconnected (call:dropped), sip:disconnected (call:missed), sip:disconnected (call:canceled), after 2 s (call:answered), after 2 s (call:dropped), after 2 s (call:missed), after 2 s (call:canceled)
 ```
 
@@ -164,11 +164,11 @@ stateDiagram-v2
 
 | État | Événements |
 | --- | --- |
-| `dialing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:dtmf`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
-| `ringing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:dtmf`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:progress` |
-| `ringing_in` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:dtmf`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
-| `answering` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:dtmf`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:progress` |
-| `connected` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `renegotiating` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `video_offer` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `hangingup` | `sip:progress`, `sip:accepted`, `sip:confirmed`, `sys:sleep`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleVideo`, `ui:acceptVideo`, `ui:rejectVideo`, `ui:dtmf`, `sip:registrationFailed`, `sip:registered`, `sip:connected`, `sys:wake`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory` |
+| `dialing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
+| `ringing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:progress` |
+| `ringing_in` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
+| `answering` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:progress` |
+| `connected` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `renegotiating` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `media_offer` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `hangingup` | `sip:progress`, `sip:accepted`, `sip:confirmed`, `sys:sleep`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:dtmf`, `sip:registrationFailed`, `sip:registered`, `sip:connected`, `sys:wake`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory` |

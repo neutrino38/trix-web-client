@@ -650,6 +650,13 @@ export interface ChatStageCtx {
   meters: boolean;
   /** Le pavé DTMF, qui se pose sur le fil comme il se posait sur l'image. */
   dtmf?: string;
+  /**
+   * Ce qui se pose **par-dessus** la scène : le bandeau de pause et l'avis
+   * de celle du correspondant (`pause.ts`). Le fil, lui, continue de vivre
+   * dessous — c'est même tout ce qui reste quand on est en pause, et c'est
+   * délibéré (ADR 0003, D7).
+   */
+  banner?: string;
 }
 
 /**
@@ -689,6 +696,7 @@ export function chatStage(ctx: ChatStageCtx): string {
       <video class="remote" data-ref="remote" autoplay playsinline></video>
       ${chatPane(ctx.peer)}
       ${ctx.dtmf ?? ""}
+      ${ctx.banner ?? ""}
     </div>`;
 }
 

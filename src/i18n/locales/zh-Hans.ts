@@ -243,13 +243,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "麦克风",
-  "ctrl.mic.mute": "关闭麦克风",
-  "ctrl.mic.unmute": "打开麦克风",
-  "ctrl.cam.aria": "摄像头",
+  "ctrl.mic.aria": "语音",
+  "ctrl.mic.add": "添加语音",
+  "ctrl.mic.remove": "移除语音",
+  "ctrl.cam.aria": "视频",
   "ctrl.cam.add": "添加视频",
   "ctrl.cam.remove": "取消视频",
-  "ctrl.cam.pending": "正在更改媒体…",
+  "ctrl.media.pending": "正在更改媒体…",
+  "ctrl.media.last": "无法执行：通话将不再承载任何媒体",
   "ctrl.selfview.aria": "本地画面",
   "ctrl.selfview.hide": "隐藏本地画面",
   "ctrl.selfview.show": "显示本地画面",
@@ -264,6 +265,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "隐藏聊天",
   "ctrl.fullscreen": "全屏",
   "ctrl.hangup": "挂断",
+  "ctrl.pause": "暂停",
+  "ctrl.pause.aria": "暂停",
+  "ctrl.resume": "继续",
+  "pause.banner": "您已暂停",
+  "pause.hint": "您的麦克风和画面已停止。文字仍在传送。",
+  "pause.resume": "继续",
+  "pause.peer": "{peer} 已暂停",
+  "ctrl.more": "更多控件",
+  "sheet.title": "更多通话控件",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -278,10 +288,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // 通话中请求添加视频
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} 希望添加视频",
-  "videoask.body": "接受后将打开你的摄像头。",
-  "videoask.accept": "接受视频",
-  "videoask.reject": "拒绝",
+  "mediaask.video.title": "{peer} 希望添加视频",
+  "mediaask.video.body": "接受后将开启您的摄像头。",
+  "mediaask.video.accept": "接受视频",
+  "mediaask.audio.title": "{peer} 希望添加语音",
+  "mediaask.audio.body": "接受后将开启您的麦克风。",
+  "mediaask.audio.accept": "接受语音",
+  "mediaask.both.title": "{peer} 希望添加语音和视频",
+  "mediaask.both.body": "接受后将开启您的麦克风和摄像头。",
+  "mediaask.both.accept": "两者都接受",
+  "mediaask.reject": "拒绝",
 
   // ---------------------------------------------------------------------
   // 通话中的即时提示
@@ -292,6 +308,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} 取消了视频",
   "notice.videoDeclinedHere": "已拒绝视频",
   "notice.videoUnavailable": "目前无法添加视频",
+  "notice.audioDeclined": "{peer} 未接受语音",
+  "notice.audioRefused": "{peer} 拒绝为此通话添加语音",
+  "notice.audioAdded": "{peer} 添加了语音",
+  "notice.audioRemoved": "{peer} 移除了语音",
+  "notice.audioDeclinedHere": "已拒绝语音",
+  "notice.audioUnavailable": "目前无法添加语音",
   "notice.dtmfFailed": "无法发送按键音 {tone}",
 
   // ---------------------------------------------------------------------
@@ -316,6 +338,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "视频来电",
   "incoming.kicker.audio": "语音来电",
+  "incoming.kicker.audioText": "语音 + 文字来电",
+  "incoming.kicker.videoText": "视频 + 文字来电",
   "incoming.kicker.text": "文字来电",
   "incoming.answerVideo": "用视频接听",
   "incoming.answerAudio": "用语音接听",

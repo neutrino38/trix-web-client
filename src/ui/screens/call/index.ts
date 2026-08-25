@@ -11,8 +11,9 @@ import { layoutMode } from "../../layout.js";
 import { renderDesktop } from "./desktop.js";
 import { renderMobile } from "./mobile.js";
 import { closeIncoming, wireIncoming } from "./incoming.js";
-import { closeVideoAsk, wireVideoAsk } from "./videoask.js";
+import { closeMediaAsk, wireMediaAsk } from "./mediaask.js";
 import { closeDtmf } from "./dtmf.js";
+import { closeSheet, wireSheet } from "./sheet.js";
 import { stopChrono, wireCallScreen } from "./parts.js";
 import { stopMediaStats } from "./stats.js";
 
@@ -38,13 +39,18 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
   // le pavé DTMF ne survit pas à la communication : un appel qui se termine
   // le referme, et le suivant repart clavier rangé
   if (view?.state !== "connected") closeDtmf();
+  // la feuille du bas non plus (ADR 0003, D8) : le raccrochage la referme,
+  // et elle ne se rouvre pas d'elle-même sur l'appel suivant, dont la barre
+  // n'a pas forcément la même composition
+  if (view?.state !== "connected") closeSheet();
+  wireSheet(node);
   // même partage pour la question posée en cours d'appel (« Alice souhaite
   // ajouter la vidéo ») : les deux boutons sont câblés avec les autres,
   // seul le focus est propre à la popup
-  if (view?.videoAsked) {
-    wireVideoAsk(node, () => phone.send({ type: "ui:rejectVideo" }));
+  if (view?.mediaAsked !== null && view !== null) {
+    wireMediaAsk(node, () => phone.send({ type: "ui:rejectMedia" }));
   } else {
-    closeVideoAsk();
+    closeMediaAsk();
   }
   return node;
 }

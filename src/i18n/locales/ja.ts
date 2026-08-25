@@ -252,13 +252,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "マイク",
-  "ctrl.mic.mute": "マイクをミュートする",
-  "ctrl.mic.unmute": "マイクのミュートを解除する",
-  "ctrl.cam.aria": "カメラ",
+  "ctrl.mic.aria": "音声",
+  "ctrl.mic.add": "音声を追加",
+  "ctrl.mic.remove": "音声を削除",
+  "ctrl.cam.aria": "ビデオ",
   "ctrl.cam.add": "ビデオを追加",
   "ctrl.cam.remove": "ビデオを削除",
-  "ctrl.cam.pending": "メディアを変更中…",
+  "ctrl.media.pending": "メディアを変更しています…",
+  "ctrl.media.last": "できません：通話に何も残らなくなります",
   "ctrl.selfview.aria": "セルフビュー",
   "ctrl.selfview.hide": "セルフビューを隠す",
   "ctrl.selfview.show": "セルフビューを表示する",
@@ -273,6 +274,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "チャットを閉じる",
   "ctrl.fullscreen": "全画面表示",
   "ctrl.hangup": "通話を切る",
+  "ctrl.pause": "一時停止",
+  "ctrl.pause.aria": "一時停止",
+  "ctrl.resume": "再開",
+  "pause.banner": "一時停止中です",
+  "pause.hint": "マイクと映像は停止しています。テキストはそのまま届きます。",
+  "pause.resume": "再開",
+  "pause.peer": "{peer} は一時停止中です",
+  "ctrl.more": "その他の操作",
+  "sheet.title": "通話のその他の操作",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -287,10 +297,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // 通話中のビデオ追加要求
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} がビデオの追加を求めています",
-  "videoask.body": "承諾するとカメラがオンになります。",
-  "videoask.accept": "ビデオを承諾する",
-  "videoask.reject": "拒否する",
+  "mediaask.video.title": "{peer} がビデオの追加を希望しています",
+  "mediaask.video.body": "承諾するとカメラがオンになります。",
+  "mediaask.video.accept": "ビデオを承諾",
+  "mediaask.audio.title": "{peer} が音声の追加を希望しています",
+  "mediaask.audio.body": "承諾するとマイクがオンになります。",
+  "mediaask.audio.accept": "音声を承諾",
+  "mediaask.both.title": "{peer} が音声とビデオの追加を希望しています",
+  "mediaask.both.body": "承諾するとマイクとカメラがオンになります。",
+  "mediaask.both.accept": "両方を承諾",
+  "mediaask.reject": "拒否",
 
   // ---------------------------------------------------------------------
   // 通話中の一時的なメッセージ
@@ -301,6 +317,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} がビデオを削除しました",
   "notice.videoDeclinedHere": "ビデオを拒否しました",
   "notice.videoUnavailable": "現在ビデオを追加できません",
+  "notice.audioDeclined": "{peer} は音声を受け入れませんでした",
+  "notice.audioRefused": "{peer} はこの通話への音声の追加を拒否しています",
+  "notice.audioAdded": "{peer} が音声を追加しました",
+  "notice.audioRemoved": "{peer} が音声を削除しました",
+  "notice.audioDeclinedHere": "音声を拒否しました",
+  "notice.audioUnavailable": "現在、音声を追加できません",
   "notice.dtmfFailed": "トーン {tone} を送信できませんでした",
 
   // ---------------------------------------------------------------------
@@ -325,6 +347,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "ビデオ通話の着信",
   "incoming.kicker.audio": "音声通話の着信",
+  "incoming.kicker.audioText": "音声＋テキスト通話の着信",
+  "incoming.kicker.videoText": "ビデオ＋テキスト通話の着信",
   "incoming.kicker.text": "テキスト通話の着信",
   "incoming.answerVideo": "ビデオで応答する",
   "incoming.answerAudio": "音声で応答する",

@@ -8,7 +8,7 @@
 import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
 import { iceServers } from "./ice.js";
-import { answeredMedia, offeredMedia, unsupportedOffer, withoutVideo } from "./sdp.js";
+import { answeredMedia, offeredMedia, unsupportedOffer, withoutMedia } from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 import {
@@ -34,13 +34,61 @@ export type SipEvent =
   | { type: "sip:incoming"; call: IncomingCall };
 
 /**
- * Combinaison de médias d'un appel. Extensible : les modes exotiques à
- * venir (vidéo sans son, texte seul…) s'ajouteront ici sans toucher aux
- * machines — elles ne font que transporter le descripteur.
+ * Combinaison de médias d'un appel — les **trois** de la conversation
+ * totale (ADR 0003, D1). F.703 §7.2 met le texte sur la même ligne que
+ * l'audio et la vidéo dans son tableau de profils : le type le fait
+ * aussi, au lieu de définir l'appel texte par l'absence des deux autres.
+ *
+ * `text` dit que **le texte est négocié**, pas qu'il passe. L'état du lien
+ * (`connecting`, `open`, `lost`, `closed`) reste porté par `RttChannel`, et
+ * lui seul : sur canal de données, l'ouverture DCEP arrive après le
+ * 200 OK, et un appel peut donc être `text: true` avec un canal encore
+ * `connecting`. C'est normal, et c'est la nuance à ne jamais confondre.
  */
 export interface CallMedia {
   audio: boolean;
   video: boolean;
+  text: boolean;
+}
+
+/**
+ * Les deux médias qui entrent et sortent de l'appel par re-INVITE (ADR
+ * 0003, D5). Le texte n'en est pas : une fois négocié il ne se retire
+ * jamais — c'est le repli d'accessibilité, et le retirer reviendrait à
+ * pouvoir couper la parole à quelqu'un en un clic, sans qu'il puisse
+ * répondre (D4).
+ */
+export type MediaKind = "audio" | "video";
+
+/** Les deux, dans l'ordre où l'interface les présente. */
+export const MEDIA_KINDS: readonly MediaKind[] = ["audio", "video"];
+
+/** Les trois médias, tous absents — point de départ de tout calcul. */
+export const NO_MEDIA: CallMedia = { audio: false, video: false, text: false };
+
+/** Deux combinaisons portent-elles exactement les mêmes médias ? */
+export function sameMedia(a: CallMedia, b: CallMedia): boolean {
+  return a.audio === b.audio && a.video === b.video && a.text === b.text;
+}
+
+/**
+ * Retirer ce média laisserait-il l'appel sans rien ? F.703 §5.3.1 autorise
+ * l'audio à être temporairement interrompu, **pourvu qu'au moins un autre
+ * média reste présent** — et un appel qui ne transporte plus rien n'est pas
+ * un appel, c'est un dialogue SIP ouvert sur le vide.
+ *
+ * Le texte compte : c'est tout l'intérêt d'en avoir fait un média (D1).
+ * Retirer l'audio d'un appel audio + texte est permis — il reste de quoi se
+ * parler, et c'est même le scénario que F.703 §4.5 décrit.
+ *
+ * La règle est ici, et une seule fois : le bloc la vérifie avant de lancer
+ * la renégociation, l'interface ne fait qu'en griser le bouton (ADR 0003,
+ * D5). Écrite dans l'interface, elle serait à réécrire dans les deux
+ * gabarits — et à oublier dans un.
+ */
+export function isLastMedia(media: CallMedia, kind: MediaKind): boolean {
+  if (!media[kind]) return false; // il n'y est pas : rien à retirer
+  return !MEDIA_KINDS.some((k) => k !== kind && media[k]) && !media.text;
 }
 
 /** Qui est à l'origine de la fin de session, tel que vu par JsSIP. */
@@ -85,7 +133,16 @@ export type CallSipEvent =
    * caméra s'allumerait sans que personne l'ait décidé ici, donc la
    * réponse SIP attend la décision de l'utilisateur.
    */
-  | { type: "sip:mediaOffer"; media: CallMedia; offer: MediaOffer };
+  | { type: "sip:mediaOffer"; media: CallMedia; offer: MediaOffer }
+  /**
+   * Le correspondant s'est mis en pause, ou en est revenu. Rien n'est passé
+   * par SIP : ses pistes ont cessé d'émettre, et les nôtres sont passées
+   * `muted` en réception. C'est exactement l'*avis explicite* que F.703
+   * §6.2.4 réclame pour une vidéo suspendue, rendu par le récepteur — un
+   * client tiers, lui, verra une image gelée, dégradation acceptable
+   * (§8.3.5) et non un refus.
+   */
+  | { type: "sip:peerPaused"; paused: boolean };
 
 /**
  * Demande de changement de média venue du distant, en attente de
@@ -113,17 +170,42 @@ export interface CallSession {
    * session finie : le carnet se referme en rendant ses lignes.
    */
   trace(): TraceLine[];
-  setMicMuted(muted: boolean): void;
   /**
-   * Ajoute ou retire la vidéo de l'appel en cours par re-INVITE
-   * (docs/CONCEPTION.md §4.4) — il n'y a pas de « couper sa caméra » en
-   * conversation totale : ne plus émettre d'image, c'est retirer la vidéo
-   * de l'appel, et le distant doit le savoir.
+   * Ajoute ou retire un média de l'appel en cours par re-INVITE
+   * (docs/CONCEPTION.md §4.4) — il n'y a pas de « couper sa caméra » ni de
+   * « couper son micro » en conversation totale : ne plus émettre un flux,
+   * c'est le retirer de l'appel, et le distant doit le savoir.
+   *
+   * **Les deux médias y sont symétriques** (ADR 0003, D5) : F.703 §5.3.1
+   * prévoit que l'audio soit temporairement interrompu, pourvu qu'un autre
+   * média reste. Se taire un instant sans rien changer à l'appel est un
+   * autre geste — la Pause, qui ne passe par aucune signalisation.
    *
    * Ne rend rien : l'issue arrive par événement, `sip:mediaChanged` si le
    * distant a suivi, `sip:mediaRefused` s'il a dit non.
    */
-  setVideo(on: boolean): void;
+  setMedia(kind: MediaKind, on: boolean): void;
+  /**
+   * **La Pause** (ADR 0003, D6 et D7) : tout ce que j'émets s'arrête d'un
+   * coup — micro et image ensemble, comme F.703 §6.2.4 les groupe.
+   *
+   * **Sur le fil : rien.** `replaceTrack(null)` sur les deux émetteurs.
+   * Aucune négociation, aucun aller-retour, aucun 488, aucun 491 — donc
+   * **aucun échec possible**, ce qui est toute la valeur du geste :
+   * quelqu'un dont on sonne à la porte n'a pas le temps d'un aller-retour
+   * SIP. La reprise rattache les mêmes pistes, sans rien rouvrir.
+   *
+   * **Le texte n'est jamais coupé**, dans aucun sens : c'est la même raison
+   * qu'en D4 — une pause qui couperait le texte reviendrait, pour un usager
+   * sourd, à raccrocher sans le dire, alors que c'est justement le média qui
+   * permet d'écrire « deux minutes ».
+   *
+   * **Le correspondant continue de vivre** : il parle, il est vu, il écrit,
+   * et il reçoit tout cela de son côté. Une mise en attente `sendonly`
+   * l'aurait suspendu lui aussi, pour rien — le besoin est de me retirer,
+   * moi.
+   */
+  setPaused(on: boolean): void;
   /**
    * Envoie une tonalité DTMF (RFC 4733) dans le flux audio de l'appel :
    * `0-9`, `*`, `#`, `A-D`. Rend `false` si elle n'a pas pu partir — appel
@@ -313,16 +395,17 @@ export function createJsSipPort(): SipPort {
             pcConfig,
           });
           bindSession(session, sendCall);
+          // le contrôle média naît avant le lien texte — son écouteur `sdp`
+          // doit passer avant celui du texte — mais il a besoin de savoir si
+          // le texte est négocié : d'où la fonction, résolue plus tard
+          let rtt: RttNegotiation | null = null;
+          const control = mediaControl(session, sendCall, () => rtt?.negotiated() ?? false);
           // le texte se greffe avant que le premier SDP ne soit rédigé :
           // `ua.call()` a lancé la négociation, elle n'est pas encore
           // arrivée à l'offre (getUserMedia d'abord). C'est nous qui
           // offrons, donc nous qui créons le canal de données (RFC 8865 §5)
-          return wrapSession(
-            session,
-            book,
-            mediaControl(session, sendCall),
-            openRttFor(cfg.rtt, session, "offer"),
-          );
+          rtt = openRttFor(cfg.rtt, session, "offer");
+          return wrapSession(session, book, control, rtt);
         },
       };
     },
@@ -411,7 +494,9 @@ function wrapIncoming(
 ): IncomingCall {
   const from = session.remote_identity;
   const offer = request.body ?? null;
-  const offered = offeredMedia(offer);
+  // le transport du compte fait partie de la question : une offre texte
+  // d'une forme que ce poste ne sait pas ouvrir n'offre pas de texte (§4.9)
+  const offered = offeredMedia(offer, cfg.rtt);
   // constaté à l'arrivée, avant que quoi que ce soit ne parte : c'est ce
   // qui permet de répondre 488 sans qu'un 180 ait été envoyé. Le transport
   // texte du compte en fait partie : lui seul dit si une offre texte seul
@@ -427,12 +512,13 @@ function wrapIncoming(
     offerProblem: problem,
     listen(send) {
       bindSession(session, send);
-      control = mediaControl(session, send);
+      let rtt: RttNegotiation | null = null;
+      control = mediaControl(session, send, () => rtt?.negotiated() ?? false);
       // le texte se greffe avant `answer()` : c'est là que JsSIP présente
       // l'offre distante, dont il faut retirer la section texte avant que
       // le navigateur ne la voie — et c'est là que naît la connexion
       // pair-à-pair, sur laquelle le canal de données du distant arrivera
-      const rtt = openRttFor(cfg.rtt, session, "answer");
+      rtt = openRttFor(cfg.rtt, session, "answer");
       // le carnet ne s'ouvre qu'ici, jamais à l'arrivée de l'INVITE : un
       // second appel refusé « occupé » n'est pas écouté, et n'a donc pas de
       // carnet à voler à la communication en cours. L'INVITE, lui, est déjà
@@ -440,10 +526,12 @@ function wrapIncoming(
       return wrapSession(session, openCallTrace(request.call_id ?? null), control, rtt);
     },
     answer(media) {
-      // répondre « audio seul » à une offre audio + vidéo se dit dans la
-      // réponse SDP : sans cela le navigateur répondrait `recvonly` et
-      // l'appelant continuerait d'émettre son image (§4.4)
-      if (offered.video && !media.video) control?.refuseVideo();
+      // répondre « audio seul » à une offre audio + vidéo — ou « texte
+      // seul » à une offre audio + texte — se dit dans la réponse SDP :
+      // sans cela le navigateur répondrait `recvonly`, et l'appelant
+      // continuerait d'émettre un flux que personne n'a demandé (§4.4)
+      const refused = MEDIA_KINDS.filter((k) => offered[k] && !media[k]);
+      if (refused.length > 0) control?.refuseMedia(refused);
       session.answer({ mediaConstraints: { audio: media.audio, video: media.video }, pcConfig });
     },
     reject(reason) {
@@ -477,28 +565,57 @@ function statusOf(e: unknown): number | undefined {
 
 /**
  * Ce que Trix pilote de la session au-delà des médias offerts au départ :
- * refuser la vidéo d'une offre, l'ajouter ou la retirer en cours d'appel,
- * et dire ce que l'appel transporte réellement après chaque négociation.
+ * refuser un flux d'une offre, l'ajouter ou le retirer en cours d'appel, et
+ * dire ce que l'appel transporte réellement après chaque négociation.
  *
- * Tout l'état média d'une session vit ici, dans une seule fermeture : la
- * piste vidéo que nous avons ouverte (et que nous seuls pouvons éteindre),
- * le refus en vigueur, le dernier résultat publié.
+ * **Les deux médias y sont strictement symétriques** (ADR 0003, D5) : F.703
+ * §5.3.1 prévoit noir sur blanc que l'audio soit temporairement interrompu,
+ * pourvu qu'un autre média reste. Il n'y a donc pas un chemin pour la
+ * caméra et un autre pour le micro — il y en a un seul, paramétré par le
+ * média.
+ *
+ * Tout l'état média d'une session vit ici, dans une seule fermeture : les
+ * pistes que nous avons ouvertes (et que nous seuls pouvons éteindre), les
+ * refus en vigueur, la renégociation en vol, le dernier résultat publié.
  */
 interface MediaControl {
-  /** Prochaine réponse SDP : vidéo déclarée `inactive`. */
-  refuseVideo(): void;
-  /** Re-INVITE ajoutant (ou retirant) la vidéo. */
-  setVideo(on: boolean): void;
-  /** Fin d'appel : la caméra que nous avons allumée s'éteint avec lui. */
+  /** Prochaine réponse SDP : ces médias déclarés `inactive`. */
+  refuseMedia(kinds: readonly MediaKind[]): void;
+  /** Re-INVITE ajoutant (ou retirant) un média de l'appel. */
+  setMedia(kind: MediaKind, on: boolean): void;
+  /**
+   * **La Pause** (ADR 0003, D6 et D7) : tout ce que j'émets s'arrête d'un
+   * coup — micro et image ensemble, comme F.703 §6.2.4 les groupe.
+   *
+   * **Sur le fil : rien.** `replaceTrack(null)` sur les deux émetteurs.
+   * Aucune négociation, aucun aller-retour, aucun 488, aucun 491 — donc
+   * **aucun échec possible**, ce qui est toute la valeur du geste :
+   * quelqu'un dont on sonne à la porte n'a pas le temps d'un aller-retour
+   * SIP. La reprise rattache les mêmes pistes, sans rien rouvrir.
+   *
+   * **Le texte n'est jamais coupé**, dans aucun sens : c'est la même raison
+   * qu'en D4 — une pause qui couperait le texte reviendrait, pour un usager
+   * sourd, à raccrocher sans le dire, alors que c'est justement le média qui
+   * permet d'écrire « deux minutes ».
+   *
+   * **Le correspondant continue de vivre** : il parle, il est vu, il écrit,
+   * et il reçoit tout cela de son côté. Une mise en attente `sendonly`
+   * l'aurait suspendu lui aussi, pour rien — le besoin est de me retirer,
+   * moi.
+   */
+  setPaused(on: boolean): void;
+  /** Pause : tout ce que j'émets s'arrête, sans que rien ne parte sur le fil. */
+  setPaused(on: boolean): void;
+  /** Fin d'appel : les capteurs que nous avons allumés s'éteignent avec lui. */
   release(): void;
 }
 
-/** Le transceiver vidéo de la connexion, s'il en existe un. */
-function videoTransceiver(pc: RTCPeerConnection): RTCRtpTransceiver | null {
+/** Le transceiver d'un média sur la connexion, s'il en existe un. */
+function transceiverOf(pc: RTCPeerConnection, kind: MediaKind): RTCRtpTransceiver | null {
   return (
     pc
       .getTransceivers()
-      .find((tr) => (tr.receiver.track?.kind ?? tr.sender.track?.kind) === "video") ?? null
+      .find((tr) => (tr.receiver.track?.kind ?? tr.sender.track?.kind) === kind) ?? null
   );
 }
 
@@ -509,8 +626,8 @@ function videoTransceiver(pc: RTCPeerConnection): RTCRtpTransceiver | null {
  * Un transceiver jamais négocié (`currentDirection === null`) ne compte
  * pas encore.
  */
-function negotiatedMedia(pc: RTCPeerConnection): CallMedia {
-  const media: CallMedia = { audio: false, video: false };
+function negotiatedMedia(pc: RTCPeerConnection, text: boolean): CallMedia {
+  const media: CallMedia = { ...NO_MEDIA, text };
   for (const tr of pc.getTransceivers()) {
     const kind = tr.receiver.track?.kind ?? tr.sender.track?.kind;
     if (kind !== "audio" && kind !== "video") continue;
@@ -533,6 +650,13 @@ function negotiatedMedia(pc: RTCPeerConnection): CallMedia {
  *   patiente sans que rien n'expire.
  */
 interface Renegotiable {
+  /**
+   * Le rôle dans le dialogue — `"outgoing"` pour l'UAC. Il ne sert qu'à une
+   * chose, et elle compte : choisir la borne du délai de reprise après un
+   * 491 (RFC 3261 §14.1). Les deux bornes sont disjointes, et c'est cela
+   * seul qui empêche les deux bouts de se recroiser.
+   */
+  direction: string;
   isReadyToReOffer(): boolean;
   _sendReinvite(options: {
     eventHandlers: { succeeded(response: unknown): void; failed(response?: unknown): void };
@@ -546,36 +670,73 @@ interface InDialogRequest {
   reply(code: number, reason?: string | null): void;
 }
 
-function mediaControl(session: Session, send: (ev: CallSipEvent) => void): MediaControl {
+/**
+ * Exporté pour les tests seuls : la reprise après 491 et la symétrie des
+ * deux médias sont exactement ce qui casse en silence, et la seule façon
+ * de les éprouver sans navigateur est d'injecter une session factice —
+ * comme `sip/rttsip.ts` le fait déjà pour ses deux transports.
+ */
+export function mediaControl(
+  session: Session,
+  send: (ev: CallSipEvent) => void,
+  /**
+   * Le texte est-il négocié ? Le port ne le lit pas sur la connexion
+   * pair-à-pair : c'est `sip/rttsip.ts` qui le sait, chacun de ses deux
+   * transports à sa façon. Une fonction, et non un booléen, parce que la
+   * réponse change au fil de la négociation — et qu'elle est posée à
+   * chaque retour à `stable`.
+   */
+  textNegotiated: () => boolean,
+): MediaControl {
   const raw = session as unknown as Session & Renegotiable;
-  /** La caméra que nous avons ouverte : personne d'autre ne l'éteindra. */
-  let own: MediaStreamTrack | null = null;
-  /** Vidéo refusée dans la prochaine réponse SDP (réponse audio à une offre A/V). */
-  let refusing = false;
+  /** Les capteurs que nous avons ouverts : personne d'autre ne les éteindra. */
+  const own: Partial<Record<MediaKind, MediaStreamTrack>> = {};
+  /** Médias refusés dans la prochaine réponse SDP (réponse audio à une offre A/V). */
+  const refusing = new Set<MediaKind>();
   /** Dernier résultat publié — on ne signale que les changements. */
   let published: CallMedia | null = null;
   /**
-   * Ce que notre re-INVITE en vol demande (`true` = ajouter la vidéo).
-   * Lu à l'arrivée de la réponse : c'est la demande, et non la caméra
-   * ouverte, qui dit s'il y a eu refus — la caméra, elle, a pu être
-   * refermée entre-temps par l'observateur de négociation.
+   * Ce que notre re-INVITE en vol demande. Lu à l'arrivée de la réponse :
+   * c'est la demande, et non le capteur ouvert, qui dit s'il y a eu refus —
+   * le capteur, lui, a pu être refermé entre-temps par l'observateur de
+   * négociation.
    */
-  let asking: boolean | null = null;
+  let asking: { kind: MediaKind; on: boolean } | null = null;
+  /**
+   * Une reprise après 491 est en cours. Le retour arrière qui la précède
+   * ramène la connexion à `stable`, et l'observateur y verrait un appel qui
+   * vient de perdre le média demandé : il éteindrait le capteur qu'on
+   * s'apprête à réoffrir, et annoncerait un changement qui n'a pas eu lieu.
+   * Tant que ce drapeau est levé, il ne fait ni l'un ni l'autre.
+   */
+  let resuming = false;
+  /** Une seule reprise par renégociation : deux clients face à face boucleraient. */
+  let retried = false;
+  /**
+   * Les pistes mises de côté le temps d'une pause (D7). Elles ne sont **pas**
+   * arrêtées : la reprise doit être instantanée, et rouvrir un capteur
+   * prendrait du temps — voire échouerait, ce qu'un geste sans échec ne peut
+   * pas se permettre. Le voyant de la caméra reste donc allumé pendant la
+   * pause ; c'est le prix d'une reprise qui ne demande rien à personne, et
+   * le bandeau plein écran dit assez clairement ce qui se passe.
+   */
+  const held: Partial<Record<MediaKind, MediaStreamTrack>> = {};
+  let paused = false;
   let pc: RTCPeerConnection | null = null;
 
   /**
-   * Éteint la caméra qui alimentait l'appel — la nôtre comme celle que
-   * JsSIP a ouverte pour un INVITE vidéo. Une piste laissée vivante
+   * Éteint le capteur qui alimentait l'appel — le nôtre comme celui que
+   * JsSIP a ouvert pour l'INVITE initial. Une piste laissée vivante
    * garderait le voyant de la machine allumé alors que plus personne ne
-   * reçoit l'image : c'est le genre de détail sur lequel se juge un
-   * logiciel de visiophonie.
+   * reçoit le flux : c'est le genre de détail sur lequel se juge un
+   * logiciel de conversation totale.
    */
-  const stopSending = (conn: RTCPeerConnection | null): void => {
-    const tr = conn ? videoTransceiver(conn) : null;
+  const stopSending = (conn: RTCPeerConnection | null, kind: MediaKind): void => {
+    const tr = conn ? transceiverOf(conn, kind) : null;
     const track = tr?.sender.track;
     if (tr && track) {
       // la piste s'arrête dans tous les cas — c'est elle qui tient le
-      // voyant de la caméra allumé. La détacher du sender, en revanche,
+      // voyant du capteur allumé. La détacher du sender, en revanche,
       // n'a de sens que sur une connexion encore ouverte : `release()` est
       // appelé sur `failed`, donc après que JsSIP a fermé la sienne, et
       // `replaceTrack` y lève un InvalidStateError qui n'apprend rien.
@@ -584,8 +745,12 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
         void tr.sender.replaceTrack(null).catch(() => {});
       }
     }
-    own?.stop();
-    own = null;
+    own[kind]?.stop();
+    delete own[kind];
+    // une pause en cours tient une piste hors du sender : elle ne doit pas
+    // survivre au média qui vient de quitter l'appel
+    held[kind]?.stop();
+    delete held[kind];
   };
 
   /**
@@ -597,41 +762,87 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
   const watch = (conn: RTCPeerConnection): void => {
     pc = conn;
     conn.addEventListener("signalingstatechange", () => {
-      if (conn.signalingState !== "stable") return;
-      const media = negotiatedMedia(conn);
-      // la vidéo est sortie de l'appel : la caméra n'a plus de raison de
-      // rester allumée
-      if (!media.video) stopSending(conn);
-      if (published && published.audio === media.audio && published.video === media.video) return;
+      if (conn.signalingState !== "stable" || resuming) return;
+      const media = negotiatedMedia(conn, textNegotiated());
+      // un média est sorti de l'appel : son capteur n'a plus de raison de
+      // rester allumé
+      for (const kind of MEDIA_KINDS) if (!media[kind]) stopSending(conn, kind);
+      if (published && sameMedia(published, media)) return;
       published = media;
       send({ type: "sip:mediaChanged", media });
     });
   };
-  if (session.connection) watch(session.connection);
-  else session.on("peerconnection", (e) => watch(e.peerconnection));
+  /**
+   * La pause **du correspondant**, lue là où elle se voit : ses pistes
+   * cessent d'émettre, et les nôtres passent `muted` en réception. Rien
+   * n'est passé par SIP — c'est bien le principe (D7).
+   *
+   * Une piste distante est `muted` **avant** d'avoir jamais rien reçu : au
+   * décroché, toutes le sont. On ne conclut donc à une pause qu'après avoir
+   * vu au moins un `unmute` sur cette connexion — sans quoi tout appel
+   * s'ouvrirait sur « le correspondant est en pause ».
+   */
+  const watchPeer = (conn: RTCPeerConnection): void => {
+    let seenLive = false;
+    let reported = false;
+    const report = (): void => {
+      const tracks = conn
+        .getReceivers()
+        .map((r) => r.track)
+        .filter((t): t is MediaStreamTrack => t !== null && (t.kind === "audio" || t.kind === "video"));
+      if (tracks.length === 0) return;
+      if (tracks.some((t) => !t.muted)) seenLive = true;
+      // tout ce qu'il nous envoyait s'est tu d'un coup : c'est une pause.
+      // Un seul flux muet sur deux serait un incident réseau, pas un geste
+      const next = seenLive && tracks.every((t) => t.muted);
+      if (next === reported) return;
+      reported = next;
+      send({ type: "sip:peerPaused", paused: next });
+    };
+    const follow = (track: MediaStreamTrack): void => {
+      track.addEventListener("mute", report);
+      track.addEventListener("unmute", report);
+    };
+    conn.addEventListener("track", (e) => {
+      follow((e as RTCTrackEvent).track);
+      report();
+    });
+    for (const r of conn.getReceivers()) if (r.track) follow(r.track);
+  };
+
+  if (session.connection) {
+    watch(session.connection);
+    watchPeer(session.connection);
+  } else {
+    session.on("peerconnection", (e) => {
+      watch(e.peerconnection);
+      watchPeer(e.peerconnection);
+    });
+  }
 
   /**
    * Filet de la réponse SDP : le transceiver est déjà passé `inactive`
-   * (voir `blockVideoInAnswer`), cette réécriture ne fait que garantir que
-   * la réponse **partie sur le fil** le dit aussi, quelle que soit la
-   * façon dont le navigateur a rédigé son answer.
+   * (voir `blockInAnswer`), cette réécriture ne fait que garantir que la
+   * réponse **partie sur le fil** le dit aussi, quelle que soit la façon
+   * dont le navigateur a rédigé son answer.
    */
   session.on("sdp", (e: { originator: string; type: string; sdp: string }) => {
-    if (refusing && e.originator === "local" && e.type === "answer") e.sdp = withoutVideo(e.sdp);
+    if (refusing.size === 0 || e.originator !== "local" || e.type !== "answer") return;
+    e.sdp = withoutMedia(e.sdp, [...refusing]);
   });
 
   /**
-   * Notre image rejoint l'appel : la caméra s'ouvre, la piste prend la
-   * place du transceiver vidéo existant s'il y en a un (celui d'une offre
-   * refusée plus tôt), sinon elle en crée un.
+   * Notre flux rejoint l'appel : le capteur s'ouvre, la piste prend la
+   * place du transceiver existant s'il y en a un (celui d'une offre refusée
+   * plus tôt), sinon elle en crée un.
    */
-  const openCamera = async (conn: RTCPeerConnection): Promise<boolean> => {
+  const openTrack = async (conn: RTCPeerConnection, kind: MediaKind): Promise<boolean> => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const track = stream.getVideoTracks()[0];
+      const stream = await navigator.mediaDevices.getUserMedia({ [kind]: true });
+      const track = stream.getTracks().find((t) => t.kind === kind);
       if (!track) return false;
-      own = track;
-      const tr = videoTransceiver(conn);
+      own[kind] = track;
+      const tr = transceiverOf(conn, kind);
       if (tr) {
         await tr.sender.replaceTrack(track);
         tr.direction = "sendrecv";
@@ -640,18 +851,33 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
       }
       return true;
     } catch {
-      // caméra refusée par le système ou déjà prise : l'appel continue
-      stopSending(conn);
+      // capteur refusé par le système ou déjà pris : l'appel continue
+      stopSending(conn, kind);
       return false;
     }
   };
 
-  /** Notre image quitte l'appel : transceiver rendu inactif, caméra éteinte. */
-  const closeCamera = (conn: RTCPeerConnection): void => {
-    stopSending(conn);
-    const tr = videoTransceiver(conn);
+  /** Notre flux quitte l'appel : transceiver rendu inactif, capteur éteint. */
+  const closeTrack = (conn: RTCPeerConnection, kind: MediaKind): void => {
+    stopSending(conn, kind);
+    const tr = transceiverOf(conn, kind);
     if (tr) tr.direction = "inactive";
   };
+
+  /** Le retour arrière d'une offre restée sans conclusion. */
+  const rollback = (conn: RTCPeerConnection): void => {
+    if (conn.signalingState === "have-local-offer")
+      void conn.setLocalDescription({ type: "rollback" }).catch(() => {});
+  };
+
+  /**
+   * Le délai avant de rejouer une offre qui s'est croisée avec celle du
+   * distant — RFC 3261 §14.1. Les deux bornes sont disjointes selon le
+   * rôle **dans le dialogue**, et c'est tout ce qui empêche les deux bouts
+   * de se recroiser indéfiniment : 0 à 2 s pour l'UAC, 2,1 à 4 s pour l'UAS.
+   */
+  const glareDelay = (): number =>
+    session.direction === "outgoing" ? Math.random() * 2000 : 2100 + Math.random() * 1900;
 
   /**
    * Notre re-INVITE. L'offre locale est déjà appliquée quand la réponse
@@ -666,23 +892,51 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
           const body = (response as { body?: string | null }).body;
           const wanted = asking;
           asking = null;
+          retried = false;
           // le résultat est publié par l'observateur de négociation ; ici
           // on ne rattrape que le refus poli, celui qui répond 200 OK en
           // ayant désactivé le flux
-          if (wanted && !answeredMedia(body).video)
+          if (wanted?.on === true && !answeredMedia(body)[wanted.kind])
             send({ type: "sip:mediaRefused", by: "remote" });
         },
         failed: (response) => {
-          asking = null;
           const conn = pc;
+          const statusCode = statusOf(response ?? {});
+          const wanted = asking;
+          asking = null;
+
+          // Glare (RFC 3261 §14.1) : les deux bouts ont renégocié en même
+          // temps. On reprend **une** fois, après un délai aléatoire — et le
+          // capteur qu'on vient d'ouvrir reste ouvert, puisqu'on va le
+          // réoffrir. S'entêter au-delà ferait boucler deux clients face à
+          // face, ce que le délai seul n'empêche pas.
+          if (statusCode === 491 && wanted !== null && !retried && conn !== null) {
+            retried = true;
+            resuming = true;
+            rollback(conn);
+            setTimeout(() => {
+              resuming = false;
+              if (session.isEnded()) return;
+              if (!raw.isReadyToReOffer()) {
+                // le distant a repris la main entre-temps : sa négociation à
+                // lui a abouti, et la nôtre n'a plus lieu d'être rejouée
+                if (!wanted.on) closeTrack(conn, wanted.kind);
+                send({ type: "sip:mediaRefused", by: "local" });
+                return;
+              }
+              asking = wanted;
+              reinvite();
+            }, glareDelay());
+            return;
+          }
+
+          retried = false;
           if (conn) {
-            if (conn.signalingState === "have-local-offer")
-              void conn.setLocalDescription({ type: "rollback" }).catch(() => {});
-            closeCamera(conn);
+            rollback(conn);
+            if (wanted) closeTrack(conn, wanted.kind);
           }
           // sans réponse du tout (transport, délai), ce n'est pas un refus
           // du distant : la phrase affichée n'est pas la même
-          const statusCode = statusOf(response ?? {});
           send({ type: "sip:mediaRefused", by: statusCode ? "remote" : "local", statusCode });
         },
       },
@@ -690,16 +944,22 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
   };
 
   /**
-   * Re-INVITE reçu. Ce qui ne fait qu'ôter la vidéo, ou n'y touche pas
-   * (rafraîchissement de session, mise en attente), suit le chemin normal
-   * de JsSIP. Ajouter la vidéo, en revanche, allumerait une caméra : la
-   * réponse attend que l'utilisateur ait tranché.
+   * Re-INVITE reçu. Ce qui ne fait qu'ôter un média, ou n'y touche pas
+   * (rafraîchissement de session), suit le chemin normal de JsSIP. **Ajouter
+   * un média, en revanche, allumerait un capteur** : la réponse attend que
+   * l'utilisateur ait tranché. La question vaut pour le micro comme pour la
+   * caméra — allumer l'un ou l'autre demande l'accord de son propriétaire
+   * (ADR 0003, D5).
    */
   const passThrough = raw._receiveReinvite.bind(raw);
   raw._receiveReinvite = (request: InDialogRequest): void => {
     const conn = pc;
     const wanted = offeredMedia(request.body ?? null);
-    if (!conn || !wanted.video || negotiatedMedia(conn).video) {
+    const here = conn ? negotiatedMedia(conn, false) : null;
+    // le texte ne pèse pas dans cette question-là : il ne s'ajoute pas par
+    // re-INVITE tant que CT-6 n'existe pas, et il ne se retire jamais (D4)
+    const added = conn && here ? MEDIA_KINDS.filter((k) => wanted[k] && !here[k]) : [];
+    if (!conn || added.length === 0) {
       passThrough(request);
       return;
     }
@@ -714,16 +974,16 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
       media: wanted,
       offer: {
         accept: once(() => {
-          refusing = false;
-          void openCamera(conn).then((ok) => {
-            // caméra impossible à ouvrir : mieux vaut le dire au distant
-            // que de lui répondre une vidéo qui n'arrivera jamais
-            if (ok) passThrough(request);
+          for (const kind of added) refusing.delete(kind);
+          void Promise.all(added.map((kind) => openTrack(conn, kind))).then((oks) => {
+            // capteur impossible à ouvrir : mieux vaut le dire au distant
+            // que de lui répondre un flux qui n'arrivera jamais
+            if (oks.every(Boolean)) passThrough(request);
             else request.reply(488, "Not Acceptable Here");
           });
         }),
         reject: once(() => {
-          refusing = true;
+          for (const kind of added) refusing.add(kind);
           request.reply(488, "Not Acceptable Here");
         }),
       },
@@ -731,13 +991,14 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
   };
 
   return {
-    refuseVideo() {
-      refusing = true;
-      const block = (conn: RTCPeerConnection): void => blockVideoInAnswer(conn, () => refusing);
+    refuseMedia(kinds) {
+      for (const kind of kinds) refusing.add(kind);
+      const block = (conn: RTCPeerConnection): void =>
+        blockInAnswer(conn, kinds, (k) => refusing.has(k));
       if (session.connection) block(session.connection);
       else session.on("peerconnection", (e) => block(e.peerconnection));
     },
-    setVideo(on) {
+    setMedia(kind, on) {
       const conn = pc;
       if (!conn || session.isEnded()) return;
       if (!raw.isReadyToReOffer()) {
@@ -746,42 +1007,84 @@ function mediaControl(session: Session, send: (ev: CallSipEvent) => void): Media
         send({ type: "sip:mediaRefused", by: "local" });
         return;
       }
+      retried = false;
       if (!on) {
-        refusing = true;
-        asking = false;
-        closeCamera(conn);
+        refusing.add(kind);
+        asking = { kind, on: false };
+        closeTrack(conn, kind);
         reinvite();
         return;
       }
-      refusing = false;
-      void openCamera(conn).then((ok) => {
+      refusing.delete(kind);
+      void openTrack(conn, kind).then((ok) => {
         if (!ok) {
           send({ type: "sip:mediaRefused", by: "local" });
           return;
         }
-        asking = true;
+        asking = { kind, on: true };
         reinvite();
       });
     },
-    release: () => stopSending(pc),
+    /**
+     * **Rien ne part sur le fil.** Les deux émetteurs lâchent leur piste, et
+     * c'est tout : pas de re-INVITE, pas de `sendonly`, pas de réponse à
+     * attendre — donc pas d'échec possible. La reprise rattache les mêmes
+     * pistes, qui n'ont jamais cessé de tourner.
+     *
+     * Le texte n'apparaît pas ici, et c'est délibéré : il vit hors de la
+     * connexion pair-à-pair (§4.9), et rien de ce que fait cette fonction ne
+     * peut l'atteindre. C'est la meilleure garantie qu'il continue de passer
+     * dans les deux sens pendant toute la pause.
+     */
+    setPaused(on) {
+      const conn = pc;
+      if (!conn || paused === on || session.isEnded()) return;
+      paused = on;
+      for (const kind of MEDIA_KINDS) {
+        const tr = transceiverOf(conn, kind);
+        if (!tr) continue;
+        if (on) {
+          const track = tr.sender.track;
+          if (!track) continue;
+          held[kind] = track;
+          void tr.sender.replaceTrack(null).catch(() => {});
+        } else {
+          const track = held[kind];
+          delete held[kind];
+          // la piste a pu disparaître entre-temps — le média a quitté
+          // l'appel pendant la pause : il n'y a plus rien à rattacher
+          if (track) void tr.sender.replaceTrack(track).catch(() => {});
+        }
+      }
+    },
+    release() {
+      for (const kind of MEDIA_KINDS) stopSending(pc, kind);
+    },
   };
 }
 
 /**
- * Répondre sans vidéo à une offre qui en propose : le transceiver que
+ * Répondre sans un média à une offre qui le propose : le transceiver que
  * l'offre distante vient de créer passe `inactive` **avant** que le
  * navigateur ne rédige sa réponse. Laissé à lui-même, il répondrait
- * `recvonly` — pas d'image envoyée, mais l'image du distant acceptée,
- * c'est-à-dire tout le contraire de ce que l'appelé a demandé.
+ * `recvonly` — rien d'envoyé, mais le flux du distant accepté, c'est-à-dire
+ * tout le contraire de ce que l'appelé a demandé.
  *
  * Le rendez-vous est `have-remote-offer` : l'offre est appliquée, les
  * transceivers existent, la réponse n'est pas encore écrite.
  */
-function blockVideoInAnswer(pc: RTCPeerConnection, active: () => boolean): void {
+function blockInAnswer(
+  pc: RTCPeerConnection,
+  kinds: readonly MediaKind[],
+  active: (kind: MediaKind) => boolean,
+): void {
   pc.addEventListener("signalingstatechange", () => {
-    if (pc.signalingState !== "have-remote-offer" || !active()) return;
-    const tr = videoTransceiver(pc);
-    if (tr) tr.direction = "inactive";
+    if (pc.signalingState !== "have-remote-offer") return;
+    for (const kind of kinds) {
+      if (!active(kind)) continue;
+      const tr = transceiverOf(pc, kind);
+      if (tr) tr.direction = "inactive";
+    }
   });
 }
 
@@ -862,13 +1165,11 @@ function wrapSession(
     trace: () => book.take(),
     mediaStats: () => media.live(),
     callStats: () => media.summary(),
-    setMicMuted(muted) {
-      if (session.isEnded()) return;
-      if (muted) session.mute({ audio: true });
-      else session.unmute({ audio: true });
+    setMedia(kind, on) {
+      control.setMedia(kind, on);
     },
-    setVideo(on) {
-      control.setVideo(on);
+    setPaused(on) {
+      control.setPaused(on);
     },
     sendDtmf(tone) {
       if (session.isEnded() || !DTMF_TONE.test(tone)) return false;

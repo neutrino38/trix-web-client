@@ -267,13 +267,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "الميكروفون",
-  "ctrl.mic.mute": "كتم الميكروفون",
-  "ctrl.mic.unmute": "إلغاء كتم الميكروفون",
-  "ctrl.cam.aria": "الكاميرا",
+  "ctrl.mic.aria": "الصوت",
+  "ctrl.mic.add": "إضافة الصوت",
+  "ctrl.mic.remove": "إزالة الصوت",
+  "ctrl.cam.aria": "الفيديو",
   "ctrl.cam.add": "إضافة الفيديو",
   "ctrl.cam.remove": "إزالة الفيديو",
-  "ctrl.cam.pending": "جارٍ تغيير الوسائط…",
+  "ctrl.media.pending": "جارٍ تغيير الوسائط…",
+  "ctrl.media.last": "غير ممكن: لن تحمل المكالمة أي وسيط",
   "ctrl.selfview.aria": "صورتك",
   "ctrl.selfview.hide": "إخفاء صورتك",
   "ctrl.selfview.show": "إظهار صورتك",
@@ -288,6 +289,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "إخفاء الدردشة",
   "ctrl.fullscreen": "ملء الشاشة",
   "ctrl.hangup": "إنهاء المكالمة",
+  "ctrl.pause": "إيقاف مؤقت",
+  "ctrl.pause.aria": "إيقاف مؤقت",
+  "ctrl.resume": "استئناف",
+  "pause.banner": "أنت في وضع الإيقاف المؤقت",
+  "pause.hint": "الميكروفون والصورة متوقفان. أما النص فيستمر.",
+  "pause.resume": "استئناف",
+  "pause.peer": "{peer} في وضع الإيقاف المؤقت",
+  "ctrl.more": "عناصر تحكم أخرى",
+  "sheet.title": "عناصر تحكم أخرى بالمكالمة",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -302,10 +312,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // طلب إضافة الفيديو أثناء المكالمة
   // ---------------------------------------------------------------------
-  "videoask.title": "يريد {peer} إضافة الفيديو",
-  "videoask.body": "القبول سيشغّل الكاميرا لديك.",
-  "videoask.accept": "قبول الفيديو",
-  "videoask.reject": "رفض",
+  "mediaask.video.title": "يريد {peer} إضافة الفيديو",
+  "mediaask.video.body": "ستؤدي الموافقة إلى تشغيل الكاميرا.",
+  "mediaask.video.accept": "قبول الفيديو",
+  "mediaask.audio.title": "يريد {peer} إضافة الصوت",
+  "mediaask.audio.body": "ستؤدي الموافقة إلى تشغيل الميكروفون.",
+  "mediaask.audio.accept": "قبول الصوت",
+  "mediaask.both.title": "يريد {peer} إضافة الصوت والفيديو",
+  "mediaask.both.body": "ستؤدي الموافقة إلى تشغيل الميكروفون والكاميرا.",
+  "mediaask.both.accept": "قبول كليهما",
+  "mediaask.reject": "رفض",
 
   // ---------------------------------------------------------------------
   // رسائل عابرة أثناء المكالمة
@@ -316,6 +332,12 @@ const messages: Translation = {
   "notice.videoRemoved": "أزال {peer} الفيديو",
   "notice.videoDeclinedHere": "تم رفض الفيديو",
   "notice.videoUnavailable": "يتعذّر إضافة الفيديو في الوقت الحالي",
+  "notice.audioDeclined": "لم يقبل {peer} الصوت",
+  "notice.audioRefused": "يرفض {peer} إضافة الصوت إلى هذه المكالمة",
+  "notice.audioAdded": "أضاف {peer} الصوت",
+  "notice.audioRemoved": "أزال {peer} الصوت",
+  "notice.audioDeclinedHere": "تم رفض الصوت",
+  "notice.audioUnavailable": "يتعذّر إضافة الصوت في الوقت الحالي",
   "notice.dtmfFailed": "تعذّر إرسال النغمة {tone}",
 
   // ---------------------------------------------------------------------
@@ -340,6 +362,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "مكالمة فيديو واردة",
   "incoming.kicker.audio": "مكالمة صوتية واردة",
+  "incoming.kicker.audioText": "مكالمة صوتية ونصية واردة",
+  "incoming.kicker.videoText": "مكالمة فيديو ونصية واردة",
   "incoming.kicker.text": "مكالمة نصية واردة",
   "incoming.answerVideo": "الرد بالفيديو",
   "incoming.answerAudio": "الرد بالصوت",
