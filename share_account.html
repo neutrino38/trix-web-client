@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Page de partage d'un compte : voir src/share/page.ts.
+     Comme index.html, `lang` et `dir` de départ sont remplacés par src/i18n
+     dès le chargement — ce qui compte ici est qu'un lecteur d'écran ait une
+     langue à annoncer avant même que le script ne tourne. -->
+<html lang="fr" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Le lien porte un secret dans son fragment : rien ne doit inviter un
+       moteur à indexer cette page, ni un intermédiaire à la suivre. -->
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Trix Communicator</title>
+  <link rel="icon" href="/trix-favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/trix-favicon-192.png">
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/src/share/page.ts"></script>
+</body>
+</html>

@@ -137,9 +137,14 @@ Thèmes clair et sombre (interrupteur, comme Elioz Connect).
 ### Écran 1 — Accueil
 
 - Logo du projet centré placeholder FSL en attendant).
-- Bouton primaire « Utiliser le compte » (affiché seulement si un compte est stocké, avec le
-  display name / username en rappel).
-- Bouton secondaire « Configurer un nouveau compte ».
+- **La liste des comptes enregistrés — deux au plus** (ADR 0002). Chacun s'affiche avec son
+  display name et son `user@domaine`, et porte deux actions : « Utiliser le compte »
+  (primaire, s'enregistre et va à l'écran d'appel) et « Modifier » (écran 2 sur ce
+  compte-là). Le premier compte de la liste est celui qui a servi en dernier.
+- Bouton secondaire « Ajouter un compte » (écran 2, formulaire vide) — **absent dès que
+  le second compte existe** : la limite se voit, elle ne se découvre pas sur un refus.
+- Aucun compte enregistré : ni liste ni bouton « Utiliser », seul « Configurer un
+  nouveau compte » en primaire, comme avant.
 
 ### Écran 2 — Configuration
 
@@ -160,15 +165,31 @@ reçus s'affichent dans la console du navigateur, y compris en pleine communicat
 (CONCEPTION §5.2). La même case ouvre les **statistiques média** de l'appel en cours,
 découvertes depuis la pastille « En communication » (CONCEPTION §5.4).
 
-Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
+Le formulaire sert la **création** comme la **modification**, et dit lequel des deux : titre
+« Nouveau compte » ou « Modifier le compte », ce dernier suivi du `user@domaine` concerné —
+avec deux comptes, savoir lequel on est en train de changer n'est plus une évidence. Le compte
+modifié n'est pas forcément celui qui est enregistré : on peut corriger le compte au repos
+sans quitter l'autre (ADR 0002).
+
+Une adresse SIP déjà prise par l'autre compte est **refusée** : deux entrées se disputeraient
+le même registrar et le même correspondant à l'écran. Le message le dit et surligne le champ.
+
+Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil), et —
+sur un compte existant — **« Supprimer ce compte »**, qui efface son enregistrement chiffré
+**et son historique d'appels**, conversations comprises. La suppression demande confirmation
+et n'est proposée que là : l'UA y est déjà arrêté.
 Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
 
 ### Écran 3 — Appel 
 
 Structure 2 zones 
 
-- **Barre d'en-tête** : logo (retour accueil), **indicateur d'enregistrement** (pastille + libellé),
-  bouton « Paramètres » (engrenage → écran 2), bouton « Se déconnecter » (→ écran 1).
+- **Barre d'en-tête** : logo (retour accueil), **indicateur d'enregistrement** (pastille + libellé,
+  suivi du `user@domaine` enregistré), bouton « Paramètres » (engrenage → écran 2),
+  bouton « Se déconnecter » (→ écran 1). Deux comptes enregistrés : s'y ajoute le
+  **bouton de bascule** vers l'autre, qui désenregistre puis enregistre celui-là (ADR 0002).
+  Comme les deux précédents, il est **grisé dès qu'un appel est en cours** — de la première
+  sonnerie au raccroché.
   En communication s'y ajoute la pastille d'appel ; trace SIP cochée, elle découvre au
   survol (ou au focus, ou au clic qui la fixe) les **statistiques média** — codec, débit
   et perte de chaque sens, sur une fenêtre glissante de 10 s (CONCEPTION §5.4).
@@ -245,7 +266,18 @@ Seul le **layout** (structure, dimensions, ergonomie) est repris.
 - [x] Historique des conversations : le fil rejoint la ligne d'appel, chiffré avec le
       compte, et se relit depuis sa bulle « T » avec « Copier » (`sip/transcript.ts`,
       `ui/chatdialog.ts`)
-- [ ] Export WebVTT de la conversation (`ui/subtitles.ts`)
+- [x] Export WebVTT de la conversation (`ui/subtitles.ts`) : calé sur le début de la
+      communication, une bulle figée par entrée, locuteur balisé `<v …>`, remarques du
+      fil en commentaires — le fichier se pose tel quel sur un enregistrement de l'appel
+
+### Phase 4bis : deuxième compte SIP
+
+- [ ] Coffre en liste : `Vault { accounts, activeId }` en un enregistrement chiffré, historique
+      nommé par l'identifiant du compte, migration du compte existant (CONCEPTION §6, ADR 0002)
+- [ ] `PhoneMachine` multi-comptes : compte actif, compte édité (`ctx.editing`), bascule,
+      suppression d'un compte avec son historique
+- [ ] Écrans : liste à l'accueil (deux comptes au plus), formulaire création/modification
+      avec suppression, bouton de bascule dans l'en-tête — grisé pendant l'appel
 
 ### Phase 5 (future) : Tauri
 - [ ] Option d'embarquement Tauri + paquet Ubuntu — **reportée**, contraintes en `CONCEPTION.md` §8

@@ -13,7 +13,7 @@
  * `wireCallScreen` (parts.ts), partagé avec la vue bureau.
  */
 
-import type { PhoneInstance } from "../../../machines/phone.js";
+import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import type { CallView } from "../../../machines/events.js";
 import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
@@ -42,11 +42,12 @@ import {
   historyRow,
   isSpeakerMuted,
   statusOf,
+  switchButton,
 } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
 export function renderMobile(phone: PhoneInstance): HTMLElement {
-  const cfg = phone.context.config;
+  const cfg = activeAccount(phone.context);
   const view = phone.state === "in_call" ? phone.context.call : null;
   const status = statusOf(phone.state);
   const failed = phone.state === "reg_failed";
@@ -95,6 +96,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
               )}</span></span>`
             : ""
         }
+        ${switchButton(phone, view !== null)}
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
                 aria-label="${esc(t("action.settings"))}">${ICONS.settings}</button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="logout" ${view ? "disabled" : ""}

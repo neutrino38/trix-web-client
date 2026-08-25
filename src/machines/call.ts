@@ -326,6 +326,11 @@ function interruptions(ending: Ending): CallOn {
     "ui:rejectVideo": () => undefined,
     "ui:backToSettings": () => undefined,
     "ui:logout": () => undefined,
+    // changer de compte pendant un appel serait raccrocher au nom de
+    // l'utilisateur, ou laisser un appel vivre sur un compte qui n'est plus
+    // enregistré : l'interdiction vaut dès la première sonnerie, et elle ne
+    // repose pas sur l'état d'un bouton (ADR 0002, décision 4 bis)
+    "ui:switchAccount": () => undefined,
     "ui:call": () => undefined,
     "ui:clearHistory": () => undefined,
     "sip:registered": () => undefined,
@@ -859,6 +864,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         "ui:hangup": () => undefined,
         "ui:backToSettings": () => undefined,
         "ui:logout": () => undefined,
+        "ui:switchAccount": () => undefined,
         "ui:call": () => undefined,
         "ui:clearHistory": () => undefined,
       },

@@ -19,6 +19,7 @@ import { formatTime, t, tn } from "../i18n/index.js";
 import { bubbleText, type ChatItem } from "../sip/transcript.js";
 import type { CallLogEntry } from "../storage/store.js";
 import { chatThreadHtml } from "./screens/call/chat.js";
+import { downloadSubtitles } from "./subtitles.js";
 import { esc } from "./el.js";
 
 /**
@@ -47,6 +48,7 @@ export function chatLogDialogHtml(entry: CallLogEntry): string {
       </div>
       <div class="trace-actions">
         <button class="linkbtn" data-act="copy">${esc(t("chat.log.copy"))}</button>
+        <button class="linkbtn" data-act="export">${esc(t("chat.log.export"))}</button>
         <button class="linkbtn" data-act="close">${esc(t("chat.log.close"))}</button>
       </div>
     </div>
@@ -95,6 +97,12 @@ export function showChatDialog(entry: CallLogEntry): void {
         copy.textContent = t("chat.log.copyFailed");
       },
     );
+  });
+  // the conversation as subtitles (`ui/subtitles.ts`): a file laid on the
+  // start of the communication, which drops as-is onto a recording of it
+  const save = dlg.querySelector<HTMLButtonElement>('[data-act="export"]')!;
+  save.addEventListener("click", () => {
+    if (!downloadSubtitles(entry)) save.textContent = t("chat.log.exportFailed");
   });
   dlg.querySelector('[data-act="close"]')!.addEventListener("click", () => dlg.close());
   // click on the backdrop, outside the frame: same gesture as Escape

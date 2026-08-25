@@ -55,6 +55,10 @@ Principes :
 src/
   main.ts                 # bootstrap, détection config, start(PhoneMachine)
   deployment.ts           # config.json : ce que l'exploitant impose (§2.1)
+  accounts.ts             # politique des comptes : combien, et ce qui les rend « le même »
+  share/
+    link.ts               # encodage/décodage d'un compte dans une URL (§6.1)
+    page.ts               # share_account.html : le compte reçu, montré puis créé
   machines/
     phone.ts              # PhoneMachine (cycle de vie app + REGISTER)
     call.ts               # CallBlock (bloc de service : l'appel)
@@ -67,7 +71,7 @@ src/
     stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
     mediaerror.ts         # échecs WebRTC : console, carnet, motif d'appel (§5.5)
   storage/
-    store.ts              # interface SecureStore + implé navigateur
+    store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
     ha1.ts                # MD5(username:realm:password)
   ui/
     screens/{home,config,call}.ts
@@ -933,7 +937,10 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
 - `ui/chatdialog.ts` — la relecture d'une conversation passée, depuis la bulle « T »
   de sa ligne d'historique : même `<dialog>` que le carnet, et le fil rendu par le
   même code que pendant l'appel.
-- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle. **Pas encore écrit.**
+- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle : entrées triées par
+  début (le fil, lui, est dans l'ordre des figeages), recouvrements gardés, remarques du
+  fil en `NOTE` horodatées, et `&`, `<`, `>` échappés. Le téléchargement lui-même est la
+  seule ligne qui touche le document, tout le reste se vérifie sans navigateur.
 
 **Pas d'émulateur de terminal.** `xterm.js` est la seule bibliothèque sérieuse du
 domaine, et elle ne convient pas : elle rend une grille monospace de dimensions fixes
@@ -1271,6 +1278,8 @@ pour des identifiants SIP). La meilleure approximation :
    des deps.
 
 ```ts
+/** Un compte, sans rien qui n'appartienne qu'à ce navigateur : c'est cette
+    forme-là qui se partage par lien (§6.1) et que reçoit `sip.start()`. */
 interface AccountConfig {
   proxy: string;        // wss://…
   domain: string;
@@ -1282,17 +1291,126 @@ interface AccountConfig {
   ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
   rtt: RttTransport;    // texte en temps réel (§4.9) — aucun (défaut), WebSocket, ou canal de données
 }
+/** Le même, une fois dans le coffre : il y gagne un identifiant opaque,
+    tiré à sa création, jamais émis sur le réseau ni transporté par un lien. */
+interface StoredAccount extends AccountConfig {
+  id: string;
+}
+/** Ce que le coffre contient, en un seul enregistrement chiffré. */
+interface Vault {
+  accounts: StoredAccount[];   // dans l'ordre d'affichage ; deux au plus (voir ci-dessous)
+  activeId: string | null;     // celui qui s'enregistre — un seul à la fois
+}
 interface SecureStore {
-  load(): Promise<AccountConfig | null>;
-  save(cfg: AccountConfig): Promise<void>;
+  load(): Promise<Vault>;                     // coffre vide si rien n'est enregistré
+  save(vault: Vault): Promise<void>;
   clear(): Promise<void>;
+  loadHistory(id: string): Promise<CallLogEntry[]>;   // clé : l'identifiant, non l'adresse
+  saveHistory(id: string, entries: CallLogEntry[]): Promise<void>;
+  deleteHistory(id: string): Promise<void>;          // la suppression d'un compte l'emporte
 }
 ```
+
+### Deux comptes (ADR 0002)
+
+Le coffre tient une **liste** et l'identifiant de celui qui est actif. L'interface en
+propose deux au plus ; le stockage et `PhoneMachine` n'en savent rien, ils manipulent
+une liste — le jour où la limite bouge, elle bouge à un endroit.
+
+**Un seul compte enregistré à la fois.** C'est déjà l'invariant de `PhoneMachine`
+(§4.1) : l'UA SIP ne vit que dans `connecting → registering → ready → in_call →
+unregistering`, et toute sortie passe par `stopSip()`. Changer de compte emprunte ce
+chemin — arrêter l'UA, repartir en `connecting` avec l'autre configuration. Il n'y a
+pas de second UA à faire cohabiter, et **la bascule est interdite dès qu'un appel est
+en cours**, de la première sonnerie au raccroché : le bouton est grisé comme le sont
+Paramètres et Se déconnecter, et `CallBlock` consomme l'événement sans effet s'il lui
+parvient malgré tout.
+
+**L'historique est nommé par l'identifiant du compte, non par son adresse.** Corriger
+une adresse mal saisie ne fait donc pas disparaître le journal d'appels, et deux
+comptes de même adresse sur deux proxys différents ne peuvent pas partager le leur —
+que le formulaire refuse par ailleurs deux fois la même adresse.
+
+**Le compte édité n'est pas le compte actif.** `PhoneMachine` porte un `ctx.editing` :
+l'identifiant de celui que le formulaire modifie, `null` pour une création. Toute la
+validation s'y adosse — au premier chef la conservation du HA1 quand le mot de passe
+est laissé vide, qui, adossée au compte *actif*, attribuerait au compte au repos
+l'empreinte de l'autre.
+
+**Migration.** Le compte enregistré sous l'ancienne forme (clé `account`) devient au
+premier démarrage le premier de la liste, et l'actif ; son historique est recopié de
+`history:<user@domaine>` vers `history:<id>`, puis les deux anciennes clés sont
+effacées — sans quoi un compte supprimé plus tard laisserait son HA1 chiffré dans la
+base, sous une clé que plus personne ne lit. L'opération est idempotente et ne perd pas
+le compte existant si elle est interrompue.
+
+**Portée de l'étanchéité.** Un compte ne voit jamais les appels, les identifiants ni
+les réglages de l'autre. Le cloisonnement est **fonctionnel, pas cryptographique** : la
+clé AES-GCM reste unique pour l'origine, ce qui déchiffre un compte déchiffre l'autre —
+c'est la limite 3 ci-dessus, que le second compte n'aggrave pas. Restent communs aux
+deux, et hors du coffre, les réglages du navigateur : thème, langue, taille de police,
+largeur du panneau, mode d'appel par défaut, trace SIP, permission de notification.
+Aucun ne porte de donnée identifiante ; ce qui appartient au compte — flash, serveurs
+ICE, transport du texte temps réel — est dans `AccountConfig` et y reste.
+
+**Un compte se supprime**, depuis le formulaire qui le modifie, et l'opération emporte
+**son historique**. Le coffre amputé est écrit d'abord, l'historique effacé ensuite : un
+historique orphelin est un désagrément, un compte sans son historique serait une fuite.
+Supprimer l'actif ne promeut pas l'autre — on revient à l'accueil, où le compte restant
+se choisit d'un clic ; se réenregistrer ailleurs sans qu'on l'ait demandé serait une
+décision prise à la place de quelqu'un.
 
 `SecureStore` est le **point d'abstraction pour Tauri** : une future implémentation
 `tauriStore` (trousseau OS via `tauri-plugin-keyring`/stronghold — libsecret/GNOME Keyring
 sous Ubuntu) se substituera à `browserStore` par détection de `window.__TAURI__`,
 sans toucher au reste du code.
+
+### 6.1 Partage d'un compte par lien (ADR 0004)
+
+Configurer un compte SIP à la main est ce qui coûte le plus cher à qui installe Trix
+pour quelqu'un d'autre : sept champs, dont une URL de proxy et un mot de passe.
+`share_account.html` fait tenir le compte entier dans une URL, à envoyer par le moyen
+que l'on voudra — rien n'est déposé sur un serveur, le lien **est** le compte
+(`src/share/link.ts`). L'historique, lui, ne voyage pas : il appartient à la personne,
+pas au compte.
+
+**La charge est dans le fragment.** `share_account.html#data=<base64url>` : un fragment
+ne quitte jamais le navigateur — pas de requête HTTP, donc pas de journal d'accès, pas
+d'en-tête `Referer`, pas de trace chez un intermédiaire. La même charge dans la requête
+(`?data=`) aurait déposé le HA1 dans le journal du serveur à chaque ouverture. La
+lecture accepte quand même `?data=`, pour un lien qu'un client de messagerie aurait
+réécrit ; Trix n'en fabrique pas de cette forme.
+
+**Le lien vaut le mot de passe.** Il porte le HA1, et le mot de passe TURN s'il y en a
+un : c'est exactement ce qu'un client SIP présente au registrar. Il n'y a pas de façon
+de rendre cela faux tout en transportant un compte utilisable — l'écran qui fabrique le
+lien le dit donc, et la page qui le reçoit le redit une fois le compte créé.
+
+**Rien n'est créé sans un clic.** La page affiche ce qu'elle a compris — adresse,
+serveur, identifiant d'authentification, serveurs ICE, transport du texte — et attend.
+Ce qui est affiché est exactement ce qui sera créé : le récapitulatif est construit à
+partir du compte **décodé et validé**, pas de la charge brute. Un lien reçu par erreur
+ne configure rien.
+
+**Ce qui vient d'une URL n'est jamais cru.** Chaque champ est vérifié au décodage :
+proxy `ws(s)://`, HA1 sur 32 chiffres hexadécimaux, adresse SIP sans espace ni second
+`@`, serveur TURN écarté s'il lui manque ses identifiants, transport inconnu ramené à
+`none`. Les champs facultatifs absents prennent les mêmes défauts qu'un compte relu d'un
+coffre ancien. Un numéro de version (`v`) permet à un lien plus récent d'être **reconnu
+comme tel** plutôt que rejeté comme illisible.
+
+**Trois refus, dits et non silencieux** : le compte est déjà enregistré sur l'appareil,
+l'appareil en garde déjà autant qu'il en tient, ou le déploiement impose un autre
+domaine SIP. Le dernier n'est pas une politesse : le HA1 a été calculé avec l'ancien
+domaine pour realm (RFC 2617), et n'authentifierait rien ici. Le compte reçu passe du
+reste par `pinAccount()` comme un compte relu — proxy, serveurs ICE et transport imposés
+l'emportent sur ce que le lien transportait (§2.1).
+
+**Deux entrées, pas un aiguillage.** `share_account.html` est une entrée Vite à part
+entière (`vite.config.ts`), servie en fichier statique sans réécriture d'URL côté
+serveur. C'est ce découpage qui garantit que la page n'embarque ni automate, ni pile
+SIP, ni JsSIP : Rollup n'y met que ce qu'elle importe — quelques kilo-octets contre
+près de quatre cents.
 
 ## 7. Normalisation d'adresse
 

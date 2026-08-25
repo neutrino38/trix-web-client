@@ -59,7 +59,8 @@ from the French reference is missing. Nothing else to register. See
 Documentation: [docs/SPECS.md](docs/SPECS.md) (spécifications),
 [docs/CONCEPTION.md](docs/CONCEPTION.md) (conception technique),
 [docs/mockups/mockup.html](docs/mockups/mockup.html) (maquettes),
-[docs/utilisation/deploiement.md](docs/utilisation/deploiement.md) (déploiement).
+[docs/utilisation/deploiement.md](docs/utilisation/deploiement.md) (déploiement),
+[docs/architecture/](docs/architecture/) (décisions d'architecture, une par fichier).
 
 ## Useful commands
 
@@ -73,8 +74,10 @@ npm run diagrams  # regenerates docs/DIAGRAMS.md from the machine sources
 
 ## Deployment
 
-The build is a set of static files. Serve `dist/` over HTTPS — WebRTC needs a secure
-context, or the browser denies camera and microphone access. No backend ships with the
+The build is a set of static files — two pages, `index.html` (the client) and
+`share_account.html` (the one that receives a shared account link). Serve `dist/` over
+HTTPS — WebRTC needs a secure context, or the browser denies camera and microphone
+access. Both are plain files: no URL rewriting is needed. No backend ships with the
 client: the user types the `wss://` URL of their SIP proxy in the configuration screen,
 along with the optional STUN/TURN servers used for NAT traversal (TURN over TLS included).
 
@@ -109,8 +112,14 @@ Full steps, required modules and per-distribution paths:
 - [x] Phase 4 (DTMF) — 12-key keypad over the video stage, physical keyboard, local
       tone feedback, and an on-screen echo of the tones that actually went out
       (RFC 4733: a DTMF is neither heard here nor carried by any SIP packet)
-- [ ] Phase 4 (chat) — chat over the WebRTC data channel
-- [ ] Phase 5 (future) — Tauri packaging
+- [x] Phase 4 (chat) — chat over the WebRTC data channel, total conversation
+      experience (adding / removing audioi or video from a call)
+- [x] Phase 5 (accounts) — deployment configuration through `config.json`, two SIP
+      accounts with one registered at a time, and **account sharing by link**: a whole
+      account travels in a single URL, created on the other device after a confirmation
+      screen (call history never travels — see
+      [ADR 0004](docs/architecture/0004-partage-compte-par-lien.md))
+- [ ] Phase 6 - Instant Messaging. Converged call history and IM, presence handling
 
 ## Observability
 

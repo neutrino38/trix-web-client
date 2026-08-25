@@ -14,7 +14,7 @@ import type { CallView } from "../../../machines/events.js";
 import type { CallLogEntry } from "../../../storage/store.js";
 import type { CallMedia } from "../../../sip/port.js";
 import type { RttTransport } from "../../../sip/rtt.js";
-import type { AccountConfig } from "../../../storage/store.js";
+import type { AccountConfig, StoredAccount } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
 import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
@@ -44,6 +44,7 @@ export const STATUS: Record<string, { key: MsgKey; cls: "ok" | "warn" | "err" }>
   ready: { key: "status.ready", cls: "ok" },
   in_call: { key: "status.ready", cls: "ok" },
   reconnecting: { key: "status.reconnecting", cls: "err" },
+  switching: { key: "status.switching", cls: "warn" },
   sleeping: { key: "status.sleeping", cls: "warn" },
   reg_failed: { key: "status.regFailed", cls: "err" },
   unregistering: { key: "status.unregistering", cls: "warn" },
@@ -81,7 +82,35 @@ export const ICONS = {
   clock: `<svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>`,
   fullscreen: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>`,
   chat: `<svg class="icon" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`,
+  // deux flèches qui se croisent : passer d'un compte à l'autre
+  swap: `<svg class="icon" viewBox="0 0 24 24"><path d="M7 3 3 7l4 4V8h9V6H7V3zm10 18 4-4-4-4v3H8v2h9v3z"/></svg>`,
 };
+
+/**
+ * Le compte sur lequel la bascule renverrait — l'autre, puisqu'il n'y en a
+ * que deux (ADR 0002). `null` quand il n'y en a pas : le bouton n'apparaît
+ * alors nulle part, plutôt que de s'afficher grisé pour une raison qu'un
+ * seul compte ne laisse pas deviner.
+ */
+export function otherAccount(phone: PhoneInstance): StoredAccount | null {
+  const { accounts, activeId } = phone.context;
+  return accounts.find((a) => a.id !== activeId) ?? null;
+}
+
+/**
+ * Le bouton de bascule de l'en-tête, pour les deux gabarits. Grisé pendant
+ * un appel comme le sont Paramètres et Se déconnecter — et refusé de toute
+ * façon par le bloc si l'événement passait quand même (machines/call.ts).
+ */
+export function switchButton(phone: PhoneInstance, inCall: boolean): string {
+  const other = otherAccount(phone);
+  if (!other) return "";
+  const label = t("action.switchAccount", { address: `${other.username}@${other.domain}` });
+  return `<button class="iconbtn ${inCall ? "inactive" : ""}" data-act="switch"
+                data-id="${esc(other.id)}" ${inCall ? "disabled" : ""}
+                title="${esc(label + (inCall ? t("action.unavailableInCall") : ""))}"
+                aria-label="${esc(label)}">${ICONS.swap}</button>`;
+}
 
 /**
  * Variantes « coupé » : la barre oblique dit l'état sans la couleur, seule
@@ -375,6 +404,9 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   // --- barre d'en-tête ----------------------------------------------------
   on('[data-act="settings"]', () => phone.send({ type: "ui:backToSettings" }));
   on('[data-act="logout"]', () => phone.send({ type: "ui:logout" }));
+  on('[data-act="switch"]', (btn) =>
+    phone.send({ type: "ui:switchAccount", id: btn.dataset.id! }),
+  );
   on('[data-act="retry"]', () => phone.send({ type: "ui:retry" }));
   on('[data-act="fix-settings"]', () => phone.send({ type: "ui:backToSettings" }));
 

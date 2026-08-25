@@ -1,8 +1,20 @@
 /**
- * Persistance du compte SIP, chiffrée au repos (docs/CONCEPTION.md §6) :
- * clé AES-GCM 256 non-extractible (WebCrypto) + configuration chiffrée,
- * toutes deux dans IndexedDB. `SecureStore` est le point d'abstraction
- * pour une future implémentation Tauri (trousseau OS).
+ * Persistance des comptes SIP, chiffrée au repos (docs/CONCEPTION.md §6) :
+ * clé AES-GCM 256 non-extractible (WebCrypto) + coffre chiffré, tous deux
+ * dans IndexedDB. `SecureStore` est le point d'abstraction pour une future
+ * implémentation Tauri (trousseau OS).
+ *
+ * Le coffre tient une **liste** de comptes et l'identifiant de l'actif, dans
+ * un seul enregistrement (ADR 0002) : l'écriture reste atomique, et un index
+ * séparé aurait de toute façon porté des adresses SIP, donc aurait dû être
+ * chiffré lui aussi. Chaque compte porte un identifiant opaque, et c'est lui
+ * — non l'adresse SIP — qui nomme son historique : corriger une adresse mal
+ * saisie ne fait plus disparaître le journal d'appels avec elle.
+ *
+ * L'étanchéité entre comptes est **fonctionnelle, pas cryptographique** : la
+ * clé AES-GCM reste unique pour l'origine, ce qui déchiffre un compte
+ * déchiffre l'autre. Ce qui est garanti est qu'un compte ne voit jamais les
+ * appels, les identifiants ni les réglages de l'autre.
  */
 
 import type { CallMedia } from "../sip/port.js";
@@ -44,6 +56,41 @@ export interface AccountConfig {
    * changer de forme sans qu'on l'ait demandé.
    */
   rtt: RttTransport;
+}
+
+/**
+ * Un compte dans le coffre : sa configuration, plus l'identifiant opaque
+ * tiré à sa création. L'identifiant ne sort jamais d'ici — il ne part pas
+ * chez le registrar, il ne se partage pas (`share/link.ts` transporte la
+ * configuration seule) : il ne sert qu'à désigner un compte parmi ceux du
+ * coffre, et à nommer son historique.
+ */
+export interface StoredAccount extends AccountConfig {
+  id: string;
+}
+
+/**
+ * Le coffre entier. `activeId` désigne le compte que l'application
+ * enregistre ; `null` tant qu'aucun n'a été choisi — un coffre vide, ou un
+ * retour à l'accueil après suppression.
+ */
+export interface Vault {
+  accounts: StoredAccount[];
+  activeId: string | null;
+}
+
+export const EMPTY_VAULT: Vault = { accounts: [], activeId: null };
+
+/**
+ * Un identifiant de compte. `crypto.randomUUID` manque aux navigateurs
+ * servis hors contexte sécurisé, où le reste de Trix ne fonctionnerait pas
+ * davantage (WebRTC, WebCrypto) — mais un repli coûte trois lignes et évite
+ * qu'une page de partage ouverte en `http://` échoue sur ce détail-là.
+ */
+export function newAccountId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export type CallDirection = "outgoing" | "incoming";
@@ -103,18 +150,25 @@ export interface CallLogEntry {
 }
 
 export interface SecureStore {
-  load(): Promise<AccountConfig | null>;
-  save(cfg: AccountConfig): Promise<void>;
+  /** Le coffre entier, migré depuis le format à compte unique s'il le faut. */
+  load(): Promise<Vault>;
+  save(vault: Vault): Promise<void>;
+  /** Efface les comptes ; les historiques se suppriment un par un. */
   clear(): Promise<void>;
-  /** Historique du compte (clé `user@domaine`), chiffré comme la configuration. */
-  loadHistory(account: string): Promise<CallLogEntry[]>;
-  saveHistory(account: string, entries: CallLogEntry[]): Promise<void>;
+  /** Historique d'un compte (clé : son identifiant), chiffré comme le coffre. */
+  loadHistory(id: string): Promise<CallLogEntry[]>;
+  saveHistory(id: string, entries: CallLogEntry[]): Promise<void>;
+  /** Supprime l'historique d'un compte — la suppression du compte l'emporte. */
+  deleteHistory(id: string): Promise<void>;
 }
 
 const DB_NAME = "trix";
 const STORE = "vault";
 const KEY_ID = "aes-key";
-const DATA_ID = "account";
+/** Le coffre à liste (ADR 0002). */
+const VAULT_ID = "accounts";
+/** Le compte unique des versions précédentes, migré puis effacé. */
+const LEGACY_ID = "account";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -195,7 +249,7 @@ async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
   }
 }
 
-const historyId = (account: string): string => `history:${account}`;
+const historyId = (id: string): string => `history:${id}`;
 
 /**
  * Lignes écrites avant l'internationalisation : leur motif est une phrase
@@ -208,32 +262,88 @@ function migrateReason(entry: CallLogEntry): CallLogEntry {
   return typeof reason === "string" ? { ...entry, reason: rawMsg(reason) } : entry;
 }
 
+/**
+ * Complète un compte relu des champs apparus après lui : identifiant séparé
+ * absent, flash actif (le désactiver ne peut être qu'un choix explicite),
+ * aucun serveur ICE et aucun texte en temps réel. Exporté parce que la page
+ * de partage relit un compte venu d'une autre installation, éventuellement
+ * plus ancienne, et lui doit les mêmes défauts.
+ */
+export function migrateAccount(cfg: AccountConfig): AccountConfig {
+  return {
+    ...cfg,
+    authUsername: cfg.authUsername ?? null,
+    flashAlert: cfg.flashAlert ?? true,
+    ice: cfg.ice ?? { ...NO_ICE },
+    rtt: parseRttTransport(cfg.rtt),
+  };
+}
+
+/**
+ * Le coffre relu, ramené à une forme utilisable : la liste doit en être une,
+ * chaque compte doit porter un identifiant, et l'actif doit désigner un
+ * compte qui existe. Un coffre à moitié lisible vaut mieux qu'un écran
+ * blanc — mais un `activeId` qui pointe dans le vide enverrait la machine
+ * s'enregistrer sur rien, et c'est cela qu'on refuse ici.
+ */
+function normalizeVault(raw: unknown): Vault {
+  if (typeof raw !== "object" || raw === null) return { ...EMPTY_VAULT };
+  const { accounts, activeId } = raw as Partial<Vault>;
+  if (!Array.isArray(accounts)) return { ...EMPTY_VAULT };
+  const kept = accounts
+    .filter((a): a is StoredAccount => typeof a?.id === "string" && a.id !== "")
+    .map((a) => ({ ...migrateAccount(a), id: a.id }));
+  const active = kept.some((a) => a.id === activeId) ? activeId! : null;
+  return { accounts: kept, activeId: active };
+}
+
+/**
+ * Migration du compte unique vers le coffre à liste (ADR 0002, décision 8).
+ *
+ * L'ordre des trois écritures est celui qui survit à une interruption sans
+ * rien perdre : l'historique est **recopié** sous le nouvel identifiant
+ * avant que le coffre ne le désigne, et les anciennes clés ne partent
+ * qu'une fois les deux en place. Coupée avant la deuxième, la migration
+ * n'aura rien changé de ce qui est lu, et rejouera entièrement au
+ * démarrage suivant.
+ *
+ * L'effacement des anciennes clés n'est pas de la cosmétique : sans lui, un
+ * compte supprimé plus tard laisserait son HA1 chiffré dans la base, sous
+ * une clé que plus personne ne lit.
+ */
+async function migrateLegacy(db: IDBDatabase): Promise<Vault> {
+  const legacy = (await decryptGet(db, LEGACY_ID)) as AccountConfig | null;
+  if (!legacy) return { ...EMPTY_VAULT };
+  const account: StoredAccount = { ...migrateAccount(legacy), id: newAccountId() };
+  const oldKey = `${legacy.username}@${legacy.domain}`;
+  const entries = (await decryptGet(db, historyId(oldKey))) as CallLogEntry[] | null;
+  if (Array.isArray(entries)) await encryptPut(db, historyId(account.id), entries);
+  const vault: Vault = { accounts: [account], activeId: account.id };
+  await encryptPut(db, VAULT_ID, vault);
+  await idbDelete(db, LEGACY_ID);
+  await idbDelete(db, historyId(oldKey));
+  return vault;
+}
+
 export function createBrowserStore(): SecureStore {
   return {
-    async save(cfg: AccountConfig): Promise<void> {
+    async save(vault: Vault): Promise<void> {
       const db = await openDb();
       try {
-        await encryptPut(db, DATA_ID, cfg);
+        await encryptPut(db, VAULT_ID, vault);
       } finally {
         db.close();
       }
     },
 
-    async load(): Promise<AccountConfig | null> {
+    async load(): Promise<Vault> {
       const db = await openDb();
       try {
-        const cfg = (await decryptGet(db, DATA_ID)) as AccountConfig | null;
-        if (!cfg) return null;
-        // comptes enregistrés avant l'ajout de ces champs : identifiant séparé
-        // absent, flash actif (le désactiver ne peut être qu'un choix explicite),
-        // aucun serveur ICE et aucun texte en temps réel
-        return {
-          ...cfg,
-          authUsername: cfg.authUsername ?? null,
-          flashAlert: cfg.flashAlert ?? true,
-          ice: cfg.ice ?? { ...NO_ICE },
-          rtt: parseRttTransport(cfg.rtt),
-        };
+        const raw = await decryptGet(db, VAULT_ID);
+        // Le coffre absent est le seul cas où l'on regarde l'ancienne clé :
+        // la migration est ainsi idempotente sans avoir à se souvenir
+        // qu'elle a eu lieu.
+        return raw === null ? await migrateLegacy(db) : normalizeVault(raw);
       } finally {
         db.close();
       }
@@ -242,26 +352,36 @@ export function createBrowserStore(): SecureStore {
     async clear(): Promise<void> {
       const db = await openDb();
       try {
-        await idbDelete(db, DATA_ID);
+        await idbDelete(db, VAULT_ID);
+        await idbDelete(db, LEGACY_ID);
       } finally {
         db.close();
       }
     },
 
-    async loadHistory(account: string): Promise<CallLogEntry[]> {
+    async loadHistory(id: string): Promise<CallLogEntry[]> {
       const db = await openDb();
       try {
-        const entries = (await decryptGet(db, historyId(account))) as CallLogEntry[] | null;
+        const entries = (await decryptGet(db, historyId(id))) as CallLogEntry[] | null;
         return Array.isArray(entries) ? entries.map(migrateReason) : [];
       } finally {
         db.close();
       }
     },
 
-    async saveHistory(account: string, entries: CallLogEntry[]): Promise<void> {
+    async saveHistory(id: string, entries: CallLogEntry[]): Promise<void> {
       const db = await openDb();
       try {
-        await encryptPut(db, historyId(account), entries);
+        await encryptPut(db, historyId(id), entries);
+      } finally {
+        db.close();
+      }
+    },
+
+    async deleteHistory(id: string): Promise<void> {
+      const db = await openDb();
+      try {
+        await idbDelete(db, historyId(id));
       } finally {
         db.close();
       }

@@ -198,7 +198,23 @@ c'est le **début** du fil qui tombe — une remarque en tête le dit. La ligne
 d'historique porte alors une bulle « T » qui rouvre la conversation en lecture seule,
 avec « Copier ».
 
-## Ce qui reste à faire
+## L'export en sous-titres
 
-L'**export en sous-titres** WebVTT (`ui/subtitles.ts`) décrit en §4.9 n'est pas écrit :
-la conversation se relit et se copie, elle ne s'exporte pas encore.
+La conversation se relit, se copie, et s'exporte en **WebVTT** (`ui/subtitles.ts`) depuis
+le même popup. Le zéro du fichier est le **décroché**, pas l'heure du jour : il se pose
+tel quel sur un enregistrement de l'appel. Un appel jamais établi n'a pas de
+communication à caler — son propre début fait alors office d'origine.
+
+Une bulle figée devient une entrée, du premier caractère au séparateur qui l'a close ; le
+locuteur est balisé `<v Bob>`, jamais préfixé. Les entrées sont **triées par début** — le
+fil, lui, est dans l'ordre des figeages, et deux personnes qui écrivent en même temps
+figent à contretemps — et les recouvrements sont gardés tels quels : c'est ce que WebVTT
+sait faire et SubRip non. Les remarques du fil (lien ouvert, rompu, refusé, début non
+conservé) deviennent des commentaires `NOTE` horodatés : personne ne les a dites, aucun
+lecteur ne les montrera, mais elles expliquent un trou à qui relit le fichier.
+
+Ce qui vient du réseau ne peut pas s'y relire comme du balisage : `&`, `<` et `>` passent
+par une entité, et les fins de ligne — qu'une bulle ne devrait pas porter — redeviennent
+des espaces, une ligne vide fermant une entrée. Une bulle collée d'un bloc, figée dans la
+milliseconde où elle s'est ouverte, dure une seconde au minimum : VTT veut une fin après
+son début, et un sous-titre plus court ne se lit pas.

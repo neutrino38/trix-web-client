@@ -13,13 +13,17 @@
  * `sleeping` raccroche et désenregistre, le réveil réenregistre.
  */
 
-import { defineMachine, goto, stay } from "finite-state-language";
-import type {
-  AccountConfig,
-  CallDirection,
-  CallLogEntry,
-  SecureStore,
+import { defineMachine, goto, stay, type Fx } from "finite-state-language";
+import {
+  newAccountId,
+  type AccountConfig,
+  type CallDirection,
+  type CallLogEntry,
+  type SecureStore,
+  type StoredAccount,
+  type Vault,
 } from "../storage/store.js";
+import { findByAddress } from "../accounts.js";
 import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
@@ -45,7 +49,23 @@ export interface PhoneCtx {
    * hôte qui n'affiche pas de tchat n'en consigne pas.
    */
   transcript: () => ChatItem[];
-  config: AccountConfig | null;
+  /**
+   * Les comptes du coffre, dans l'ordre où ils y sont (ADR 0002). La
+   * machine en manipule une liste sans savoir combien il en tient : la
+   * limite est une affaire d'interface (`src/accounts.ts`).
+   */
+  accounts: StoredAccount[];
+  /** Le compte que l'application enregistre — `null` tant qu'aucun n'est choisi. */
+  activeId: string | null;
+  /**
+   * Le compte que le formulaire modifie, `null` pour une création. Ce n'est
+   * **pas** forcément l'actif : on modifie le compte au repos pendant que
+   * l'autre est enregistré. Toute la validation s'y adosse — conservation du
+   * HA1 quand le mot de passe est laissé vide, comparaison du domaine,
+   * reprise du mot de passe TURN. La comparer à l'actif attribuerait
+   * silencieusement le HA1 d'un compte à l'autre.
+   */
+  editing: string | null;
   handle: SipHandle | null;
   /**
    * Erreur métier en cours, gardée sous forme de message différé : la
@@ -75,6 +95,8 @@ export interface PhoneCtx {
   callError: Msg | null;
   /** Historique d'appels du compte courant, persisté chiffré. */
   history: CallLogEntry[];
+  /** Compte dont la suppression est en cours d'écriture (état `deleting`). */
+  pendingDelete: string | null;
   /** Boucle de reconnexion active : les échecs de connexion repartent en reconnecting. */
   autoReconnect: boolean;
   /** Mise en veille demandée pendant un appel : posée par le bloc, lue à son retour. */
@@ -95,8 +117,23 @@ function recent(entries: CallLogEntry[]): CallLogEntry[] {
   return entries.slice(0, HISTORY_MAX);
 }
 
-function accountKey(cfg: AccountConfig): string {
-  return `${cfg.username}@${cfg.domain}`;
+/**
+ * Le compte enregistré, ou `null`. C'est ce que lisent les écrans et ce que
+ * le port SIP reçoit ; l'identité de l'appelant, l'historique affiché et le
+ * domaine des cibles composées en découlent tous.
+ */
+export function activeAccount(ctx: PhoneCtx): StoredAccount | null {
+  return ctx.accounts.find((a) => a.id === ctx.activeId) ?? null;
+}
+
+/** Le compte que le formulaire modifie — `null` en création. */
+export function editedAccount(ctx: PhoneCtx): StoredAccount | null {
+  return ctx.accounts.find((a) => a.id === ctx.editing) ?? null;
+}
+
+/** Le coffre tel qu'il doit être persisté, dérivé du contexte. */
+function vaultOf(ctx: PhoneCtx): Vault {
+  return { accounts: ctx.accounts, activeId: ctx.activeId };
 }
 
 function stopSip(ctx: PhoneCtx): void {
@@ -128,7 +165,7 @@ function clearError(ctx: PhoneCtx): void {
 /** Vidage de l'historique du compte courant (mémoire + persistance). */
 function clearHistory(_ev: PhoneEvent, ctx: PhoneCtx) {
   ctx.history = [];
-  if (ctx.config) void ctx.store.saveHistory(accountKey(ctx.config), []).catch(() => {});
+  if (ctx.activeId) void ctx.store.saveHistory(ctx.activeId, []).catch(() => {});
   return stay("historique vidé");
 }
 
@@ -188,7 +225,7 @@ function chatOf(ctx: PhoneCtx): { chat?: ChatItem[] } {
 
 function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
   const info = ctx.pendingCall;
-  if (!info || !ctx.config) return;
+  if (!info || !ctx.activeId) return;
   const d = ev.data;
   const connectedAt = "connectedAt" in d ? d.connectedAt : null;
   const entry: CallLogEntry = {
@@ -212,7 +249,7 @@ function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
     ...chatOf(ctx),
   };
   ctx.history = recent([entry, ...ctx.history]);
-  void ctx.store.saveHistory(accountKey(ctx.config), ctx.history).catch(() => {});
+  void ctx.store.saveHistory(ctx.activeId, ctx.history).catch(() => {});
 }
 
 /**
@@ -231,9 +268,17 @@ function isCredentialsError(statusCode: number | undefined): boolean {
   return statusCode === 401 || statusCode === 403 || statusCode === 404 || statusCode === 407;
 }
 
-/** Validation + HA1 du formulaire, partagé par configuring et reconfiguring. */
+/**
+ * Validation + HA1 du formulaire, partagé par configuring et reconfiguring.
+ *
+ * Tout ce qui se compare à « le compte enregistré » se compare ici au
+ * compte **édité** (`ctx.editing`), qui n'est pas forcément l'actif : c'est
+ * la seule façon que modifier le compte au repos ne lui attribue pas le HA1
+ * de l'autre (ADR 0002, décision 5).
+ */
 function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: PhoneCtx) {
   const f = ev.form;
+  const edited = editedAccount(ctx);
   // ce que l'exploitant impose (`config.json`) : le formulaire n'en montre
   // pas les champs, et cette fonction n'en lit pas la saisie — un formulaire
   // trafiqué ne peut donc pas placer le compte ailleurs que sur ce
@@ -254,15 +299,24 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     ctx.suspectFields = "credentials";
     return stay("domaine imposé");
   }
+  // une adresse SIP ne peut pas être enregistrée deux fois : le second
+  // compte ne s'enregistrerait pas, et les deux partageraient un historique
+  // qui n'aurait de sens pour aucun des deux (ADR 0002, décision 6)
+  const address = `${username}@${domain}`;
+  if (findByAddress(ctx.accounts, address, ctx.editing)) {
+    ctx.lastError = msg("error.duplicateAccount", { address });
+    ctx.suspectFields = "credentials";
+    return stay("adresse déjà enregistrée");
+  }
   const authUsername = f.authUsername?.trim() || null;
   // le HA1 dépend de l'identité d'authentification effective et du realm (= domaine)
   const authId = authUsername ?? username;
-  const prevAuthId = ctx.config ? (ctx.config.authUsername ?? ctx.config.username) : null;
+  const prevAuthId = edited ? (edited.authUsername ?? edited.username) : null;
   const ha1 =
     f.password !== null && f.password !== ""
       ? computeHa1(authId, domain, f.password)
-      : ctx.config && prevAuthId === authId && ctx.config.domain === domain
-        ? ctx.config.ha1
+      : edited && prevAuthId === authId && edited.domain === domain
+        ? edited.ha1
         : null;
   if (!ha1) {
     ctx.lastError = msg("error.passwordRequired");
@@ -275,7 +329,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   // pas du formulaire.
   let ice = dep.ice;
   if (!ice) {
-    const parsedIce = parseIceForm(f, ctx.config?.ice ?? null);
+    const parsedIce = parseIceForm(f, edited?.ice ?? null);
     if (!parsedIce.ok) {
       ctx.lastError = parsedIce.error;
       ctx.suspectFields = parsedIce.field;
@@ -283,7 +337,10 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     }
     ice = parsedIce.ice;
   }
-  ctx.config = {
+  const account: StoredAccount = {
+    // un compte modifié garde son identifiant, donc son historique — c'est
+    // tout l'intérêt de ne pas le nommer par son adresse
+    id: edited?.id ?? newAccountId(),
     proxy: dep.proxy ?? f.proxy,
     domain,
     displayName: f.displayName,
@@ -296,7 +353,72 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     // inconnue (compte migré, formulaire trafiqué) retombe sur le défaut
     rtt: dep.rtt ?? parseRttTransport(f.rtt),
   };
+  ctx.accounts = edited
+    ? ctx.accounts.map((a) => (a.id === account.id ? account : a))
+    : [...ctx.accounts, account];
+  // « Enregistrer et se connecter » : le compte que l'on vient de remplir
+  // est celui sur lequel on repart, qu'il fût l'actif ou non
+  ctx.activeId = account.id;
+  ctx.editing = account.id;
   return goto("saving");
+}
+
+/**
+ * Écrit le coffre et relit l'historique du compte actif — le même travail
+ * pour `saving` (le formulaire vient d'être validé) et pour `switching`
+ * (c'est `activeId` qui vient de changer). Les deux repartent ensuite en
+ * `connecting` : ce qui suit une écriture réussie ou ratée est ce qui les
+ * distingue, pas l'écriture elle-même.
+ */
+function persistVault(ctx: PhoneCtx, fx: Fx<PhoneEvent, PhoneCtx>): void {
+  const id = ctx.activeId!;
+  fx.task(ctx.store.save(vaultOf(ctx)).then(() => ctx.store.loadHistory(id)), "saveVault", {
+    timeout: 3000,
+  });
+}
+
+/**
+ * Suppression du compte que le formulaire modifie (ADR 0002, décision 7).
+ * L'opération efface l'enregistrement **et son historique** ; c'est l'état
+ * `deleting` qui écrit, celui-ci ne fait que retirer le compte de la
+ * session et désigner ce qui prend sa place.
+ *
+ * Rien n'est proposé pour un formulaire de création : il n'y a pas de
+ * compte à supprimer, et l'écran ne montre pas le bouton.
+ */
+function deleteAccount(_ev: PhoneEvent, ctx: PhoneCtx) {
+  const id = ctx.editing;
+  if (!id || !ctx.accounts.some((a) => a.id === id)) return stay("aucun compte à supprimer");
+  ctx.accounts = ctx.accounts.filter((a) => a.id !== id);
+  ctx.pendingDelete = id;
+  // supprimer l'actif ne promeut pas l'autre : on retourne à l'accueil, où
+  // le compte restant se choisit d'un clic — se réenregistrer ailleurs sans
+  // qu'on l'ait demandé serait une décision prise à la place de quelqu'un
+  if (ctx.activeId === id) {
+    ctx.activeId = null;
+    ctx.history = [];
+  }
+  clearError(ctx);
+  return goto("deleting");
+}
+
+/**
+ * Bascule vers l'autre compte, depuis l'en-tête de l'écran d'appel. Elle
+ * emprunte un chemin qui existe déjà — arrêter l'UA, repartir en
+ * `connecting` avec une autre configuration — via `switching`, qui écrit le
+ * coffre et charge l'historique du compte qui prend la main. Il n'y a pas
+ * de second UA à faire cohabiter, et il ne faut surtout pas en inventer un
+ * (ADR 0002).
+ *
+ * L'interdiction pendant un appel n'est pas ici : `in_call` a rendu la main
+ * au bloc, qui consomme l'événement sans effet — la garantie ne repose pas
+ * sur l'état d'un bouton.
+ */
+function switchAccount(ev: Extract<PhoneEvent, { type: "ui:switchAccount" }>, ctx: PhoneCtx) {
+  if (ev.id === ctx.activeId) return stay("déjà ce compte");
+  if (!ctx.accounts.some((a) => a.id === ev.id)) return stay("compte inconnu");
+  ctx.activeId = ev.id;
+  return goto("switching", "changement de compte");
 }
 
 /**
@@ -330,7 +452,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     store: null as unknown as SecureStore,
     sip: null as unknown as SipPort,
     transcript: () => [],
-    config: null,
+    accounts: [],
+    activeId: null,
+    editing: null,
     handle: null,
     lastError: null,
     lastErrorCode: null,
@@ -340,6 +464,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     call: null,
     callError: null,
     history: [],
+    pendingDelete: null,
     autoReconnect: false,
     sleepRequested: false,
   }),
@@ -348,25 +473,32 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     initial_state: {
       enter(ctx, fx) {
         fx.task(
-          ctx.store.load().then(async (config) => ({
-            config,
-            history: config ? await ctx.store.loadHistory(accountKey(config)) : [],
+          ctx.store.load().then(async (vault) => ({
+            vault,
+            history: vault.activeId ? await ctx.store.loadHistory(vault.activeId) : [],
           })),
-          "loadConfig",
+          "loadVault",
           { timeout: 3000 },
         );
       },
       on: {
-        "task:loadConfig": (ev, ctx) => {
-          // le compte relu passe par le déploiement avant d'être adopté :
-          // proxy, serveurs ICE et transport texte imposés écrasent ce qui
-          // avait été enregistré, et un compte d'un autre domaine que le
-          // domaine imposé est écarté — son HA1 a été calculé sur ce
-          // domaine-là (§6), rien ne peut le rattraper ici
-          const loaded = ev.ok ? ev.value.config : null;
-          ctx.config = loaded ? pinAccount(loaded) : null;
-          ctx.history = ev.ok && ctx.config ? recent(ev.value.history) : [];
-          return goto("home", ctx.config ? "compte trouvé" : "aucun compte");
+        "task:loadVault": (ev, ctx) => {
+          // les comptes relus passent par le déploiement avant d'être
+          // adoptés : proxy, serveurs ICE et transport texte imposés
+          // écrasent ce qui avait été enregistré, et un compte d'un autre
+          // domaine que le domaine imposé est écarté — son HA1 a été calculé
+          // sur ce domaine-là (§6), rien ne peut le rattraper ici. Si c'est
+          // l'actif qui disparaît ainsi, l'accueil repart sur ce qui reste.
+          const vault = ev.ok ? ev.value.vault : null;
+          ctx.accounts = (vault?.accounts ?? []).flatMap((a) => {
+            const pinned = pinAccount(a);
+            return pinned ? [{ ...pinned, id: a.id }] : [];
+          });
+          ctx.activeId = ctx.accounts.some((a) => a.id === vault?.activeId)
+            ? vault!.activeId
+            : null;
+          ctx.history = ctx.activeId && ev.ok ? recent(ev.value.history) : [];
+          return goto("home", ctx.accounts.length > 0 ? "compte trouvé" : "aucun compte");
         },
       },
       meta: { screen: "boot" },
@@ -374,12 +506,18 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
 
     home: {
       on: {
-        "ui:configure": (_ev, ctx) => {
+        "ui:configure": (ev, ctx) => {
           clearError(ctx);
+          // `id: null` ouvre un formulaire vide — ajouter un compte, et non
+          // écraser celui qui est là
+          ctx.editing = ev.id;
           return goto("configuring");
         },
-        "ui:useAccount": (_ev, ctx) =>
-          ctx.config ? goto("connecting") : stay("aucun compte configuré"),
+        "ui:useAccount": (ev, ctx) => {
+          if (!ctx.accounts.some((a) => a.id === ev.id)) return stay("compte inconnu");
+          ctx.activeId = ev.id;
+          return goto("switching", "compte choisi");
+        },
         // événements SIP tardifs d'un UA arrêté : consommés sans effet
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
@@ -395,6 +533,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       // suspects restent affichés sur le formulaire pour guider la correction
       on: {
         "ui:saveConfig": saveConfig,
+        "ui:deleteAccount": deleteAccount,
         "ui:cancelConfig": () => goto("home"),
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
@@ -409,6 +548,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     reconfiguring: {
       on: {
         "ui:saveConfig": saveConfig,
+        "ui:deleteAccount": deleteAccount,
         "ui:cancelConfig": () => goto("connecting", "retour à l'appel"),
         // suites de l'arrêt de l'UA : consommées sans effet
         "sip:disconnected": () => undefined,
@@ -422,17 +562,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     },
 
     saving: {
-      enter(ctx, fx) {
-        const cfg = ctx.config!;
-        // sauvegarde + chargement de l'historique du compte (re)configuré
-        fx.task(
-          ctx.store.save(cfg).then(() => ctx.store.loadHistory(accountKey(cfg))),
-          "saveConfig",
-          { timeout: 3000 },
-        );
-      },
+      enter: persistVault,
       on: {
-        "task:saveConfig": (ev, ctx) => {
+        "task:saveVault": (ev, ctx) => {
           // même si la persistance échoue, la session en mémoire reste utilisable
           if (ev.ok) ctx.history = recent(ev.value);
           else {
@@ -447,10 +579,77 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       meta: { screen: "config" },
     },
 
+    /**
+     * Changement de compte actif — depuis l'accueil ou depuis l'en-tête de
+     * l'écran d'appel. Le même travail que `saving` : persister le coffre
+     * (c'est `activeId` qui vient de changer) et charger l'historique du
+     * compte qui prend la main, avant de repartir en `connecting`.
+     *
+     * Un état à lui, et non `saving`, parce que l'écran n'est pas le même :
+     * on ne revient pas au formulaire de paramètres pour avoir cliqué sur
+     * un nom de compte.
+     */
+    switching: {
+      enter(ctx, fx) {
+        stopSip(ctx);
+        ctx.autoReconnect = false;
+        // rien de l'ancien compte ne doit survivre à la bascule : ni son
+        // journal d'appels à l'écran, ni l'erreur de son enregistrement
+        ctx.history = [];
+        clearError(ctx);
+        persistVault(ctx, fx);
+      },
+      on: {
+        "task:saveVault": (ev, ctx) => {
+          if (ev.ok) ctx.history = recent(ev.value);
+          return goto("connecting", "compte changé");
+        },
+        "sip:disconnected": () => undefined,
+        "sip:unregistered": () => undefined,
+        "sip:registrationFailed": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
+        "sys:sleep": () => undefined,
+        "sys:wake": () => undefined,
+      },
+      meta: { screen: "call" },
+    },
+
+    /**
+     * Suppression du compte que le formulaire modifiait : le coffre amputé
+     * est écrit, puis son historique effacé. Dans cet ordre — un historique
+     * orphelin est un désagrément, un compte sans son historique est une
+     * fuite : quelques dizaines d'appels chiffrés sous une clé que plus
+     * personne ne lit.
+     */
+    deleting: {
+      enter(ctx, fx) {
+        stopSip(ctx);
+        ctx.autoReconnect = false;
+        const id = ctx.pendingDelete!;
+        fx.task(
+          ctx.store.save(vaultOf(ctx)).then(() => ctx.store.deleteHistory(id)),
+          "deleteAccount",
+          { timeout: 3000 },
+        );
+      },
+      on: {
+        // l'échec d'écriture ne change rien à la décision : le compte a
+        // disparu de la session, et l'accueil ne le propose plus
+        "task:deleteAccount": (_ev, ctx) => {
+          ctx.pendingDelete = null;
+          ctx.editing = null;
+          return goto("home", "compte supprimé");
+        },
+        "sys:sleep": () => undefined,
+        "sys:wake": () => undefined,
+      },
+      meta: { screen: "config" },
+    },
+
     connecting: {
       enter(ctx, fx) {
         clearError(ctx);
-        ctx.handle = ctx.sip.start(ctx.config!, (ev) => fx.send(ev));
+        ctx.handle = ctx.sip.start(activeAccount(ctx)!, (ev) => fx.send(ev));
       },
       on: {
         "sip:connected": () => goto("registering", "WebSocket ouverte"),
@@ -551,8 +750,12 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:backToSettings": (_ev, ctx) => {
           stopSip(ctx);
           clearError(ctx);
+          // les paramètres s'ouvrent sur le compte enregistré : c'est celui
+          // dont on vient, et le seul que l'en-tête désigne
+          ctx.editing = ctx.activeId;
           return goto("reconfiguring", "retour paramètres");
         },
+        "ui:switchAccount": switchAccount,
         "ui:logout": () => goto("unregistering"),
         "ui:clearHistory": clearHistory,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
@@ -617,8 +820,10 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:clearHistory": clearHistory,
         "ui:backToSettings": (_ev, ctx) => {
           ctx.autoReconnect = false;
+          ctx.editing = ctx.activeId;
           return goto("reconfiguring", "paramètres");
         },
+        "ui:switchAccount": switchAccount,
         "ui:logout": (_ev, ctx) => {
           ctx.autoReconnect = false;
           return goto("home", "déconnexion");
@@ -655,7 +860,11 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": () => undefined,
         "ui:logout": () => goto("home"),
-        "ui:backToSettings": () => goto("reconfiguring"),
+        "ui:switchAccount": switchAccount,
+        "ui:backToSettings": (_ev, ctx) => {
+          ctx.editing = ctx.activeId;
+          return goto("reconfiguring");
+        },
       },
       meta: { screen: "call" },
     },
@@ -667,7 +876,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "ui:retry": () => goto("connecting"),
         "ui:clearHistory": clearHistory,
-        "ui:backToSettings": () => goto("configuring"),
+        "ui:switchAccount": switchAccount,
+        // le compte dont l'enregistrement vient d'échouer : c'est celui-là
+        // qu'il faut corriger, et l'erreur reste affichée sur son formulaire
+        "ui:backToSettings": (_ev, ctx) => {
+          ctx.editing = ctx.activeId;
+          return goto("configuring");
+        },
         "ui:logout": () => goto("home"),
         // suites de l'arrêt de l'UA : consommées sans effet
         "sip:disconnected": () => undefined,
