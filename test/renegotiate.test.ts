@@ -19,7 +19,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mediaControl } from "../src/sip/port.js";
+import { mediaControl, wrapSession } from "../src/sip/port.js";
+import type { RttChannel } from "../src/sip/rtt.js";
 import type { CallSipEvent, MediaKind } from "../src/sip/port.js";
 
 /**
@@ -170,8 +171,16 @@ class FakeSession {
 
   _receiveReinvite(): void {}
 
+  private listeners: Record<string, ((e: never) => void)[]> = {};
+
   on(event: string, listener: (e: never) => void): void {
     if (event === "sdp") this.sdpListeners.push(listener as never);
+    (this.listeners[event] ??= []).push(listener);
+  }
+
+  /** Joue un événement de session — `accepted` est celui qui rend la parole. */
+  emit(event: string): void {
+    for (const l of this.listeners[event] ?? []) (l as () => void)();
   }
 
   /** Joue un passage de SDP et rend ce qui partira sur le fil. */
@@ -595,5 +604,62 @@ describe("silence avant le décrochage", () => {
     late.sent.enabled = true;
     session.pc.settle("have-local-offer");
     expect(late.sent.enabled).toBe(false);
+  });
+});
+
+/**
+ * **La régression la plus silencieuse possible** : un appel qui s'établit —
+ * signalisation parfaite, chrono qui tourne — et où rien ne passe, parce que
+ * le silence posé avant le décrochage n'a pas été levé. Elle est arrivée une
+ * fois, en perdant l'écouteur qui le lève ; ce test est là pour qu'elle ne
+ * revienne pas.
+ *
+ * Les deux restrictions se lèvent ensemble : les pistes réémettent, et le
+ * texte tapé repart.
+ */
+describe("le décrochage rend la parole", () => {
+  const fakeRtt = () => {
+    const sending: boolean[] = [];
+    const channel = {
+      setSending: (on: boolean) => sending.push(on),
+      missingText: () => 0,
+    } as unknown as RttChannel;
+    return { sending, negotiation: { channel, negotiated: () => true, close: () => {} } };
+  };
+
+  it("pose le silence à l'ouverture, le lève sur `accepted`", () => {
+    const session = new FakeSession(["audio", "video"]);
+    const ctl = mediaControl(session as never, () => {}, () => false);
+    const rtt = fakeRtt();
+    wrapSession(session as never, { take: () => [] }, ctl, rtt.negotiation as never);
+
+    // avant le décrochage : noir, silence, et rien de tapé ne part
+    for (const tr of session.pc.transceivers) expect(tr.sent.enabled).toBe(false);
+    expect(rtt.sending).toEqual([false]);
+
+    session.emit("accepted");
+
+    // après : tout repart, et ensemble
+    for (const tr of session.pc.transceivers) expect(tr.sent.enabled).toBe(true);
+    expect(rtt.sending).toEqual([false, true]);
+  });
+
+  it("l'ACK rattrape si le décrochage n'a pas été vu", () => {
+    const session = new FakeSession(["audio"]);
+    const ctl = mediaControl(session as never, () => {}, () => false);
+    const rtt = fakeRtt();
+    wrapSession(session as never, { take: () => [] }, ctl, rtt.negotiation as never);
+    session.emit("confirmed");
+    expect(session.pc.transceivers[0]!.sent.enabled).toBe(true);
+    expect(rtt.sending).toEqual([false, true]);
+  });
+
+  it("un appel sans texte se comporte pareil du côté des pistes", () => {
+    const session = new FakeSession(["audio"]);
+    const ctl = mediaControl(session as never, () => {}, () => false);
+    wrapSession(session as never, { take: () => [] }, ctl, null);
+    expect(session.pc.transceivers[0]!.sent.enabled).toBe(false);
+    session.emit("accepted");
+    expect(session.pc.transceivers[0]!.sent.enabled).toBe(true);
   });
 });

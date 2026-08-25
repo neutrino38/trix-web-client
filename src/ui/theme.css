@@ -1208,7 +1208,14 @@ fieldset.field { border: none; }
    automatique portée par un pseudo-élément, et non `justify-content:flex-end`
    — celui-ci rend inatteignable ce qui déborde par le haut. */
 .chat-stage .chat-thread::before { content: ""; margin-block-start: auto; }
-.chat-stage .chat-line { max-width: min(88%, 620px); }
+/* Le plafond de largeur d'une bulle : assez large pour qu'un message long
+   ne se replie pas en colonne — sur un écran de bureau, 620 px laissaient
+   les côtés vides et empilaient les lignes — assez court pour que l'œil
+   retrouve le début de la ligne suivante. Il est en `rem`, donc il suit le
+   réglage de taille de police du pied de panneau (`ui/prefs.ts`) : agrandir
+   le texte élargit la bulle d'autant, et le nombre de caractères par ligne
+   ne bouge pas. */
+.chat-stage .chat-line { max-width: min(88%, 60rem); }
 .chat-stage .bubble { font-size: 0.95rem; }
 .chat-stage .chat-composer { padding: 0.7rem clamp(0.75rem, 5vw, 2.5rem) 0.6rem; }
 /* le pavé DTMF se posait au-dessus de la barre, en bas de l'image ; la barre

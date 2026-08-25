@@ -1294,7 +1294,12 @@ function dtmfSender(pc: RTCPeerConnection | undefined): RTCDTMFSender | null {
   return sender?.dtmf ?? null;
 }
 
-function wrapSession(
+/**
+ * La session vue par les machines et l'UI. Exportée pour être vérifiable :
+ * c'est ici que se pose — et se lève — le silence d'avant le décrochage,
+ * et rien d'autre dans le port n'a la même conséquence en cas d'oubli.
+ */
+export function wrapSession(
   session: RtcSessionLike,
   book: CallTraceHandle,
   control: MediaControl,
@@ -1320,6 +1325,20 @@ function wrapSession(
    */
   control.setSilent(true);
   rtt?.channel.setSending(false);
+  // Le décrochage, et lui seul, rend la parole. Les deux restrictions se
+  // lèvent **ensemble et ici** : posées sans être levées, elles font un
+  // appel qui s'établit et où rien ne passe — la panne la plus silencieuse
+  // qui soit, puisque la signalisation, elle, est parfaite.
+  const speakUp = (): void => {
+    control.setSilent(false);
+    rtt?.channel.setSending(true);
+  };
+  // `accepted` suffit — il est émis des deux côtés, par le 200 OK reçu pour
+  // un sortant et par son envoi pour un entrant. `confirmed` (l'ACK) est là
+  // en ceinture : les deux gestes sont idempotents, et le prix d'un appel
+  // muet de bout en bout est trop élevé pour dépendre d'un seul événement.
+  session.on("accepted", speakUp);
+  session.on("confirmed", speakUp);
 
   // la caméra que nous avons ouverte survivrait au dialogue : JsSIP ne
   // referme que le flux qu'il a demandé lui-même
