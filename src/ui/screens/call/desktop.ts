@@ -7,7 +7,7 @@
  * `wireCallScreen` (parts.ts), partagé avec la vue mobile.
  */
 
-import type { PhoneInstance } from "../../../machines/phone.js";
+import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
@@ -29,11 +29,12 @@ import {
   historyRow,
   isSpeakerMuted,
   statusOf,
+  switchButton,
 } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
 export function renderDesktop(phone: PhoneInstance): HTMLElement {
-  const cfg = phone.context.config;
+  const cfg = activeAccount(phone.context);
   const view = phone.state === "in_call" ? phone.context.call : null;
   const status = statusOf(phone.state);
   const identity = cfg ? ` — ${esc(cfg.username)}@${esc(cfg.domain)}` : "";
@@ -88,6 +89,10 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             : ""
         }
         <span class="spacer"></span>
+        <!-- La bascule de compte, avant Paramètres : elle ne change pas les
+             réglages, elle change d'identité (ADR 0002, décision 4). Absente
+             tant qu'il n'y a qu'un compte. -->
+        ${switchButton(phone, view !== null)}
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
                 title="${esc(t("action.settings") + (view ? t("action.unavailableInCall") : ""))}"
                 aria-label="${esc(t("action.settings"))}">

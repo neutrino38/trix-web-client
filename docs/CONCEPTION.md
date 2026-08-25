@@ -55,6 +55,10 @@ Principes :
 src/
   main.ts                 # bootstrap, détection config, start(PhoneMachine)
   deployment.ts           # config.json : ce que l'exploitant impose (§2.1)
+  accounts.ts             # politique des comptes : combien, et ce qui les rend « le même »
+  share/
+    link.ts               # encodage/décodage d'un compte dans une URL (§6.1)
+    page.ts               # share_account.html : le compte reçu, montré puis créé
   machines/
     phone.ts              # PhoneMachine (cycle de vie app + REGISTER)
     call.ts               # CallBlock (bloc de service : l'appel)
@@ -67,7 +71,7 @@ src/
     stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
     mediaerror.ts         # échecs WebRTC : console, carnet, motif d'appel (§5.5)
   storage/
-    store.ts              # interface SecureStore + implé navigateur
+    store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
     ha1.ts                # MD5(username:realm:password)
   ui/
     screens/{home,config,call}.ts
@@ -1274,8 +1278,9 @@ pour des identifiants SIP). La meilleure approximation :
    des deps.
 
 ```ts
+/** Un compte, sans rien qui n'appartienne qu'à ce navigateur : c'est cette
+    forme-là qui se partage par lien (§6.1) et que reçoit `sip.start()`. */
 interface AccountConfig {
-  id: string;           // identifiant opaque du compte, tiré à sa création — jamais émis sur le réseau
   proxy: string;        // wss://…
   domain: string;
   displayName: string;
@@ -1286,9 +1291,14 @@ interface AccountConfig {
   ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
   rtt: RttTransport;    // texte en temps réel (§4.9) — aucun (défaut), WebSocket, ou canal de données
 }
+/** Le même, une fois dans le coffre : il y gagne un identifiant opaque,
+    tiré à sa création, jamais émis sur le réseau ni transporté par un lien. */
+interface StoredAccount extends AccountConfig {
+  id: string;
+}
 /** Ce que le coffre contient, en un seul enregistrement chiffré. */
 interface Vault {
-  accounts: AccountConfig[];   // dans l'ordre d'affichage ; deux au plus (voir ci-dessous)
+  accounts: StoredAccount[];   // dans l'ordre d'affichage ; deux au plus (voir ci-dessous)
   activeId: string | null;     // celui qui s'enregistre — un seul à la fois
 }
 interface SecureStore {
@@ -1297,6 +1307,7 @@ interface SecureStore {
   clear(): Promise<void>;
   loadHistory(id: string): Promise<CallLogEntry[]>;   // clé : l'identifiant, non l'adresse
   saveHistory(id: string, entries: CallLogEntry[]): Promise<void>;
+  deleteHistory(id: string): Promise<void>;          // la suppression d'un compte l'emporte
 }
 ```
 
@@ -1342,10 +1353,64 @@ largeur du panneau, mode d'appel par défaut, trace SIP, permission de notificat
 Aucun ne porte de donnée identifiante ; ce qui appartient au compte — flash, serveurs
 ICE, transport du texte temps réel — est dans `AccountConfig` et y reste.
 
+**Un compte se supprime**, depuis le formulaire qui le modifie, et l'opération emporte
+**son historique**. Le coffre amputé est écrit d'abord, l'historique effacé ensuite : un
+historique orphelin est un désagrément, un compte sans son historique serait une fuite.
+Supprimer l'actif ne promeut pas l'autre — on revient à l'accueil, où le compte restant
+se choisit d'un clic ; se réenregistrer ailleurs sans qu'on l'ait demandé serait une
+décision prise à la place de quelqu'un.
+
 `SecureStore` est le **point d'abstraction pour Tauri** : une future implémentation
 `tauriStore` (trousseau OS via `tauri-plugin-keyring`/stronghold — libsecret/GNOME Keyring
 sous Ubuntu) se substituera à `browserStore` par détection de `window.__TAURI__`,
 sans toucher au reste du code.
+
+### 6.1 Partage d'un compte par lien (ADR 0004)
+
+Configurer un compte SIP à la main est ce qui coûte le plus cher à qui installe Trix
+pour quelqu'un d'autre : sept champs, dont une URL de proxy et un mot de passe.
+`share_account.html` fait tenir le compte entier dans une URL, à envoyer par le moyen
+que l'on voudra — rien n'est déposé sur un serveur, le lien **est** le compte
+(`src/share/link.ts`). L'historique, lui, ne voyage pas : il appartient à la personne,
+pas au compte.
+
+**La charge est dans le fragment.** `share_account.html#data=<base64url>` : un fragment
+ne quitte jamais le navigateur — pas de requête HTTP, donc pas de journal d'accès, pas
+d'en-tête `Referer`, pas de trace chez un intermédiaire. La même charge dans la requête
+(`?data=`) aurait déposé le HA1 dans le journal du serveur à chaque ouverture. La
+lecture accepte quand même `?data=`, pour un lien qu'un client de messagerie aurait
+réécrit ; Trix n'en fabrique pas de cette forme.
+
+**Le lien vaut le mot de passe.** Il porte le HA1, et le mot de passe TURN s'il y en a
+un : c'est exactement ce qu'un client SIP présente au registrar. Il n'y a pas de façon
+de rendre cela faux tout en transportant un compte utilisable — l'écran qui fabrique le
+lien le dit donc, et la page qui le reçoit le redit une fois le compte créé.
+
+**Rien n'est créé sans un clic.** La page affiche ce qu'elle a compris — adresse,
+serveur, identifiant d'authentification, serveurs ICE, transport du texte — et attend.
+Ce qui est affiché est exactement ce qui sera créé : le récapitulatif est construit à
+partir du compte **décodé et validé**, pas de la charge brute. Un lien reçu par erreur
+ne configure rien.
+
+**Ce qui vient d'une URL n'est jamais cru.** Chaque champ est vérifié au décodage :
+proxy `ws(s)://`, HA1 sur 32 chiffres hexadécimaux, adresse SIP sans espace ni second
+`@`, serveur TURN écarté s'il lui manque ses identifiants, transport inconnu ramené à
+`none`. Les champs facultatifs absents prennent les mêmes défauts qu'un compte relu d'un
+coffre ancien. Un numéro de version (`v`) permet à un lien plus récent d'être **reconnu
+comme tel** plutôt que rejeté comme illisible.
+
+**Trois refus, dits et non silencieux** : le compte est déjà enregistré sur l'appareil,
+l'appareil en garde déjà autant qu'il en tient, ou le déploiement impose un autre
+domaine SIP. Le dernier n'est pas une politesse : le HA1 a été calculé avec l'ancien
+domaine pour realm (RFC 2617), et n'authentifierait rien ici. Le compte reçu passe du
+reste par `pinAccount()` comme un compte relu — proxy, serveurs ICE et transport imposés
+l'emportent sur ce que le lien transportait (§2.1).
+
+**Deux entrées, pas un aiguillage.** `share_account.html` est une entrée Vite à part
+entière (`vite.config.ts`), servie en fichier statique sans réécriture d'URL côté
+serveur. C'est ce découpage qui garantit que la page n'embarque ni automate, ni pile
+SIP, ni JsSIP : Rollup n'y met que ce qu'elle importe — quelques kilo-octets contre
+près de quatre cents.
 
 ## 7. Normalisation d'adresse
 

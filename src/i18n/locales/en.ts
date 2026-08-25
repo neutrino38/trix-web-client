@@ -39,6 +39,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "screen.settings": "Settings",
   "screen.saving": "Saving…",
+  "screen.deleting": "Deleting…",
 
   // ---------------------------------------------------------------------
   // Home screen
@@ -46,6 +47,8 @@ const messages: Translation = {
   "home.tagline": "Total Conversation webphone",
   "home.useAccount": "Use this account",
   "home.newAccount": "Set up a new account",
+  "home.addAccount": "Add an account",
+  "home.editAccount": "Edit",
   "home.version": "Version {version}",
   "fsl.aria": "Powered by FSL — finite-state-language on GitHub (new window)",
 
@@ -53,6 +56,7 @@ const messages: Translation = {
   // Configuration screen
   // ---------------------------------------------------------------------
   "config.title": "Settings",
+  "config.titleNew": "New account",
   "config.section.account": "SIP account",
   "config.proxy": "SIP server",
   "config.proxyPlaceholder": "wss://sip.example.com:8443/ws",
@@ -71,6 +75,12 @@ const messages: Translation = {
   "config.passwordKeep": "Leave blank to keep the current password.",
   "config.ha1Note":
     "The password itself is never stored — only a digest (HA1), encrypted, in this browser.",
+  "config.share": "Account sharing",
+  "config.shareCopy": "Copy sharing link",
+  "config.shareWarn":
+    "This link carries everything needed to authenticate on this account: it is worth the password. Only pass it to whoever must use it, and over a safe channel.",
+  "config.shareCopied": "Sharing link copied",
+  "config.shareManual": "Sharing link, to copy",
 
   "config.section.nat": "NAT traversal",
   "config.natHint":
@@ -138,6 +148,8 @@ const messages: Translation = {
   "config.save": "Save and connect",
   "config.saving": "Saving…",
   "config.cancel": "Cancel",
+  "config.delete": "Delete this account",
+  "config.deleteConfirm": "Confirm: delete {address} and its history",
 
   // ---------------------------------------------------------------------
   // Phone state
@@ -149,6 +161,7 @@ const messages: Translation = {
   "status.sleeping": "Asleep",
   "status.regFailed": "Registration failed",
   "status.unregistering": "Signing out…",
+  "status.switching": "Switching account…",
 
   // ---------------------------------------------------------------------
   // Call state
@@ -228,6 +241,7 @@ const messages: Translation = {
   "action.retryNow": "Try again now",
   "action.fixSettings": "Fix settings",
   "action.unavailableInCall": " (unavailable during a call)",
+  "action.switchAccount": "Switch to {address}",
 
   // ---------------------------------------------------------------------
   // Media controls
@@ -394,6 +408,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "error.invalidUri": "Invalid SIP address (expected user@domain)",
   "error.wrongDomain": "This address must be in the {domain} domain",
+  "error.duplicateAccount": "{address} is already saved as the other account",
   "error.passwordRequired": "Password required",
   "error.saveFailed": "Could not save: {detail}",
   "error.invalidProxy": "Invalid proxy name — check the WSS address",
@@ -425,6 +440,36 @@ const messages: Translation = {
   "reason.offerUnsupported": "Media offer without {detail}: not WebRTC-compatible",
   "reason.callFailed": "Could not place the call: {detail}",
   "reason.sip": "{cause} (SIP {code})",
+
+  // ---------------------------------------------------------------------
+  // Account sharing page (share_account.html)
+  // ---------------------------------------------------------------------
+  "share.title": "Shared account",
+  "share.intro":
+    "This link carries the settings of a SIP account. Check them, then create the account on this device.",
+  "share.address": "SIP address",
+  "share.displayName": "Display name",
+  "share.proxy": "SIP server",
+  "share.authUsername": "Authentication username",
+  "share.ice": "NAT traversal",
+  "share.rtt": "Real-time text",
+  "share.none": "None",
+  "share.warn":
+    "This link carries everything needed to authenticate on this account. Once the account is created, do not keep it and do not pass it on.",
+  "share.create": "Create this account",
+  "share.creating": "Creating…",
+  "share.open": "Open Trix",
+  "share.noLink": "This link carries no account.",
+  "share.malformed":
+    "This link cannot be read: it was most likely cut short on the way. Ask for it to be sent again, whole.",
+  "share.version":
+    "This link comes from a newer version of Trix. Update the application to open it.",
+  "share.wrongDomain":
+    "This account is in the {domain} domain, which this installation of Trix does not accept.",
+  "share.exists": "{address} is already saved on this device. Nothing was changed.",
+  "share.full":
+    "This device already keeps {max} accounts. Delete one in the settings before adding this one.",
+  "share.saveFailed": "The account could not be saved: {detail}",
 
   "misc.raw": "{text}",
 };

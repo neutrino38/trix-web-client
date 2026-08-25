@@ -55,6 +55,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "screen.settings": "الإعدادات",
   "screen.saving": "جارٍ الحفظ…",
+  "screen.deleting": "جارٍ الحذف…",
 
   // ---------------------------------------------------------------------
   // Écran d'accueil
@@ -62,6 +63,8 @@ const messages: Translation = {
   "home.tagline": "هاتف ويب للمحادثة الشاملة",
   "home.useAccount": "استخدام هذا الحساب",
   "home.newAccount": "إعداد حساب جديد",
+  "home.addAccount": "إضافة حساب",
+  "home.editAccount": "تعديل",
   "home.version": "الإصدار {version}",
   "fsl.aria": "مدعوم بـ FSL — finite-state-language على GitHub (نافذة جديدة)",
 
@@ -69,6 +72,7 @@ const messages: Translation = {
   // Écran de configuration
   // ---------------------------------------------------------------------
   "config.title": "الإعدادات",
+  "config.titleNew": "حساب جديد",
   "config.section.account": "حساب SIP",
   "config.proxy": "خادم SIP",
   "config.proxyPlaceholder": "wss://sip.example.fr:8443/ws",
@@ -85,6 +89,12 @@ const messages: Translation = {
   "config.passwordKeep": "اتركها فارغة للإبقاء على كلمة المرور الحالية.",
   "config.ha1Note":
     "لا تُحفَظ كلمة المرور؛ لا يُخزَّن في هذا المتصفّح سوى بصمتها (HA1) مشفَّرةً.",
+  "config.share": "مشاركة الحساب",
+  "config.shareCopy": "نسخ رابط المشاركة",
+  "config.shareWarn":
+    "يحمل هذا الرابط ما يكفي للمصادقة على هذا الحساب: فهو يعادل كلمة المرور. لا تُرسله إلّا لمن يحتاج إليه، وعبر وسيلة آمنة.",
+  "config.shareCopied": "نُسِخ رابط المشاركة",
+  "config.shareManual": "رابط المشاركة، للنسخ",
 
   "config.section.nat": "اجتياز NAT",
   "config.natHint":
@@ -149,6 +159,8 @@ const messages: Translation = {
   "config.save": "الحفظ والاتصال",
   "config.saving": "جارٍ الحفظ…",
   "config.cancel": "إلغاء",
+  "config.delete": "حذف هذا الحساب",
+  "config.deleteConfirm": "تأكيد: حذف {address} وسجلّ مكالماته",
 
   // ---------------------------------------------------------------------
   // État du téléphone (pastille de la barre d'en-tête, titre d'onglet)
@@ -160,6 +172,7 @@ const messages: Translation = {
   "status.sleeping": "في وضع السكون",
   "status.regFailed": "فشل التسجيل",
   "status.unregistering": "جارٍ تسجيل الخروج…",
+  "status.switching": "جارٍ تبديل الحساب…",
 
   // ---------------------------------------------------------------------
   // État de l'appel
@@ -249,6 +262,7 @@ const messages: Translation = {
   "action.retryNow": "إعادة المحاولة الآن",
   "action.fixSettings": "تصحيح الإعدادات",
   "action.unavailableInCall": " (غير متاح أثناء المكالمة)",
+  "action.switchAccount": "الانتقال إلى الحساب {address}",
 
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
@@ -425,6 +439,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "error.invalidUri": "عنوان SIP غير صالح (المتوقَّع: user@domain)",
   "error.wrongDomain": "يجب أن يكون هذا العنوان ضمن النطاق {domain}",
+  "error.duplicateAccount": "{address} مسجَّل بالفعل في الحساب الآخر",
   "error.passwordRequired": "كلمة المرور مطلوبة",
   "error.saveFailed": "تعذّر الحفظ: {detail}",
   "error.invalidProxy": "اسم الوسيط غير صالح — تحقّق من عنوان WSS",
@@ -456,6 +471,32 @@ const messages: Translation = {
   "reason.offerUnsupported": "عرض وسائط بدون {detail}: غير متوافق مع WebRTC",
   "reason.callFailed": "تعذّر إجراء المكالمة: {detail}",
   "reason.sip": "{cause} (SIP {code})",
+
+  // ---------------------------------------------------------------------
+  // صفحة مشاركة الحساب (share_account.html)
+  // ---------------------------------------------------------------------
+  "share.title": "حساب مُشارَك",
+  "share.intro": "يحمل هذا الرابط إعدادات حساب SIP. تحقّق منها، ثم أنشئ الحساب على هذا الجهاز.",
+  "share.address": "عنوان SIP",
+  "share.displayName": "الاسم المعروض",
+  "share.proxy": "خادم SIP",
+  "share.authUsername": "معرّف المصادقة",
+  "share.ice": "اجتياز NAT",
+  "share.rtt": "النصّ الفوري",
+  "share.none": "بلا",
+  "share.warn":
+    "يحمل هذا الرابط ما يكفي للمصادقة على هذا الحساب. بعد إنشاء الحساب، لا تحتفظ به ولا تُعِد إرساله.",
+  "share.create": "إنشاء هذا الحساب",
+  "share.creating": "جارٍ الإنشاء…",
+  "share.open": "فتح Trix",
+  "share.noLink": "لا يحمل هذا الرابط أيّ حساب.",
+  "share.malformed":
+    "تعذّرت قراءة هذا الرابط: الأرجح أنّه اقتُطع في الطريق. اطلب إرساله كاملًا من جديد.",
+  "share.version": "يأتي هذا الرابط من إصدار أحدث من Trix. حدِّث التطبيق لفتحه.",
+  "share.wrongDomain": "هذا الحساب ضمن النطاق {domain}، وهو نطاق لا يقبله هذا التنصيب من Trix.",
+  "share.exists": "{address} مسجَّل بالفعل على هذا الجهاز. لم يتغيّر شيء.",
+  "share.full": "يحتفظ هذا الجهاز بـ {max} حسابات بالفعل. احذف أحدها من الإعدادات قبل إضافة هذا.",
+  "share.saveFailed": "تعذّر حفظ الحساب: {detail}",
 
   "misc.raw": "{text}",
 };

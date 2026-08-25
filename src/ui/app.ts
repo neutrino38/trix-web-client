@@ -28,6 +28,7 @@ const SCREEN_TITLE: Record<string, MsgKey> = {
   configuring: "screen.settings",
   reconfiguring: "screen.settings",
   saving: "screen.saving",
+  deleting: "screen.deleting",
 };
 
 /**
@@ -112,6 +113,7 @@ function pick(phone: PhoneInstance): HTMLElement {
     case "configuring":
     case "reconfiguring":
     case "saving":
+    case "deleting":
       // filet : l'alerte d'appel entrant vit hors de #app (flash, titre,
       // notification) — quitter l'écran d'appel doit toujours l'éteindre,
       // et refermer la popup pour que le focus ne reste pas piégé

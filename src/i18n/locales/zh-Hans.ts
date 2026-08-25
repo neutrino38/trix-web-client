@@ -53,6 +53,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "screen.settings": "设置",
   "screen.saving": "正在保存…",
+  "screen.deleting": "正在删除…",
 
   // ---------------------------------------------------------------------
   // Écran d'accueil
@@ -60,6 +61,8 @@ const messages: Translation = {
   "home.tagline": "全交流网页电话",
   "home.useAccount": "使用此账号",
   "home.newAccount": "设置新账号",
+  "home.addAccount": "添加账号",
+  "home.editAccount": "修改",
   "home.version": "版本 {version}",
   "fsl.aria": "Powered by FSL — GitHub 上的 finite-state-language（新窗口）",
 
@@ -67,6 +70,7 @@ const messages: Translation = {
   // Écran de configuration
   // ---------------------------------------------------------------------
   "config.title": "设置",
+  "config.titleNew": "新账号",
   "config.section.account": "SIP 账号",
   "config.proxy": "SIP 服务器",
   "config.proxyPlaceholder": "wss://sip.example.com:8443/ws",
@@ -81,6 +85,11 @@ const messages: Translation = {
   "config.passwordSet": "••••••（已设置）",
   "config.passwordKeep": "留空则保留当前密码。",
   "config.ha1Note": "密码本身不会保存，只有加密后的摘要（HA1）留在此浏览器中。",
+  "config.share": "账号共享",
+  "config.shareCopy": "复制共享链接",
+  "config.shareWarn": "该链接包含在此账号上完成认证所需的一切，等同于密码。只发给确实需要使用它的人，并通过安全的渠道。",
+  "config.shareCopied": "已复制共享链接",
+  "config.shareManual": "共享链接，供复制",
 
   "config.section.nat": "NAT 穿越",
   "config.natHint":
@@ -137,6 +146,8 @@ const messages: Translation = {
   "config.save": "保存并连接",
   "config.saving": "正在保存…",
   "config.cancel": "取消",
+  "config.delete": "删除此账号",
+  "config.deleteConfirm": "确认：删除 {address} 及其通话记录",
 
   // ---------------------------------------------------------------------
   // État du téléphone (pastille de la barre d'en-tête, titre d'onglet)
@@ -148,6 +159,7 @@ const messages: Translation = {
   "status.sleeping": "已休眠",
   "status.regFailed": "注册失败",
   "status.unregistering": "正在断开…",
+  "status.switching": "正在切换账号…",
 
   // ---------------------------------------------------------------------
   // État de l'appel
@@ -226,6 +238,7 @@ const messages: Translation = {
   "action.retryNow": "立即重试",
   "action.fixSettings": "修改设置",
   "action.unavailableInCall": "（通话中不可用）",
+  "action.switchAccount": "切换到账号 {address}",
 
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
@@ -392,6 +405,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "error.invalidUri": "SIP 地址无效（应为 用户@域名）",
   "error.wrongDomain": "该地址必须属于 {domain} 域",
+  "error.duplicateAccount": "{address} 已登记为另一个账号",
   "error.passwordRequired": "请输入密码",
   "error.saveFailed": "无法保存：{detail}",
   "error.invalidProxy": "代理服务器名称无效 — 请检查 WSS 地址",
@@ -423,6 +437,30 @@ const messages: Translation = {
   "reason.offerUnsupported": "媒体提议缺少 {detail}：与 WebRTC 不兼容",
   "reason.callFailed": "无法呼叫：{detail}",
   "reason.sip": "{cause}（SIP {code}）",
+
+  // ---------------------------------------------------------------------
+  // 账号共享页面（share_account.html）
+  // ---------------------------------------------------------------------
+  "share.title": "共享的账号",
+  "share.intro": "该链接包含一个 SIP 账号的设置。请先核对，再在此设备上创建该账号。",
+  "share.address": "SIP 地址",
+  "share.displayName": "显示名称",
+  "share.proxy": "SIP 服务器",
+  "share.authUsername": "认证用户名",
+  "share.ice": "NAT 穿越",
+  "share.rtt": "实时文本",
+  "share.none": "无",
+  "share.warn": "该链接包含在此账号上完成认证所需的一切。账号创建后，请不要保留，也不要再转发。",
+  "share.create": "创建此账号",
+  "share.creating": "正在创建…",
+  "share.open": "打开 Trix",
+  "share.noLink": "该链接不包含任何账号。",
+  "share.malformed": "无法读取该链接：多半在传递途中被截断了。请对方重新发送完整链接。",
+  "share.version": "该链接来自更新版本的 Trix。请先更新应用再打开。",
+  "share.wrongDomain": "该账号属于 {domain} 域，此 Trix 安装不接受该域。",
+  "share.exists": "{address} 已登记在此设备上，未做任何更改。",
+  "share.full": "此设备已保存 {max} 个账号。请先在设置中删除一个，再添加这个。",
+  "share.saveFailed": "无法保存账号：{detail}",
 
   "misc.raw": "{text}",
 };

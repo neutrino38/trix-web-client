@@ -1,6 +1,6 @@
 # ADR 0002 — Deux comptes SIP, un seul enregistré à la fois
 
-**Statut :** accepté — 2026-08-24
+**Statut :** accepté — 2026-08-24 · **implémenté** — 2026-08-25
 **Portée :** `storage/store.ts`, `machines/phone.ts`, `machines/events.ts`,
 `ui/screens/home.ts`, `ui/screens/config.ts`, `ui/screens/call/` (en-tête)
 

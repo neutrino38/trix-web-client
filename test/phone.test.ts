@@ -5,8 +5,14 @@
  * tests attendent l'état `home` avec vi.waitFor.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
-import type { AccountConfig, CallLogEntry, SecureStore } from "../src/storage/store.js";
+import { activeAccount, PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
+import type {
+  AccountConfig,
+  CallLogEntry,
+  SecureStore,
+  StoredAccount,
+  Vault,
+} from "../src/storage/store.js";
 import type {
   CallMedia,
   CallSipEvent,
@@ -34,23 +40,59 @@ const CFG: AccountConfig = {
   rtt: "websocket",
 };
 
+/** L'identifiant du compte que `fakeStore` sème — les tests le nomment. */
+const SEED_ID = "acc-seed";
+
+/**
+ * Un coffre en mémoire. `box.saved` rend le **compte actif sans son
+ * identifiant** : c'est sous cette forme que les tests l'ont toujours
+ * comparé, et le passage à une liste (ADR 0002) n'a pas à se lire dans
+ * trente assertions qui parlent d'autre chose.
+ */
+/**
+ * Le compte actif tel que les tests le comparent : sa configuration, sans
+ * l'identifiant opaque que le coffre lui a donné.
+ */
+function activeCfg(phone: PhoneInstance): AccountConfig | null {
+  const account = activeAccount(phone.context);
+  if (!account) return null;
+  const { id: _id, ...cfg } = account;
+  return cfg;
+}
+
 function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[] = []) {
+  const seed: StoredAccount | null = initial ? { ...initial, id: SEED_ID } : null;
   const box = {
-    saved: initial as AccountConfig | null,
+    vault: {
+      accounts: seed ? [seed] : [],
+      activeId: seed?.id ?? null,
+    } as Vault,
     history: new Map<string, CallLogEntry[]>(),
+    /** Les historiques effacés par une suppression de compte. */
+    dropped: [] as string[],
+    get saved(): AccountConfig | null {
+      const account = this.vault.accounts.find((a) => a.id === this.vault.activeId);
+      if (!account) return null;
+      const { id: _id, ...cfg } = account;
+      return cfg;
+    },
   };
-  if (initial) box.history.set(`${initial.username}@${initial.domain}`, history);
+  if (seed) box.history.set(seed.id, history);
   const store: SecureStore = {
-    load: async () => box.saved,
-    save: async (cfg) => {
-      box.saved = cfg;
+    load: async () => box.vault,
+    save: async (vault) => {
+      box.vault = vault;
     },
     clear: async () => {
-      box.saved = null;
+      box.vault = { accounts: [], activeId: null };
     },
-    loadHistory: async (account) => box.history.get(account) ?? [],
-    saveHistory: async (account, entries) => {
-      box.history.set(account, entries);
+    loadHistory: async (id) => box.history.get(id) ?? [],
+    saveHistory: async (id, entries) => {
+      box.history.set(id, entries);
+    },
+    deleteHistory: async (id) => {
+      box.dropped.push(id);
+      box.history.delete(id);
     },
   };
   return { store, box };
@@ -166,14 +208,17 @@ async function bootTo(
 ): Promise<{
   phone: PhoneInstance;
   sip: FakeSip;
-  box: { saved: AccountConfig | null; history: Map<string, CallLogEntry[]> };
+  box: ReturnType<typeof fakeStore>["box"];
 }> {
   const { store, box } = fakeStore(initial, history);
   const sip = new FakeSip();
   const phone = PhoneMachine.start({ args: { store, sip, transcript } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
   if (state === "home") return { phone, sip, box };
-  phone.send({ type: "ui:useAccount" });
+  // choisir un compte passe par `switching`, qui écrit le coffre et charge
+  // l'historique du compte retenu avant de lancer l'UA
+  phone.send({ type: "ui:useAccount", id: SEED_ID });
+  await vi.waitFor(() => expect(phone.state).toBe("connecting"));
   if (state === "connecting") return { phone, sip, box };
   sip.send({ type: "sip:connected" });
   if (state === "registering") return { phone, sip, box };
@@ -185,12 +230,12 @@ async function bootTo(
 describe("PhoneMachine — amorçage", () => {
   it("charge la config au boot et arrive sur l'accueil", async () => {
     const { phone } = await bootTo("home", CFG);
-    expect(phone.context.config).toEqual(CFG);
+    expect(activeCfg(phone)).toEqual(CFG);
   });
 
   it("sans compte, ui:useAccount reste sur l'accueil", async () => {
     const { phone, sip } = await bootTo("home", null);
-    phone.send({ type: "ui:useAccount" });
+    phone.send({ type: "ui:useAccount", id: SEED_ID });
     expect(phone.state).toBe("home");
     expect(sip.started).toHaveLength(0);
   });
@@ -225,7 +270,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       debug: true,
     });
     const { phone, sip } = await bootTo("connecting", CFG);
-    expect(phone.context.config).toEqual({
+    expect(activeCfg(phone)).toEqual({
       ...CFG,
       proxy: "wss://impose.example.fr/ws",
       ice: { stun: "stun.impose.fr", turn: null },
@@ -240,14 +285,14 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
     const { phone } = await bootTo("home", CFG);
     // son HA1 a été calculé sur example.fr : le réécrire ne l'authentifierait
     // sur rien, l'accueil repart donc sur « nouveau compte »
-    expect(phone.context.config).toBeNull();
+    expect(activeCfg(phone)).toBeNull();
     expect(phone.context.history).toEqual([]);
   });
 
   it("une adresse hors du domaine imposé est refusée, on reste sur le formulaire", async () => {
     setDeployment({ ...OPEN_DEPLOYMENT, domain: "impose.example.fr" });
     const { phone, box } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({ type: "ui:saveConfig", form: { ...FORM } });
     expect(phone.state).toBe("configuring");
     expect(phone.context.lastError).toEqual({
@@ -267,7 +312,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       debug: true,
     });
     const { phone, box } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     // un formulaire trafiqué peut porter ces champs : la machine ne les lit pas
     phone.send({ type: "ui:saveConfig", form: { ...FORM } });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
@@ -283,7 +328,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
 describe("PhoneMachine — configuration", () => {
   it("calcule le HA1 depuis l'URI, persiste sans mot de passe, puis se connecte", async () => {
     const { phone, sip, box } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     expect(phone.state).toBe("configuring");
     phone.send({
       type: "ui:saveConfig",
@@ -310,7 +355,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("le préfixe sip: de l'URI est accepté et ignoré", async () => {
     const { phone, box } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -334,7 +379,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("Adresse SIP invalide : erreur, on reste sur le formulaire", async () => {
     const { phone } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -358,7 +403,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("identifiant d'authentification distinct : le HA1 est calculé avec lui", async () => {
     const { phone, box } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -384,7 +429,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("mot de passe vide sans compte existant : erreur, on reste sur le formulaire", async () => {
     const { phone } = await bootTo("home", null);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -408,7 +453,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("mot de passe vide avec compte existant : conserve le HA1 (même identité/domaine)", async () => {
     const { phone, box } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -433,7 +478,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("changement d'identité sans nouveau mot de passe : refusé (le HA1 en dépend)", async () => {
     const { phone } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -457,7 +502,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("ajout d'un identifiant d'authentification sans mot de passe : refusé", async () => {
     const { phone } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -481,7 +526,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("serveurs STUN/TURN : persistés avec le compte et passés au port SIP", async () => {
     const { phone, sip, box } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -509,7 +554,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("serveur STUN invalide : erreur, champ désigné, on reste sur le formulaire", async () => {
     const { phone, box } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -535,7 +580,7 @@ describe("PhoneMachine — configuration", () => {
 
   it("flash d'appel entrant désactivé : réglage persisté avec le compte", async () => {
     const { phone, box } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -555,12 +600,12 @@ describe("PhoneMachine — configuration", () => {
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
     expect(box.saved!.flashAlert).toBe(false);
-    expect(phone.context.config!.flashAlert).toBe(false);
+    expect(activeCfg(phone)!.flashAlert).toBe(false);
   });
 
   it("transport du texte en temps réel : persisté avec le compte", async () => {
     const { phone, box } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -580,12 +625,12 @@ describe("PhoneMachine — configuration", () => {
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
     expect(box.saved!.rtt).toBe("datachannel");
-    expect(phone.context.config!.rtt).toBe("datachannel");
+    expect(activeCfg(phone)!.rtt).toBe("datachannel");
   });
 
   it("transport inconnu : le compte retombe sur « aucun », sans échouer", async () => {
     const { phone, box } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
       form: {
@@ -666,7 +711,7 @@ describe("PhoneMachine — enregistrement", () => {
     expect(phone.context.lastError).toEqual({ key: "error.badCredentials" });
     expect(phone.context.lastErrorCode).toBe("SIP 404");
     expect(phone.context.suspectFields).toBe("credentials");
-    expect(phone.context.config).toEqual(CFG); // formulaire pré-rempli
+    expect(activeCfg(phone)).toEqual(CFG); // formulaire pré-rempli
   });
 
   it("échec WSS : champ proxy suspect, effacé au relancement de la connexion", async () => {
@@ -683,7 +728,7 @@ describe("PhoneMachine — enregistrement", () => {
     sip.send({ type: "sip:registrationFailed", cause: "Not Found", statusCode: 404 });
     phone.send({ type: "ui:logout" }); // reg_failed → home
     expect(phone.state).toBe("home");
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     expect(phone.state).toBe("configuring");
     expect(phone.context.lastError).toBeNull();
     expect(phone.context.suspectFields).toBeNull();
@@ -709,7 +754,7 @@ describe("PhoneMachine — enregistrement", () => {
       const phone = PhoneMachine.start({ args: { store, sip } });
       await vi.advanceTimersByTimeAsync(0); // règle la task loadConfig
       expect(phone.state).toBe("home");
-      phone.send({ type: "ui:useAccount" });
+      phone.send({ type: "ui:useAccount", id: SEED_ID });
       await vi.advanceTimersByTimeAsync(10_000);
       expect(phone.state).toBe("reg_failed");
     } finally {
@@ -724,7 +769,8 @@ describe("PhoneMachine — enregistrement", () => {
       const sip = new FakeSip();
       const phone = PhoneMachine.start({ args: { store, sip } });
       await vi.advanceTimersByTimeAsync(0);
-      phone.send({ type: "ui:useAccount" });
+      phone.send({ type: "ui:useAccount", id: SEED_ID });
+      await vi.advanceTimersByTimeAsync(0); // règle la task saveVault de `switching`
       sip.send({ type: "sip:connected" });
       await vi.advanceTimersByTimeAsync(30_000);
       expect(phone.state).toBe("reg_failed");
@@ -964,7 +1010,7 @@ describe("PhoneMachine — historique d'appels", () => {
     });
     expect(entry!.connectedAt).not.toBeNull();
     await vi.waitFor(() =>
-      expect(box.history.get("alice@example.fr")).toHaveLength(1),
+      expect(box.history.get(SEED_ID)).toHaveLength(1),
     );
   });
 
@@ -1067,7 +1113,7 @@ describe("PhoneMachine — historique d'appels", () => {
     expect(phone.context.history).toHaveLength(1);
     phone.send({ type: "ui:clearHistory" });
     expect(phone.context.history).toHaveLength(0);
-    await vi.waitFor(() => expect(box.history.get("alice@example.fr")).toEqual([]));
+    await vi.waitFor(() => expect(box.history.get(SEED_ID)).toEqual([]));
   });
 
   it("l'historique du compte est rechargé au boot", async () => {
@@ -1141,7 +1187,8 @@ describe("PhoneMachine — perte du proxy et veille", () => {
       const sip = new FakeSip();
       const phone = PhoneMachine.start({ args: { store, sip } });
       await vi.advanceTimersByTimeAsync(0);
-      phone.send({ type: "ui:useAccount" });
+      phone.send({ type: "ui:useAccount", id: SEED_ID });
+      await vi.advanceTimersByTimeAsync(0); // règle la task saveVault de `switching`
       sip.send({ type: "sip:connected" });
       sip.send({ type: "sip:registered" });
       expect(phone.state).toBe("ready");
@@ -1272,7 +1319,8 @@ describe("PhoneMachine — sorties", () => {
       const sip = new FakeSip();
       const phone = PhoneMachine.start({ args: { store, sip } });
       await vi.advanceTimersByTimeAsync(0);
-      phone.send({ type: "ui:useAccount" });
+      phone.send({ type: "ui:useAccount", id: SEED_ID });
+      await vi.advanceTimersByTimeAsync(0); // règle la task saveVault de `switching`
       sip.send({ type: "sip:connected" });
       sip.send({ type: "sip:registered" });
       phone.send({ type: "ui:logout" });
@@ -1288,7 +1336,7 @@ describe("PhoneMachine — sorties", () => {
     phone.send({ type: "ui:backToSettings" });
     expect(phone.state).toBe("reconfiguring");
     expect(sip.stopped).toBe(1);
-    expect(phone.context.config).toEqual(CFG);
+    expect(activeCfg(phone)).toEqual(CFG);
   });
 
   it("paramètres ouverts depuis ready puis Annuler : reconnexion vers l'écran d'appel", async () => {
@@ -1330,7 +1378,7 @@ describe("PhoneMachine — sorties", () => {
 
   it("Annuler depuis la config ouverte à l'accueil : retour à l'accueil", async () => {
     const { phone, sip } = await bootTo("home", CFG);
-    phone.send({ type: "ui:configure" });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({ type: "ui:cancelConfig" });
     expect(phone.state).toBe("home");
     expect(sip.started).toHaveLength(0);

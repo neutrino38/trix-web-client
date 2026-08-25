@@ -36,6 +36,7 @@ const messages = {
   // ---------------------------------------------------------------------
   "screen.settings": "Paramètres",
   "screen.saving": "Enregistrement…",
+  "screen.deleting": "Suppression…",
 
   // ---------------------------------------------------------------------
   // Écran d'accueil
@@ -43,6 +44,8 @@ const messages = {
   "home.tagline": "Webphone conversation totale",
   "home.useAccount": "Utiliser le compte",
   "home.newAccount": "Configurer un nouveau compte",
+  "home.addAccount": "Ajouter un compte",
+  "home.editAccount": "Modifier",
   /** Version du logiciel, en pied de l'accueil — voir `src/version.ts`. */
   "home.version": "Version {version}",
   "fsl.aria": "Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)",
@@ -51,6 +54,7 @@ const messages = {
   // Écran de configuration
   // ---------------------------------------------------------------------
   "config.title": "Paramètres",
+  "config.titleNew": "Nouveau compte",
   "config.section.account": "Compte SIP",
   "config.proxy": "Serveur SIP",
   "config.proxyPlaceholder": "wss://sip.example.fr:8443/ws",
@@ -70,6 +74,12 @@ const messages = {
   "config.passwordKeep": "Laisser vide pour conserver le mot de passe actuel.",
   "config.ha1Note":
     "Le mot de passe n'est pas conservé : seule une empreinte (HA1) est stockée, chiffrée, dans ce navigateur.",
+  "config.share": "Partage du compte",
+  "config.shareCopy": "Copier le lien de partage",
+  "config.shareWarn":
+    "Ce lien contient de quoi s'authentifier sur ce compte : il vaut le mot de passe. Ne le transmettez qu'à qui doit s'en servir, et par un moyen sûr.",
+  "config.shareCopied": "Lien de partage copié",
+  "config.shareManual": "Lien de partage, à copier",
 
   "config.section.nat": "Traversée de NAT",
   "config.natHint":
@@ -138,6 +148,8 @@ const messages = {
   "config.save": "Enregistrer et se connecter",
   "config.saving": "Enregistrement…",
   "config.cancel": "Annuler",
+  "config.delete": "Supprimer ce compte",
+  "config.deleteConfirm": "Confirmer : supprimer {address} et son historique",
 
   // ---------------------------------------------------------------------
   // État du téléphone (pastille de la barre d'en-tête, titre d'onglet)
@@ -149,6 +161,7 @@ const messages = {
   "status.sleeping": "En veille",
   "status.regFailed": "Échec d'enregistrement",
   "status.unregistering": "Déconnexion…",
+  "status.switching": "Changement de compte…",
 
   // ---------------------------------------------------------------------
   // État de l'appel
@@ -230,6 +243,7 @@ const messages = {
   "action.fixSettings": "Corriger les paramètres",
   /** Suffixe d'infobulle des commandes désactivées pendant un appel. */
   "action.unavailableInCall": " (indisponible en appel)",
+  "action.switchAccount": "Passer au compte {address}",
 
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
@@ -395,6 +409,7 @@ const messages = {
   // ---------------------------------------------------------------------
   "error.invalidUri": "Adresse SIP invalide (attendu : utilisateur@domaine)",
   "error.wrongDomain": "Cette adresse doit être du domaine {domain}",
+  "error.duplicateAccount": "{address} est déjà enregistré dans l'autre compte",
   "error.passwordRequired": "Mot de passe requis",
   "error.saveFailed": "Sauvegarde impossible : {detail}",
   "error.invalidProxy": "Nom du proxy invalide — vérifiez l'adresse WSS",
@@ -432,6 +447,36 @@ const messages = {
    * Texte technique qui n'a pas de traduction (cause JsSIP, historique
    * enregistré avant l'i18n) : rendu tel quel, sans être perdu.
    */
+  // ---------------------------------------------------------------------
+  // Page de partage d'un compte (share_account.html)
+  // ---------------------------------------------------------------------
+  "share.title": "Compte partagé",
+  "share.intro":
+    "Ce lien contient les paramètres d'un compte SIP. Vérifiez-les, puis créez le compte sur cet appareil.",
+  "share.address": "Adresse SIP",
+  "share.displayName": "Nom affiché",
+  "share.proxy": "Serveur SIP",
+  "share.authUsername": "Identifiant d'authentification",
+  "share.ice": "Traversée de NAT",
+  "share.rtt": "Texte en temps réel",
+  "share.none": "Aucun",
+  "share.warn":
+    "Ce lien contient de quoi s'authentifier sur ce compte. Une fois le compte créé, ne le conservez pas et ne le retransmettez pas.",
+  "share.create": "Créer ce compte",
+  "share.creating": "Création…",
+  "share.open": "Ouvrir Trix",
+  "share.noLink": "Ce lien ne contient aucun compte.",
+  "share.malformed":
+    "Ce lien est illisible : il a sans doute été coupé en chemin. Demandez qu'on vous le renvoie en entier.",
+  "share.version":
+    "Ce lien vient d'une version plus récente de Trix. Mettez l'application à jour pour l'ouvrir.",
+  "share.wrongDomain":
+    "Ce compte est du domaine {domain}, que cette installation de Trix n'accepte pas.",
+  "share.exists": "{address} est déjà enregistré sur cet appareil. Rien n'a été modifié.",
+  "share.full":
+    "Cet appareil garde déjà {max} comptes. Supprimez-en un dans les paramètres avant d'ajouter celui-ci.",
+  "share.saveFailed": "Le compte n'a pas pu être enregistré : {detail}",
+
   "misc.raw": "{text}",
 };
 
