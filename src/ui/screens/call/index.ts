@@ -6,7 +6,7 @@
  * ni l'appel en cours ni l'enregistrement.
  */
 
-import type { PhoneInstance } from "../../../machines/phone.js";
+import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import { layoutMode } from "../../layout.js";
 import { renderDesktop } from "./desktop.js";
 import { renderMobile } from "./mobile.js";
@@ -25,7 +25,7 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
     phone,
     view,
     ready: phone.state === "ready",
-    cfg: phone.context.config,
+    cfg: activeAccount(phone.context),
   });
   // Le comportement modal de la popup d'appel entrant est câblé ici, et non
   // dans `wireCallScreen` : les boutons, eux, le sont là-bas comme tous les

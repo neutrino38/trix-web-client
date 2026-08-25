@@ -47,6 +47,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "screen.settings": "設定",
   "screen.saving": "保存中…",
+  "screen.deleting": "削除中…",
 
   // ---------------------------------------------------------------------
   // Écran d'accueil
@@ -54,6 +55,8 @@ const messages: Translation = {
   "home.tagline": "トータルコンバセーション対応のウェブフォン",
   "home.useAccount": "このアカウントを使う",
   "home.newAccount": "新しいアカウントを設定する",
+  "home.addAccount": "アカウントを追加する",
+  "home.editAccount": "編集",
   "home.version": "バージョン {version}",
   "fsl.aria": "Powered by FSL — GitHub の finite-state-language（新しいウィンドウ）",
 
@@ -61,6 +64,7 @@ const messages: Translation = {
   // Écran de configuration
   // ---------------------------------------------------------------------
   "config.title": "設定",
+  "config.titleNew": "新しいアカウント",
   "config.section.account": "SIP アカウント",
   "config.proxy": "SIP サーバー",
   "config.proxyPlaceholder": "wss://sip.example.jp:8443/ws",
@@ -78,6 +82,12 @@ const messages: Translation = {
   "config.passwordKeep": "現在のパスワードを保つには、空のままにしてください。",
   "config.ha1Note":
     "パスワードそのものは保存されません。暗号化されたダイジェスト（HA1）だけが、このブラウザーに残ります。",
+  "config.share": "アカウントの共有",
+  "config.shareCopy": "共有リンクをコピー",
+  "config.shareWarn":
+    "このリンクには、このアカウントで認証するのに必要なものが入っています。パスワードと同じ重みがあります。使う必要のある相手にだけ、安全な手段で渡してください。",
+  "config.shareCopied": "共有リンクをコピーしました",
+  "config.shareManual": "共有リンク（コピー用）",
 
   "config.section.nat": "NAT 越え",
   "config.natHint":
@@ -145,6 +155,8 @@ const messages: Translation = {
   "config.save": "保存して接続する",
   "config.saving": "保存中…",
   "config.cancel": "キャンセル",
+  "config.delete": "このアカウントを削除する",
+  "config.deleteConfirm": "確認：{address} と通話履歴を削除する",
 
   // ---------------------------------------------------------------------
   // État du téléphone (pastille de la barre d'en-tête, titre d'onglet)
@@ -156,6 +168,7 @@ const messages: Translation = {
   "status.sleeping": "スリープ中",
   "status.regFailed": "登録に失敗しました",
   "status.unregistering": "切断中…",
+  "status.switching": "アカウントを切り替え中…",
 
   // ---------------------------------------------------------------------
   // État de l'appel
@@ -219,7 +232,10 @@ const messages: Translation = {
   "chat.log.copy": "コピー",
   "chat.log.copied": "コピーしました",
   "chat.log.copyFailed": "コピーできませんでした",
+  "chat.log.export": "書き出す",
+  "chat.log.exportFailed": "書き出せませんでした",
   "chat.log.close": "閉じる",
+  "chat.log.vttBase": "時刻は通話開始からの経過時間 — {at} の通話。",
   "chat.log.cut": "会話の冒頭は保存されていません",
 
   // ---------------------------------------------------------------------
@@ -231,6 +247,7 @@ const messages: Translation = {
   "action.retryNow": "今すぐ再試行",
   "action.fixSettings": "設定を修正する",
   "action.unavailableInCall": "（通話中は使えません）",
+  "action.switchAccount": "アカウント {address} に切り替える",
 
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
@@ -397,6 +414,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "error.invalidUri": "SIP アドレスが不正です（形式：ユーザー@ドメイン）",
   "error.wrongDomain": "このアドレスは {domain} ドメインのものである必要があります",
+  "error.duplicateAccount": "{address} はもう一方のアカウントとして登録済みです",
   "error.passwordRequired": "パスワードを入力してください",
   "error.saveFailed": "保存できませんでした：{detail}",
   "error.invalidProxy": "プロキシー名が不正です — WSS アドレスを確認してください",
@@ -428,6 +446,30 @@ const messages: Translation = {
   "reason.offerUnsupported": "{detail} のないメディアオファー：WebRTC 非対応",
   "reason.callFailed": "発信できませんでした：{detail}",
   "reason.sip": "{cause}（SIP {code}）",
+
+  // ---------------------------------------------------------------------
+  // アカウント共有ページ（share_account.html）
+  // ---------------------------------------------------------------------
+  "share.title": "共有されたアカウント",
+  "share.intro": "このリンクには SIP アカウントの設定が入っています。内容を確かめてから、この端末にアカウントを作成してください。",
+  "share.address": "SIP アドレス",
+  "share.displayName": "表示名",
+  "share.proxy": "SIP サーバー",
+  "share.authUsername": "認証ユーザー名",
+  "share.ice": "NAT 越え",
+  "share.rtt": "リアルタイムテキスト",
+  "share.none": "なし",
+  "share.warn": "このリンクには、このアカウントで認証するのに必要なものが入っています。アカウントを作成したら、保存せず、転送もしないでください。",
+  "share.create": "このアカウントを作成する",
+  "share.creating": "作成中…",
+  "share.open": "Trix を開く",
+  "share.noLink": "このリンクにはアカウントが入っていません。",
+  "share.malformed": "このリンクは読み取れません。途中で切れた可能性があります。全文を送り直してもらってください。",
+  "share.version": "このリンクは新しいバージョンの Trix で作られています。アプリを更新してから開いてください。",
+  "share.wrongDomain": "このアカウントは {domain} ドメインのものですが、この Trix では受け付けられません。",
+  "share.exists": "{address} はこの端末にすでに登録されています。何も変更していません。",
+  "share.full": "この端末はすでに {max} 件のアカウントを保持しています。設定でどちらかを削除してから追加してください。",
+  "share.saveFailed": "アカウントを保存できませんでした：{detail}",
 
   "misc.raw": "{text}",
 };

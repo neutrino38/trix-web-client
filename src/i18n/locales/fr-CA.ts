@@ -54,6 +54,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "screen.settings": "Paramètres",
   "screen.saving": "Enregistrement…",
+  "screen.deleting": "Suppression…",
 
   // ---------------------------------------------------------------------
   // Écran d'accueil
@@ -61,6 +62,8 @@ const messages: Translation = {
   "home.tagline": "Téléphone Web en conversation totale",
   "home.useAccount": "Prendre ce compte-là",
   "home.newAccount": "Configurer un nouveau compte",
+  "home.addAccount": "Ajouter un compte",
+  "home.editAccount": "Modifier",
   "home.version": "Version {version}",
   "fsl.aria": "Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)",
 
@@ -68,6 +71,7 @@ const messages: Translation = {
   // Écran de configuration
   // ---------------------------------------------------------------------
   "config.title": "Paramètres",
+  "config.titleNew": "Nouveau compte",
   "config.section.account": "Compte SIP",
   "config.proxy": "Serveur SIP",
   "config.proxyPlaceholder": "wss://sip.exemple.qc.ca:8443/ws",
@@ -86,6 +90,12 @@ const messages: Translation = {
   "config.passwordKeep": "Laissez vide pour garder le mot de passe actuel.",
   "config.ha1Note":
     "Le mot de passe n'est pas gardé : seule une empreinte (HA1) est stockée, chiffrée, dans ce navigateur.",
+  "config.share": "Partage du compte",
+  "config.shareCopy": "Copier le lien de partage",
+  "config.shareWarn":
+    "Ce lien-là contient de quoi s'authentifier sur le compte : il vaut le mot de passe. Envoie-le juste à qui doit s'en servir, et par un moyen sûr.",
+  "config.shareCopied": "Lien de partage copié",
+  "config.shareManual": "Lien de partage, à copier",
 
   "config.section.nat": "Traversée de NAT",
   "config.natHint":
@@ -154,6 +164,8 @@ const messages: Translation = {
   "config.save": "Enregistrer et se brancher",
   "config.saving": "Enregistrement…",
   "config.cancel": "Annuler",
+  "config.delete": "Supprimer ce compte-là",
+  "config.deleteConfirm": "Confirmer : supprimer {address} et son historique",
 
   // ---------------------------------------------------------------------
   // État du téléphone (pastille de la barre d'en-tête, titre d'onglet)
@@ -165,6 +177,7 @@ const messages: Translation = {
   "status.sleeping": "En veille",
   "status.regFailed": "Échec d'enregistrement",
   "status.unregistering": "Fermeture de la session…",
+  "status.switching": "Changement de compte…",
 
   // ---------------------------------------------------------------------
   // État de l'appel
@@ -229,7 +242,10 @@ const messages: Translation = {
   "chat.log.copy": "Copier",
   "chat.log.copied": "Copié, tiguidou!",
   "chat.log.copyFailed": "Copie refusée",
+  "chat.log.export": "Exporter",
+  "chat.log.exportFailed": "Export refusé",
   "chat.log.close": "Fermer",
+  "chat.log.vttBase": "Temps comptés depuis le début de la communication — appel du {at}.",
   "chat.log.cut": "Début de la conversation non conservé",
 
   // ---------------------------------------------------------------------
@@ -241,6 +257,7 @@ const messages: Translation = {
   "action.retryNow": "Réessayer tout de suite",
   "action.fixSettings": "Corriger les paramètres",
   "action.unavailableInCall": " (pas disponible en appel)",
+  "action.switchAccount": "Passer au compte {address}",
 
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
@@ -406,6 +423,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "error.invalidUri": "Adresse SIP invalide (attendu : utilisateur@domaine)",
   "error.wrongDomain": "Cette adresse doit être du domaine {domain}",
+  "error.duplicateAccount": "{address} est déjà enregistré dans l'autre compte",
   "error.passwordRequired": "Mot de passe requis",
   "error.saveFailed": "Sauvegarde impossible : {detail}",
   "error.invalidProxy": "Nom du proxy invalide — vérifiez l'adresse WSS",
@@ -437,6 +455,36 @@ const messages: Translation = {
   "reason.offerUnsupported": "Offre média sans {detail} : incompatible avec WebRTC",
   "reason.callFailed": "Appel impossible : {detail}",
   "reason.sip": "{cause} (SIP {code})",
+
+  // ---------------------------------------------------------------------
+  // Page de partage d'un compte (share_account.html)
+  // ---------------------------------------------------------------------
+  "share.title": "Compte partagé",
+  "share.intro":
+    "Ce lien-là contient les paramètres d'un compte SIP. Vérifie-les, puis crée le compte sur cet appareil-ci.",
+  "share.address": "Adresse SIP",
+  "share.displayName": "Nom affiché",
+  "share.proxy": "Serveur SIP",
+  "share.authUsername": "Identifiant d'authentification",
+  "share.ice": "Traversée de NAT",
+  "share.rtt": "Texte en temps réel",
+  "share.none": "Aucun",
+  "share.warn":
+    "Ce lien-là contient de quoi s'authentifier sur le compte. Une fois le compte créé, garde-le pas et renvoie-le pas.",
+  "share.create": "Créer ce compte-là",
+  "share.creating": "Création…",
+  "share.open": "Ouvrir Trix",
+  "share.noLink": "Ce lien-là contient aucun compte.",
+  "share.malformed":
+    "Ce lien-là est illisible : il a sûrement été coupé en chemin. Demande qu'on te le renvoie au complet.",
+  "share.version":
+    "Ce lien-là vient d'une version plus récente de Trix. Mets l'application à jour pour l'ouvrir.",
+  "share.wrongDomain":
+    "Ce compte-là est du domaine {domain}, que cette installation de Trix accepte pas.",
+  "share.exists": "{address} est déjà enregistré sur cet appareil-ci. Rien a été changé.",
+  "share.full":
+    "Cet appareil-ci garde déjà {max} comptes. Supprimes-en un dans les paramètres avant d'ajouter celui-là.",
+  "share.saveFailed": "Le compte a pas pu être enregistré : {detail}",
 
   "misc.raw": "{text}",
 };

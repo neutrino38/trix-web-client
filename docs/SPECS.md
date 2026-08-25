@@ -233,15 +233,15 @@ Thème : trois choix — **Système** (défaut, suit le réglage de l'appareil),
 
 ### Écran 1 — Accueil
 
-- Icône Trix (200 px) et nom du produit en **texte** (et non en image : le mot-marque de
-  `trix-logo.svg` est peint en violet foncé, illisible en thème sombre).
-- Accroche et **numéro de version** (issu de `package.json` via `src/version.ts`) — la
-  première chose qu'on demande à qui signale une anomalie.
-- Bouton primaire « Utiliser ce compte » (affiché seulement si un compte est stocké, avec
-  le nom affiché et `user@domaine` en rappel).
-- Bouton « Configurer un nouveau compte » (primaire si aucun compte n'est stocké).
-- Sélecteur de **langue**.
-- Crédit « Powered by FSL » en pied, vers le dépôt du framework (nouvelle fenêtre).
+- Logo du projet centré placeholder FSL en attendant).
+- **La liste des comptes enregistrés — deux au plus** (ADR 0002). Chacun s'affiche avec son
+  display name et son `user@domaine`, et porte deux actions : « Utiliser le compte »
+  (primaire, s'enregistre et va à l'écran d'appel) et « Modifier » (écran 2 sur ce
+  compte-là). Le premier compte de la liste est celui qui a servi en dernier.
+- Bouton secondaire « Ajouter un compte » (écran 2, formulaire vide) — **absent dès que
+  le second compte existe** : la limite se voit, elle ne se découvre pas sur un refus.
+- Aucun compte enregistré : ni liste ni bouton « Utiliser », seul « Configurer un
+  nouveau compte » en primaire, comme avant.
 
 ### Écran 2 — Configuration
 
@@ -279,9 +279,20 @@ navigateur (immédiat).
 | Langue de l'interface | navigateur, effet immédiat |
 | Tracer les échanges SIP | navigateur, effet immédiat, y compris en appel |
 
-Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil).
-Note visible : « Le mot de passe n'est pas conservé : seule une empreinte (HA1) est
-stockée, chiffrée, dans ce navigateur. »
+Le formulaire sert la **création** comme la **modification**, et dit lequel des deux : titre
+« Nouveau compte » ou « Modifier le compte », ce dernier suivi du `user@domaine` concerné —
+avec deux comptes, savoir lequel on est en train de changer n'est plus une évidence. Le compte
+modifié n'est pas forcément celui qui est enregistré : on peut corriger le compte au repos
+sans quitter l'autre (ADR 0002).
+
+Une adresse SIP déjà prise par l'autre compte est **refusée** : deux entrées se disputeraient
+le même registrar et le même correspondant à l'écran. Le message le dit et surligne le champ.
+
+Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour accueil), et —
+sur un compte existant — **« Supprimer ce compte »**, qui efface son enregistrement chiffré
+**et son historique d'appels**, conversations comprises. La suppression demande confirmation
+et n'est proposée que là : l'UA y est déjà arrêté.
+Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
 
 ### Écran 3 — Appel (vue bureau)
 
@@ -312,8 +323,30 @@ stockée, chiffrée, dans ce navigateur. »
     masqué tant que l'appel dure,
   - pied : taille du texte (A− / A+) — le seul réglage qu'on ajuste en cours de conversation.
 
-Panneau replié, la scène occupe toute la largeur et « Raccrocher » reste atteignable par le
-rond rouge de la barre de surimpression.
+- **Barre d'en-tête** : logo (retour accueil), **indicateur d'enregistrement** (pastille + libellé,
+  suivi du `user@domaine` enregistré), bouton « Paramètres » (engrenage → écran 2),
+  bouton « Se déconnecter » (→ écran 1). Deux comptes enregistrés : s'y ajoute le
+  **bouton de bascule** vers l'autre, qui désenregistre puis enregistre celui-là (ADR 0002).
+  Comme les deux précédents, il est **grisé dès qu'un appel est en cours** — de la première
+  sonnerie au raccroché.
+  En communication s'y ajoute la pastille d'appel ; trace SIP cochée, elle découvre au
+  survol (ou au focus, ou au clic qui la fixe) les **statistiques média** — codec, débit
+  et perte de chaque sens, sur une fenêtre glissante de 10 s (CONCEPTION §5.4).
+  L'appel terminé, le même bilan — mesuré sur toute sa durée — reste accessible depuis
+  la **loupe** de sa ligne d'historique, avec un bouton « Copier ».
+- **Zone centrale (flexible)** : vidéo distante plein cadre sur fond noir ; self-view incrusté
+  en haut-gauche (~25 % de hauteur, coins arrondis 10px) ; vu-mètres verticaux discrets ;
+  overlay « Connexion… » pendant l'établissement. Double-clic = plein écran.
+- **Barre inférieure (48px)** : ajouter/retirer la vidéo, masquer self-view, haut-parleur, clavier DTMF.
+- **Sidebar droite (300px)** :
+  - champ « Adresse SIP » (complétion `@domaine` implicite),
+  - bouton **« Appeler » (vert, audio) + menu déroulant « Appel vidéo »**,
+  - bouton « Raccrocher » (rouge, visible uniquement en communication),
+  - chrono HH:MM:SS + mute micro,
+  - zone tchat : le fil du texte temps réel pendant l'appel, à la place de
+    l'historique — qui est masqué tant que l'appel dure (phase 4) ; hors appel, la
+    mention « le tchat s'ouvre avec l'appel »,
+  - pied : A-/A+ et interrupteur thème clair/foncé.
 
 ### Écran 3 — Appel (vue mobile)
 
@@ -381,7 +414,18 @@ clignotant de l'alerte, qui reste le signal principal.
 - [x] Historique des conversations : le fil rejoint la ligne d'appel, chiffré avec le
       compte, et se relit depuis sa bulle « T » avec « Copier » (`sip/transcript.ts`,
       `ui/chatdialog.ts`)
-- [ ] Export WebVTT de la conversation (`ui/subtitles.ts`)
+- [x] Export WebVTT de la conversation (`ui/subtitles.ts`) : calé sur le début de la
+      communication, une bulle figée par entrée, locuteur balisé `<v …>`, remarques du
+      fil en commentaires — le fichier se pose tel quel sur un enregistrement de l'appel
+
+### Phase 4bis : deuxième compte SIP
+
+- [ ] Coffre en liste : `Vault { accounts, activeId }` en un enregistrement chiffré, historique
+      nommé par l'identifiant du compte, migration du compte existant (CONCEPTION §6, ADR 0002)
+- [ ] `PhoneMachine` multi-comptes : compte actif, compte édité (`ctx.editing`), bascule,
+      suppression d'un compte avec son historique
+- [ ] Écrans : liste à l'accueil (deux comptes au plus), formulaire création/modification
+      avec suppression, bouton de bascule dans l'en-tête — grisé pendant l'appel
 
 ### Hors phase — livré en cours de route
 - [x] Internationalisation : anglais / français / québécois / japonais / chinois simplifié /

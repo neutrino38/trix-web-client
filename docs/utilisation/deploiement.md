@@ -42,6 +42,20 @@ autorise n'importe quel hôte en WebSocket sécurisé.
    sudo restorecon -R /var/www/trix   # systèmes avec SELinux
    ```
 
+   La construction produit **deux pages** : `index.html`, le client, et
+   `share_account.html`, celle qui reçoit un compte partagé par lien
+   (docs/CONCEPTION.md §6.1). Toutes deux sont des fichiers statiques : aucune
+   réécriture d'URL n'est à configurer, mais les deux doivent être servies —
+   `share_account.html` absente, les liens déjà envoyés tombent sur un 404.
+   `deploy.sh` le vérifie avant de transférer quoi que ce soit.
+
+   Le lien de partage porte sa charge dans le **fragment** de l'URL
+   (`share_account.html#data=…`), qui ne quitte jamais le navigateur : rien de ce
+   qu'il transporte — le HA1 du compte, le mot de passe TURN — n'apparaît dans les
+   journaux d'accès du serveur. L'en-tête `Referrer-Policy: no-referrer` des vhosts
+   fournis achève de l'empêcher de fuir vers un tiers ; si vous écrivez votre propre
+   configuration, gardez-le.
+
 3. Installez le certificat et sa clé :
 
    - `/etc/pki/tls/certs/trix.example.com-fullchain.crt` contient le certificat du

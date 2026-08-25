@@ -68,6 +68,12 @@ describe("contenu du popup", () => {
     expect(chatLogDialogHtml(entry(THREAD))).toContain("2 messages");
   });
 
+  it("offre la copie et l'export en sous-titres", () => {
+    const html = chatLogDialogHtml(entry(THREAD));
+    expect(html).toContain('data-act="copy"');
+    expect(html).toContain('data-act="export"');
+  });
+
   it("aucune bulle vivante : la conversation est finie, rien n'y clignote", () => {
     expect(chatLogDialogHtml(entry(THREAD))).not.toContain("chat-caret");
   });

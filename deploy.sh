@@ -118,6 +118,11 @@ else
 fi
 
 [[ -f dist/index.html ]] || fatal "dist/index.html est absent : la construction a échoué."
+# La page de partage d'un compte est une entrée de construction à part
+# (vite.config.ts). Absente, les liens déjà envoyés tombent sur un 404 sans
+# que rien d'autre ne le signale.
+[[ -f dist/share_account.html ]] \
+  || fatal "dist/share_account.html est absent : la construction a échoué."
 
 # --- Vérification des ressources statiques ----------------------------------
 
@@ -136,9 +141,10 @@ done
 # apple-touch-icon compris : c'est ce que le navigateur ira chercher.
 while read -r ref; do
   [[ -n $ref ]] || continue
-  [[ -e "dist/${ref#/}" ]] || manquants+=("$ref (référencé par index.html)")
-done < <(grep -oE '<link[^>]+rel="[^"]*icon[^"]*"[^>]*>' dist/index.html \
-         | grep -oE 'href="[^"]+"' | cut -d'"' -f2)
+  [[ -e "dist/${ref#/}" ]] || manquants+=("$ref (référencé par une page)")
+done < <(grep -hoE '<link[^>]+rel="[^"]*icon[^"]*"[^>]*>' \
+             dist/index.html dist/share_account.html \
+         | grep -oE 'href="[^"]+"' | cut -d'"' -f2 | sort -u)
 
 if (( ${#manquants[@]} )); then
   printf '  - %s\n' "${manquants[@]}" >&2

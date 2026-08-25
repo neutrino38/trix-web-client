@@ -1,4 +1,4 @@
-import type { PhoneInstance } from "../../machines/phone.js";
+import { editedAccount, type PhoneInstance } from "../../machines/phone.js";
 import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
 import { alertPermission, requestAlertPermission } from "../alert.js";
@@ -10,6 +10,9 @@ import { t } from "../../i18n/index.js";
 import type { Msg, MsgKey } from "../../i18n/types.js";
 import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
 import { deployment } from "../../deployment.js";
+import { shareUrl } from "../../share/link.js";
+import { showToast } from "../toast.js";
+import { RTT_LABELS } from "../rttlabels.js";
 
 /**
  * État de la permission de notification — le seul canal d'alerte qui traverse
@@ -45,17 +48,6 @@ const THEMES: { id: ThemeChoice; label: MsgKey }[] = [
 ];
 
 /**
- * Libellés des transports du texte en temps réel. La liste elle-même vit
- * dans `sip/rtt.ts` : en ajouter un se voit à la compilation ici, faute
- * de clé — l'écran ne peut pas en oublier un en silence.
- */
-const RTT_LABELS: Record<RttTransport, { label: MsgKey; desc: MsgKey }> = {
-  none: { label: "config.rttNone", desc: "config.rttNoneDesc" },
-  websocket: { label: "config.rttWs", desc: "config.rttWsDesc" },
-  datachannel: { label: "config.rttDc", desc: "config.rttDcDesc" },
-};
-
-/**
  * Le bandeau d'erreur du formulaire et son code technique, réécrits sur
  * place après une validation refusée.
  *
@@ -72,6 +64,25 @@ function errorSlot(err: Msg | null, code: string | null): string {
 }
 
 /**
+ * Le lien affiché en clair, quand le presse-papier n'a pas voulu de lui.
+ * Le champ est en lecture seule et sélectionné : il ne reste qu'à copier.
+ * Il remplace le bouton plutôt que de s'ajouter dessous — un bouton
+ * « Copier » qui ne copie pas ne doit pas rester cliquable.
+ */
+function showShareFallback(node: HTMLElement, link: string): void {
+  const btn = node.querySelector('[data-act="share"]');
+  if (!btn) return;
+  const box = el(
+    `<input class="share-link" type="text" readonly aria-label="${esc(
+      t("config.shareManual"),
+    )}" value="${esc(link)}">`,
+  ) as HTMLInputElement;
+  btn.replaceWith(box);
+  box.focus();
+  box.select();
+}
+
+/**
  * Le userpart proposé quand le déploiement impose le domaine : le champ
  * part de `user@domaine` et cette moitié-là est sélectionnée à la prise de
  * focus. C'est la seule chose qui reste à saisir, autant la désigner.
@@ -79,8 +90,11 @@ function errorSlot(err: Msg | null, code: string | null): string {
 const URI_USER = "user";
 
 export function renderConfig(phone: PhoneInstance): HTMLElement {
-  const cfg = phone.context.config;
-  const saving = phone.state === "saving";
+  // Le compte que le formulaire modifie — pas forcément l'actif : on
+  // corrige le compte au repos pendant que l'autre est enregistré
+  // (machines/phone.ts). `null` en création.
+  const cfg = editedAccount(phone.context);
+  const saving = phone.state === "saving" || phone.state === "deleting";
   const err = phone.context.lastError;
   const errCode = phone.context.lastErrorCode;
   const suspect = phone.context.suspectFields;
@@ -181,7 +195,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   const node = el(`
     <div class="screen-config">
       <form novalidate>
-        <h2>${esc(t("config.title"))}</h2>
+        <h2>${esc(t(cfg ? "config.title" : "config.titleNew"))}</h2>
         <div class="error-slot" data-ref="errslot">${errorSlot(err, errCode)}</div>
         <div class="config-cols${natCol ? "" : " cols-2"}">
         <section class="config-col">
@@ -230,6 +244,23 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
           ${cfg ? `<span class="hint">${esc(t("config.passwordKeep"))}</span>` : ""}
         </div>
         <div class="note">${esc(t("config.ha1Note"))}</div>
+        ${
+          // Partager, c'est partager de quoi s'authentifier : le lien porte
+          // le HA1, et le mot de passe TURN s'il y en a un. L'avertissement
+          // reste sous le bouton plutôt que de passer dans un bandeau — il
+          // vaut au moment où l'on hésite à envoyer le lien, pas trois
+          // secondes après l'avoir copié (share/link.ts).
+          //
+          // Rien à partager d'un formulaire de création : le compte n'existe
+          // pas encore, et son HA1 non plus.
+          cfg
+            ? `<div class="field">
+          <span class="field-title">${esc(t("config.share"))}</span>
+          <button class="btn" type="button" data-act="share">${esc(t("config.shareCopy"))}</button>
+          <span class="hint warn">${esc(t("config.shareWarn"))}</span>
+        </div>`
+            : ""
+        }
 
         </section>
 
@@ -298,6 +329,18 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
           <button class="btn ghost" type="button" data-act="cancel" ${saving ? "disabled" : ""}>${esc(
             t("config.cancel"),
           )}</button>
+          ${
+            // Supprimer emporte le compte **et son historique**, sans retour
+            // possible : le bouton demande donc deux clics, le second sur un
+            // libellé qui dit ce qui va disparaître. Pas de `confirm()` —
+            // une modale native ne se traduit pas, ne se met pas au thème,
+            // et bloque la page tant qu'elle est là.
+            cfg
+              ? `<span class="spacer"></span>
+          <button class="btn danger" type="button" data-act="delete" ${saving ? "disabled" : ""}
+                  data-armed="no">${esc(t("config.delete"))}</button>`
+              : ""
+          }
         </div>
       </form>
     </div>`);
@@ -409,6 +452,48 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   node
     .querySelector('[data-act="cancel"]')!
     .addEventListener("click", () => phone.send({ type: "ui:cancelConfig" }));
+
+  /**
+   * Le lien de partage, copié dans le presse-papier. Il est fabriqué à
+   * partir du compte **enregistré** et non de la saisie en cours : ce qui
+   * n'a pas été validé n'a pas de HA1, et partager une adresse à moitié
+   * corrigée n'aurait aucun sens.
+   *
+   * `writeText` n'est pas garanti — contexte non sécurisé, permission
+   * refusée, navigateur ancien. L'échec ne laisse pas l'utilisateur sans
+   * rien : le lien s'affiche alors, sélectionné, à copier à la main.
+   */
+  node.querySelector('[data-act="share"]')?.addEventListener("click", () => {
+    const link = shareUrl(cfg!, location.href);
+    void navigator.clipboard
+      ?.writeText(link)
+      .then(() => showToast(t("config.shareCopied")))
+      .catch(() => showShareFallback(node, link));
+    if (!navigator.clipboard) showShareFallback(node, link);
+  });
+
+  /**
+   * La suppression en deux temps : le premier clic arme le bouton et lui
+   * fait dire ce qui va disparaître, le second envoie l'événement. Quitter
+   * le bouton le désarme — un bouton rouge resté armé derrière soi est un
+   * piège.
+   */
+  const deleteBtn = node.querySelector<HTMLButtonElement>('[data-act="delete"]');
+  const disarm = (): void => {
+    if (!deleteBtn) return;
+    deleteBtn.dataset.armed = "no";
+    deleteBtn.textContent = t("config.delete");
+  };
+  deleteBtn?.addEventListener("click", () => {
+    if (deleteBtn.dataset.armed === "yes") {
+      phone.send({ type: "ui:deleteAccount" });
+      return;
+    }
+    deleteBtn.dataset.armed = "yes";
+    deleteBtn.textContent = t("config.deleteConfirm", { address: `${cfg!.username}@${cfg!.domain}` });
+  });
+  deleteBtn?.addEventListener("blur", disarm);
+
   wireLangPicker(node);
   // le surlignage s'efface dès que l'utilisateur corrige le champ — et il
   // peut revenir à la soumission suivante, d'où l'écoute permanente

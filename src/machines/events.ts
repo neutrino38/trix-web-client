@@ -1,5 +1,5 @@
 import type { SbbReturn, TaskResult } from "finite-state-language";
-import type { AccountConfig, CallDirection, CallLogEntry } from "../storage/store.js";
+import type { CallDirection, CallLogEntry, Vault } from "../storage/store.js";
 import type { CallMedia, CallSession, CallSipEvent, SipEvent } from "../sip/port.js";
 import type { Msg } from "../i18n/types.js";
 import type { RttTransport } from "../sip/rtt.js";
@@ -135,10 +135,20 @@ export type CallReturn =
   | SbbReturn<"call", "missed", { reason: Msg; failed: boolean }>;
 
 export type PhoneEvent =
-  | { type: "ui:configure" }
+  /** Ouvrir le formulaire sur un compte du coffre, ou vide (`id: null`) pour en ajouter un. */
+  | { type: "ui:configure"; id: string | null }
   | { type: "ui:cancelConfig" }
   | { type: "ui:saveConfig"; form: ConfigForm }
-  | { type: "ui:useAccount" }
+  /** Supprimer le compte que le formulaire modifie — avec son historique. */
+  | { type: "ui:deleteAccount" }
+  /** S'enregistrer sur ce compte, depuis l'accueil. */
+  | { type: "ui:useAccount"; id: string }
+  /**
+   * Passer à l'autre compte, depuis l'en-tête de l'écran d'appel. Interdit
+   * dès la première sonnerie : `CallBlock` consomme l'événement sans effet
+   * s'il lui parvient malgré un bouton grisé.
+   */
+  | { type: "ui:switchAccount"; id: string }
   | { type: "ui:retry" }
   | { type: "ui:backToSettings" }
   | { type: "ui:logout" }
@@ -151,7 +161,9 @@ export type PhoneEvent =
   | CallSipEvent
   | CallReturn
   | SipEvent
-  // boot : configuration + historique du compte, chargés d'un seul tenant
-  | TaskResult<"loadConfig", { config: AccountConfig | null; history: CallLogEntry[] }>
-  // sauvegarde : rend l'historique du compte (re)configuré
-  | TaskResult<"saveConfig", CallLogEntry[]>;
+  // boot : coffre + historique du compte actif, chargés d'un seul tenant
+  | TaskResult<"loadVault", { vault: Vault; history: CallLogEntry[] }>
+  // écriture du coffre : rend l'historique du compte qui prend la main
+  | TaskResult<"saveVault", CallLogEntry[]>
+  // suppression : coffre amputé écrit, puis historique effacé
+  | TaskResult<"deleteAccount", void>;
