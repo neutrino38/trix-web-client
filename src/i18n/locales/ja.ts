@@ -175,6 +175,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "call.dialing": "発信中",
   "call.ringing": "呼び出し中",
+  "call.earlyMedia": "ネットワークの音声案内",
   "call.ringingIn": "着信",
   "call.answering": "接続中…",
   "call.connected": "通話中",
@@ -211,6 +212,7 @@ const messages: Translation = {
   "chat.composerAria": "リアルタイムテキストのメッセージ",
   "chat.placeholder": "入力すると、そのまま相手に届きます",
   "chat.placeholderClosed": "この通話ではテキストを使えません",
+  "chat.placeholderEarly": "応答されるまでは読み取り専用です",
   "chat.enterHint": "Enter で吹き出しを確定",
   "chat.state.open": "入力しながら送信中",
   "chat.state.connecting": "リアルタイムテキストを開いています…",
@@ -252,13 +254,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "マイク",
-  "ctrl.mic.mute": "マイクをミュートする",
-  "ctrl.mic.unmute": "マイクのミュートを解除する",
-  "ctrl.cam.aria": "カメラ",
+  "ctrl.mic.aria": "音声",
+  "ctrl.mic.add": "音声を追加",
+  "ctrl.mic.remove": "音声を削除",
+  "ctrl.cam.aria": "ビデオ",
   "ctrl.cam.add": "ビデオを追加",
   "ctrl.cam.remove": "ビデオを削除",
-  "ctrl.cam.pending": "メディアを変更中…",
+  "ctrl.media.pending": "メディアを変更しています…",
+  "ctrl.media.last": "できません：通話に何も残らなくなります",
   "ctrl.selfview.aria": "セルフビュー",
   "ctrl.selfview.hide": "セルフビューを隠す",
   "ctrl.selfview.show": "セルフビューを表示する",
@@ -273,6 +276,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "チャットを閉じる",
   "ctrl.fullscreen": "全画面表示",
   "ctrl.hangup": "通話を切る",
+  "ctrl.pause": "一時停止",
+  "ctrl.pause.aria": "一時停止",
+  "ctrl.resume": "再開",
+  "pause.banner": "一時停止中です",
+  "pause.hint": "マイクと映像は停止しています。テキストはそのまま届きます。",
+  "pause.resume": "再開",
+  "pause.peer": "{peer} は一時停止中です",
+  "ctrl.more": "その他の操作",
+  "sheet.title": "通話のその他の操作",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -287,10 +299,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // 通話中のビデオ追加要求
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} がビデオの追加を求めています",
-  "videoask.body": "承諾するとカメラがオンになります。",
-  "videoask.accept": "ビデオを承諾する",
-  "videoask.reject": "拒否する",
+  "mediaask.video.title": "{peer} がビデオの追加を希望しています",
+  "mediaask.video.body": "承諾するとカメラがオンになります。",
+  "mediaask.video.accept": "ビデオを承諾",
+  "mediaask.audio.title": "{peer} が音声の追加を希望しています",
+  "mediaask.audio.body": "承諾するとマイクがオンになります。",
+  "mediaask.audio.accept": "音声を承諾",
+  "mediaask.both.title": "{peer} が音声とビデオの追加を希望しています",
+  "mediaask.both.body": "承諾するとマイクとカメラがオンになります。",
+  "mediaask.both.accept": "両方を承諾",
+  "mediaask.reject": "拒否",
 
   // ---------------------------------------------------------------------
   // 通話中の一時的なメッセージ
@@ -301,6 +319,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} がビデオを削除しました",
   "notice.videoDeclinedHere": "ビデオを拒否しました",
   "notice.videoUnavailable": "現在ビデオを追加できません",
+  "notice.audioDeclined": "{peer} は音声を受け入れませんでした",
+  "notice.audioRefused": "{peer} はこの通話への音声の追加を拒否しています",
+  "notice.audioAdded": "{peer} が音声を追加しました",
+  "notice.audioRemoved": "{peer} が音声を削除しました",
+  "notice.audioDeclinedHere": "音声を拒否しました",
+  "notice.audioUnavailable": "現在、音声を追加できません",
   "notice.dtmfFailed": "トーン {tone} を送信できませんでした",
 
   // ---------------------------------------------------------------------
@@ -325,6 +349,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "ビデオ通話の着信",
   "incoming.kicker.audio": "音声通話の着信",
+  "incoming.kicker.audioText": "音声＋テキスト通話の着信",
+  "incoming.kicker.videoText": "ビデオ＋テキスト通話の着信",
   "incoming.kicker.text": "テキスト通話の着信",
   "incoming.answerVideo": "ビデオで応答する",
   "incoming.answerAudio": "音声で応答する",
@@ -390,10 +416,14 @@ const messages: Translation = {
   "stats.sent": "送信",
   "stats.audio": "音声",
   "stats.video": "映像",
+  "stats.text": "テキスト",
+  "stats.missing": "欠落テキスト",
   "stats.codec": "コーデック",
   "stats.bitrate": "ビットレート",
   "stats.loss": "パケット損失",
   "stats.rtt": "往復遅延",
+  "stats.sync": "音声と映像のずれ",
+  "stats.syncHint": "{n} ms 未満なら読唇と手話に支障がありません（F.703 §5.2.2）。",
   "stats.lossNote": "送信側の損失は、相手の受信レポートが伝える値です。",
   "stats.pending": "測定中…",
   "stats.none": "測定できたメディアストリームはありません",
@@ -408,6 +438,24 @@ const messages: Translation = {
   "stats.copy": "コピー",
   "stats.copied": "コピーしました",
   "stats.copyFailed": "コピーできませんでした",
+  "selftest.section": "マイクとカメラ",
+  "selftest.open": "マイクとカメラをテストする",
+  "selftest.sectionHint": "通話前の確認です。マイクが無音であることは、通話中ではなく今気づくほうが確実です。",
+  "selftest.title": "マイクとカメラのテスト",
+  "selftest.sub": "送信は行われません。このテストは端末内で完結します。",
+  "selftest.close": "閉じる",
+  "selftest.starting": "デバイスを起動しています…",
+  "selftest.hint": "話してみてください。バーが動き、映像にご自身が映るはずです。",
+  "selftest.levelAria": "マイクの入力レベル",
+  "selftest.mic": "マイク",
+  "selftest.cam": "カメラ",
+  "selftest.unnamed": "名称のないデバイス",
+  "selftest.absent": "なし",
+  "selftest.noCamera": "カメラがありません。マイクのみをテストします。",
+  "selftest.denied": "マイクとカメラへのアクセスが拒否されました。ブラウザーで許可してから、もう一度テストしてください。",
+  "selftest.missing": "この端末にマイクもカメラも見つかりません。",
+  "selftest.busy": "マイクまたはカメラが他のアプリで使用中です。",
+  "selftest.failed": "テストできません：{detail}",
 
   // ---------------------------------------------------------------------
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)

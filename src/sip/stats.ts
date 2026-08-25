@@ -20,6 +20,12 @@
  *   (RR) que le navigateur agrège dans `remote-inbound-rtp` — rapporté aux
  *   paquets envoyés, qui comptent déjà les perdus.
  *
+ * S'y ajoute une mesure qui n'est ni un débit ni une perte : **l'écart
+ * audio / vidéo**, celui que F.703 §5.2.2 veut sous 100 ms parce que c'est
+ * la limite de la lecture labiale et de la langue des signes (H-series
+ * Suppl. 1). C'est *la* métrique du public de Trix, et elle se lit à
+ * l'instant, pas sur une fenêtre.
+ *
  * Les mêmes échantillons servent deux lectures, et c'est tout l'intérêt de
  * les prendre une seule fois : la fenêtre de 10 s pendant l'appel, et le
  * **bilan de l'appel entier** — premier échantillon contre dernier — que
@@ -57,16 +63,69 @@ export interface Flow {
   loss: number | null;
 }
 
+/**
+ * Le texte temps réel sur la fenêtre — **le troisième média** (ADR 0003,
+ * D1), et il se mesure autrement que les deux autres.
+ *
+ * Ni débit ni taux de perte : le texte ne passe pas par RTP, `getStats()`
+ * n'en sait rien, et de toute façon la question n'est pas la même. T.140
+ * §5.3.2.3 donne au texte son unité de mesure — caractères corrompus,
+ * caractères perdus, **marqueurs de texte manquant** —, et c'est le
+ * troisième que l'on peut compter sans mentir : un `U+FFFD` reçu est un
+ * trou constaté, ici ou chez le distant (`sip/rtt.ts`).
+ *
+ * Un seul sens, celui de la réception : ce qui est parti d'ici, personne ne
+ * dit s'il est arrivé — SCTP et WebSocket sont fiables, et une passerelle
+ * qui perd du RTP en aval ne le rapporte à personne.
+ */
+export interface TextFlow {
+  /** Marqueurs de texte manquant apparus sur la fenêtre. */
+  missing: number;
+}
+
 /** L'état du média des deux côtés, sur la fenêtre. */
 export interface MediaStats {
   /** `null` quand ce média n'est pas dans l'appel (un appel audio n'a pas de vidéo). */
   audio: Record<Direction, Flow> | null;
   video: Record<Direction, Flow> | null;
+  /** `null` quand l'appel ne porte pas de texte — le compte est en `none`, ou le distant n'a pas suivi. */
+  text: TextFlow | null;
   /** Aller-retour rapporté par les RR, en millisecondes. */
   rttMs: number | null;
+  /**
+   * **Écart audio / vidéo à la lecture**, en millisecondes, signé : positif
+   * quand le son est en avance sur l'image, négatif quand il est en retard.
+   *
+   * F.703 §5.2.2 le veut sous 120 ms, de préférence sous 100 — le seuil de
+   * la lecture labiale et de la langue des signes (`SYNC_LIMIT_MS`). Trix
+   * s'adresse d'abord à des personnes sourdes : un décalage que personne
+   * n'entend rend l'image inutilisable, et c'est la seule mesure de cet
+   * encart dont la valeur cible vient d'une norme.
+   *
+   * Sur la fenêtre de 10 s, c'est l'écart **du dernier relevé** : ce qui se
+   * passe maintenant. Sur le bilan d'un appel entier, c'est le **pire écart
+   * observé** — un instantané pris une seconde avant le raccrochage ne
+   * dirait rien des trois minutes où l'image avait décroché, et c'est
+   * précisément la question que l'on pose à un bilan.
+   *
+   * Il vient de `estimatedPlayoutTimestamp` des deux flux entrants — la
+   * date à laquelle le navigateur estime jouer ce qu'il tient. Deux flux
+   * synchronisés jouent le même instant de capture, donc l'écart de ces
+   * deux dates *est* le décalage. `null` dès qu'il manque un des deux —
+   * appel sans vidéo, flux pas encore établi, navigateur qui ne rapporte
+   * pas ce compteur : mieux vaut « — » qu'un zéro rassurant.
+   */
+  syncMs: number | null;
   /** Étendue réelle de la fenêtre, en ms : 0 tant qu'un seul échantillon. */
   spanMs: number;
 }
+
+/**
+ * L'écart audio / vidéo au-delà duquel la lecture labiale décroche : 100 ms,
+ * la valeur préférée de F.703 §5.2.2 (la limite absolue y est 120 ms). C'est
+ * le seuil à partir duquel l'encart met le chiffre en avant.
+ */
+export const SYNC_LIMIT_MS = 100;
 
 /** La fenêtre demandée par les specs : 10 s de conversation, pas la moyenne de l'appel. */
 export const STATS_WINDOW_MS = 10_000;
@@ -104,6 +163,27 @@ export interface Snapshot {
   at: number;
   flows: Record<FlowKey, Counters>;
   rttMs: number | null;
+  /**
+   * Marqueurs de texte manquant **cumulés depuis le début de l'appel**, tels
+   * que le canal texte les compte (`sip/rtt.ts`). `null` quand l'appel n'en
+   * porte pas.
+   *
+   * Cumulé, comme les octets et les paquets du rapport WebRTC — et pour la
+   * même raison : c'est la différence entre deux relevés qui dit quelque
+   * chose de l'instant. Trois trous en dix minutes ne se lisent pas comme
+   * trois trous en dix secondes.
+   */
+  textMissing: number | null;
+  /**
+   * Date de lecture estimée de chaque flux entrant (`estimatedPlayoutTimestamp`,
+   * en ms), telle que le navigateur la rapporte. `null` quand il ne la
+   * rapporte pas, ou que le flux n'existe pas.
+   *
+   * Instantané, et non cumulé : c'est la seule valeur du rapport dont la
+   * différence entre deux relevés ne voudrait rien dire — ce qui compte est
+   * l'écart entre les deux médias au même instant.
+   */
+  playout: Record<MediaKind, number | null>;
 }
 
 function empty(): Counters {
@@ -139,7 +219,11 @@ function kindOf(stat: RawStat): MediaKind | null {
  * média (simulcast, plusieurs SSRC) s'additionnent : ce qui compte à
  * l'écran est le débit de la vidéo, pas celui de chacune de ses couches.
  */
-export function snapshot(report: StatsReportLike, at: number): Snapshot {
+export function snapshot(
+  report: StatsReportLike,
+  at: number,
+  textMissing: number | null = null,
+): Snapshot {
   const flows: Record<FlowKey, Counters> = {
     "audio-recv": empty(),
     "audio-sent": empty(),
@@ -147,6 +231,7 @@ export function snapshot(report: StatsReportLike, at: number): Snapshot {
     "video-sent": empty(),
   };
   let rttMs: number | null = null;
+  const playout: Record<MediaKind, number | null> = { audio: null, video: null };
 
   for (const [, stat] of report) {
     const kind = kindOf(stat);
@@ -155,6 +240,11 @@ export function snapshot(report: StatsReportLike, at: number): Snapshot {
     if (stat.type === "inbound-rtp") {
       const flow = flows[`${kind}-recv`];
       flow.present = true;
+      // le premier flux du média suffit : les couches d'un simulcast sont
+      // jouées ensemble, et c'est l'écart *entre médias* que l'on mesure
+      if (playout[kind] === null && typeof stat.estimatedPlayoutTimestamp === "number") {
+        playout[kind] = stat.estimatedPlayoutTimestamp;
+      }
       flow.bytes += num(stat.bytesReceived);
       flow.packets += num(stat.packetsReceived);
       // `packetsLost` est signé : des paquets dupliqués le font reculer
@@ -177,7 +267,7 @@ export function snapshot(report: StatsReportLike, at: number): Snapshot {
       }
     }
   }
-  return { at, flows, rttMs };
+  return { at, flows, rttMs, textMissing, playout };
 }
 
 /**
@@ -202,6 +292,27 @@ function flowOf(dir: Direction, from: Counters, to: Counters, spanMs: number): F
   };
 }
 
+/**
+ * Les trous de texte apparus entre deux échantillons. Le compteur du canal
+ * ne redescend jamais, mais un appel peut avoir commencé sans texte et en
+ * gagner un : la différence est alors prise à partir du premier relevé qui
+ * en portait un, et jamais négative.
+ */
+function textOf(from: Snapshot, to: Snapshot): TextFlow | null {
+  if (to.textMissing === null) return null;
+  return { missing: Math.max(0, to.textMissing - (from.textMissing ?? 0)) };
+}
+
+/**
+ * L'écart audio / vidéo d'un relevé : la différence des deux dates de
+ * lecture estimées. Un état, pas un cumul — d'où la lecture sur un seul
+ * échantillon, là où tout le reste de ce module compare deux bornes.
+ */
+export function syncOf(to: Snapshot): number | null {
+  const { audio, video } = to.playout;
+  return audio !== null && video !== null ? audio - video : null;
+}
+
 /** Ce qui s'est passé entre deux échantillons. `from === to` : les codecs seuls. */
 export function windowStats(from: Snapshot, to: Snapshot): MediaStats {
   const spanMs = Math.max(0, to.at - from.at);
@@ -214,7 +325,14 @@ export function windowStats(from: Snapshot, to: Snapshot): MediaStats {
       sent: flowOf("sent", from.flows[`${kind}-sent`], sent, spanMs),
     };
   };
-  return { audio: both("audio"), video: both("video"), rttMs: to.rttMs, spanMs };
+  return {
+    audio: both("audio"),
+    video: both("video"),
+    text: textOf(from, to),
+    rttMs: to.rttMs,
+    syncMs: syncOf(to),
+    spanMs,
+  };
 }
 
 /**
@@ -224,7 +342,7 @@ export function windowStats(from: Snapshot, to: Snapshot): MediaStats {
  * comparer si les mesures s'espaçaient (onglet en arrière-plan).
  */
 export interface StatsWindow {
-  push(report: StatsReportLike, at?: number): void;
+  push(report: StatsReportLike, at?: number, textMissing?: number | null): void;
   /** Pour qui a déjà réduit son rapport et le garde par ailleurs (`createCallStats`). */
   pushSnapshot(sample: Snapshot): void;
   /** `null` tant qu'aucun rapport n'est arrivé. */
@@ -241,8 +359,8 @@ export function createStatsWindow(windowMs: number = STATS_WINDOW_MS): StatsWind
     while (samples.length > 2 && samples[0]!.at < floor) samples.shift();
   };
   return {
-    push(report, at = Date.now()) {
-      pushSnapshot(snapshot(report, at));
+    push(report, at = Date.now(), textMissing = null) {
+      pushSnapshot(snapshot(report, at, textMissing));
     },
     pushSnapshot,
     read() {
@@ -268,7 +386,12 @@ export function createStatsWindow(windowMs: number = STATS_WINDOW_MS): StatsWind
  * eux-mêmes ne sont pas conservés, seuls leurs quelques compteurs le sont.
  */
 export interface CallStatsCollector {
-  push(report: StatsReportLike, at?: number): void;
+  /**
+   * Un relevé. `textMissing` est le compteur cumulé du canal texte, `null`
+   * quand l'appel n'en porte pas — le port le lit au même instant que le
+   * rapport WebRTC, pour que les deux mesures parlent de la même seconde.
+   */
+  push(report: StatsReportLike, at?: number, textMissing?: number | null): void;
   /** Les dix dernières secondes. */
   live(): MediaStats | null;
   /** Tout ce qui a été mesuré de l'appel. `null` s'il n'a rien été mesuré. */
@@ -279,14 +402,21 @@ export function createCallStats(windowMs: number = STATS_WINDOW_MS): CallStatsCo
   const win = createStatsWindow(windowMs);
   let first: Snapshot | null = null;
   let last: Snapshot | null = null;
+  /** Le pire écart audio / vidéo vu de tout l'appel — voir `MediaStats.syncMs`. */
+  let worstSync: number | null = null;
   return {
-    push(report, at = Date.now()) {
-      const sample = snapshot(report, at);
+    push(report, at = Date.now(), textMissing = null) {
+      const sample = snapshot(report, at, textMissing);
       first ??= sample;
       last = sample;
+      const sync = syncOf(sample);
+      if (sync !== null && (worstSync === null || Math.abs(sync) > Math.abs(worstSync))) {
+        worstSync = sync;
+      }
       win.pushSnapshot(sample);
     },
     live: () => win.read(),
-    summary: () => (first && last ? windowStats(first, last) : null),
+    summary: () =>
+      first && last ? { ...windowStats(first, last), syncMs: worstSync } : null,
   };
 }

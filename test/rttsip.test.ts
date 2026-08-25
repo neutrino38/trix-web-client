@@ -17,6 +17,13 @@ import { T140_CHANNEL } from "../src/sip/rttdc.js";
 /** La connexion pair-à-pair, réduite à l'ouverture d'un canal de données. */
 class FakePc {
   created: { label: string; protocol: string }[] = [];
+  /**
+   * L'association SCTP, telle que le navigateur la publie une fois la
+   * section `m=application` négociée des deux côtés — `null` tant qu'elle
+   * ne l'est pas, et si le distant l'a rejetée (port 0). C'est là-dessus,
+   * et sur rien d'autre, que se lit « le texte est négocié » (ADR 0003, D1).
+   */
+  sctp: unknown = null;
 
   createDataChannel(label: string, init: { protocol?: string }): unknown {
     const dc = {
@@ -157,7 +164,13 @@ describe("négociation du texte sur WebSocket", () => {
     expect(channel.state()).toBe("open");
   });
 
-  it("le texte tapé pendant la sonnerie part à l'ouverture du socket", () => {
+  /**
+   * Le tampon du canal survit à l'attente d'un fil : c'est ce qui rend une
+   * reprise de lien indolore en pleine conversation. L'écran, lui, ne
+   * laisse pas taper avant le décrochage (`call/chat.ts`) — mais la règle
+   * est là-haut, et le tuyau, lui, ne connaît pas l'état de l'appel.
+   */
+  it("ce qui attend dans le tampon part à l'ouverture du socket, signature en tête", () => {
     const session = new FakeSession();
     const { channel } = negotiateRttOverWs(session);
     session.sdp("local", "offer", LOCAL_OFFER);
@@ -168,7 +181,9 @@ describe("négociation du texte sur WebSocket", () => {
 
     session.sdp("remote", "answer", REMOTE_ANSWER);
     FakeSocket.instances[0]!.open();
-    expect(FakeSocket.instances[0]!.sent).toEqual(["bonjour"]);
+    // la signature de session ouvre le flux — et le chemin retour de la
+    // passerelle — avant le premier caractère
+    expect(FakeSocket.instances[0]!.sent).toEqual(["\uFEFF", "bonjour"]);
   });
 
   it("appelé : la section est retirée de l'offre, et rendue à sa place dans la réponse", () => {
@@ -294,5 +309,74 @@ describe("négociation du texte sur WebSocket", () => {
     nego.close();
     expect(socket.readyState).toBe(3);
     expect(nego.channel.state()).toBe("closed");
+  });
+});
+
+/**
+ * **« Négocié » n'est pas « ouvert »** — ADR 0003, D1. C'est la nuance que
+ * `CallMedia.text` porte et que `RttChannel.state` ne porte pas : les deux
+ * bouts peuvent être convenus du texte alors que le lien n'est pas encore
+ * là. Sur canal de données, c'est même le cas normal — DCEP ouvre le canal
+ * après le 200 OK. Confondre les deux ferait clignoter l'écran d'appel à
+ * chaque seconde de latence du réseau.
+ */
+describe("le texte négocié, et le lien ouvert", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.instances = [];
+    vi.stubGlobal("WebSocket", FakeSocket);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("WebSocket : rien n'est négocié avant que le distant ait annoncé son socket", () => {
+    const session = new FakeSession();
+    const nego = negotiateRttOverWs(session);
+    expect(nego.negotiated()).toBe(false);
+
+    // notre offre porte le texte, mais offrir n'est pas convenir
+    session.sdp("local", "offer", LOCAL_OFFER);
+    expect(nego.negotiated()).toBe(false);
+
+    session.sdp("remote", "answer", REMOTE_ANSWER);
+    expect(nego.negotiated()).toBe(true);
+    // et le lien, lui, n'est pas encore ouvert : c'est toute la nuance
+    expect(nego.channel.state()).toBe("connecting");
+
+    FakeSocket.instances[0]!.open();
+    expect(nego.channel.state()).toBe("open");
+    expect(nego.negotiated()).toBe(true);
+  });
+
+  it("WebSocket : un distant qui refuse le texte ne le fait jamais passer négocié", () => {
+    const session = new FakeSession();
+    const nego = negotiateRttOverWs(session);
+    session.sdp("local", "offer", LOCAL_OFFER);
+    session.sdp("remote", "answer", LOCAL_OFFER); // sans section texte
+    expect(nego.negotiated()).toBe(false);
+    expect(nego.channel.state()).toBe("closed");
+  });
+
+  it("canal de données : négocié à l'association SCTP, ouvert bien plus tard", () => {
+    const session = new FakeSession();
+    const nego = openRttFor("datachannel", session, "offer")!;
+    // le canal est créé avant la première offre : il existe, il n'est
+    // convenu de rien
+    expect(session.pc.created).toHaveLength(1);
+    expect(nego.negotiated()).toBe(false);
+
+    session.pc.sctp = { state: "connected" };
+    expect(nego.negotiated()).toBe(true);
+    // DCEP n'a pas encore ouvert le canal `t140` : `text: true` avec un
+    // lien `connecting` est un état normal, et non une incohérence
+    expect(nego.channel.state()).toBe("connecting");
+  });
+
+  it("canal de données rejeté par le distant : pas de SCTP, pas de texte", () => {
+    const session = new FakeSession();
+    const nego = openRttFor("datachannel", session, "offer")!;
+    expect(nego.negotiated()).toBe(false);
   });
 });

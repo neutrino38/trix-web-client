@@ -12,12 +12,14 @@
 import type { PhoneInstance } from "../../../machines/phone.js";
 import type { CallView } from "../../../machines/events.js";
 import type { CallLogEntry } from "../../../storage/store.js";
-import type { CallMedia } from "../../../sip/port.js";
+import { MEDIA_KINDS, type CallMedia } from "../../../sip/port.js";
 import type { RttTransport } from "../../../sip/rtt.js";
 import type { AccountConfig, StoredAccount } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { el, esc } from "../../el.js";
 import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
+import { startRingback, stopRingback } from "../../ring.js";
+import { audioLevel, barHeight } from "../../vumeter.js";
 import { hideToast, showToast } from "../../toast.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
@@ -59,11 +61,28 @@ export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "
 const CALL_LABEL_KEY: Record<CallView["state"], MsgKey> = {
   dialing: "call.dialing",
   ringing: "call.ringing",
+  /**
+   * Le réseau parle avant le décrochage : ce libellé est le seul endroit
+   * où cela existe pour qui n'entend pas. Le raisonnement est celui des
+   * DTMF (§4.8) — un son que l'application ne montre pas n'a pas eu lieu.
+   */
+  early_media: "call.earlyMedia",
   ringing_in: "call.ringingIn",
   answering: "call.answering",
   connected: "call.connected",
   hangingup: "call.hangingup",
 };
+
+/**
+ * Faut-il produire le retour d'appel local ? Oui pendant la sonnerie, et
+ * encore en média précoce tant que celui-ci n'apporte pas de son (ADR 0003,
+ * §4 — F.703 §6.1.2). Séparée du câblage parce que c'est une règle, et
+ * qu'une règle se relit sans navigateur.
+ */
+export function ringbackNeeded(view: CallView): boolean {
+  if (view.state === "ringing") return true;
+  return view.state === "early_media" && !view.earlyMedia.audio;
+}
 
 export function callLabel(state: CallView["state"]): string {
   return t(CALL_LABEL_KEY[state]);
@@ -146,6 +165,12 @@ interface CallModeDef {
   media: CallMedia;
 }
 
+/**
+ * Ce que chaque mode demande **de son propre chef** : le texte n'y figure
+ * pas, parce qu'il n'est jamais un choix de l'appelant (ADR 0003, D2). Il
+ * est là si le compte le porte, et `callModes` l'y ajoute — c'est ce qui
+ * évite un menu à six entrées pour trois intentions.
+ */
 const CALL_MODE_KEYS = [
   {
     id: "audio",
@@ -168,19 +193,34 @@ const CALL_MODE_KEYS = [
     icon: ICONS.chat,
     media: { audio: false, video: false },
   },
-] as const satisfies readonly { id: string; label: MsgKey; buttonLabel: MsgKey; icon: string; media: CallMedia }[];
+] as const satisfies readonly {
+  id: string;
+  label: MsgKey;
+  buttonLabel: MsgKey;
+  icon: string;
+  media: { audio: boolean; video: boolean };
+}[];
 
-/** Les modes proposés par le compte, libellés dans la langue courante. */
+/**
+ * Les modes proposés par le compte, libellés dans la langue courante.
+ *
+ * Le texte s'ajoute à **tous** les modes dès que le compte le transporte
+ * (§4.9) — c'est ce qui fait passer l'appel audio du profil F.703 « — »
+ * au profil 3c, et l'appel vidéo de la visiophonie (1b/1c) à la
+ * conversation totale (4a/4b). L'**appel texte**, lui, n'est proposé que
+ * là : sans transport, ce serait un appel sans rien.
+ */
 export function callModes(rtt?: RttTransport): CallModeDef[] {
-  return CALL_MODE_KEYS.filter((m) => m.id !== "text" || (rtt !== undefined && rtt !== "none")).map(
-    (m) => ({
-      id: m.id,
-      label: t(m.label),
-      buttonLabel: t(m.buttonLabel),
-      icon: m.icon,
-      media: m.media,
-    }),
-  );
+  const carriesText = rtt !== undefined && rtt !== "none";
+  return CALL_MODE_KEYS.filter((m) => m.id !== "text" || carriesText).map((m) => ({
+    id: m.id,
+    label: t(m.label),
+    buttonLabel: t(m.buttonLabel),
+    icon: m.icon,
+    // l'appel texte est le seul dont le texte est la raison d'être : il
+    // le porte par définition, les deux autres parce que le compte le porte
+    media: { ...m.media, text: m.id === "text" || carriesText },
+  }));
 }
 
 export function currentMode(rtt?: RttTransport): CallModeDef {
@@ -217,14 +257,43 @@ export function displayTarget(target: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Le média d'un appel en un mot — l'ordre est celui de la richesse, et
- * « texte » est ce qui reste quand il n'y a ni image ni son : un appel
- * texte seul (§4.9) n'est pas un appel muet, c'est son propre mode.
+ * Le média d'un appel en un mot — l'ordre est celui de la richesse. Ce
+ * n'est plus une déduction par l'absence : « texte » se lit désormais sur
+ * `media.text`, comme « vidéo » se lit sur `media.video` (ADR 0003, D1).
+ * Sert là où un seul mot suffit — l'icône de la sonnerie, la notification
+ * système.
  */
 export type CallKind = "audio" | "video" | "text";
 
 export function callKind(media: CallMedia): CallKind {
   return media.video ? "video" : media.audio ? "audio" : "text";
+}
+
+/**
+ * Le **profil** de l'appel, au sens du tableau F.703 §7.2 : la combinaison
+ * complète, et non le média dominant. C'est ce que l'écran d'appel entrant
+ * annonce — dire « appel audio » d'un appel qui porte aussi le texte
+ * cacherait précisément ce qui le rend accessible.
+ *
+ * Cinq combinaisons, les cinq que Trix propose (D2) :
+ *
+ * | profil | médias | F.703 §7.2 |
+ * |---|---|---|
+ * | `text` | T | 3a — text telephone service |
+ * | `audio` | A | téléphonie (monomédia) |
+ * | `audioText` | A + T | 3c — good text conversation with usable audio |
+ * | `video` | A + V | 1b / 1c — videophone service |
+ * | `videoText` | A + V + T | **4a / 4b — total conversation service** |
+ *
+ * Une vidéo sans audio se range avec la visiophonie : c'est bien l'image
+ * qui domine, et le mot que l'utilisateur attend est « vidéo ».
+ */
+export type CallProfile = "audio" | "audioText" | "video" | "videoText" | "text";
+
+export function callProfile(media: CallMedia): CallProfile {
+  if (media.video) return media.text ? "videoText" : "video";
+  if (media.audio) return media.text ? "audioText" : "audio";
+  return "text";
 }
 
 /**
@@ -247,21 +316,34 @@ export interface AnswerChoice {
 
 export function answerChoices(offered: CallMedia): AnswerChoice[] {
   const choices: AnswerChoice[] = [];
+  // un choix par média offert, du plus riche au plus sobre : c'est tout le
+  // tableau de D3, et il n'y a rien de plus à dire — une offre A V T donne
+  // « A V T · A T · T », une offre V T donne « V T · T » (pas d'audio à
+  // proposer seul, puisqu'il n'est pas offert)
   if (offered.video)
     choices.push({ act: "answer-av", label: t("incoming.answerVideo"), icon: ICONS.cam });
   if (offered.audio)
     choices.push({ act: "answer-audio", label: t("incoming.answerAudio"), icon: ICONS.phone });
-  if (!offered.audio && !offered.video)
+  if (offered.text)
     choices.push({ act: "answer-text", label: t("incoming.answerText"), icon: ICONS.chat });
   return choices;
 }
 
-/** Médias de la réponse pour un choix donné (jamais plus que ce qui est proposé). */
+/**
+ * Médias de la réponse pour un choix donné. **Jamais un sur-ensemble de
+ * l'offre** (F.703 §8.1, D3) : l'appelé retranche, il n'ajoute pas —
+ * ajouter, cela se fait après, par re-INVITE.
+ *
+ * Le texte ne s'y décide pas : il suit l'offre partout où il est offert.
+ * Il n'apparaît donc dans aucune ligne comme un choix — il est dans toutes
+ * les réponses de la ligne, ou dans aucune.
+ */
 function answerMedia(act: AnswerChoice["act"], offered: CallMedia): CallMedia {
-  if (act === "answer-av") return { audio: offered.audio, video: true };
-  // répondre en texte, c'est n'allumer ni micro ni caméra
-  if (act === "answer-text") return { audio: false, video: false };
-  return { audio: true, video: false };
+  if (act === "answer-av") return { audio: offered.audio, video: true, text: offered.text };
+  // répondre en texte, c'est n'allumer ni micro ni caméra — et ce choix
+  // n'est proposé que si le texte est offert, donc `text: true` sans risque
+  if (act === "answer-text") return { audio: false, video: false, text: true };
+  return { audio: true, video: false, text: offered.text };
 }
 
 /** Identité de l'appelant : nom affiché si le From en porte un, URI sinon. */
@@ -369,6 +451,50 @@ function rowButtons(entry: CallLogEntry, index: number): string {
     entry.stats ? one("stats", "statsbtn", "stats.open", LENS_ICON) : "",
   ].filter((b) => b !== "");
   return btns.length > 0 ? `<span class="rowbtns">${btns.join("")}</span>` : "";
+}
+
+/**
+ * Change l'icône et le libellé d'une commande sans toucher au reste du
+ * bouton. Les deux vivent dans leurs propres nœuds (`overlay.ts`) : c'est ce
+ * qui permet à une commande de passer de la pastille à la feuille du bas —
+ * où le libellé devient visible — sans être reconstruite.
+ */
+function setCmd(btn: HTMLElement, icon: string, label: string): void {
+  const iconNode = btn.querySelector(".cmd-icon");
+  const labelNode = btn.querySelector(".cmd-label");
+  if (iconNode) iconNode.innerHTML = icon;
+  else btn.innerHTML = icon; // vue bureau : pas de feuille, pas de nœuds
+  if (labelNode) labelNode.textContent = label;
+}
+
+/**
+ * **Règle 1 de D8 : un état coupé ne se cache jamais.** Une commande de la
+ * feuille du bas qui vient de couper un flux remonte dans la pastille, et y
+ * reste tant qu'elle coupe.
+ *
+ * Le déplacement se fait ici, dans le DOM, et non au rendu suivant : le
+ * haut-parleur est de l'interface pure — il ne passe par aucune machine, donc
+ * rien ne re-rend l'écran quand on le coupe. Attendre le prochain rendu
+ * laisserait un flux coupé invisible pendant tout ce temps, ce qui est
+ * exactement ce que la règle interdit.
+ *
+ * La pastille rendue par le prochain rendu retrouvera la même disposition :
+ * `dispatch` (overlay.ts) applique la même règle sur les mêmes états.
+ */
+function promoteIfCut(node: HTMLElement, btn: HTMLElement, cut: boolean): void {
+  const pill = node.querySelector<HTMLElement>(".overlaybar.compact .overlay-pill");
+  const sheet = node.querySelector<HTMLElement>('[data-ref="sheet"]');
+  const bar = node.querySelector<HTMLElement>(".overlaybar.compact");
+  if (!pill || !sheet || !bar) return; // vue bureau : la commande ne bouge pas
+  if (cut) {
+    // en fin de pastille, après le « ⋯ » : les places de tête appartiennent
+    // aux deux médias de l'axe 1, qui ne bougent jamais
+    pill.appendChild(btn);
+  } else {
+    // rendue à la feuille, en tête : c'est la place que `dispatch` lui donne
+    sheet.insertBefore(btn, sheet.firstChild);
+  }
+  bar.classList.toggle("crowded", pill.children.length > 4);
 }
 
 export function fmtChrono(startedAt: number): string {
@@ -502,6 +628,21 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     stopIncomingAlert();
   }
 
+  // --- retour d'appel sortant ----------------------------------------------
+  // F.703 §6.1.2 : la progression de l'appel s'annonce à l'appelant par des
+  // signaux visuels **et** sonores. « Sonnerie » est le visuel ; le son est
+  // produit ici, faute de quoi l'appelant n'entendrait rien du tout — un
+  // appel SIP ne transporte aucun média avant le 200 OK.
+  //
+  // Sauf en `early_media`, où le réseau émet déjà (RFC 3960) — et c'est
+  // **son audio à lui** qui commande, pas le simple fait qu'il émette :
+  // une annonce en langue des signes ou en texte temps réel ne remplit
+  // aucun silence, et couper la tonalité laisserait l'appelant croire que
+  // la ligne est morte. La condition tient donc en une phrase : on sonne
+  // tant que rien de sonore n'arrive.
+  if (view?.direction === "outgoing" && ringbackNeeded(view)) startRingback();
+  else stopRingback();
+
   // --- message fugace -------------------------------------------------------
   // L'écran est reconstruit à chaque notification de la machine : c'est le
   // numéro d'ordre, et lui seul, qui distingue un message neuf d'un rendu de
@@ -518,10 +659,16 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 
   // --- commandes en communication -----------------------------------------
   on('[data-act="hangup"]', () => phone.send({ type: "ui:hangup" }));
-  on('[data-act="muteMic"]', () => phone.send({ type: "ui:muteMic" }));
-  on('[data-act="toggleVideo"]', () => phone.send({ type: "ui:toggleVideo" }));
-  on('[data-act="accept-video"]', () => phone.send({ type: "ui:acceptVideo" }));
-  on('[data-act="reject-video"]', () => phone.send({ type: "ui:rejectVideo" }));
+  // les deux boutons de l'axe 1, câblés par la même ligne : c'est ce que
+  // « strictement symétriques » veut dire jusque dans le code (ADR 0003, D6)
+  for (const kind of MEDIA_KINDS) {
+    on(`[data-act="toggle-${kind}"]`, () => phone.send({ type: "ui:toggleMedia", kind }));
+  }
+  // deux boutons pour un seul geste : celui de la barre, et « Reprendre »
+  // dans le bandeau plein écran. `on` les câble tous les deux
+  on('[data-act="pause"]', () => phone.send({ type: "ui:togglePause" }));
+  on('[data-act="accept-media"]', () => phone.send({ type: "ui:acceptMedia" }));
+  on('[data-act="reject-media"]', () => phone.send({ type: "ui:rejectMedia" }));
   on('[data-act="selfview"]', () => phone.send({ type: "ui:toggleSelfView" }));
   // haut-parleur : UI pure (mute de l'élément <video> distant), pas de machine
   on('[data-act="speaker"]', (btn) => {
@@ -531,8 +678,24 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     // `off` et non `toggled` : un son coupé est un flux interrompu (voir overlay.ts)
     btn.classList.toggle("off", speakerMuted);
     btn.setAttribute("aria-pressed", String(speakerMuted));
-    btn.title = t(speakerMuted ? "ctrl.speaker.unmute" : "ctrl.speaker.mute");
-    btn.innerHTML = speakerMuted ? ICONS_OFF.speaker : ICONS.speaker;
+    const label = t(speakerMuted ? "ctrl.speaker.unmute" : "ctrl.speaker.mute");
+    btn.title = label;
+    // l'icône seule est remplacée : le libellé vit dans son propre nœud, et
+    // c'est lui qui rend le bouton lisible une fois dans la feuille du bas
+    setCmd(btn, speakerMuted ? ICONS_OFF.speaker : ICONS.speaker, label);
+    promoteIfCut(node, btn, speakerMuted);
+  });
+
+  // la feuille mène au bilan média (ADR 0003, D8) ; la pastille d'état de la
+  // barre haute reste l'autre chemin — c'est elle qui porte l'encart, et
+  // c'est donc à elle que l'entrée s'adresse
+  on('[data-act="stats-open"]', () => {
+    const pill = node.querySelector<HTMLElement>('[data-ref="statsbtn"]');
+    // une microtask plus tard : le clic qui nous amène ici va d'abord
+    // remonter jusqu'à l'écran, où `startMediaStats` dépingle l'encart pour
+    // tout clic pris hors de la pastille. L'épingler avant serait l'épingler
+    // pour rien.
+    if (pill) queueMicrotask(() => pill.click());
   });
 
   // --- historique ----------------------------------------------------------
@@ -631,34 +794,12 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 }
 
 // ---------------------------------------------------------------------------
-// Vu-mètres : analyse du flux audio distant et local (WebAudio), UI pure.
+// Vu-mètres : les deux barres de la scène, et le flash du haut-parleur.
+// La mesure elle-même vit dans `ui/vumeter.ts` — l'autotest hors appel s'en
+// sert aussi, et deux analyseurs sur le même flux ne mesureraient pas mieux.
 // ---------------------------------------------------------------------------
 
-let audioCtx: AudioContext | null = null;
-const analysers = new WeakMap<MediaStream, AnalyserNode>();
 let vuRaf: number | null = null;
-
-function analyserFor(stream: MediaStream): AnalyserNode | null {
-  if (stream.getAudioTracks().length === 0) return null;
-  const existing = analysers.get(stream);
-  if (existing) return existing;
-  audioCtx ??= new AudioContext();
-  const an = audioCtx.createAnalyser();
-  an.fftSize = 256;
-  audioCtx.createMediaStreamSource(stream).connect(an);
-  analysers.set(stream, an);
-  return an;
-}
-
-function level(an: AnalyserNode, buf: Uint8Array<ArrayBuffer>): number {
-  an.getByteTimeDomainData(buf);
-  let sum = 0;
-  for (const v of buf) {
-    const d = (v - 128) / 128;
-    sum += d * d;
-  }
-  return Math.sqrt(sum / buf.length); // RMS 0..1
-}
 
 /** Seuil de détection de parole (RMS) et durée de maintien du flash. */
 const SPEECH_RMS = 0.015;
@@ -675,7 +816,6 @@ function startVuMeters(
   // le haut-parleur clignote sur l'audio entrant, même sans vu-mètres à l'écran
   const speakerBtn = node.querySelector('[data-act="speaker"]') as HTMLElement | null;
   if (!remoteBar && !localBar && !speakerBtn) return;
-  const buf = new Uint8Array(256);
   let lastSpeech = 0;
 
   const tick = (): void => {
@@ -688,11 +828,10 @@ function startVuMeters(
       [self, localBar],
     ] as const) {
       const stream = video?.srcObject instanceof MediaStream ? video.srcObject : null;
-      const an = stream ? analyserFor(stream) : null;
-      const rms = an ? level(an, buf) : 0;
+      const rms = audioLevel(stream);
       // le plancher est en pixels (min-height CSS) : la barre court sur
       // toute la hauteur de la scène, un plancher en % y serait énorme
-      if (bar) bar.style.height = `${Math.min(100, Math.round(rms * 260))}%`;
+      if (bar) bar.style.height = `${barHeight(rms)}%`;
       if (video === remote && speakerBtn) {
         // maintien court : sinon le flash strobe entre deux syllabes
         if (rms > SPEECH_RMS) lastSpeech = Date.now();

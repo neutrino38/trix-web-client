@@ -252,14 +252,29 @@ async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
 const historyId = (id: string): string => `history:${id}`;
 
 /**
- * Lignes écrites avant l'internationalisation : leur motif est une phrase
- * française figée. On l'enveloppe pour qu'elle traverse la même chaîne de
- * rendu que les messages traduisibles — elle ne changera pas de langue,
- * mais elle ne disparaîtra pas non plus de l'historique.
+ * Une ligne d'historique relue, complétée des champs apparus après elle —
+ * l'équivalent de `migrateAccount` pour l'historique.
+ *
+ * Deux passages, et rien d'autre :
+ *
+ * - **le motif**, écrit avant l'internationalisation sous forme de phrase
+ *   française figée. On l'enveloppe pour qu'il traverse la même chaîne de
+ *   rendu que les messages traduisibles — il ne changera pas de langue,
+ *   mais il ne disparaîtra pas non plus de l'historique ;
+ * - **le texte**, apparu dans `CallMedia` avec l'ADR 0003. Une ligne
+ *   d'avant ne dit rien de lui, et l'absence se lit `false` : le champ est
+ *   déclaré obligatoire, une ligne relue sans lui ferait mentir le type au
+ *   premier `entry.media.text`.
  */
-function migrateReason(entry: CallLogEntry): CallLogEntry {
+function migrateEntry(entry: CallLogEntry): CallLogEntry {
   const reason = entry.reason as Msg | string | null;
-  return typeof reason === "string" ? { ...entry, reason: rawMsg(reason) } : entry;
+  return {
+    ...entry,
+    ...(typeof reason === "string" ? { reason: rawMsg(reason) } : {}),
+    // seul `text` peut manquer : `audio` et `video` sont là depuis la
+    // première ligne jamais écrite
+    media: { ...entry.media, text: (entry.media as Partial<CallMedia>).text ?? false },
+  };
 }
 
 /**
@@ -363,7 +378,7 @@ export function createBrowserStore(): SecureStore {
       const db = await openDb();
       try {
         const entries = (await decryptGet(db, historyId(id))) as CallLogEntry[] | null;
-        return Array.isArray(entries) ? entries.map(migrateReason) : [];
+        return Array.isArray(entries) ? entries.map(migrateEntry) : [];
       } finally {
         db.close();
       }

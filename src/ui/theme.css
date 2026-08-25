@@ -532,11 +532,11 @@ fieldset.field { border: none; }
 /* Même modale que l'appel entrant, à deux différences près : elle ne voile
    pas la conversation (on doit pouvoir raccrocher pendant qu'on réfléchit)
    et son badge est violet — c'est une proposition, pas une sonnerie. */
-.videoask-veil { background: rgba(13, 10, 18, 0.3); }
-.videoask-veil,
-.videoask { pointer-events: auto; }
-.videoask .who { font-size: 1.6rem; }
-.videoask .ring-badge {
+.mediaask-veil { background: rgba(13, 10, 18, 0.3); }
+.mediaask-veil,
+.mediaask { pointer-events: auto; }
+.mediaask .who { font-size: 1.6rem; }
+.mediaask .ring-badge {
   background: var(--accent);
   box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 18%, transparent);
   animation: none;
@@ -599,6 +599,163 @@ fieldset.field { border: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .overlay-pill .iconbtn { transition: box-shadow 90ms linear, color 90ms linear, background 90ms linear; }
+}
+
+/* ---------- les deux axes de la barre mobile (ADR 0003, D6 et D8) ---------- */
+/* Le libellé accompagne toujours l'icône dans le balisage : muet dans la
+   pastille, lisible dans la feuille du bas. C'est ce qui permet à une
+   commande coupée de remonter d'un endroit à l'autre par simple déplacement
+   de nœud (règle 1 de D8) sans être reconstruite. */
+.cmd-icon { display: inline-flex; }
+.overlay-pill .cmd-label { display: none; }
+
+/* La barre compacte tient le budget de D8 : `4 × 44 + 3 × 6 + 16 = 210 px`
+   pour la pastille, `108 px + 20` pour la Pause et le raccrochage — 338 px,
+   et l'écran en fait 360. Les écarts se resserrent plus bas pour tenir
+   aussi à 320 px, sans jamais rogner une cible sous 44 px (WCAG 2.5.5). */
+.overlaybar.compact { gap: 0.45rem; padding-inline: 0.45rem; }
+.overlaybar.compact .overlay-pill { gap: 0.3rem; padding: 0.25rem; }
+.overlaybar.compact .hangup-round { margin-inline-start: 0; }
+
+/* Règle 1 : un état coupé ne se cache jamais. Le haut-parleur coupé remonte
+   dans la pastille, qui porte alors cinq icônes — elle prend sa propre ligne
+   plutôt que de rétrécir quoi que ce soit. Le cas est rare et volontaire ;
+   Pause et Raccrocher, eux, ne bougent pas d'un pixel. */
+.overlaybar.compact.crowded { flex-wrap: wrap; }
+/* Le saut de ligne est porté par un élément dédié, et non par un
+   `flex-basis: 100%` sur la pastille : celle-ci s'étirerait alors sur toute
+   la largeur, et son fond dirait « quatre boutons dans un long tube » là où
+   il doit dire « quatre boutons groupés ». Le séparateur, lui, ne se voit
+   pas — il ne fait que rompre la ligne. */
+.bar-break { display: none; }
+.overlaybar.compact.crowded .bar-break { display: block; flex-basis: 100%; height: 0; }
+
+/* Axe 2 — « est-ce que je suis là, à l'instant ». Hors de la pastille, près
+   du raccrochage : carré arrondi et cerclé d'ambre, là où les boutons média
+   sont ronds et gris. Rien de ce qui le distingue d'eux ne se joue sur la
+   même dimension (D6) — c'est ce qui garantit qu'on ne les confondra pas. */
+.pause-btn {
+  width: 52px; height: 52px; border-radius: 16px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer;
+  border: 2px solid var(--orange);
+}
+.pause-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--orange) 30%, transparent); }
+.pause-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.pause-btn .icon { width: 22px; height: 22px; }
+/* grisée hors communication : il n'y a rien à suspendre avant le décrochage */
+.pause-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---------- la Pause, telle qu'elle se voit (call/pause.ts) ---------- */
+/* « Impossible à oublier : le bandeau. » En pause, l'écran entier le dit et
+   « Reprendre » est le seul geste offert — c'est ce qui supprime le « tu
+   étais en sourdine », mieux qu'une icône rouge de 44 px qu'on cesse de
+   voir au bout de dix secondes. */
+.pause-banner {
+  /* sous la barre de commandes (`z-index` ci-dessous), et non par-dessus :
+     Raccrocher doit rester atteignable en pause — un geste d'urgence ne se
+     suspend pas — et « Reprendre » a besoin du bouton Pause à sa place
+     habituelle, pour qui l'y cherche */
+  position: absolute; inset: 0; z-index: 4;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; padding: 1.5rem; text-align: center;
+  background: color-mix(in srgb, var(--ground) 92%, transparent);
+  color: var(--ink);
+}
+.pause-banner h2 { margin: 0; font-size: 1.5rem; }
+.pause-banner p {
+  margin: 0; max-width: 30ch; font-size: 0.95rem; color: var(--ink-soft);
+  text-wrap: balance;
+}
+.pause-banner .btn { margin-block-start: 0.5rem; min-width: 12rem; min-height: 48px; }
+/* le cercle d'ambre, comme sur le bouton : c'est le même geste, en grand */
+.pause-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 72px; height: 72px; border-radius: 50%;
+  border: 2px solid var(--orange); color: var(--orange);
+}
+.pause-badge .icon { width: 34px; height: 34px; }
+
+/* Les commandes média s'éteignent derrière le bandeau (D7) — mais elles ne
+   disparaissent pas : Raccrocher reste au même endroit, et un geste
+   d'urgence ne se suspend pas. La Pause elle-même garde tout son éclat,
+   puisque c'est par elle qu'on revient. */
+.overlaybar.dimmed { z-index: 5; }
+.overlaybar.dimmed .overlay-pill { opacity: 0.35; pointer-events: none; }
+/* le dégradé de la barre n'a plus d'image à couvrir : il salirait le bandeau */
+.overlaybar.dimmed { background: none; }
+
+/* En pause, le bouton passe plein ambre : l'état ne se lit pas que dans le
+   bandeau — au clavier comme à la loupe, le bouton doit le dire aussi. */
+.pause-btn.on { background: var(--orange); color: #fff; }
+
+/* L'avis de la pause **du correspondant**, à la place de l'image figée qu'on
+   verrait sinon (F.703 §6.2.4). Discret : ce n'est pas mon état, et je n'ai
+   rien à décider — il reviendra. */
+.peer-paused {
+  position: absolute; z-index: 4; inset-inline: 0; top: 50%;
+  transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  padding: 0.6rem 1rem; font-size: 1.05rem; font-weight: 600;
+  color: #fff; background: rgba(0, 0, 0, 0.55);
+}
+.peer-paused .icon { width: 22px; height: 22px; color: var(--orange); }
+
+/* ---------- feuille du bas (call/sheet.ts) ---------- */
+/* Une feuille, et non un menu déroulant : atteignable au pouce, lisible, et
+   annonçable. `fixed` et non `absolute` : la barre vit tantôt sur la vidéo,
+   tantôt dans le bandeau de la scène de texte, et la feuille doit tomber au
+   bas de l'écran dans les deux cas. */
+.sheet-veil {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0, 0, 0, 0.35);
+}
+.sheet-veil[hidden], .sheet[hidden] { display: none; }
+.sheet {
+  position: fixed; inset-inline: 0; bottom: 0; z-index: 41;
+  display: flex; flex-direction: column; gap: 0.15rem;
+  padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
+  border-start-start-radius: 18px; border-start-end-radius: 18px;
+  background: var(--panel); border-block-start: 1px solid var(--border);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.35);
+}
+/* la poignée : de quoi lire d'un coup d'œil que ce panneau vient du bas */
+.sheet::before {
+  content: ""; align-self: center; flex: none;
+  width: 36px; height: 4px; margin-block-end: 0.35rem;
+  border-radius: 999px; background: var(--border);
+}
+/* Icône + libellé, une ligne par commande, 52 px de haut : au-dessus du
+   plancher de 44 px, parce qu'on vise ici au pouce et sans regarder. */
+/* les commandes gardent la classe `iconbtn` de la pastille — c'est ce qui
+   leur permet d'y remonter par simple déplacement de nœud (règle 1 de D8) —
+   et il faut donc en défaire ici la forme ronde et centrée */
+.sheet button {
+  display: flex; align-items: center; justify-content: flex-start; gap: 0.75rem;
+  width: 100%; height: auto; min-height: 52px; padding: 0.35rem 0.75rem;
+  border: none; border-radius: 12px; cursor: pointer;
+  background: none; color: var(--ink);
+  font: inherit; font-size: 0.98rem; text-align: start;
+}
+.sheet button:hover:not(:disabled) { background: var(--panel-2); }
+.sheet button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sheet button:disabled { opacity: 0.4; cursor: default; }
+.sheet .icon { width: 22px; height: 22px; flex: none; }
+/* la couleur y garde exactement le sens qu'elle a dans la pastille : rouge,
+   un flux est coupé ; violet, une bascule d'affichage locale (voir overlay.ts) */
+.sheet button.off .cmd-icon { color: var(--red); }
+.sheet button.toggled .cmd-icon { color: var(--accent); }
+
+/* Sous 360 px, le budget de D8 ne tient plus sur une ligne : `4 × 44 + 52 +
+   56 = 284 px` de cibles incompressibles, et il ne resterait pas 36 px pour
+   tous les écarts. Plutôt que de rogner une cible sous 44 px — ce que WCAG
+   2.5.5 interdit, et ce que le public de Trix pardonne le moins — la
+   pastille prend sa propre ligne, exactement comme quand elle est
+   surchargée. Pause et Raccrocher, eux, ne bougent pas : ils restent en bas,
+   là où le pouce les cherche. */
+@media (max-width: 359px) {
+  .overlaybar.compact { flex-wrap: wrap; }
+  .overlaybar.compact .bar-break { display: block; flex-basis: 100%; height: 0; }
 }
 
 /* ---------- clavier DTMF (call/dtmf.ts) ---------- */
@@ -803,6 +960,45 @@ fieldset.field { border: none; }
 .stats-head h2 { font-size: 0.95rem; overflow-wrap: anywhere; }
 .stats-sub { font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
 .stats-actions { flex: none; display: flex; gap: 0.9rem; }
+/* ---------------------------------------------------------------------------
+   Autotest micro / caméra (ui/selftest.ts) : même cadre que le bilan média,
+   une scène vidéo et une barre de niveau horizontale.
+   --------------------------------------------------------------------------- */
+.selftest-dialog {
+  width: min(420px, 92vw); padding: 0;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--panel); color: var(--ink); box-shadow: var(--shadow);
+}
+.selftest-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
+.selftest-body { padding: 0.85rem 1rem 1rem; display: grid; gap: 0.7rem; }
+.selftest-stage {
+  position: relative; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden;
+  background: #000; display: grid; place-items: center;
+}
+/* sans caméra, la scène n'a rien à montrer : elle se réduit au message */
+.selftest-dialog.no-video .selftest-stage { aspect-ratio: auto; background: var(--bg-soft, transparent); }
+.selftest-dialog.no-video .selftest-video { display: none; }
+.selftest-video {
+  width: 100%; height: 100%; object-fit: cover;
+  /* miroir : on se regarde comme dans une glace, jamais à l'envers */
+  transform: scaleX(-1);
+}
+.selftest-msg {
+  position: absolute; margin: 0; padding: 0.6rem 0.8rem; text-align: center;
+  font-size: 0.8rem; color: var(--ink); background: var(--panel);
+  border-radius: 8px; max-width: 90%;
+}
+.selftest-dialog.no-video .selftest-msg { position: static; background: none; }
+.selftest-vu {
+  height: 10px; border-radius: 999px; background: var(--border); overflow: hidden;
+}
+.selftest-vu .bar { display: block; height: 100%; background: var(--ok, #36AD45); transition: width 60ms linear; }
+.selftest-hint { font-size: 0.78rem; color: var(--ink-soft); }
+.selftest-devices { display: grid; gap: 0.25rem; font-size: 0.78rem; }
+.selftest-row { display: flex; justify-content: space-between; gap: 0.8rem; }
+.selftest-kind { color: var(--ink-soft); }
+.selftest-device { overflow-wrap: anywhere; text-align: right; }
+
 /* le corps réemploie l'encart : mêmes classes, sans le cadre flottant */
 .stats-body.mediastats {
   position: static; width: auto; max-width: none;
@@ -1012,7 +1208,14 @@ fieldset.field { border: none; }
    automatique portée par un pseudo-élément, et non `justify-content:flex-end`
    — celui-ci rend inatteignable ce qui déborde par le haut. */
 .chat-stage .chat-thread::before { content: ""; margin-block-start: auto; }
-.chat-stage .chat-line { max-width: min(88%, 620px); }
+/* Le plafond de largeur d'une bulle : assez large pour qu'un message long
+   ne se replie pas en colonne — sur un écran de bureau, 620 px laissaient
+   les côtés vides et empilaient les lignes — assez court pour que l'œil
+   retrouve le début de la ligne suivante. Il est en `rem`, donc il suit le
+   réglage de taille de police du pied de panneau (`ui/prefs.ts`) : agrandir
+   le texte élargit la bulle d'autant, et le nombre de caractères par ligne
+   ne bouge pas. */
+.chat-stage .chat-line { max-width: min(88%, 60rem); }
 .chat-stage .bubble { font-size: 0.95rem; }
 .chat-stage .chat-composer { padding: 0.7rem clamp(0.75rem, 5vw, 2.5rem) 0.6rem; }
 /* le pavé DTMF se posait au-dessus de la barre, en bas de l'image ; la barre

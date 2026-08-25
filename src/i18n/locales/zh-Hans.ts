@@ -166,6 +166,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "call.dialing": "正在呼叫",
   "call.ringing": "正在振铃",
+  "call.earlyMedia": "网络提示音",
   "call.ringingIn": "来电",
   "call.answering": "正在接通…",
   "call.connected": "通话中",
@@ -202,6 +203,7 @@ const messages: Translation = {
   "chat.composerAria": "实时文本消息",
   "chat.placeholder": "边打字边发送",
   "chat.placeholderClosed": "本次通话无法使用文本",
+  "chat.placeholderEarly": "接通前仅可阅读",
   "chat.enterHint": "回车结束当前气泡",
   "chat.state.open": "边打字边发送",
   "chat.state.connecting": "正在打开实时文本…",
@@ -243,13 +245,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "麦克风",
-  "ctrl.mic.mute": "关闭麦克风",
-  "ctrl.mic.unmute": "打开麦克风",
-  "ctrl.cam.aria": "摄像头",
+  "ctrl.mic.aria": "语音",
+  "ctrl.mic.add": "添加语音",
+  "ctrl.mic.remove": "移除语音",
+  "ctrl.cam.aria": "视频",
   "ctrl.cam.add": "添加视频",
   "ctrl.cam.remove": "取消视频",
-  "ctrl.cam.pending": "正在更改媒体…",
+  "ctrl.media.pending": "正在更改媒体…",
+  "ctrl.media.last": "无法执行：通话将不再承载任何媒体",
   "ctrl.selfview.aria": "本地画面",
   "ctrl.selfview.hide": "隐藏本地画面",
   "ctrl.selfview.show": "显示本地画面",
@@ -264,6 +267,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "隐藏聊天",
   "ctrl.fullscreen": "全屏",
   "ctrl.hangup": "挂断",
+  "ctrl.pause": "暂停",
+  "ctrl.pause.aria": "暂停",
+  "ctrl.resume": "继续",
+  "pause.banner": "您已暂停",
+  "pause.hint": "您的麦克风和画面已停止。文字仍在传送。",
+  "pause.resume": "继续",
+  "pause.peer": "{peer} 已暂停",
+  "ctrl.more": "更多控件",
+  "sheet.title": "更多通话控件",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -278,10 +290,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // 通话中请求添加视频
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} 希望添加视频",
-  "videoask.body": "接受后将打开你的摄像头。",
-  "videoask.accept": "接受视频",
-  "videoask.reject": "拒绝",
+  "mediaask.video.title": "{peer} 希望添加视频",
+  "mediaask.video.body": "接受后将开启您的摄像头。",
+  "mediaask.video.accept": "接受视频",
+  "mediaask.audio.title": "{peer} 希望添加语音",
+  "mediaask.audio.body": "接受后将开启您的麦克风。",
+  "mediaask.audio.accept": "接受语音",
+  "mediaask.both.title": "{peer} 希望添加语音和视频",
+  "mediaask.both.body": "接受后将开启您的麦克风和摄像头。",
+  "mediaask.both.accept": "两者都接受",
+  "mediaask.reject": "拒绝",
 
   // ---------------------------------------------------------------------
   // 通话中的即时提示
@@ -292,6 +310,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} 取消了视频",
   "notice.videoDeclinedHere": "已拒绝视频",
   "notice.videoUnavailable": "目前无法添加视频",
+  "notice.audioDeclined": "{peer} 未接受语音",
+  "notice.audioRefused": "{peer} 拒绝为此通话添加语音",
+  "notice.audioAdded": "{peer} 添加了语音",
+  "notice.audioRemoved": "{peer} 移除了语音",
+  "notice.audioDeclinedHere": "已拒绝语音",
+  "notice.audioUnavailable": "目前无法添加语音",
   "notice.dtmfFailed": "无法发送按键音 {tone}",
 
   // ---------------------------------------------------------------------
@@ -316,6 +340,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "视频来电",
   "incoming.kicker.audio": "语音来电",
+  "incoming.kicker.audioText": "语音 + 文字来电",
+  "incoming.kicker.videoText": "视频 + 文字来电",
   "incoming.kicker.text": "文字来电",
   "incoming.answerVideo": "用视频接听",
   "incoming.answerAudio": "用语音接听",
@@ -381,10 +407,14 @@ const messages: Translation = {
   "stats.sent": "发送",
   "stats.audio": "音频",
   "stats.video": "视频",
+  "stats.text": "文本",
+  "stats.missing": "缺失文本",
   "stats.codec": "编解码器",
   "stats.bitrate": "码率",
   "stats.loss": "丢包",
   "stats.rtt": "往返时延",
+  "stats.sync": "音视频偏差",
+  "stats.syncHint": "低于 {n} 毫秒时，唇读和手语不受影响（F.703 §5.2.2）。",
   "stats.lossNote": "发送侧的丢包，取自对方接收报告所给的数值。",
   "stats.pending": "正在测量…",
   "stats.none": "未测得媒体流",
@@ -399,6 +429,24 @@ const messages: Translation = {
   "stats.copy": "复制",
   "stats.copied": "已复制",
   "stats.copyFailed": "复制被拒绝",
+  "selftest.section": "麦克风与摄像头",
+  "selftest.open": "测试我的麦克风和摄像头",
+  "selftest.sectionHint": "通话前的自检：与其通话中才发现麦克风没声音，不如现在就确认。",
+  "selftest.title": "麦克风与摄像头测试",
+  "selftest.sub": "不会发送任何内容：测试只在本设备上进行。",
+  "selftest.close": "关闭",
+  "selftest.starting": "正在启动设备…",
+  "selftest.hint": "请说话：音量条应有反应，画面中应能看到自己。",
+  "selftest.levelAria": "麦克风音量",
+  "selftest.mic": "麦克风",
+  "selftest.cam": "摄像头",
+  "selftest.unnamed": "未命名设备",
+  "selftest.absent": "无",
+  "selftest.noCamera": "未检测到摄像头：仅测试麦克风。",
+  "selftest.denied": "麦克风和摄像头权限被拒绝。请在浏览器中允许后重新测试。",
+  "selftest.missing": "本设备未检测到麦克风或摄像头。",
+  "selftest.busy": "麦克风或摄像头正被其他应用占用。",
+  "selftest.failed": "无法测试：{detail}",
 
   // ---------------------------------------------------------------------
   // Erreurs des automates (écrites dans le contexte, rendues par l'UI)

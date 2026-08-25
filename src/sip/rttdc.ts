@@ -34,6 +34,23 @@ const LOSS_MARKER = "\uFFFD";
 /** How many times a lost channel is reopened before giving up for good. */
 const MAX_REOPEN = 10;
 
+/**
+ * How often the session signature is repeated while nothing else is being
+ * sent — a keep-alive, and the reason it exists is the return path.
+ *
+ * SCTP rides DTLS over UDP, and a NAT keeps a mapping open only as long as
+ * packets cross it. On a call that is ringing — or playing an early-media
+ * announcement, which is exactly when a gateway has text to send us — the
+ * local side may write nothing at all for minutes: the mapping lapses, and
+ * the subtitles of that announcement reach a closed door.
+ *
+ * The signature is what we send, because it is the one thing in T.140 that
+ * carries no meaning: a receiver consumes it and displays nothing, wherever
+ * it appears in the stream (T.140 §6.2). Five seconds is well inside the
+ * shortest NAT UDP timeouts in the wild (30 s is the low end).
+ */
+const KEEPALIVE_MS = 5000;
+
 const isLive = (dc: RTCDataChannel): boolean =>
   dc.readyState === "connecting" || dc.readyState === "open";
 
@@ -55,6 +72,26 @@ export function openDcWire(
   let reopens = 0;
   /** A channel was lost: whatever comes next follows a gap in the stream. */
   let interrupted = false;
+  /** When something last went out, keep-alive included. */
+  let sinceSend = 0;
+
+  /** Writes on the elected channel, and remembers that the path was used. */
+  const write = (text: string): void => {
+    // the wrapping channel's state can be a microtask behind ours
+    if (elected?.readyState !== "open") return;
+    elected.send(text);
+    sinceSend = Date.now();
+  };
+
+  /**
+   * The keep-alive: a signature every `KEEPALIVE_MS`, and only when nothing
+   * else has gone out since — a conversation keeps its own path open, and
+   * has no use for a beat on top of it.
+   */
+  const beat = setInterval(() => {
+    if (closed || Date.now() - sinceSend < KEEPALIVE_MS) return;
+    write(SESSION_BOM);
+  }, KEEPALIVE_MS);
 
   /**
    * Lets a channel go without mistaking it for a loss. `onmessage` stays
@@ -85,7 +122,9 @@ export function openDcWire(
     if (elected === null || elected.readyState !== "open") return;
     if (!signed.has(elected)) {
       signed.add(elected);
-      elected.send(SESSION_BOM); // the signature opens the stream, before any character
+      // the signature opens the stream, before any character — and it is
+      // the first beat of the keep-alive that follows
+      write(SESSION_BOM);
     }
     if (interrupted) {
       interrupted = false;
@@ -179,12 +218,10 @@ export function openDcWire(
   if (role === "offer") create();
 
   return {
-    send(text) {
-      // the wrapping channel's state can be a microtask behind ours
-      if (elected?.readyState === "open") elected.send(text);
-    },
+    send: write,
     close() {
       closed = true;
+      clearInterval(beat);
       connection.removeEventListener("datachannel", onDataChannel);
       connection.removeEventListener("connectionstatechange", onConnectionState);
       for (const dc of channels) {

@@ -1,6 +1,12 @@
 import type { SbbReturn, TaskResult } from "finite-state-language";
 import type { CallDirection, CallLogEntry, Vault } from "../storage/store.js";
-import type { CallMedia, CallSession, CallSipEvent, SipEvent } from "../sip/port.js";
+import type {
+  CallMedia,
+  CallSession,
+  CallSipEvent,
+  MediaKind,
+  SipEvent,
+} from "../sip/port.js";
 import type { Msg } from "../i18n/types.js";
 import type { RttTransport } from "../sip/rtt.js";
 
@@ -38,17 +44,29 @@ export type SuspectField = "proxy" | "credentials" | "stun" | "turn";
 /** Commandes UI valables pendant un appel — consommées par le bloc CallBlock. */
 export type CallControlEvent =
   | { type: "ui:hangup" }
-  | { type: "ui:muteMic" }
   /**
-   * L'icône de la caméra, en conversation totale : elle ajoute la vidéo à
-   * l'appel si elle n'y est pas, l'en retire si elle y est. Il n'y a pas
-   * de « couper sa caméra » — cesser d'émettre son image, c'est retirer la
-   * vidéo de l'appel, et le distant doit le savoir (docs/CONCEPTION.md §4.4).
+   * Les deux boutons média de la pastille, **strictement symétriques**
+   * (ADR 0003, D5 et D6) : chacun ajoute son média à l'appel s'il n'y est
+   * pas, l'en retire s'il y est. Il n'y a pas de « couper son micro » ni de
+   * « couper sa caméra » — cesser d'émettre un flux, c'est le retirer de
+   * l'appel, et le distant doit le savoir (docs/CONCEPTION.md §4.4).
+   *
+   * Se taire un instant sans rien changer à l'appel est un autre geste, sur
+   * un autre axe : la Pause, qui ne passe par aucune signalisation.
    */
-  | { type: "ui:toggleVideo" }
-  /** Décision sur la vidéo que le distant propose d'ajouter en cours d'appel. */
-  | { type: "ui:acceptVideo" }
-  | { type: "ui:rejectVideo" }
+  | { type: "ui:toggleMedia"; kind: MediaKind }
+  /** Décision sur le média que le distant propose d'ajouter en cours d'appel. */
+  | { type: "ui:acceptMedia" }
+  | { type: "ui:rejectMedia" }
+  /**
+   * **Axe 2** (ADR 0003, D6) : le bouton unique qui coupe d'un coup tout ce
+   * que j'émets — micro et image ensemble, comme F.703 §6.2.4 les groupe.
+   *
+   * Ce n'est pas un contrôle média : il ne change rien à ce que l'appel
+   * transporte, rien ne part sur le fil, et il ne peut donc pas échouer. Il
+   * parle de moi, pas de l'appel.
+   */
+  | { type: "ui:togglePause" }
   | { type: "ui:toggleSelfView" }
   /**
    * Une tonalité DTMF composée au clavier de l'appel (`0-9`, `*`, `#`) —
@@ -76,7 +94,19 @@ export interface CallNotice {
  * tenir à jour. C'est ce que l'UI lit pour rendre l'écran d'appel.
  */
 export interface CallView {
-  state: "dialing" | "ringing" | "ringing_in" | "answering" | "connected" | "hangingup";
+  /**
+   * `early_media` est l'attente d'une réponse, comme `ringing`, mais le
+   * réseau y envoie déjà du son (RFC 3960) : c'est ce qui décide du
+   * silence du retour d'appel local (`ui/ring.ts`, F.703 §6.1.2).
+   */
+  state:
+    | "dialing"
+    | "ringing"
+    | "early_media"
+    | "ringing_in"
+    | "answering"
+    | "connected"
+    | "hangingup";
   direction: CallDirection;
   target: string;
   /** Nom affiché de l'appelant (entrant), s'il en porte un. */
@@ -85,12 +115,33 @@ export interface CallView {
   offered: CallMedia;
   /** Médias effectivement négociés — ce que l'appel transporte à cet instant. */
   media: CallMedia;
-  micMuted: boolean;
   selfViewHidden: boolean;
-  /** Notre demande d'ajout ou de retrait de la vidéo est en vol : l'icône attend. */
-  videoPending: boolean;
-  /** Le distant demande à ajouter la vidéo : l'écran pose la question. */
-  videoAsked: boolean;
+  /**
+   * Une renégociation est en vol — **une seule à la fois, quel que soit le
+   * média qu'elle porte** (ADR 0003, D5). Deux re-INVITE en vol sur la même
+   * boîte de dialogue, c'est un 491 garanti : le verrou est donc un état de
+   * l'appel, pas du média, et les deux icônes attendent ensemble.
+   */
+  mediaPending: boolean;
+  /**
+   * Le distant demande à ajouter un média : l'écran pose la question. `null`
+   * quand il n'y en a pas — sinon, ce qu'il propose d'ajouter, pour que la
+   * question le nomme.
+   */
+  mediaAsked: MediaKind[] | null;
+  /**
+   * **Je suis en pause** : rien de ce que j'émets ne part. L'appel n'a pas
+   * changé de nature — `media` dit toujours la même chose — et le texte
+   * continue de passer dans les deux sens (D7).
+   */
+  paused: boolean;
+  /**
+   * **Le correspondant est en pause.** Lu sur ses pistes devenues muettes,
+   * jamais sur SIP : c'est l'avis explicite que F.703 §6.2.4 réclame pour
+   * une vidéo suspendue, et il remplace l'image figée que l'on verrait
+   * sinon.
+   */
+  peerPaused: boolean;
   /**
    * Les tonalités DTMF composées depuis le début de l'appel, dans l'ordre,
    * et seulement celles qui sont **parties**. Rien d'autre ne les rejoue :
@@ -101,6 +152,16 @@ export interface CallView {
   dtmfSent: string;
   /** Dernier message fugace à afficher, s'il y en a eu un. */
   notice: CallNotice | null;
+  /**
+   * En `early_media` : **ce que le réseau émet déjà**, avant le décrochage
+   * (RFC 3960). Les trois médias, parce qu'un accueil peut être parlé,
+   * signé ou écrit — et c'est ce détail qui décide du retour d'appel local
+   * (`ui/ring.ts`) : une annonce en langue des signes ou en texte
+   * n'apporte aucun son, la tonalité doit donc continuer.
+   *
+   * `NO_MEDIA` dans tous les autres états.
+   */
+  earlyMedia: CallMedia;
   /** Timestamp du 200 OK ; l'UI en dérive le chrono. */
   connectedAt: number | null;
   /** Qui a mis fin à l'appel, connu à partir de hangingup/fin de session. */

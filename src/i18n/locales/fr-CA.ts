@@ -184,6 +184,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "call.dialing": "Appel en cours",
   "call.ringing": "Ça sonne",
+  "call.earlyMedia": "Message du réseau",
   "call.ringingIn": "Appel entrant",
   "call.answering": "Connexion…",
   "call.connected": "En communication",
@@ -220,6 +221,7 @@ const messages: Translation = {
   "chat.composerAria": "Message en texte temps réel",
   "chat.placeholder": "Écrivez — le texte part au fur et à mesure",
   "chat.placeholderClosed": "Texte non disponible pour cet appel",
+  "chat.placeholderEarly": "Lecture seule tant que l'appel n'est pas décroché",
   "chat.enterHint": "Entrée fige la bulle",
   "chat.state.open": "Part au fur et à mesure",
   "chat.state.connecting": "Ouverture du texte temps réel…",
@@ -262,13 +264,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Commandes média (barre de surimpression)
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "Micro",
-  "ctrl.mic.mute": "Fermer le micro",
-  "ctrl.mic.unmute": "Ouvrir le micro",
-  "ctrl.cam.aria": "Caméra",
+  "ctrl.mic.aria": "Audio",
+  "ctrl.mic.add": "Ajouter l'audio",
+  "ctrl.mic.remove": "Retirer l'audio",
+  "ctrl.cam.aria": "Vidéo",
   "ctrl.cam.add": "Ajouter la vidéo",
   "ctrl.cam.remove": "Enlever la vidéo",
-  "ctrl.cam.pending": "Changement de média en cours…",
+  "ctrl.media.pending": "Changement de média en cours…",
+  "ctrl.media.last": "Impossible : l'appel ne transporterait plus rien",
   "ctrl.selfview.aria": "Image de soi",
   "ctrl.selfview.hide": "Cacher l'image de soi",
   "ctrl.selfview.show": "Montrer l'image de soi",
@@ -283,6 +286,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "Masquer le clavardage",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
+  "ctrl.pause": "Mettre en pause",
+  "ctrl.pause.aria": "Pause",
+  "ctrl.resume": "Reprendre",
+  "pause.banner": "Vous êtes en pause",
+  "pause.hint": "Votre micro et votre image sont arrêtés. Le texte, lui, continue de passer.",
+  "pause.resume": "Reprendre",
+  "pause.peer": "{peer} est en pause",
+  "ctrl.more": "Autres commandes",
+  "sheet.title": "Autres commandes de l'appel",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -297,10 +309,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Vidéo demandée en cours d'appel
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} veut ajouter la vidéo",
-  "videoask.body": "Accepter va ouvrir ta caméra.",
-  "videoask.accept": "Accepter la vidéo",
-  "videoask.reject": "Refuser",
+  "mediaask.video.title": "{peer} souhaite ajouter la vidéo",
+  "mediaask.video.body": "Accepter allumera votre caméra.",
+  "mediaask.video.accept": "Accepter la vidéo",
+  "mediaask.audio.title": "{peer} souhaite ajouter l'audio",
+  "mediaask.audio.body": "Accepter allumera votre micro.",
+  "mediaask.audio.accept": "Accepter l'audio",
+  "mediaask.both.title": "{peer} souhaite ajouter l'audio et la vidéo",
+  "mediaask.both.body": "Accepter allumera votre micro et votre caméra.",
+  "mediaask.both.accept": "Accepter les deux",
+  "mediaask.reject": "Refuser",
 
   // ---------------------------------------------------------------------
   // Messages fugaces de l'appel
@@ -311,6 +329,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} a enlevé la vidéo",
   "notice.videoDeclinedHere": "Vidéo refusée",
   "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour l'instant",
+  "notice.audioDeclined": "{peer} n'a pas accepté l'audio",
+  "notice.audioRefused": "{peer} refuse d'ajouter l'audio à cet appel",
+  "notice.audioAdded": "{peer} a ajouté l'audio",
+  "notice.audioRemoved": "{peer} a retiré l'audio",
+  "notice.audioDeclinedHere": "Audio refusé",
+  "notice.audioUnavailable": "Impossible d'ajouter l'audio pour le moment",
   "notice.dtmfFailed": "La tonalité {tone} n'a pas pu être envoyée",
 
   // ---------------------------------------------------------------------
@@ -335,6 +359,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "APPEL VIDÉO ENTRANT",
   "incoming.kicker.audio": "APPEL AUDIO ENTRANT",
+  "incoming.kicker.audioText": "APPEL AUDIO + TEXTE ENTRANT",
+  "incoming.kicker.videoText": "APPEL VIDÉO + TEXTE ENTRANT",
   "incoming.kicker.text": "APPEL TEXTE ENTRANT",
   "incoming.answerVideo": "Répondre en vidéo",
   "incoming.answerAudio": "Répondre en audio",
@@ -399,10 +425,14 @@ const messages: Translation = {
   "stats.sent": "Émis",
   "stats.audio": "Audio",
   "stats.video": "Vidéo",
+  "stats.text": "Texte",
+  "stats.missing": "Texte manquant",
   "stats.codec": "Codec",
   "stats.bitrate": "Débit",
   "stats.loss": "Perte",
   "stats.rtt": "Aller-retour",
+  "stats.sync": "Écart audio / vidéo",
+  "stats.syncHint": "Sous {n} ms, la lecture labiale et la langue des signes restent confortables (F.703 §5.2.2).",
   "stats.lossNote": "Perte à l'émission d'après les rapports de réception du correspondant.",
   "stats.pending": "Mesure en cours…",
   "stats.none": "Aucun flux média mesuré",
@@ -417,6 +447,24 @@ const messages: Translation = {
   "stats.copy": "Copier",
   "stats.copied": "Copié, tiguidou!",
   "stats.copyFailed": "Copie refusée",
+  "selftest.section": "Micro et caméra",
+  "selftest.open": "Tester mon micro et ma caméra",
+  "selftest.sectionHint": "Un essai hors appel : mieux vaut découvrir un micro muet maintenant que pendant une conversation.",
+  "selftest.title": "Test du micro et de la caméra",
+  "selftest.sub": "Rien n'est envoyé : ce test reste sur cet appareil.",
+  "selftest.close": "Fermer",
+  "selftest.starting": "Ouverture des périphériques…",
+  "selftest.hint": "Parlez : la barre doit bouger. Vous devez vous voir dans l'image.",
+  "selftest.levelAria": "Niveau du micro",
+  "selftest.mic": "Micro",
+  "selftest.cam": "Caméra",
+  "selftest.unnamed": "périphérique sans nom",
+  "selftest.absent": "aucun",
+  "selftest.noCamera": "Aucune caméra : le micro seul est testé.",
+  "selftest.denied": "L'accès au micro et à la caméra a été refusé. Autorisez-le dans le navigateur, puis relancez le test.",
+  "selftest.missing": "Aucun micro ni caméra détecté sur cet appareil.",
+  "selftest.busy": "Le micro ou la caméra est déjà utilisé par une autre application.",
+  "selftest.failed": "Test impossible : {detail}",
 
   // ---------------------------------------------------------------------
   // Erreurs des automates — ici, on parle clair et net

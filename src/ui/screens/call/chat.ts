@@ -614,9 +614,21 @@ function headDot(): string {
  * c'est la bulle **figée**, une fois, par la région d'état de l'application
  * (`ui/announce.ts`) — le seul moment où le correspondant a fini sa phrase.
  */
-export function chatPane(peer: string): string {
+export function chatPane(peer: string, writable = true): string {
   const state = chatStateLine();
   const closed = chat.link === "closed";
+  /**
+   * **Lire oui, écrire non** : avant le décrochage, le fil montre ce que le
+   * réseau envoie déjà (une annonce en texte temps réel arrive en média
+   * précoce, RFC 3960) mais la saisie reste fermée. Rien de ce qu'on
+   * taperait n'a de destinataire tant que personne n'a répondu, et le
+   * tampon du canal le ferait partir d'un bloc au décrochage — sur la
+   * conversation de quelqu'un d'autre si l'appel a été dévié.
+   *
+   * La signature de session, elle, part quand même (`sip/rttws.ts`) : c'est
+   * elle qui ouvre le chemin retour, et elle ne dit rien.
+   */
+  const locked = closed || !writable;
   return `<div class="chatpane" id="${CHAT_PANE_ID}" role="region"
        data-ref="chatpane" aria-label="${esc(t("chat.aria", { peer }))}">
       <div class="chat-thread" data-ref="chat-thread" role="log" aria-live="off"
@@ -626,9 +638,17 @@ export function chatPane(peer: string): string {
       }>${esc(tn("chat.jump", unseen))}</button>
       <div class="chat-composer">
         <textarea class="composer" data-ref="chat-input" rows="2" dir="auto"
-                  ${closed ? "disabled" : ""}
+                  ${locked ? "disabled" : ""}
                   aria-label="${esc(t("chat.composerAria"))}"
-                  placeholder="${esc(t(closed ? "chat.placeholderClosed" : "chat.placeholder"))}"
+                  placeholder="${esc(
+                    t(
+                      closed
+                        ? "chat.placeholderClosed"
+                        : writable
+                          ? "chat.placeholder"
+                          : "chat.placeholderEarly",
+                    ),
+                  )}"
                   >${esc(chat.draft)}</textarea>
         <div class="chat-foot">
           <span class="chat-state" data-ref="chat-state">
@@ -648,8 +668,17 @@ export interface ChatStageCtx {
   bar: string;
   /** Vu-mètres : l'appel porte le son, et il est établi. */
   meters: boolean;
+  /** L'appel est établi : avant, le fil se lit mais ne s'écrit pas. */
+  writable?: boolean;
   /** Le pavé DTMF, qui se pose sur le fil comme il se posait sur l'image. */
   dtmf?: string;
+  /**
+   * Ce qui se pose **par-dessus** la scène : le bandeau de pause et l'avis
+   * de celle du correspondant (`pause.ts`). Le fil, lui, continue de vivre
+   * dessous — c'est même tout ce qui reste quand on est en pause, et c'est
+   * délibéré (ADR 0003, D7).
+   */
+  banner?: string;
 }
 
 /**
@@ -687,8 +716,9 @@ export function chatStage(ctx: ChatStageCtx): string {
         }
       </div>
       <video class="remote" data-ref="remote" autoplay playsinline></video>
-      ${chatPane(ctx.peer)}
+      ${chatPane(ctx.peer, ctx.writable ?? true)}
       ${ctx.dtmf ?? ""}
+      ${ctx.banner ?? ""}
     </div>`;
 }
 

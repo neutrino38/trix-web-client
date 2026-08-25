@@ -72,6 +72,92 @@ function fakeWire(rec: Recorder): (hooks: RttWireHooks) => RttWire {
   };
 }
 
+/**
+ * Le compteur de texte manquant (T.140 §5.3.2.3, ADR 0003 §4) : la seule
+ * mesure de qualité que ce niveau puisse produire honnêtement. Ce qui se
+ * vérifie ici est qu'il compte **tout** ce qui arrive — les marqueurs
+ * insérés par le fil à la reprise d'un canal comme ceux que le distant
+ * envoie pour ses propres trous —, et qu'il les compte même quand personne
+ * n'écoute encore : le canal vit avec l'appel, le panneau de tchat non.
+ */
+/**
+ * **Avant le décrochage, on lit mais on n'écrit pas.** Le canal peut être
+ * grand ouvert bien avant que quiconque ait répondu : en média précoce
+ * (RFC 3960), la connexion pair-à-pair s'établit sur la réponse provisoire,
+ * et un serveur peut déjà envoyer les sous-titres de l'annonce qu'il joue.
+ * Ce qui arrive s'affiche ; ce qu'on écrirait n'a pas de destinataire, et
+ * ne doit surtout pas attendre en tampon — il partirait d'un bloc au
+ * décrochage.
+ */
+describe("émission suspendue", () => {
+  it("ce qui est tapé est jeté, pas mis en attente", () => {
+    const rec = recorder();
+    const channel = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    rec.hooks.state("open");
+    channel.setSending(false);
+    channel.send("bonjour");
+    channel.backspace();
+    channel.flush();
+    expect(rec.sent).toEqual([]);
+    // décrochage : ce qui suit part, ce qui précède est perdu pour de bon
+    channel.setSending(true);
+    channel.send("bonsoir");
+    channel.flush();
+    expect(rec.sent).toEqual(["bonsoir"]);
+  });
+
+  it("ne touche pas à ce qui arrive : l'annonce précoce s'affiche", () => {
+    const rec = recorder();
+    const channel = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    channel.setSending(false);
+    rec.hooks.state("open");
+    rec.hooks.text("Bienvenue au service d'urgence");
+    expect(rec.received).toEqual(["Bienvenue au service d'urgence"]);
+    expect(channel.state()).toBe("open");
+  });
+
+  it("ce qui attendait déjà ne part pas non plus au décrochage", () => {
+    const rec = recorder();
+    const channel = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    // fil pas encore ouvert : le texte tombe dans le tampon
+    channel.send("tapé trop tôt");
+    channel.setSending(false);
+    rec.hooks.state("open");
+    channel.flush();
+    expect(rec.sent).toEqual([]);
+  });
+});
+
+describe("texte manquant", () => {
+  const LOST = "\uFFFD";
+
+  it("part de zéro et compte les marqueurs reçus", () => {
+    const rec = recorder();
+    const channel = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    expect(channel.missingText()).toBe(0);
+    rec.hooks.text(`bonjour${LOST}`);
+    expect(channel.missingText()).toBe(1);
+    rec.hooks.text(`${LOST}au rev${LOST}oir`);
+    expect(channel.missingText()).toBe(3);
+  });
+
+  it("compte avant tout abonné : le trou d'avant l'ouverture du panneau est un trou", () => {
+    const rec = recorder();
+    const channel = rttChannel("websocket", fakeWire(rec));
+    rec.hooks.text(`${LOST}salut`);
+    expect(channel.missingText()).toBe(1);
+  });
+
+  it("ne compte pas ce qui part d'ici", () => {
+    const rec = recorder();
+    const channel = listening(rttChannel("websocket", fakeWire(rec)), rec);
+    rec.hooks.state("open");
+    channel.send(LOST); // rien n'interdit de taper le caractère : il n'est pas reçu
+    channel.flush();
+    expect(channel.missingText()).toBe(0);
+  });
+});
+
 describe("parseRttTransport", () => {
   it("accepte les trois choix", () => {
     expect(parseRttTransport("none")).toBe("none");
@@ -400,12 +486,25 @@ describe("fil WebSocket", () => {
 
     socket.open();
     expect(ch.state()).toBe("open");
+    // la signature de session part la première : elle ouvre le flux (T.140)
+    // et, du même coup, le chemin retour de la passerelle
+    expect(socket.sent).toEqual(["\uFEFF"]);
 
     ch.send("bonjour");
-    expect(socket.sent).toEqual(["bonjour"]);
+    expect(socket.sent).toEqual(["\uFEFF", "bonjour"]);
 
     socket.onmessage?.({ data: "bonsoir" });
     expect(rec.received).toEqual(["bonsoir"]);
+  });
+
+  it("la signature repart sur un socket rouvert : la passerelle a pu perdre l'association", () => {
+    const rec = recorder();
+    listening(openRtt({ transport: "websocket", url: "wss://gw.example.fr/rtt/42" }), rec);
+    FakeSocket.instances[0]!.open();
+    FakeSocket.instances[0]!.drop();
+    vi.advanceTimersByTime(1000);
+    FakeSocket.instances[1]!.open();
+    expect(FakeSocket.instances[1]!.sent).toEqual(["\uFEFF"]);
   });
 
   it("une coupure se reprend, et la perte se voit dans le fil", () => {
@@ -548,6 +647,82 @@ function dcChannel(pc: FakeConnection, role: "offer" | "answer", rec: Recorder):
 }
 
 describe("fil canal de données", () => {
+  /**
+   * **Le battement qui tient le NAT ouvert.** SCTP roule sur DTLS, donc sur
+   * UDP : une association de NAT ne survit qu'au trafic qui la traverse. Un
+   * appel qui sonne — ou une annonce précoce, c'est-à-dire exactement le
+   * moment où une passerelle a du texte à nous envoyer — peut ne rien
+   * écrire pendant des minutes, et les sous-titres arriveraient alors
+   * devant une porte fermée.
+   *
+   * Ce qu'on envoie est la signature de session, seul caractère de T.140
+   * qui ne veut rien dire : le décodeur le consomme sans rien afficher, où
+   * qu'il apparaisse dans le flux.
+   */
+  describe("battement de maintien", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("répète la signature toutes les 5 s tant que rien d'autre ne part", () => {
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "offer", rec);
+      const dc = pc.created[0]!;
+      dc.open();
+      expect(dc.sent).toEqual(["\uFEFF"]);
+
+      vi.advanceTimersByTime(5000);
+      expect(dc.sent).toEqual(["\uFEFF", "\uFEFF"]);
+      vi.advanceTimersByTime(5000);
+      expect(dc.sent).toHaveLength(3);
+    });
+
+    it("se tait quand la conversation entretient elle-même le chemin", () => {
+      const rec = recorder();
+      const pc = new FakeConnection();
+      const ch = dcChannel(pc, "offer", rec);
+      const dc = pc.created[0]!;
+      dc.open();
+
+      vi.advanceTimersByTime(4000);
+      ch.send("bonjour");
+      ch.flush();
+      expect(dc.sent).toEqual(["\uFEFF", "bonjour"]);
+      // le battement suivant tombe moins de 5 s après la frappe : rien
+      vi.advanceTimersByTime(1500);
+      expect(dc.sent).toEqual(["\uFEFF", "bonjour"]);
+      // cinq secondes de silence plus tard, il reprend
+      vi.advanceTimersByTime(5000);
+      expect(dc.sent).toEqual(["\uFEFF", "bonjour", "\uFEFF"]);
+    });
+
+    it("bat même émission suspendue : c'est le chemin qu'il tient, pas la conversation", () => {
+      const rec = recorder();
+      const pc = new FakeConnection();
+      const ch = dcChannel(pc, "offer", rec);
+      const dc = pc.created[0]!;
+      dc.open();
+      ch.setSending(false);
+
+      ch.send("rien ne doit partir");
+      ch.flush();
+      vi.advanceTimersByTime(5000);
+      expect(dc.sent).toEqual(["\uFEFF", "\uFEFF"]);
+    });
+
+    it("s'arrête avec le canal", () => {
+      const rec = recorder();
+      const pc = new FakeConnection();
+      const ch = dcChannel(pc, "offer", rec);
+      const dc = pc.created[0]!;
+      dc.open();
+      ch.close();
+      const after = dc.sent.length;
+      vi.advanceTimersByTime(20_000);
+      expect(dc.sent).toHaveLength(after);
+    });
+  });
+
   it("l'offrant crée un canal t140 fiable et ordonné, et signe la session", () => {
     const rec = recorder();
     const pc = new FakeConnection();

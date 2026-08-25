@@ -32,7 +32,7 @@ import {
 } from "../src/ui/screens/call/chat.js";
 import { overlayBar } from "../src/ui/screens/call/overlay.js";
 import type { CallView } from "../src/machines/events.js";
-import type { CallSession } from "../src/sip/port.js";
+import type { CallMedia, CallSession } from "../src/sip/port.js";
 import { T140 } from "../src/sip/t140.js";
 import { useLocale } from "../src/i18n/index.js";
 
@@ -94,6 +94,23 @@ describe("le fil reçu", () => {
   it("ne pose qu'un seul marqueur pour des pertes consécutives", () => {
     chatReceive(`${T140.LOST}${T140.LOST}${T140.LOST}suite`);
     expect(texts()).toEqual([`${T140.LOST}suite`]);
+  });
+});
+
+/**
+ * **L'annonce précoce s'affiche.** Un serveur qui joue un fichier sous-titré
+ * après un 183 envoie du T.140 avant que quiconque ait décroché : la
+ * connexion pair-à-pair est déjà établie, le canal avec elle. Pour une
+ * personne sourde, ce texte *est* l'annonce — le taire au motif que l'appel
+ * n'est pas établi reviendrait à ne rien recevoir du tout.
+ */
+describe("texte reçu avant le décrochage", () => {
+  it("le fil montre l'annonce, et la saisie reste fermée", () => {
+    chatReceive("Toutes nos lignes sont occupées.");
+    expect(texts()).toEqual(["Toutes nos lignes sont occupées."]);
+    const pane = chatPane("Bob", false);
+    expect(pane).toContain("Toutes nos lignes sont occupées.");
+    expect(pane).toMatch(/<textarea[^>]*disabled/s);
   });
 });
 
@@ -225,6 +242,24 @@ describe("le gabarit", () => {
     expect(pane.slice(0, pane.indexOf(">"))).not.toContain("hidden");
   });
 
+  /**
+   * Avant le décrochage — sonnerie, et surtout média précoce, où une
+   * annonce en texte temps réel peut déjà arriver (RFC 3960) — le fil se
+   * **lit** mais ne s'écrit pas : ce qu'on taperait n'aurait pas de
+   * destinataire, et partirait d'un bloc au décrochage.
+   */
+  it("avant le décrochage : le fil se lit, la saisie est fermée", () => {
+    chatLink("open");
+    const early = chatPane("Bob", false);
+    expect(early).toMatch(/<textarea[^>]*disabled/s);
+    expect(early).toContain("Lecture seule tant que l'appel n'est pas décroché");
+    // le fil lui-même reste une région ordinaire : rien n'y est masqué
+    expect(early).toContain('role="log"');
+
+    const live = chatPane("Bob");
+    expect(live).not.toMatch(/<textarea[^>]*disabled/s);
+  });
+
   it("l'en-tête porte la pastille du lien, suivie par la projection", () => {
     chatLink("open");
     expect(chatHead("<svg/>")).toContain('class="dot live" data-ref="chat-dot"');
@@ -238,14 +273,16 @@ describe("le gabarit", () => {
       direction: "outgoing",
       target: "sip:bob@example.fr",
       displayName: null,
-      offered: { audio: true, video: false },
-      media: { audio: true, video: false },
-      micMuted: false,
+      offered: { audio: true, video: false, text: false },
+      media: { audio: true, video: false, text: false },
       selfViewHidden: false,
-      videoPending: false,
-      videoAsked: false,
+      mediaPending: false,
+      mediaAsked: null,
+      paused: false,
+      peerPaused: false,
       dtmfSent: "",
       notice: null,
+      earlyMedia: { audio: false, video: false, text: false },
       connectedAt: Date.now(),
       endedBy: null,
       session: null,
@@ -271,7 +308,7 @@ describe("le gabarit", () => {
  */
 describe("le tchat sur la scène", () => {
   /** Un appel dont la session porte un canal de texte — le canal suffit ici. */
-  const callOf = (media: { audio: boolean; video: boolean }, state = "connected"): CallView =>
+  const callOf = (media: CallMedia, state = "connected"): CallView =>
     ({
       state,
       direction: "outgoing",
@@ -279,10 +316,11 @@ describe("le tchat sur la scène", () => {
       displayName: null,
       offered: media,
       media,
-      micMuted: false,
       selfViewHidden: false,
-      videoPending: false,
-      videoAsked: false,
+      mediaPending: false,
+      mediaAsked: null,
+      paused: false,
+      peerPaused: false,
       dtmfSent: "",
       notice: null,
       connectedAt: Date.now(),
@@ -291,30 +329,30 @@ describe("le tchat sur la scène", () => {
     }) as CallView;
 
   it("prend la scène quand l'appel n'a pas d'image", () => {
-    expect(chatOnStage(callOf({ audio: true, video: false }))).toBe(true);
-    expect(chatOnStage(callOf({ audio: false, video: false }))).toBe(true);
+    expect(chatOnStage(callOf({ audio: true, video: false, text: false }))).toBe(true);
+    expect(chatOnStage(callOf({ audio: false, video: false, text: false }))).toBe(true);
   });
 
   it("la rend à l'image dès que l'appel porte la vidéo", () => {
-    expect(chatOnStage(callOf({ audio: true, video: true }))).toBe(false);
+    expect(chatOnStage(callOf({ audio: true, video: true, text: false }))).toBe(false);
   });
 
   it("pas pendant la sonnerie entrante : la popup est le seul interlocuteur", () => {
-    expect(chatOnStage(callOf({ audio: true, video: false }, "ringing_in"))).toBe(false);
+    expect(chatOnStage(callOf({ audio: true, video: false, text: false }, "ringing_in"))).toBe(false);
   });
 
   it("pas d'appel, pas de canal, pas de scène", () => {
     expect(chatOnStage(null)).toBe(false);
-    const view = callOf({ audio: true, video: false });
+    const view = callOf({ audio: true, video: false, text: false });
     expect(chatOnStage({ ...view, session: null })).toBe(false);
   });
 
   it("texte refusé : l'appel audio retrouve sa scène, l'appel texte garde la sienne", () => {
     chatLink("closed"); // fermé sans s'être jamais ouvert : le distant n'en a pas voulu
-    expect(chatOnStage(callOf({ audio: true, video: false }))).toBe(false);
+    expect(chatOnStage(callOf({ audio: true, video: false, text: false }))).toBe(false);
     // un appel texte seul n'a rien d'autre à montrer, et la remarque du fil
     // dit pourquoi il ne mènera nulle part
-    expect(chatOnStage(callOf({ audio: false, video: false }))).toBe(true);
+    expect(chatOnStage(callOf({ audio: false, video: false, text: false }))).toBe(true);
   });
 
   it("la scène porte le fil, la barre reçue, et le son de l'appel", () => {

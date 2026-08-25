@@ -18,25 +18,32 @@ import type {
   CallSession,
   CallSipEvent,
   IncomingCall,
+  MediaKind,
   RejectReason,
   SipHandle,
 } from "../src/sip/port.js";
+import { MEDIA_KINDS, NO_MEDIA } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 
 class FakeSession implements CallSession {
   terminated = 0;
-  mic: boolean[] = [];
-  /** Les ajouts et retraits de vidéo demandés par re-INVITE. */
-  video: boolean[] = [];
+  /** Les ajouts et retraits de média demandés par re-INVITE, dans l'ordre. */
+  asked: { kind: MediaKind; on: boolean }[] = [];
   terminate(): void {
     this.terminated++;
   }
-  setMicMuted(m: boolean): void {
-    this.mic.push(m);
+  setMedia(kind: MediaKind, on: boolean): void {
+    this.asked.push({ kind, on });
   }
-  setVideo(on: boolean): void {
-    this.video.push(on);
+  /** Ce qui a été demandé pour un média donné — le raccourci des tests. */
+  askedFor(kind: MediaKind): boolean[] {
+    return this.asked.filter((a) => a.kind === kind).map((a) => a.on);
+  }
+  /** Les pauses demandées, dans l'ordre : rien ne part sur le fil pour elles. */
+  pauses: boolean[] = [];
+  setPaused(on: boolean): void {
+    this.pauses.push(on);
   }
   /** Les tonalités reçues par le port, et ce qu'il en fait (cf. `dtmfFails`). */
   tones: string[] = [];
@@ -89,7 +96,7 @@ function fakeHandle(opts: { throwOnCall?: string } = {}) {
 
 /** INVITE entrant factice : mêmes points de contrôle que le port JsSIP. */
 function fakeIncoming(
-  offered: CallMedia = { audio: true, video: false },
+  offered: CallMedia = { audio: true, video: false, text: false },
   offerProblem: string | null = null,
 ) {
   const session = new FakeSession();
@@ -160,7 +167,7 @@ function hostOf(args: Partial<CallData>, handle: SipHandle | null) {
 
 function startCall(handle: SipHandle, video = false) {
   return hostOf(
-    { target: "sip:bob@example.fr", media: { audio: true, video }, direction: "outgoing" },
+    { target: "sip:bob@example.fr", media: { audio: true, video, text: false }, direction: "outgoing" },
     handle,
   ).start();
 }
@@ -180,14 +187,14 @@ describe("CallBlock — appel sortant", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle);
     expect(box.calls).toEqual([
-      { target: "sip:bob@example.fr", media: { audio: true, video: false } },
+      { target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } },
     ]);
     // l'hôte n'a pas bougé : c'est un appel de sous-routine, pas un état
     expect(call.state).toBe("initial_state");
     expect(call.sbb?.block).toBe("CallBlock");
     expect(call.sbb?.state).toBe("dialing");
 
-    box.sendCall({ type: "sip:progress" });
+    box.sendCall({ type: "sip:progress", media: NO_MEDIA });
     expect(call.sbb?.state).toBe("ringing");
     box.sendCall({ type: "sip:accepted" });
     expect(call.sbb?.state).toBe("connected");
@@ -199,7 +206,7 @@ describe("CallBlock — appel sortant", () => {
     expect(call.sbb).toBeUndefined();
     expect(outcome(call)).toMatchObject({
       type: "call:answered",
-      data: { endedBy: "remote", media: { audio: true, video: false } },
+      data: { endedBy: "remote", media: { audio: true, video: false, text: false } },
     });
     await Promise.resolve();
   });
@@ -214,7 +221,7 @@ describe("CallBlock — appel sortant", () => {
   it("échec en sonnerie : rejected avec cause et code SIP", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle);
-    box.sendCall({ type: "sip:progress" });
+    box.sendCall({ type: "sip:progress", media: NO_MEDIA });
     box.sendCall({ type: "sip:failed", cause: "Rejected", statusCode: 603 });
     expect(outcome(call)).toEqual({
       type: "call:rejected",
@@ -236,7 +243,7 @@ describe("CallBlock — appel sortant", () => {
     try {
       const { handle, box } = fakeHandle();
       const call = startCall(handle);
-      box.sendCall({ type: "sip:progress" });
+      box.sendCall({ type: "sip:progress", media: NO_MEDIA });
       await vi.advanceTimersByTimeAsync(90_000);
       expect(box.session.terminated).toBeGreaterThanOrEqual(1);
       expect(outcome(call)).toEqual({
@@ -246,6 +253,104 @@ describe("CallBlock — appel sortant", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * Le média précoce (RFC 3960) est un état à part entière, et non un
+   * détail de la sonnerie : ce qu'il change est ce que l'appelant entend,
+   * et le vérifier tient à ce que le SDP d'une réponse provisoire soit lu
+   * **pour les trois médias**. Un accueil signé ou écrit est le cas normal
+   * du public de Trix, et il ne remplit aucun silence.
+   */
+  describe("média précoce", () => {
+    const AUDIO: CallMedia = { audio: true, video: false, text: false };
+    const SIGNED: CallMedia = { audio: false, video: true, text: false };
+
+    it("183 porteur de SDP : dialing → early_media, médias publiés", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.state).toBe("early_media");
+      expect(call.context.call?.earlyMedia).toEqual(AUDIO);
+    });
+
+    it("180 puis 183 : la sonnerie cède au média précoce", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: NO_MEDIA });
+      expect(call.sbb?.state).toBe("ringing");
+      box.sendCall({ type: "sip:progress", media: SIGNED });
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.earlyMedia).toEqual(SIGNED);
+    });
+
+    it("le média précoce s'ajoute et ne se retire pas", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: SIGNED });
+      // l'annonce se double de parole : les deux, et non l'un à la place
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      expect(call.context.call?.earlyMedia).toEqual({ audio: true, video: true, text: false });
+      // un 180 sans SDP n'interrompt aucun flux : il cesse de le décrire
+      box.sendCall({ type: "sip:progress", media: NO_MEDIA });
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.earlyMedia).toEqual({ audio: true, video: true, text: false });
+    });
+
+    it("décrochage depuis le média précoce : connected", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      box.sendCall({ type: "sip:accepted" });
+      expect(call.sbb?.state).toBe("connected");
+    });
+
+    it("annonce d'indisponibilité : le 480 qui suit ressort en rejected", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      box.sendCall({ type: "sip:failed", cause: "Unavailable", statusCode: 480 });
+      expect(outcome(call)).toEqual({
+        type: "call:rejected",
+        data: { reason: { key: "reason.sip", vars: { cause: "Unavailable", code: 480 } } },
+      });
+    });
+
+    it("les commandes média sont sans effet avant le décrochage", () => {
+      const { handle, box } = fakeHandle();
+      const call = startCall(handle);
+      box.sendCall({ type: "sip:progress", media: AUDIO });
+      call.send({ type: "ui:toggleMedia", kind: "video" });
+      call.send({ type: "ui:toggleMedia", kind: "audio" });
+      call.send({ type: "ui:togglePause" });
+      // ni renégociation lancée, ni média changé, ni état quitté : il n'y a
+      // pas encore de dialogue où poser un re-INVITE, et l'offre en vol est
+      // celle à laquelle le distant est en train de répondre
+      expect(box.session.asked).toEqual([]);
+      expect(box.session.pauses).toEqual([]);
+      expect(call.sbb?.state).toBe("early_media");
+      expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
+      expect(call.context.call?.mediaPending).toBe(false);
+      expect(call.context.call?.paused).toBe(false);
+    });
+
+    it("le délai de garde de 90 s vaut aussi pour une annonce qui n'en finit pas", async () => {
+      vi.useFakeTimers();
+      try {
+        const { handle, box } = fakeHandle();
+        const call = startCall(handle);
+        box.sendCall({ type: "sip:progress", media: AUDIO });
+        await vi.advanceTimersByTimeAsync(90_000);
+        expect(box.session.terminated).toBeGreaterThanOrEqual(1);
+        expect(outcome(call)).toEqual({
+          type: "call:rejected",
+          data: { reason: { key: "reason.noAnswer" } },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it("raccrochage sans confirmation JsSIP : answered forcé après 2 s", async () => {
@@ -267,16 +372,13 @@ describe("CallBlock — appel sortant", () => {
     }
   });
 
-  it("sourdine et self-view en communication : vue publiée, état inchangé", () => {
+  it("self-view en communication : vue publiée, état inchangé", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle, true);
     box.sendCall({ type: "sip:accepted" });
-    call.send({ type: "ui:muteMic" });
     call.send({ type: "ui:toggleSelfView" });
     expect(call.sbb?.state).toBe("connected");
-    expect(call.context.call?.micMuted).toBe(true);
     expect(call.context.call?.selfViewHidden).toBe(true);
-    expect(box.session.mic).toEqual([true]);
   });
 
   it("annulation pendant dialing : CANCEL puis canceled au sip:failed", () => {
@@ -295,21 +397,21 @@ describe("CallBlock — appel sortant", () => {
 
 describe("CallBlock — appel entrant", () => {
   it("démarre en sonnerie avec l'identité et les médias proposés", () => {
-    const { incoming } = fakeIncoming({ audio: true, video: true });
+    const { incoming } = fakeIncoming({ audio: true, video: true, text: false });
     const call = startIncoming(incoming);
     expect(call.sbb?.state).toBe("ringing_in");
     const view = call.context.call!;
     expect(view.direction).toBe("incoming");
     expect(view.target).toBe("sip:bob@example.fr");
     expect(view.displayName).toBe("Bob Martin");
-    expect(view.offered).toEqual({ audio: true, video: true });
+    expect(view.offered).toEqual({ audio: true, video: true, text: false });
   });
 
   it("réponse A/V : 200 OK avec les médias choisis, puis connected", () => {
-    const { incoming, box } = fakeIncoming({ audio: true, video: true });
+    const { incoming, box } = fakeIncoming({ audio: true, video: true, text: false });
     const call = startIncoming(incoming);
-    call.send({ type: "ui:answer", media: { audio: true, video: true } });
-    expect(box.answered).toEqual([{ audio: true, video: true }]);
+    call.send({ type: "ui:answer", media: { audio: true, video: true, text: false } });
+    expect(box.answered).toEqual([{ audio: true, video: true, text: false }]);
     expect(call.sbb?.state).toBe("answering");
     box.sendCall({ type: "sip:accepted" });
     expect(call.sbb?.state).toBe("connected");
@@ -317,17 +419,17 @@ describe("CallBlock — appel entrant", () => {
   });
 
   it("réponse audio seul à une offre vidéo : la vidéo n'est pas acceptée", () => {
-    const { incoming, box } = fakeIncoming({ audio: true, video: true });
+    const { incoming, box } = fakeIncoming({ audio: true, video: true, text: false });
     const call = startIncoming(incoming);
-    call.send({ type: "ui:answer", media: { audio: true, video: false } });
-    expect(box.answered).toEqual([{ audio: true, video: false }]);
-    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+    call.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
+    expect(box.answered).toEqual([{ audio: true, video: false, text: false }]);
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
   });
 
   it("ACK sans accepted préalable : connected quand même", () => {
     const { incoming, box } = fakeIncoming();
     const call = startIncoming(incoming);
-    call.send({ type: "ui:answer", media: { audio: true, video: false } });
+    call.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
     box.sendCall({ type: "sip:confirmed" });
     expect(call.sbb?.state).toBe("connected");
   });
@@ -344,7 +446,7 @@ describe("CallBlock — appel entrant", () => {
   });
 
   it("offre inétablissable : 488 sans sonnerie, et l'échec part en historique", () => {
-    const { incoming, box } = fakeIncoming({ audio: true, video: true }, "ICE, DTLS, SRTP (RTP/AVP)");
+    const { incoming, box } = fakeIncoming({ audio: true, video: true, text: false }, "ICE, DTLS, SRTP (RTP/AVP)");
     const call = startIncoming(incoming);
     // le téléphone n'a jamais sonné : le bloc rend la main depuis l'aiguillage
     expect(box.rejected).toEqual(["incompatible"]);
@@ -390,7 +492,7 @@ describe("CallBlock — appel entrant", () => {
   it("échec après réponse (média refusé) : manqué avec la cause", () => {
     const { incoming, box } = fakeIncoming();
     const call = startIncoming(incoming);
-    call.send({ type: "ui:answer", media: { audio: true, video: false } });
+    call.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
     box.sendCall({ type: "sip:failed", cause: "User Denied Media Access", originator: "local" });
     // un échec technique après décrochage : la même ligne d'historique
     // qu'un manqué, mais l'écran doit en montrer la cause
@@ -406,7 +508,7 @@ describe("CallBlock — appel entrant", () => {
   it("488 après décrochage : le motif porte ce que le navigateur a refusé", () => {
     const { incoming, box } = fakeIncoming();
     const call = startIncoming(incoming);
-    call.send({ type: "ui:answer", media: { audio: true, video: false } });
+    call.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
     box.sendCall({
       type: "sip:failed",
       cause: "WebRTC Error",
@@ -434,7 +536,7 @@ describe("CallBlock — appel entrant", () => {
   it("raccrochage en communication depuis un entrant : BYE puis answered", () => {
     const { incoming, box } = fakeIncoming();
     const call = startIncoming(incoming);
-    call.send({ type: "ui:answer", media: { audio: true, video: false } });
+    call.send({ type: "ui:answer", media: { audio: true, video: false, text: false } });
     box.sendCall({ type: "sip:accepted" });
     call.send({ type: "ui:hangup" });
     expect(call.sbb?.state).toBe("hangingup");
@@ -506,12 +608,12 @@ describe("CallBlock — ce que le bloc consomme pour son hôte", () => {
  * vidéo n'est pas une sourdine locale : elle entre dans l'appel ou en sort,
  * et les deux correspondants voient la même chose.
  */
-describe("CallBlock — la vidéo entre et sort de l'appel", () => {
+describe("CallBlock — les médias entrent et sortent de l'appel", () => {
   /** Un appel établi, avec les médias que le port dit avoir négociés. */
   function connectedCall(asked: boolean, negotiated = asked) {
     const { handle, box } = fakeHandle();
     const call = startCall(handle, asked);
-    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: negotiated } });
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: negotiated, text: false } });
     box.sendCall({ type: "sip:accepted" });
     return { call, box };
   }
@@ -520,7 +622,7 @@ describe("CallBlock — la vidéo entre et sort de l'appel", () => {
     const { call } = connectedCall(true, false);
     expect(call.sbb?.state).toBe("connected");
     const view = call.context.call!;
-    expect(view.media).toEqual({ audio: true, video: false });
+    expect(view.media).toEqual({ audio: true, video: false, text: false });
     expect(view.notice?.message).toEqual({
       key: "notice.videoDeclined",
       vars: { peer: "bob@example.fr" },
@@ -529,37 +631,37 @@ describe("CallBlock — la vidéo entre et sort de l'appel", () => {
 
   it("appel vidéo décroché en vidéo : rien à signaler", () => {
     const { call } = connectedCall(true);
-    expect(call.context.call?.media).toEqual({ audio: true, video: true });
+    expect(call.context.call?.media).toEqual({ audio: true, video: true, text: false });
     expect(call.context.call?.notice).toBeNull();
   });
 
   it("ajout de la vidéo : re-INVITE, attente, puis vue à jour", () => {
     const { call, box } = connectedCall(false);
-    call.send({ type: "ui:toggleVideo" });
-    expect(box.session.video).toEqual([true]);
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(box.session.askedFor("video")).toEqual([true]);
     expect(call.sbb?.state).toBe("renegotiating");
-    expect(call.context.call?.videoPending).toBe(true);
+    expect(call.context.call?.mediaPending).toBe(true);
 
-    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true } });
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true, text: false } });
     expect(call.sbb?.state).toBe("connected");
-    expect(call.context.call?.media).toEqual({ audio: true, video: true });
-    expect(call.context.call?.videoPending).toBe(false);
+    expect(call.context.call?.media).toEqual({ audio: true, video: true, text: false });
+    expect(call.context.call?.mediaPending).toBe(false);
   });
 
   it("retrait de la vidéo : re-INVITE dans l'autre sens", () => {
     const { call, box } = connectedCall(true);
-    call.send({ type: "ui:toggleVideo" });
-    expect(box.session.video).toEqual([false]);
-    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false } });
-    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(box.session.askedFor("video")).toEqual([false]);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false, text: false } });
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
   });
 
   it("488 du distant : message, appel intact, vidéo toujours absente", () => {
     const { call, box } = connectedCall(false);
-    call.send({ type: "ui:toggleVideo" });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
     box.sendCall({ type: "sip:mediaRefused", by: "remote", statusCode: 488 });
     expect(call.sbb?.state).toBe("connected");
-    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
     expect(call.context.call?.notice?.message).toEqual({
       key: "notice.videoRefused",
       vars: { peer: "bob@example.fr" },
@@ -568,26 +670,28 @@ describe("CallBlock — la vidéo entre et sort de l'appel", () => {
 
   it("refus local (caméra indisponible) : message local", () => {
     const { call, box } = connectedCall(false);
-    call.send({ type: "ui:toggleVideo" });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
     box.sendCall({ type: "sip:mediaRefused", by: "local" });
     expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoUnavailable" });
   });
 
   it("un second clic pendant la renégociation ne part pas", () => {
     const { call, box } = connectedCall(false);
-    call.send({ type: "ui:toggleVideo" });
-    call.send({ type: "ui:toggleVideo" });
-    expect(box.session.video).toEqual([true]);
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(box.session.askedFor("video")).toEqual([true]);
   });
 
-  it("renégociation sans réponse : l'appel continue au bout de 20 s", async () => {
+  it("renégociation sans réponse : l'appel continue au bout de 30 s", async () => {
     vi.useFakeTimers();
     try {
       const { call } = connectedCall(false);
-      call.send({ type: "ui:toggleVideo" });
-      await vi.advanceTimersByTimeAsync(20_000);
+      call.send({ type: "ui:toggleMedia", kind: "video" });
+      // le délai couvre la reprise après un 491, qui peut demander jusqu'à
+      // 4 s avant même de repartir (RFC 3261 §14.1)
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(call.sbb?.state).toBe("connected");
-      expect(call.context.call?.videoPending).toBe(false);
+      expect(call.context.call?.mediaPending).toBe(false);
       expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoUnavailable" });
     } finally {
       vi.useRealTimers();
@@ -596,10 +700,329 @@ describe("CallBlock — la vidéo entre et sort de l'appel", () => {
 
   it("raccrocher pendant une renégociation reste possible", () => {
     const { call, box } = connectedCall(false);
-    call.send({ type: "ui:toggleVideo" });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
     call.send({ type: "ui:hangup" });
     expect(call.sbb?.state).toBe("hangingup");
     expect(box.session.terminated).toBe(1);
+  });
+
+  /**
+   * ADR 0003, D1. Le texte se déclare négocié quand la signalisation le
+   * conclut — plus tard que l'audio sur canal de données, où l'association
+   * SCTP est confirmée après le 200 OK. Ce n'est **pas** un changement
+   * dont le correspondant est l'auteur : rien n'apparaît ni ne disparaît
+   * sous les yeux de l'utilisateur, et l'écran n'a donc rien à annoncer.
+   */
+  it("le texte qui se déclare négocié rejoint la vue sans message fugace", () => {
+    const { call, box } = connectedCall(false);
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
+
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false, text: true } });
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: true });
+    expect(call.context.call?.notice).toBeNull();
+  });
+
+  /**
+   * L'ajout de la vidéo, lui, se dit — et le texte déjà là le reste : une
+   * renégociation qui porte l'image ne touche pas au lien texte (D4, le
+   * retrait du texte est interdit).
+   */
+  it("la vidéo entre dans un appel qui porte le texte sans l'en chasser", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle, false);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false, text: true } });
+    box.sendCall({ type: "sip:accepted" });
+
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(box.session.askedFor("video")).toEqual([true]);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: true, text: true } });
+    expect(call.context.call?.media).toEqual({ audio: true, video: true, text: true });
+  });
+});
+
+/**
+ * **La matrice de D5**, le critère de sortie de CT-3 : l'ajout et le
+ * retrait passent pour toutes les combinaisons de médias — A, V, T, AV, AT,
+ * VT, AVT — refus et 491 compris.
+ *
+ * Ce n'est pas de la redondance avec les tests ci-dessus : ceux-là décrivent
+ * le chemin d'un média, celle-ci vérifie qu'il n'y a **qu'un seul** chemin,
+ * et qu'aucune combinaison n'en sort. L'asymétrie qui s'installerait entre
+ * le micro et la caméra ne se verrait nulle part ailleurs.
+ */
+/**
+ * **La Pause** (ADR 0003, D6 et D7) — l'axe 2, vu du bloc.
+ *
+ * Ce n'est pas un contrôle média : elle ne change rien à ce que l'appel
+ * transporte, rien ne part sur le fil, et elle ne peut pas échouer. Trois
+ * choses s'y vérifient, et ce sont les trois du critère de sortie de CT-4.
+ */
+describe("CallBlock — la Pause", () => {
+  function connected(m: CallMedia = { audio: true, video: true, text: true }) {
+    const { handle, box } = fakeHandle();
+    const call = hostOf(
+      { target: "sip:bob@example.fr", media: m, direction: "outgoing" },
+      handle,
+    ).start();
+    box.sendCall({ type: "sip:mediaChanged", media: m });
+    box.sendCall({ type: "sip:accepted" });
+    return { call, box };
+  }
+
+  it("se pose et se lève sans quitter `connected` : rien ne se négocie", () => {
+    const { call, box } = connected();
+    call.send({ type: "ui:togglePause" });
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.paused).toBe(true);
+    expect(box.session.pauses).toEqual([true]);
+
+    call.send({ type: "ui:togglePause" });
+    expect(call.context.call?.paused).toBe(false);
+    expect(box.session.pauses).toEqual([true, false]);
+    // et pas un seul re-INVITE dans tout cela
+    expect(box.session.asked).toEqual([]);
+  });
+
+  /**
+   * D7 : « la reprise rétablit les deux médias sans renégociation ». Ce que
+   * l'appel transporte n'a pas bougé d'un iota pendant la pause — c'est
+   * précisément ce qui la distingue d'un retrait de média.
+   */
+  it("l'appel transporte exactement la même chose pendant et après", () => {
+    const full: CallMedia = { audio: true, video: true, text: true };
+    const { call } = connected(full);
+    call.send({ type: "ui:togglePause" });
+    expect(call.context.call?.media).toEqual(full);
+    call.send({ type: "ui:togglePause" });
+    expect(call.context.call?.media).toEqual(full);
+  });
+
+  /**
+   * D7 : « le texte passe dans les deux sens pendant toute la pause ». Le
+   * bloc n'a rien à faire pour cela, et c'est la garantie : la Pause ne
+   * touche qu'aux deux émetteurs de la connexion pair-à-pair, et le lien
+   * texte vit ailleurs (§4.9). Ce que le test tient, c'est qu'on n'ait
+   * jamais l'idée de l'y ajouter.
+   */
+  it("ne touche pas au lien texte, et `media.text` reste vrai", () => {
+    const { call, box } = connected({ audio: true, video: false, text: true });
+    call.send({ type: "ui:togglePause" });
+    expect(call.context.call?.media.text).toBe(true);
+    // le port n'a reçu qu'un ordre de pause, jamais rien sur le texte
+    expect(box.session.pauses).toEqual([true]);
+  });
+
+  it("vaut aussi pendant une renégociation : se retirer n'attend pas un 200 OK", () => {
+    const { call, box } = connected();
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(call.sbb?.state).toBe("renegotiating");
+    call.send({ type: "ui:togglePause" });
+    expect(box.session.pauses).toEqual([true]);
+    expect(call.context.call?.paused).toBe(true);
+    // la renégociation suit son cours, sans que la pause l'ait dérangée
+    expect(call.sbb?.state).toBe("renegotiating");
+  });
+
+  it("hors communication, il n'y a rien à suspendre", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    call.send({ type: "ui:togglePause" });
+    expect(box.session.pauses).toEqual([]);
+    expect(call.context.call?.paused).toBe(false);
+  });
+
+  describe("la pause du correspondant", () => {
+    it("se publie dans la vue, sans que l'appel change de nature", () => {
+      const { call, box } = connected();
+      box.sendCall({ type: "sip:peerPaused", paused: true });
+      expect(call.context.call?.peerPaused).toBe(true);
+      expect(call.sbb?.state).toBe("connected");
+      expect(call.context.call?.media).toEqual({ audio: true, video: true, text: true });
+
+      box.sendCall({ type: "sip:peerPaused", paused: false });
+      expect(call.context.call?.peerPaused).toBe(false);
+    });
+
+    it("ne suspend rien de ce que nous émettons : c'est lui qui s'est retiré", () => {
+      const { call, box } = connected();
+      box.sendCall({ type: "sip:peerPaused", paused: true });
+      expect(call.context.call?.paused).toBe(false);
+      expect(box.session.pauses).toEqual([]);
+    });
+
+    it("répétée, elle ne republie rien", () => {
+      const { call, box } = connected();
+      box.sendCall({ type: "sip:peerPaused", paused: true });
+      const seq = call.context.call?.notice?.seq ?? 0;
+      box.sendCall({ type: "sip:peerPaused", paused: true });
+      expect(call.context.call?.notice?.seq ?? 0).toBe(seq);
+    });
+  });
+});
+
+describe("CallBlock — la matrice des ajouts et des retraits", () => {
+  const media = (audio: boolean, video: boolean, text: boolean): CallMedia => ({
+    audio,
+    video,
+    text,
+  });
+
+  /** Un appel établi transportant exactement ces médias. */
+  function callWith(m: CallMedia) {
+    const { handle, box } = fakeHandle();
+    const call = hostOf(
+      { target: "sip:bob@example.fr", media: m, direction: "outgoing" },
+      handle,
+    ).start();
+    box.sendCall({ type: "sip:mediaChanged", media: m });
+    box.sendCall({ type: "sip:accepted" });
+    return { call, box };
+  }
+
+  /** Les sept combinaisons que Trix sait porter, nommées comme dans D3. */
+  const PROFILES: [string, CallMedia][] = [
+    ["A", media(true, false, false)],
+    ["V", media(false, true, false)],
+    ["T", media(false, false, true)],
+    ["AV", media(true, true, false)],
+    ["AT", media(true, false, true)],
+    ["VT", media(false, true, true)],
+    ["AVT", media(true, true, true)],
+  ];
+
+  describe("le retrait", () => {
+    for (const [name, m] of PROFILES) {
+      for (const kind of ["audio", "video"] as const) {
+        if (!m[kind]) continue;
+        const alone = !MEDIA_KINDS.some((k) => k !== kind && m[k]) && !m.text;
+        it(`${name} : retirer ${kind} ${alone ? "est refusé — il ne resterait rien" : "part en re-INVITE"}`, () => {
+          const { call, box } = callWith(m);
+          call.send({ type: "ui:toggleMedia", kind });
+          if (alone) {
+            // l'invariant du bloc, et non un bouton grisé : l'événement
+            // qui passerait quand même est refusé au même endroit
+            expect(box.session.asked).toEqual([]);
+            expect(call.sbb?.state).toBe("connected");
+            expect(call.context.call?.media).toEqual(m);
+            return;
+          }
+          expect(box.session.asked).toEqual([{ kind, on: false }]);
+          expect(call.sbb?.state).toBe("renegotiating");
+          box.sendCall({ type: "sip:mediaChanged", media: { ...m, [kind]: false } });
+          expect(call.sbb?.state).toBe("connected");
+          expect(call.context.call?.media).toEqual({ ...m, [kind]: false });
+        });
+      }
+    }
+  });
+
+  describe("l'ajout", () => {
+    for (const [name, m] of PROFILES) {
+      for (const kind of ["audio", "video"] as const) {
+        if (m[kind]) continue;
+        it(`${name} : ajouter ${kind} part en re-INVITE et aboutit`, () => {
+          const { call, box } = callWith(m);
+          call.send({ type: "ui:toggleMedia", kind });
+          expect(box.session.asked).toEqual([{ kind, on: true }]);
+          box.sendCall({ type: "sip:mediaChanged", media: { ...m, [kind]: true } });
+          expect(call.sbb?.state).toBe("connected");
+          expect(call.context.call?.media).toEqual({ ...m, [kind]: true });
+        });
+
+        it(`${name} : ajouter ${kind} refusé par le distant laisse l'appel intact`, () => {
+          const { call, box } = callWith(m);
+          call.send({ type: "ui:toggleMedia", kind });
+          box.sendCall({ type: "sip:mediaRefused", by: "remote", statusCode: 488 });
+          expect(call.sbb?.state).toBe("connected");
+          expect(call.context.call?.media).toEqual(m);
+          expect(call.context.call?.notice?.message).toEqual({
+            key: kind === "audio" ? "notice.audioRefused" : "notice.videoRefused",
+            vars: { peer: "bob@example.fr" },
+          });
+        });
+      }
+    }
+  });
+
+  /**
+   * Le 491 est absorbé **dans le port** : il y reprend une fois, après un
+   * délai aléatoire (RFC 3261 §14.1). Du point de vue du bloc, il n'existe
+   * donc pas — soit la reprise aboutit et le média change, soit elle échoue
+   * et un `sip:mediaRefused` arrive. Ce que le bloc doit garantir, c'est
+   * qu'il **attend** pendant tout ce temps, sans laisser partir une seconde
+   * offre : un seul verrou, quel que soit le média (D5).
+   */
+  describe("le glare", () => {
+    it("la reprise qui aboutit : le média change, et rien n'est parti deux fois", () => {
+      const { call, box } = callWith(media(true, false, true));
+      call.send({ type: "ui:toggleMedia", kind: "video" });
+      // pendant la reprise, l'utilisateur s'impatiente sur les deux boutons
+      call.send({ type: "ui:toggleMedia", kind: "video" });
+      call.send({ type: "ui:toggleMedia", kind: "audio" });
+      expect(box.session.asked).toEqual([{ kind: "video", on: true }]);
+      expect(call.context.call?.mediaPending).toBe(true);
+
+      box.sendCall({ type: "sip:mediaChanged", media: media(true, true, true) });
+      expect(call.sbb?.state).toBe("connected");
+      expect(call.context.call?.mediaPending).toBe(false);
+    });
+
+    it("la reprise qui échoue : l'appel continue, et le message le dit", () => {
+      const { call, box } = callWith(media(true, false, true));
+      call.send({ type: "ui:toggleMedia", kind: "audio" });
+      expect(box.session.asked).toEqual([{ kind: "audio", on: false }]);
+      // le port a repris une fois, puis renoncé
+      box.sendCall({ type: "sip:mediaRefused", by: "local" });
+      expect(call.sbb?.state).toBe("connected");
+      expect(call.context.call?.media).toEqual(media(true, false, true));
+      expect(call.context.call?.notice?.message).toEqual({ key: "notice.audioUnavailable" });
+    });
+
+    /**
+     * Le distant renégocie pendant que notre offre est en vol : c'est
+     * exactement la situation qui produit le 491 en sens inverse. Sa
+     * demande est éconduite — la nôtre est déjà partie, la sienne
+     * attendra son tour.
+     */
+    it("l'offre du distant qui croise la nôtre est éconduite, pas mise en attente", () => {
+      const { call, box } = callWith(media(true, false, true));
+      call.send({ type: "ui:toggleMedia", kind: "video" });
+      const decisions: string[] = [];
+      box.sendCall({
+        type: "sip:mediaOffer",
+        media: media(true, true, true),
+        offer: {
+          accept: () => decisions.push("accept"),
+          reject: () => decisions.push("reject"),
+        },
+      });
+      expect(decisions).toEqual(["reject"]);
+      expect(call.sbb?.state).toBe("renegotiating");
+    });
+  });
+
+  /**
+   * D5 encore : le distant qui ajoute l'**audio** pose la même question que
+   * celui qui ajoute la vidéo. Allumer un micro demande l'accord de son
+   * propriétaire, et `video_offer` est devenu `media_offer` pour cela.
+   */
+  it("l'audio proposé par le distant passe par la même question que la vidéo", () => {
+    const { call, box } = callWith(media(false, false, true));
+    const decisions: string[] = [];
+    box.sendCall({
+      type: "sip:mediaOffer",
+      media: media(true, false, true),
+      offer: {
+        accept: () => decisions.push("accept"),
+        reject: () => decisions.push("reject"),
+      },
+    });
+    expect(call.sbb?.state).toBe("media_offer");
+    expect(call.context.call?.mediaAsked).toEqual(["audio"]);
+    call.send({ type: "ui:acceptMedia" });
+    expect(decisions).toEqual(["accept"]);
+    expect(call.sbb?.state).toBe("renegotiating");
   });
 });
 
@@ -612,7 +1035,7 @@ describe("CallBlock — vidéo proposée par le distant", () => {
     const decisions: string[] = [];
     box.sendCall({
       type: "sip:mediaOffer",
-      media: { audio: true, video: true },
+      media: { audio: true, video: true, text: false },
       offer: {
         accept: () => decisions.push("accept"),
         reject: () => decisions.push("reject"),
@@ -623,25 +1046,25 @@ describe("CallBlock — vidéo proposée par le distant", () => {
 
   it("la question est posée à l'écran, l'appel continue derrière", () => {
     const { call } = offered();
-    expect(call.sbb?.state).toBe("video_offer");
-    expect(call.context.call?.videoAsked).toBe(true);
+    expect(call.sbb?.state).toBe("media_offer");
+    expect(call.context.call?.mediaAsked).toEqual(["video"]);
     expect(call.context.call?.state).toBe("connected");
   });
 
   it("acceptée : 200 OK puis attente du média négocié", () => {
     const { call, decisions } = offered();
-    call.send({ type: "ui:acceptVideo" });
+    call.send({ type: "ui:acceptMedia" });
     expect(decisions).toEqual(["accept"]);
     expect(call.sbb?.state).toBe("renegotiating");
-    expect(call.context.call?.videoAsked).toBe(false);
+    expect(call.context.call?.mediaAsked).toBeNull();
   });
 
   it("refusée : 488 et message, l'appel reste en audio", () => {
     const { call, decisions } = offered();
-    call.send({ type: "ui:rejectVideo" });
+    call.send({ type: "ui:rejectMedia" });
     expect(decisions).toEqual(["reject"]);
     expect(call.sbb?.state).toBe("connected");
-    expect(call.context.call?.media).toEqual({ audio: true, video: false });
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
     expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoDeclinedHere" });
   });
 
@@ -663,7 +1086,7 @@ describe("CallBlock — vidéo proposée par le distant", () => {
     const decisions: string[] = [];
     box.sendCall({
       type: "sip:mediaOffer",
-      media: { audio: true, video: true },
+      media: { audio: true, video: true, text: false },
       offer: { accept: () => decisions.push("accept"), reject: () => decisions.push("reject") },
     });
     expect(decisions).toEqual(["reject"]);
@@ -679,7 +1102,7 @@ describe("CallBlock — raccrocher pendant une question de vidéo", () => {
     const decisions: string[] = [];
     box.sendCall({
       type: "sip:mediaOffer",
-      media: { audio: true, video: true },
+      media: { audio: true, video: true, text: false },
       offer: { accept: () => decisions.push("accept"), reject: () => decisions.push("reject") },
     });
     call.send({ type: "ui:hangup" });
@@ -732,7 +1155,7 @@ describe("CallBlock — DTMF", () => {
 
   it("une renégociation en vol n'empêche pas de composer", () => {
     const { call, box } = connected();
-    call.send({ type: "ui:toggleVideo" });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
     expect(call.sbb?.state).toBe("renegotiating");
     call.send({ type: "ui:dtmf", tone: "1" });
     expect(box.session.tones).toEqual(["1"]);
@@ -742,7 +1165,7 @@ describe("CallBlock — DTMF", () => {
   it("hors communication : la touche est consommée, rien n'est émis", () => {
     const { handle, box } = fakeHandle();
     const call = startCall(handle);
-    box.sendCall({ type: "sip:progress" });
+    box.sendCall({ type: "sip:progress", media: NO_MEDIA });
     call.send({ type: "ui:dtmf", tone: "5" });
     expect(box.session.tones).toEqual([]);
     expect(call.sbb?.state).toBe("ringing");

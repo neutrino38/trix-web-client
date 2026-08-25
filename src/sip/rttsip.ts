@@ -79,6 +79,20 @@ export type RttRole = "offer" | "answer";
 export interface RttNegotiation {
   /** Le lien texte de l'appel, du premier INVITE au raccrochage. */
   channel: RttChannel;
+  /**
+   * Le texte est-il **négocié** ? C'est-à-dire : les deux bouts en ont-ils
+   * convenu dans la signalisation — pas « le lien est-il ouvert », que dit
+   * `channel.state` (ADR 0003, D1). Les deux transports répondent à des
+   * endroits différents, et c'est toute la raison d'être de cette méthode :
+   *
+   * - **WebSocket** — le distant a annoncé l'URL de son socket dans son
+   *   SDP. Tant qu'aucun SDP distant n'est arrivé, la réponse est non ;
+   * - **canal de données** — l'association SCTP a été négociée
+   *   (`RTCPeerConnection.sctp`). Le canal `t140` lui-même s'ouvre plus
+   *   tard, par DCEP, et c'est justement la nuance : `text: true` avec un
+   *   canal encore `connecting` est un état normal.
+   */
+  negotiated(): boolean;
   /** Ferme le lien — l'appel est terminé. */
   close(): void;
 }
@@ -174,6 +188,9 @@ export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
 
   return {
     channel,
+    // l'URL vient du SDP distant : la voir, c'est que le distant a répondu
+    // du texte — la retirer de ce que le navigateur voit n'y change rien
+    negotiated: () => url !== null,
     close() {
       channel.close();
     },
@@ -205,7 +222,11 @@ export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNego
     return deferred.wire;
   });
 
+  /** La connexion, dès qu'il y en a une : c'est elle qui porte le SCTP. */
+  let peer: RTCPeerConnection | null = null;
+
   const start = (pc: RTCPeerConnection): void => {
+    peer = pc;
     deferred?.open((hooks) => openDcWire(pc, role, hooks));
   };
   if (session.connection) start(session.connection);
@@ -213,6 +234,9 @@ export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNego
 
   return {
     channel,
+    // `sctp` n'existe qu'une fois la section `m=application` négociée des
+    // deux côtés : un distant qui l'a rejetée (port 0) la laisse à `null`
+    negotiated: () => (peer?.sctp ?? null) !== null,
     close() {
       channel.close();
     },

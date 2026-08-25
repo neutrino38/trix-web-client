@@ -12,6 +12,7 @@ import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../
 import { deployment } from "../../deployment.js";
 import { shareUrl } from "../../share/link.js";
 import { showToast } from "../toast.js";
+import { showSelfTestDialog } from "../selftest.js";
 import { RTT_LABELS } from "../rttlabels.js";
 
 /**
@@ -298,6 +299,15 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
           </div>
           <span class="hint">${esc(t("config.themeHint"))}</span>
         </fieldset>
+        <!-- L'autotest hors appel (F.703 §4.4 note) : il ne s'enregistre
+             pas, ne concerne pas le compte, et n'a donc rien à faire dans
+             le formulaire — un bouton, et une modale qui rend les
+             périphériques en partant (ui/selftest.ts). -->
+        <h3>${esc(t("selftest.section"))}</h3>
+        <p class="section-hint">${esc(t("selftest.sectionHint"))}</p>
+        <div class="field">
+          <button class="btn" type="button" data-act="selftest">${esc(t("selftest.open"))}</button>
+        </div>
         <!-- La langue est aussi offerte à l'accueil, qu'on ne revoit plus
              une fois le compte enregistré : c'est ici qu'on la retrouve. -->
         ${langPicker()}
@@ -433,6 +443,10 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
   // le socket relit ce réglage à chaque paquet
   const traceToggle = node.querySelector<HTMLInputElement>("#f-siptrace");
   traceToggle?.addEventListener("change", () => setSipTrace(traceToggle.checked));
+
+  // le test ouvre le micro et la caméra : il part d'un geste utilisateur,
+  // sans quoi le navigateur refuserait la demande de permission
+  node.querySelector('[data-act="selftest"]')?.addEventListener("click", () => showSelfTestDialog());
 
   // la mention « si différent de … » suit le userpart de l'URI en cours de saisie
   const uriInput = form.querySelector("#f-uri") as HTMLInputElement;

@@ -12,11 +12,12 @@ import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
-import { videoAskDialog } from "./videoask.js";
+import { mediaAskDialog } from "./mediaask.js";
 import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
 import { chatChannel, chatHead, chatOnStage, chatPane, chatRefused, chatStage } from "./chat.js";
 import { statsPill } from "./stats.js";
+import { pauseBanner, peerPauseNotice } from "./pause.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
   ICONS,
@@ -124,7 +125,10 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                     panel: { collapsed, controls: "call-panel" },
                   }),
                   meters: connected && view.media.audio,
+                  // avant le décrochage, le fil se lit mais ne s'écrit pas
+                  writable: connected,
                   dtmf: dtmfPad(view),
+                  banner: `${peerPauseNotice(view)}${pauseBanner(view)}`,
                 })
               : `<div class="video" data-ref="videozone">
             ${
@@ -147,7 +151,9 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                        : `<div class="call-overlay">${esc(callLabel(view.state))}…<br>
                             <span class="target">${esc(displayTarget(view.target))}</span></div>`
                    }
+                   ${peerPauseNotice(view)}
                    ${dtmfPad(view)}
+                   ${pauseBanner(view)}
                    ${overlayBar({
                      view,
                      speakerMuted,
@@ -243,7 +249,9 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           ${
             // le tchat ne tient la sidebar que si la scène ne l'a pas pris :
             // c'est le cas de l'appel vidéo, où l'image occupe le centre
-            chat && view && !stageChat ? chatHead(ICONS.chat) + chatPane(callerName(view)) : ""
+            chat && view && !stageChat
+              ? chatHead(ICONS.chat) + chatPane(callerName(view), connected)
+              : ""
           }
           ${
             // hors appel, le tchat n'a pas lieu d'être : il naît avec le canal
@@ -265,6 +273,6 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         </div>
       </div>
       ${incoming ? incomingDialog(view) : ""}
-      ${view?.videoAsked ? videoAskDialog(view) : ""}
+      ${view?.mediaAsked !== null && view !== null ? mediaAskDialog(view) : ""}
     </div>`);
 }

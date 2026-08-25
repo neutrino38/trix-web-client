@@ -168,6 +168,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "call.dialing": "Calling",
   "call.ringing": "Ringing",
+  "call.earlyMedia": "Network message",
   "call.ringingIn": "Incoming call",
   "call.answering": "Connecting…",
   "call.connected": "In call",
@@ -204,6 +205,7 @@ const messages: Translation = {
   "chat.composerAria": "Real-time text message",
   "chat.placeholder": "Type — the text leaves as you write",
   "chat.placeholderClosed": "Text unavailable on this call",
+  "chat.placeholderEarly": "Read-only until the call is answered",
   "chat.enterHint": "Enter freezes the bubble",
   "chat.state.open": "Leaving as you type",
   "chat.state.connecting": "Opening real-time text…",
@@ -246,13 +248,14 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Media controls
   // ---------------------------------------------------------------------
-  "ctrl.mic.aria": "Microphone",
-  "ctrl.mic.mute": "Mute microphone",
-  "ctrl.mic.unmute": "Unmute microphone",
-  "ctrl.cam.aria": "Camera",
+  "ctrl.mic.aria": "Audio",
+  "ctrl.mic.add": "Add audio",
+  "ctrl.mic.remove": "Remove audio",
+  "ctrl.cam.aria": "Video",
   "ctrl.cam.add": "Add video",
   "ctrl.cam.remove": "Remove video",
-  "ctrl.cam.pending": "Changing media…",
+  "ctrl.media.pending": "Media change in progress…",
+  "ctrl.media.last": "Not possible: the call would carry nothing at all",
   "ctrl.selfview.aria": "Self-view",
   "ctrl.selfview.hide": "Hide self-view",
   "ctrl.selfview.show": "Show self-view",
@@ -267,6 +270,15 @@ const messages: Translation = {
   "ctrl.chat.hide": "Hide chat",
   "ctrl.fullscreen": "Full screen",
   "ctrl.hangup": "Hang up",
+  "ctrl.pause": "Pause",
+  "ctrl.pause.aria": "Pause",
+  "ctrl.resume": "Resume",
+  "pause.banner": "You are paused",
+  "pause.hint": "Your microphone and image are stopped. Text keeps flowing.",
+  "pause.resume": "Resume",
+  "pause.peer": "{peer} is paused",
+  "ctrl.more": "More controls",
+  "sheet.title": "More call controls",
 
   // ---------------------------------------------------------------------
   // Clavier DTMF
@@ -281,10 +293,16 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Video requested mid-call
   // ---------------------------------------------------------------------
-  "videoask.title": "{peer} wants to add video",
-  "videoask.body": "Accepting will turn your camera on.",
-  "videoask.accept": "Accept video",
-  "videoask.reject": "Decline",
+  "mediaask.video.title": "{peer} would like to add video",
+  "mediaask.video.body": "Accepting will turn on your camera.",
+  "mediaask.video.accept": "Accept video",
+  "mediaask.audio.title": "{peer} would like to add audio",
+  "mediaask.audio.body": "Accepting will turn on your microphone.",
+  "mediaask.audio.accept": "Accept audio",
+  "mediaask.both.title": "{peer} would like to add audio and video",
+  "mediaask.both.body": "Accepting will turn on your microphone and camera.",
+  "mediaask.both.accept": "Accept both",
+  "mediaask.reject": "Decline",
 
   // ---------------------------------------------------------------------
   // Passing call messages
@@ -295,6 +313,12 @@ const messages: Translation = {
   "notice.videoRemoved": "{peer} removed video",
   "notice.videoDeclinedHere": "Video declined",
   "notice.videoUnavailable": "Video cannot be added right now",
+  "notice.audioDeclined": "{peer} did not accept audio",
+  "notice.audioRefused": "{peer} declines adding audio to this call",
+  "notice.audioAdded": "{peer} added audio",
+  "notice.audioRemoved": "{peer} removed audio",
+  "notice.audioDeclinedHere": "Audio declined",
+  "notice.audioUnavailable": "Cannot add audio right now",
   "notice.dtmfFailed": "Tone {tone} could not be sent",
 
   // ---------------------------------------------------------------------
@@ -319,6 +343,8 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "incoming.kicker.video": "INCOMING VIDEO CALL",
   "incoming.kicker.audio": "INCOMING AUDIO CALL",
+  "incoming.kicker.audioText": "INCOMING AUDIO + TEXT CALL",
+  "incoming.kicker.videoText": "INCOMING VIDEO + TEXT CALL",
   "incoming.kicker.text": "INCOMING TEXT CALL",
   "incoming.answerVideo": "Answer with video",
   "incoming.answerAudio": "Answer with audio",
@@ -384,10 +410,14 @@ const messages: Translation = {
   "stats.sent": "Sent",
   "stats.audio": "Audio",
   "stats.video": "Video",
+  "stats.text": "Text",
+  "stats.missing": "Missing text",
   "stats.codec": "Codec",
   "stats.bitrate": "Bitrate",
   "stats.loss": "Loss",
   "stats.rtt": "Round trip",
+  "stats.sync": "Audio / video skew",
+  "stats.syncHint": "Below {n} ms, lip-reading and sign language stay comfortable (F.703 §5.2.2).",
   "stats.lossNote": "Send-side loss as reported by the other party's receiver reports.",
   "stats.pending": "Measuring — won't be a moment…",
   "stats.none": "No media stream measured. Nothing to see here",
@@ -402,6 +432,24 @@ const messages: Translation = {
   "stats.copy": "Copy",
   "stats.copied": "Copied",
   "stats.copyFailed": "Copy refused. Sorry about that",
+  "selftest.section": "Microphone and camera",
+  "selftest.open": "Test my microphone and camera",
+  "selftest.sectionHint": "A check outside any call: better to find a silent microphone now than during a conversation.",
+  "selftest.title": "Microphone and camera test",
+  "selftest.sub": "Nothing is sent: this test stays on this device.",
+  "selftest.close": "Close",
+  "selftest.starting": "Opening devices…",
+  "selftest.hint": "Speak: the bar should move. You should see yourself in the picture.",
+  "selftest.levelAria": "Microphone level",
+  "selftest.mic": "Microphone",
+  "selftest.cam": "Camera",
+  "selftest.unnamed": "unnamed device",
+  "selftest.absent": "none",
+  "selftest.noCamera": "No camera: testing the microphone alone.",
+  "selftest.denied": "Access to the microphone and camera was denied. Allow it in the browser, then run the test again.",
+  "selftest.missing": "No microphone or camera found on this device.",
+  "selftest.busy": "The microphone or camera is already in use by another application.",
+  "selftest.failed": "Test failed: {detail}",
 
   // ---------------------------------------------------------------------
   // State machine errors

@@ -9,7 +9,7 @@
  * miroir chez le parent.
  *
  * Ce qui lui appartient en propre vit dans sa sandbox (`fx.data`) : la
- * session JsSIP, qui a raccroché, l'état des sourdines. Rien de cela ne
+ * session JsSIP, qui a raccroché, la renégociation en vol. Rien de cela ne
  * peut entrer en collision avec une clé de l'hôte.
  *
  * Une seule définition sert les deux sens : `initial_state` aiguille
@@ -32,13 +32,15 @@ import type {
   CallMedia,
   CallSession,
   IncomingCall,
+  MediaKind,
   MediaOffer,
   RejectReason,
   SipHandle,
   SipOriginator,
 } from "../sip/port.js";
+import { MEDIA_KINDS, NO_MEDIA, anyMedia, isLastMedia, mergeMedia, sameMedia } from "../sip/port.js";
 import type { CallDirection } from "../storage/store.js";
-import { msg, rawMsg, type Msg } from "../i18n/types.js";
+import { msg, rawMsg, type Msg, type MsgKey } from "../i18n/types.js";
 import type { CallNotice, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 
 /**
@@ -79,12 +81,35 @@ export interface CallData {
   session: CallSession | null;
   connectedAt: number | null;
   endedBy: "local" | "remote" | "network" | null;
-  micMuted: boolean;
   selfViewHidden: boolean;
-  /** Renégociation en vol : l'icône de la caméra attend son issue. */
-  videoPending: boolean;
-  /** Vidéo proposée par le distant, en attente de la décision de l'utilisateur. */
-  videoOffer: MediaOffer | null;
+  /**
+   * **Un seul verrou de renégociation** (ADR 0003, D5) : une à la fois,
+   * quel que soit le média qu'elle porte. Deux re-INVITE en vol sur la même
+   * boîte de dialogue, c'est un 491 garanti — le verrou appartient donc à
+   * l'appel, pas au média.
+   */
+  mediaPending: boolean;
+  /**
+   * **Axe 2** : je n'émets plus rien, le temps d'une pause (D7). Ce n'est
+   * pas un média de moins — l'appel n'a pas changé — et cela ne se négocie
+   * pas : le port lâche les deux pistes, et personne n'a de réponse à
+   * attendre.
+   */
+  paused: boolean;
+  /** Le correspondant s'est mis en pause : ses pistes se sont tues. */
+  peerPaused: boolean;
+  /**
+   * Ce que le réseau émet **avant le décrochage** (RFC 3960), lu dans le
+   * SDP des réponses provisoires : les trois médias, parce qu'un accueil
+   * peut être parlé, signé ou écrit. `NO_MEDIA` tant qu'aucune réponse
+   * provisoire n'a décrit de flux — l'état `early_media` est justement
+   * celui où ce n'est plus le cas.
+   */
+  earlyMedia: CallMedia;
+  /** Média proposé par le distant, en attente de la décision de l'utilisateur. */
+  mediaOffer: MediaOffer | null;
+  /** Ce que cette offre ajouterait — de quoi nommer le média dans la question. */
+  offerAdds: MediaKind[];
   /** Les tonalités DTMF réellement parties, dans l'ordre de composition. */
   dtmfSent: string;
   /** Dernier message fugace publié, et le numéro d'ordre qui le distingue. */
@@ -111,11 +136,12 @@ type CallStateName =
   | "initial_state"
   | "dialing"
   | "ringing"
+  | "early_media"
   | "ringing_in"
   | "answering"
   | "connected"
   | "renegotiating"
-  | "video_offer"
+  | "media_offer"
   | "hangingup";
 type CallOn = OnMap<CallHost, PhoneEvent, CallStateName, CallFx>;
 
@@ -128,12 +154,14 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
     displayName: data.displayName,
     offered: data.offered,
     media: data.media,
-    micMuted: data.micMuted,
     selfViewHidden: data.selfViewHidden,
-    videoPending: data.videoPending,
-    videoAsked: data.videoOffer !== null,
+    paused: data.paused,
+    peerPaused: data.peerPaused,
+    mediaPending: data.mediaPending,
+    mediaAsked: data.mediaOffer !== null ? data.offerAdds : null,
     dtmfSent: data.dtmfSent,
     notice: data.notice,
+    earlyMedia: data.earlyMedia,
     connectedAt: data.connectedAt,
     endedBy: data.endedBy,
     session: data.session,
@@ -318,12 +346,18 @@ function interruptions(ending: Ending): CallOn {
     },
     // désactivés à l'écran pendant l'appel : consommés pour qu'un clic ne
     // reste pas en attente et ne s'exécute pas après coup
-    "ui:toggleVideo": () => undefined,
+    "ui:toggleMedia": () => undefined,
     // le clavier DTMF n'existe qu'en communication : hors de là, il n'y a
     // pas de flux RTP où glisser la tonalité
     "ui:dtmf": () => undefined,
-    "ui:acceptVideo": () => undefined,
-    "ui:rejectVideo": () => undefined,
+    "ui:acceptMedia": () => undefined,
+    "ui:rejectMedia": () => undefined,
+    // hors communication, il n'y a rien à suspendre : le bouton n'existe pas
+    // à l'écran, et l'événement qui arriverait quand même est consommé
+    "ui:togglePause": () => undefined,
+    // les pistes distantes se taisent à l'établissement comme au
+    // raccrochage : ce n'est pas une pause, et il n'y a rien à en dire
+    "sip:peerPaused": () => undefined,
     "ui:backToSettings": () => undefined,
     "ui:logout": () => undefined,
     // changer de compte pendant un appel serait raccrocher au nom de
@@ -340,6 +374,39 @@ function interruptions(ending: Ending): CallOn {
 }
 
 /**
+ * Les messages fugaces d'un changement de média, un jeu par média. Une
+ * table plutôt qu'une phrase à trous : « a ajouté la vidéo » et « a ajouté
+ * l'audio » ne se construisent pas par concaténation dans les six langues —
+ * l'article change, et l'arabe comme le japonais n'ont pas la même syntaxe.
+ */
+const NOTICE: Record<
+  MediaKind,
+  { declined: MsgKey; refused: MsgKey; added: MsgKey; removed: MsgKey; declinedHere: MsgKey; unavailable: MsgKey }
+> = {
+  audio: {
+    declined: "notice.audioDeclined",
+    refused: "notice.audioRefused",
+    added: "notice.audioAdded",
+    removed: "notice.audioRemoved",
+    declinedHere: "notice.audioDeclinedHere",
+    unavailable: "notice.audioUnavailable",
+  },
+  video: {
+    declined: "notice.videoDeclined",
+    refused: "notice.videoRefused",
+    added: "notice.videoAdded",
+    removed: "notice.videoRemoved",
+    declinedHere: "notice.videoDeclinedHere",
+    unavailable: "notice.videoUnavailable",
+  },
+};
+
+/** Les médias qui ont changé entre deux états de l'appel — l'audio d'abord. */
+function changed(before: CallMedia, after: CallMedia): MediaKind[] {
+  return MEDIA_KINDS.filter((k) => before[k] !== after[k]);
+}
+
+/**
  * Combien de tonalités la vue garde. Un code de conférence en fait une
  * douzaine, un menu vocal quelques-unes de plus ; au-delà, ce sont les
  * dernières qui intéressent — et l'écho de l'écran a une largeur finie.
@@ -347,9 +414,64 @@ function interruptions(ending: Ending): CallOn {
 const DTMF_KEPT = 32;
 
 /**
+ * Ce que les deux temps de l'attente d'une réponse partagent — `ringing`
+ * et `early_media`. Du point de vue du protocole, ils sont le même état :
+ * l'INVITE a reçu une réponse provisoire et attend la finale. Ce qui les
+ * sépare est ce que l'appelant **entend** pendant ce temps, et cela ne
+ * regarde que l'écran (ADR 0003, §4 — F.703 §6.1.2).
+ *
+ * `from` est l'état d'où l'on scelle : c'est lui qui sera publié en
+ * dernier, et l'historique n'a pas à confondre un appel resté sans
+ * réponse avec un appel où le réseau a répondu quelque chose.
+ */
+function awaitingAnswer(from: "ringing" | "early_media"): CallOn {
+  return {
+    ...interruptions("canceled"),
+    /**
+     * **Rien ne change de média avant le décrochage**, et cela est dit ici
+     * plutôt que laissé au hasard d'un événement sans destinataire.
+     *
+     * L'appel n'est pas encore un appel : il n'y a pas de dialogue établi
+     * où poser un re-INVITE (RFC 3261 §14.1 le réserve à un dialogue
+     * confirmé), et l'offre partie avec l'INVITE est celle à laquelle le
+     * distant est en train de répondre — la changer sous lui n'aurait pas
+     * de sens. L'écran dit la même chose de son côté : les deux boutons
+     * média sont désactivés hors communication (`call/overlay.ts`).
+     *
+     * La Pause est refusée pour la même raison, à l'envers : il n'y a rien
+     * à suspendre tant que rien n'est établi.
+     */
+    "ui:toggleMedia": () => undefined,
+    "ui:togglePause": () => undefined,
+    "sip:accepted": () => goto("connected", "200 OK"),
+    "sip:failed": (ev, ctx, fx) => {
+      sealed(from, endedBy(ev.originator), ctx, fx);
+      fx.sbbReturn("rejected", { reason: failReason(ev) });
+    },
+    "sip:ended": (ev, ctx, fx) => {
+      sealed(from, endedBy(ev.originator), ctx, fx);
+      fx.sbbReturn("canceled", { reason: rawMsg(ev.cause) });
+    },
+    "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", msg("reason.hungUp"), "CANCEL"),
+  };
+}
+
+/**
+ * Le délai de garde de l'appel sortant est écoulé : personne ne décrochera,
+ * on annule et on rapporte. Seul le corps est partagé — le `delay` reste
+ * écrit dans chaque état, faute de quoi le diagramme perd l'arête et une
+ * garde qui n'apparaît plus nulle part ne se relit plus (§4.5).
+ */
+function giveUp(from: "ringing" | "early_media", ctx: CallHost, fx: CallFx): void {
+  fx.data.session?.terminate();
+  sealed(from, "local", ctx, fx);
+  fx.sbbReturn("rejected", { reason: msg("reason.noAnswer") });
+}
+
+/**
  * Ce que les trois états de la communication partagent — `connected` et
  * les deux temps d'une renégociation. L'appel ne change pas de nature
- * parce qu'une offre est en vol : on raccroche, on coupe son micro et on
+ * parce qu'une offre est en vol : on raccroche, on compose un DTMF et on
  * masque son self-view exactement pareil.
  */
 function inCall(): CallOn {
@@ -386,11 +508,31 @@ function inCall(): CallOn {
       });
     },
     "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "answered", msg("reason.hungUp"), "BYE"),
-    "ui:muteMic": (_ev, ctx, fx) => {
-      fx.data.micMuted = !fx.data.micMuted;
-      fx.data.session?.setMicMuted(fx.data.micMuted);
+    /**
+     * **La Pause** (D6, D7). `stay()` et non `goto()` : rien ne se négocie,
+     * donc il n'y a pas d'état d'attente — le geste est instantané et ne
+     * peut pas échouer, ce qui est toute sa valeur.
+     *
+     * Elle vaut dans les trois états de la communication, renégociation en
+     * vol comprise : se retirer un instant ne demande pas d'attendre qu'un
+     * re-INVITE ait abouti.
+     */
+    "ui:togglePause": (_ev, ctx, fx) => {
+      fx.data.paused = !fx.data.paused;
+      fx.data.session?.setPaused(fx.data.paused);
       publish("connected", ctx, fx.data);
-      return stay(fx.data.micMuted ? "micro coupé" : "micro rétabli");
+      return stay(fx.data.paused ? "en pause" : "reprise");
+    },
+    /**
+     * Le correspondant s'est mis en pause, ou en est revenu. Rien à faire
+     * qu'à le dire : l'appel continue, et nous continuons de lui envoyer
+     * tout ce que nous émettons — c'est lui qui s'est retiré, pas nous.
+     */
+    "sip:peerPaused": (ev, ctx, fx) => {
+      if (fx.data.peerPaused === ev.paused) return undefined;
+      fx.data.peerPaused = ev.paused;
+      publish("connected", ctx, fx.data);
+      return stay(ev.paused ? "le distant est en pause" : "le distant est revenu");
     },
     "ui:toggleSelfView": (_ev, ctx, fx) => {
       fx.data.selfViewHidden = !fx.data.selfViewHidden;
@@ -434,19 +576,22 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
 
   data: () => ({
     target: "",
-    media: { audio: true, video: false },
+    media: { audio: true, video: false, text: false },
     direction: "outgoing" as CallDirection,
     incoming: null,
     displayName: null,
-    offered: { audio: true, video: false },
-    asked: { audio: true, video: false },
+    offered: { audio: true, video: false, text: false },
+    asked: { audio: true, video: false, text: false },
     session: null,
     connectedAt: null,
     endedBy: null,
-    micMuted: false,
     selfViewHidden: false,
-    videoPending: false,
-    videoOffer: null,
+    paused: false,
+    peerPaused: false,
+    mediaPending: false,
+    earlyMedia: NO_MEDIA,
+    mediaOffer: null,
+    offerAdds: [] as MediaKind[],
     dtmfSent: "",
     notice: null,
     noticeSeq: 0,
@@ -521,7 +666,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
       },
       on: {
         ...interruptions("canceled"),
-        "sip:progress": () => goto("ringing", "180/183"),
+        "sip:progress": (ev, _ctx, fx) => {
+          if (!anyMedia(ev.media)) return goto("ringing", "180");
+          fx.data.earlyMedia = ev.media;
+          return goto("early_media", "183 + SDP");
+        },
         "sip:accepted": () => goto("connected", "200 OK"),
         "sip:failed": (ev, ctx, fx) => {
           sealed("dialing", endedBy(ev.originator), ctx, fx);
@@ -541,28 +690,84 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         publish("ringing", ctx, fx.data);
       },
       on: {
-        ...interruptions("canceled"),
-        "sip:progress": () => undefined, // 180 répétés
-        "sip:accepted": () => goto("connected", "200 OK"),
-        "sip:failed": (ev, ctx, fx) => {
-          sealed("ringing", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("rejected", { reason: failReason(ev) });
+        ...awaitingAnswer("ringing"),
+        // un 183 porteur de SDP, après le 180 : le réseau se met à parler
+        "sip:progress": (ev, _ctx, fx) => {
+          if (!anyMedia(ev.media)) return undefined;
+          fx.data.earlyMedia = ev.media;
+          return goto("early_media", "183 + SDP");
         },
-        "sip:ended": (ev, ctx, fx) => {
-          sealed("ringing", endedBy(ev.originator), ctx, fx);
-          fx.sbbReturn("canceled", { reason: rawMsg(ev.cause) });
-        },
-        "ui:hangup": (_ev, _ctx, fx) => hangUp(fx, "canceled", msg("reason.hungUp"), "CANCEL"),
       },
+      // 90 s : le Timer C de RFC 3261 §16.6, la limite qu'un proxy applique
+      // de toute façon à une transaction INVITE. Le délai est écrit ici, en
+      // clair, et non derrière une constante : c'est de cette ligne que le
+      // diagramme tire son arête (§4.5)
       after: {
         delay: 90_000,
-        then: (ctx, fx) => {
-          fx.data.session?.terminate();
-          sealed("ringing", "local", ctx, fx);
-          fx.sbbReturn("rejected", { reason: msg("reason.noAnswer") });
-        },
+        then: (ctx, fx) => giveUp("ringing", ctx, fx),
       },
       meta: { callState: "ringing" },
+    },
+
+    /**
+     * **Le réseau parle avant le décrochage** (RFC 3960) : une réponse
+     * provisoire a porté une description de session, et du son arrive déjà
+     * — la sonnerie de l'opérateur, une annonce (« votre correspondant
+     * n'est pas joignable »), un serveur vocal. Les pistes reçues sont
+     * branchées sur l'élément distant dès qu'elles arrivent
+     * (`sip/port.ts`, `attachMedia`) : cela s'entend.
+     *
+     * Rien ne distingue cet état de `ringing` du point de vue du protocole
+     * — mêmes réponses attendues, même délai de garde. Ce qu'il porte est
+     * ce que l'écran doit en faire : **se taire**. Le retour d'appel que
+     * Trix produit localement (F.703 §6.1.2, `ui/ring.ts`) couvrirait ce
+     * que le réseau a déjà à dire, et deux tonalités qui se répondent
+     * valent moins qu'une.
+     *
+     * On n'en revient pas : un 180 sans SDP qui suivrait n'interrompt pas
+     * le flux précoce, il cesse seulement de le décrire. Repasser en
+     * `ringing` rallumerait la tonalité par-dessus.
+     *
+     * **Ce que l'on émet pendant ce temps**, et qui n'est pas un choix :
+     * les flux audio et vidéo sortants sont ouverts dès l'établissement de
+     * la connexion pair-à-pair, avant le décrochage. C'est ce qui perce le
+     * NAT — sans paquet sortant, aucune passerelle ne sait où renvoyer le
+     * média, et l'annonce précoce n'arriverait jamais. Le texte fait la
+     * même chose avec sa signature de session, qui ne dit rien
+     * (`sip/rttws.ts`). Ce n'est donc pas un état où l'on peut promettre
+     * que rien ne part ; c'est un état où rien de ce qui part n'a été
+     * *décidé* — d'où l'interdiction de toucher aux médias jusqu'au
+     * décrochage (`awaitingAnswer`), et la saisie de texte fermée à
+     * l'écran (`call/chat.ts`).
+     */
+    early_media: {
+      enter(ctx, fx) {
+        publish("early_media", ctx, fx.data);
+      },
+      on: {
+        ...awaitingAnswer("early_media"),
+        /**
+         * Réponses provisoires suivantes : le média précoce **s'ajoute**,
+         * il ne se retire pas. Un 180 sans SDP après un 183 qui en portait
+         * un n'interrompt aucun flux, il cesse seulement de le décrire ; et
+         * une annonce qui passe de la parole à la langue des signes est un
+         * média de plus, pas un média à la place.
+         */
+        "sip:progress": (ev, ctx, fx) => {
+          const merged = mergeMedia(fx.data.earlyMedia, ev.media);
+          if (sameMedia(merged, fx.data.earlyMedia)) return undefined;
+          fx.data.earlyMedia = merged;
+          publish("early_media", ctx, fx.data);
+          return undefined;
+        },
+      },
+      // le délai de garde repart de l'entrée dans cet état : une annonce
+      // du réseau est une progression, pas une attente qui s'éternise
+      after: {
+        delay: 90_000,
+        then: (ctx, fx) => giveUp("early_media", ctx, fx),
+      },
+      meta: { callState: "early_media" },
     },
 
     /**
@@ -643,89 +848,116 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         // `??=` et non `=` : la communication repasse par cet état après
         // chaque renégociation, le chronomètre ne repart pas de zéro
         fx.data.connectedAt ??= Date.now();
-        fx.data.videoPending = false;
+        fx.data.mediaPending = false;
         publish("connected", ctx, fx.data);
       },
       on: {
         ...inCall(),
         /**
-         * L'icône de la caméra : elle ajoute la vidéo à l'appel, ou l'en
-         * retire. Le re-INVITE part, son issue arrivera en
-         * `sip:mediaChanged` ou `sip:mediaRefused`.
+         * Les deux boutons média, **strictement symétriques** (ADR 0003,
+         * D5) : chacun ajoute son média à l'appel, ou l'en retire. Le
+         * re-INVITE part, son issue arrivera en `sip:mediaChanged` ou
+         * `sip:mediaRefused`.
+         *
+         * L'invariant « on ne retire pas le dernier média » se vérifie
+         * **ici**, et nulle part ailleurs : l'interface ne fait qu'en griser
+         * le bouton, et l'événement qui passerait malgré tout est refusé au
+         * même endroit que celui qui vient d'un raccourci clavier.
          */
-        "ui:toggleVideo": (_ev, _ctx, fx) => {
-          const on = !fx.data.media.video;
-          fx.data.asked = { ...fx.data.media, video: on };
-          fx.data.session?.setVideo(on);
-          return goto("renegotiating", on ? "ajout de la vidéo" : "retrait de la vidéo");
+        "ui:toggleMedia": (ev, _ctx, fx) => {
+          const kind = ev.kind;
+          const on = !fx.data.media[kind];
+          if (!on && isLastMedia(fx.data.media, kind)) return stay("dernier média");
+          fx.data.asked = { ...fx.data.media, [kind]: on };
+          fx.data.session?.setMedia(kind, on);
+          return goto("renegotiating", `${on ? "ajout" : "retrait"} : ${kind}`);
         },
         /**
          * Changement venu du distant : personne ne l'a demandé ici, donc
-         * l'écran le signale — c'est la seule façon de comprendre que
-         * l'image vient d'apparaître ou de disparaître.
+         * l'écran le signale — c'est la seule façon de comprendre qu'un flux
+         * vient d'apparaître ou de disparaître.
          */
         "sip:mediaChanged": (ev, ctx, fx) => {
           const before = fx.data.media;
           fx.data.media = ev.media;
           fx.data.asked = ev.media;
-          if (before.video === ev.media.video) {
+          // le texte qui se déclare négocié n'est pas un changement à
+          // annoncer : c'est la fin d'une négociation commencée avec l'appel
+          // (ADR 0003, D1) — seuls l'audio et la vidéo apparaissent ou
+          // disparaissent sous les yeux du correspondant
+          const moved = changed(before, ev.media);
+          if (moved.length === 0) {
             publish("connected", ctx, fx.data);
             return stay("média inchangé");
           }
+          // deux médias changent rarement d'un coup, et quand cela arrive,
+          // c'est le plus visible qui se dit — annoncer deux fois
+          // n'apporterait qu'un message chassant l'autre
+          const kind = moved.includes("video") ? "video" : moved[0]!;
           notify(
             ctx,
             fx,
-            msg(ev.media.video ? "notice.videoAdded" : "notice.videoRemoved", {
-              peer: peerName(fx.data),
-            }),
+            msg(NOTICE[kind][ev.media[kind] ? "added" : "removed"], { peer: peerName(fx.data) }),
           );
-          return stay(ev.media.video ? "vidéo ajoutée par le distant" : "vidéo retirée par le distant");
+          return stay(`${kind} ${ev.media[kind] ? "ajouté" : "retiré"} par le distant`);
         },
-        "sip:mediaOffer": (ev, ctx, fx) => {
-          fx.data.videoOffer = ev.offer;
-          return goto("video_offer", "le distant propose la vidéo");
+        "sip:mediaOffer": (ev, _ctx, fx) => {
+          fx.data.mediaOffer = ev.offer;
+          fx.data.offerAdds = MEDIA_KINDS.filter((k) => ev.media[k] && !fx.data.media[k]);
+          return goto("media_offer", "le distant propose un média");
         },
       },
       meta: { callState: "connected" },
     },
 
     /**
-     * Notre re-INVITE est parti : l'appel continue exactement comme
-     * avant, seule l'icône de la caméra attend. L'issue est l'un des
-     * trois événements du port — le média a changé, le distant a dit non,
-     * ou personne ne répond et le délai tranche.
+     * Notre re-INVITE est parti : l'appel continue exactement comme avant,
+     * seules les icônes média attendent. **Un seul verrou pour les deux**
+     * (ADR 0003, D5) : deux offres en vol sur la même boîte de dialogue,
+     * c'est un 491 garanti.
+     *
+     * L'issue est l'un des trois événements du port — le média a changé, le
+     * distant a dit non, ou personne ne répond et le délai tranche. Le délai
+     * est généreux parce qu'un 491 peut coûter jusqu'à 4 s de reprise
+     * (RFC 3261 §14.1), et que cette reprise a droit d'aboutir.
      */
     renegotiating: {
       enter(ctx, fx) {
-        fx.data.videoPending = true;
+        fx.data.mediaPending = true;
         publish("connected", ctx, fx.data);
       },
       on: {
         ...inCall(),
-        // une renégociation à la fois : le second clic est sans effet
-        "ui:toggleVideo": () => undefined,
+        // une renégociation à la fois, quel que soit le média : le second
+        // clic est sans effet — sur l'autre bouton comme sur le même
+        "ui:toggleMedia": () => undefined,
         "sip:mediaChanged": (ev, ctx, fx) => {
-          const refused = fx.data.asked.video && !ev.media.video;
+          // ce que nous avions demandé et que le distant n'a pas suivi :
+          // c'est la différence entre `asked` et ce qui a été négocié
+          const refused = MEDIA_KINDS.filter((k) => fx.data.asked[k] && !ev.media[k]);
           fx.data.media = ev.media;
-          fx.data.videoPending = false;
-          if (refused) {
-            notify(ctx, fx, msg("notice.videoRefused", { peer: peerName(fx.data) }));
-            return goto("connected", "vidéo refusée");
+          fx.data.mediaPending = false;
+          const kind = refused[0];
+          if (kind !== undefined) {
+            notify(ctx, fx, msg(NOTICE[kind].refused, { peer: peerName(fx.data) }));
+            return goto("connected", `${kind} refusé`);
           }
           publish("connected", ctx, fx.data);
-          return goto("connected", ev.media.video ? "vidéo ajoutée" : "vidéo retirée");
+          return goto("connected", "média négocié");
         },
         "sip:mediaRefused": (ev, ctx, fx) => {
+          // ce que nous demandions, avant de revenir à ce que l'appel porte
+          const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
           fx.data.asked = fx.data.media;
-          fx.data.videoPending = false;
+          fx.data.mediaPending = false;
           // le distant a dit non, ou la demande n'a jamais pu partir d'ici
-          // (caméra prise ailleurs) : ce n'est pas la même phrase
+          // (capteur pris ailleurs) : ce n'est pas la même phrase
           notify(
             ctx,
             fx,
             ev.by === "remote"
-              ? msg("notice.videoRefused", { peer: peerName(fx.data) })
-              : msg("notice.videoUnavailable"),
+              ? msg(NOTICE[kind].refused, { peer: peerName(fx.data) })
+              : msg(NOTICE[kind].unavailable),
           );
           return goto("connected", "refus");
         },
@@ -736,12 +968,15 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         },
       },
       after: {
-        // le distant n'a jamais conclu : l'appel, lui, continue
-        delay: 20_000,
+        // le distant n'a jamais conclu : l'appel, lui, continue. Le délai
+        // couvre la reprise après 491, qui peut demander jusqu'à 4 s avant
+        // même de repartir
+        delay: 30_000,
         then: (ctx, fx) => {
+          const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
           fx.data.asked = fx.data.media;
-          fx.data.videoPending = false;
-          notify(ctx, fx, msg("notice.videoUnavailable"));
+          fx.data.mediaPending = false;
+          notify(ctx, fx, msg(NOTICE[kind].unavailable));
           return goto("connected", "sans réponse");
         },
       },
@@ -749,50 +984,54 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
     },
 
     /**
-     * Le distant veut ajouter la vidéo. Accepter allumerait la caméra :
-     * cela ne se décide pas sans l'utilisateur, et le re-INVITE reste sans
-     * réponse finale tant qu'il n'a pas tranché — l'appelant patiente sur
-     * le 100 Trying déjà envoyé (docs/CONCEPTION.md §4.4).
+     * Le distant veut ajouter un média. Accepter allumerait un capteur —
+     * micro ou caméra, la question est la même (ADR 0003, D5) : cela ne se
+     * décide pas sans l'utilisateur, et le re-INVITE reste sans réponse
+     * finale tant qu'il n'a pas tranché — l'appelant patiente sur le
+     * 100 Trying déjà envoyé (docs/CONCEPTION.md §4.4).
      */
-    video_offer: {
+    media_offer: {
       enter(ctx, fx) {
         publish("connected", ctx, fx.data);
       },
       on: {
         ...inCall(),
-        "ui:acceptVideo": (_ev, _ctx, fx) => {
-          const offer = fx.data.videoOffer;
-          fx.data.videoOffer = null;
-          fx.data.asked = { ...fx.data.media, video: true };
+        "ui:acceptMedia": (_ev, _ctx, fx) => {
+          const offer = fx.data.mediaOffer;
+          const adds = fx.data.offerAdds;
+          fx.data.mediaOffer = null;
+          fx.data.asked = { ...fx.data.media };
+          for (const kind of adds) fx.data.asked[kind] = true;
           offer?.accept();
-          return goto("renegotiating", "vidéo acceptée");
+          return goto("renegotiating", `accepté : ${adds.join(", ")}`);
         },
-        "ui:rejectVideo": (_ev, ctx, fx) => {
-          const offer = fx.data.videoOffer;
-          fx.data.videoOffer = null;
+        "ui:rejectMedia": (_ev, ctx, fx) => {
+          const offer = fx.data.mediaOffer;
+          const kind = fx.data.offerAdds[0] ?? "video";
+          fx.data.mediaOffer = null;
           offer?.reject();
-          notify(ctx, fx, msg("notice.videoDeclinedHere"));
+          notify(ctx, fx, msg(NOTICE[kind].declinedHere));
           return goto("connected", "488");
         },
-        // l'icône de la caméra ne répond pas à la question posée : c'est la
+        // les icônes média ne répondent pas à la question posée : c'est la
         // popup qui le fait
-        "ui:toggleVideo": () => undefined,
+        "ui:toggleMedia": () => undefined,
         // raccrocher pendant la question : le re-INVITE mérite sa réponse
         // avant le BYE, sinon l'appelant reste sur une offre en suspens
         "ui:hangup": (_ev, _ctx, fx) => {
-          const offer = fx.data.videoOffer;
-          fx.data.videoOffer = null;
+          const offer = fx.data.mediaOffer;
+          fx.data.mediaOffer = null;
           offer?.reject();
           return hangUp(fx, "answered", msg("reason.hungUp"), "BYE");
         },
         "sip:mediaOffer": (ev) => {
           ev.offer.reject();
         },
-        // le distant a renoncé de lui-même (nouvelle négociation, mise en
-        // attente) : la question n'a plus d'objet
+        // le distant a renoncé de lui-même (nouvelle négociation) : la
+        // question n'a plus d'objet
         "sip:mediaChanged": (ev, ctx, fx) => {
           fx.data.media = ev.media;
-          fx.data.videoOffer = null;
+          fx.data.mediaOffer = null;
           publish("connected", ctx, fx.data);
           return goto("connected", "offre caduque");
         },
@@ -801,10 +1040,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         // sans réponse, on ne fait pas patienter l'appelant indéfiniment
         delay: 25_000,
         then: (ctx, fx) => {
-          const offer = fx.data.videoOffer;
-          fx.data.videoOffer = null;
+          const offer = fx.data.mediaOffer;
+          const kind = fx.data.offerAdds[0] ?? "video";
+          fx.data.mediaOffer = null;
           offer?.reject();
-          notify(ctx, fx, msg("notice.videoDeclinedHere"));
+          notify(ctx, fx, msg(NOTICE[kind].declinedHere));
           return goto("connected", "sans réponse");
         },
       },
@@ -853,9 +1093,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         "sip:mediaOffer": (ev) => {
           ev.offer.reject();
         },
-        "ui:toggleVideo": () => undefined,
-        "ui:acceptVideo": () => undefined,
-        "ui:rejectVideo": () => undefined,
+        "ui:toggleMedia": () => undefined,
+        "ui:acceptMedia": () => undefined,
+        "ui:rejectMedia": () => undefined,
+        "ui:togglePause": () => undefined,
+        "sip:peerPaused": () => undefined,
         "ui:dtmf": () => undefined,
         "sip:registrationFailed": () => undefined,
         "sip:registered": () => undefined,

@@ -4,6 +4,7 @@ import { renderConfig } from "./screens/config.js";
 import { renderCall } from "./screens/call/index.js";
 import { layoutMode, type LayoutMode } from "./layout.js";
 import { stopIncomingAlert } from "./alert.js";
+import { stopRingback } from "./ring.js";
 import { closeIncoming } from "./screens/call/incoming.js";
 import { announce } from "./announce.js";
 import { setStateTitle } from "./title.js";
@@ -108,6 +109,7 @@ function pick(phone: PhoneInstance): HTMLElement {
       return document.createElement("div"); // chargement de la config (< 3 s)
     case "home":
       stopIncomingAlert();
+      stopRingback();
       closeIncoming();
       return renderHome(phone);
     case "configuring":
@@ -116,8 +118,11 @@ function pick(phone: PhoneInstance): HTMLElement {
     case "deleting":
       // filet : l'alerte d'appel entrant vit hors de #app (flash, titre,
       // notification) — quitter l'écran d'appel doit toujours l'éteindre,
-      // et refermer la popup pour que le focus ne reste pas piégé
+      // et refermer la popup pour que le focus ne reste pas piégé. Le
+      // retour d'appel sonore est dans le même cas : son oscillateur ne
+      // tient à aucun nœud du DOM.
       stopIncomingAlert();
+      stopRingback();
       closeIncoming();
       return renderConfig(phone);
     default:

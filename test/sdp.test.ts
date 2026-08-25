@@ -4,7 +4,7 @@
  * vidéo dans la réponse, quand on décroche en audio seul (§4.4).
  */
 import { describe, expect, it } from "vitest";
-import { offeredMedia, unsupportedOffer, withoutVideo } from "../src/sip/sdp.js";
+import { offeredMedia, unsupportedOffer, withoutMedia } from "../src/sip/sdp.js";
 
 const head = ["v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=-", "c=IN IP4 192.0.2.1", "t=0 0"];
 
@@ -17,30 +17,32 @@ describe("offeredMedia", () => {
     expect(offeredMedia(sdp("m=audio 49170 RTP/AVP 0 8", "a=sendrecv"))).toEqual({
       audio: true,
       video: false,
+      text: false,
     });
   });
 
   it("audio + vidéo", () => {
     expect(
       offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96", "a=sendrecv")),
-    ).toEqual({ audio: true, video: true });
+    ).toEqual({ audio: true, video: true, text: false });
   });
 
   it("vidéo seule", () => {
-    expect(offeredMedia(sdp("m=video 51372 RTP/AVP 96"))).toEqual({ audio: false, video: true });
+    expect(offeredMedia(sdp("m=video 51372 RTP/AVP 96"))).toEqual({ audio: false, video: true, text: false });
   });
 
   it("flux refusé (port 0) : ignoré", () => {
     expect(offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "m=video 0 RTP/AVP 96"))).toEqual({
       audio: true,
       video: false,
+      text: false,
     });
   });
 
   it("flux inactif : ignoré", () => {
     expect(
       offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96", "a=inactive")),
-    ).toEqual({ audio: true, video: false });
+    ).toEqual({ audio: true, video: false, text: false });
   });
 
   it("direction de session appliquée aux flux qui n'en déclarent pas", () => {
@@ -49,55 +51,88 @@ describe("offeredMedia", () => {
         ["v=0", "a=inactive", "m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96", "a=sendrecv"]
           .join("\r\n"),
       ),
-    ).toEqual({ audio: false, video: true });
+    ).toEqual({ audio: false, video: true, text: false });
   });
 
   it("recvonly / sendonly restent des médias proposés", () => {
     expect(offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "a=recvonly"))).toEqual({
       audio: true,
       video: false,
+      text: false,
     });
   });
+
+  const DC = "m=application 5000 UDP/DTLS/SCTP webrtc-datachannel";
+  const WS = "m=text 60000 TCP/WSS t140";
 
   it("un canal de données seul est un appel texte, pas un appel audio", () => {
-    expect(
-      offeredMedia(sdp("m=application 5000 UDP/DTLS/SCTP webrtc-datachannel", "a=sendrecv")),
-    ).toEqual({ audio: false, video: false });
-    // la section m=text des passerelles dit la même chose
-    expect(offeredMedia(sdp("m=text 60000 TCP/WSS t140"))).toEqual({
+    expect(offeredMedia(sdp(DC, "a=sendrecv"), "datachannel")).toEqual({
       audio: false,
       video: false,
+      text: true,
+    });
+    // la section m=text des passerelles dit la même chose
+    expect(offeredMedia(sdp(WS), "websocket")).toEqual({
+      audio: false,
+      video: false,
+      text: true,
     });
   });
 
-  it("le texte ne masque pas la parole : l'audio l'emporte sur le canal", () => {
+  /**
+   * Le transport fait partie de la question (§4.9) : une offre texte
+   * d'une forme que ce poste ne sait pas ouvrir n'offre pas de texte —
+   * répondre « oui » y serait promettre un lien qui ne s'ouvrira jamais.
+   */
+  it("un transport que le compte ne porte pas n'offre pas de texte", () => {
+    expect(offeredMedia(sdp(WS), "datachannel").text).toBe(false);
+    expect(offeredMedia(sdp(DC, "a=sendrecv"), "websocket").text).toBe(false);
+    // sans transport au compte, aucune offre texte ne compte
+    expect(offeredMedia(sdp(DC, "a=sendrecv"), "none").text).toBe(false);
+    expect(offeredMedia(sdp(WS), "none").text).toBe(false);
+  });
+
+  /**
+   * ADR 0003, D1 : le texte est un média à côté des deux autres, plus ce
+   * qui reste quand ils manquent. Un appel audio + texte se lit donc comme
+   * tel — c'est le profil 3c de F.703 §7.2, et l'écran d'appel entrant le
+   * dit.
+   */
+  it("le texte s'ajoute à la parole au lieu de s'y substituer", () => {
+    expect(offeredMedia(sdp("m=audio 49170 RTP/AVP 0", DC), "datachannel")).toEqual({
+      audio: true,
+      video: false,
+      text: true,
+    });
     expect(
-      offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "m=application 5000 UDP/DTLS/SCTP webrtc-datachannel")),
-    ).toEqual({ audio: true, video: false });
+      offeredMedia(sdp("m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96", WS), "websocket"),
+    ).toEqual({ audio: true, video: true, text: true });
   });
 
   it("un canal de données rejeté (port 0) ne fait pas un appel texte", () => {
-    expect(offeredMedia(sdp("m=application 0 UDP/DTLS/SCTP webrtc-datachannel"))).toEqual({
+    expect(offeredMedia(sdp("m=application 0 UDP/DTLS/SCTP webrtc-datachannel"), "datachannel")).toEqual({
       audio: true,
       video: false,
+      text: false,
     });
   });
 
   it("offre absente ou illisible : audio par défaut", () => {
-    expect(offeredMedia(null)).toEqual({ audio: true, video: false });
-    expect(offeredMedia("")).toEqual({ audio: true, video: false });
-    expect(offeredMedia("n'importe quoi")).toEqual({ audio: true, video: false });
+    expect(offeredMedia(null)).toEqual({ audio: true, video: false, text: false });
+    expect(offeredMedia("")).toEqual({ audio: true, video: false, text: false });
+    expect(offeredMedia("n'importe quoi")).toEqual({ audio: true, video: false, text: false });
   });
 
   it("séparateurs LF seuls (SDP mal formés dans la nature)", () => {
     expect(offeredMedia("v=0\nm=audio 49170 RTP/AVP 0\nm=video 51372 RTP/AVP 96")).toEqual({
       audio: true,
       video: true,
+      text: false,
     });
   });
 });
 
-describe("withoutVideo", () => {
+describe("withoutMedia", () => {
   const av = sdp(
     "m=audio 49170 RTP/AVP 0 8",
     "a=sendrecv",
@@ -107,8 +142,8 @@ describe("withoutVideo", () => {
   );
 
   it("la vidéo passe inactive, l'audio ne bouge pas", () => {
-    const out = withoutVideo(av);
-    expect(offeredMedia(out)).toEqual({ audio: true, video: false });
+    const out = withoutMedia(av, ["video"]);
+    expect(offeredMedia(out)).toEqual({ audio: true, video: false, text: false });
     expect(out).toContain("m=video 51372 RTP/AVP 96");
     expect(out).toContain("a=rtpmap:96 H264/90000");
     expect(out.match(/a=sendrecv/g)).toHaveLength(1); // celui de l'audio
@@ -116,19 +151,19 @@ describe("withoutVideo", () => {
   });
 
   it("une section vidéo sans direction s'en voit poser une", () => {
-    const out = withoutVideo(sdp("m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96"));
-    expect(offeredMedia(out)).toEqual({ audio: true, video: false });
+    const out = withoutMedia(sdp("m=audio 49170 RTP/AVP 0", "m=video 51372 RTP/AVP 96"), ["video"]);
+    expect(offeredMedia(out)).toEqual({ audio: true, video: false, text: false });
     expect(out.trimEnd().endsWith("a=inactive")).toBe(true);
   });
 
   it("sans vidéo, le SDP traverse inchangé", () => {
     const audio = sdp("m=audio 49170 RTP/AVP 0", "a=sendrecv");
-    expect(withoutVideo(audio).trimEnd()).toBe(audio.trimEnd());
+    expect(withoutMedia(audio, ["video"]).trimEnd()).toBe(audio.trimEnd());
   });
 
   it("les fins de ligne du SDP d'origine sont conservées", () => {
-    expect(withoutVideo(av)).toContain("\r\n");
-    expect(withoutVideo(av.replaceAll("\r\n", "\n"))).not.toContain("\r");
+    expect(withoutMedia(av, ["video"])).toContain("\r\n");
+    expect(withoutMedia(av.replaceAll("\r\n", "\n"), ["video"])).not.toContain("\r");
   });
 });
 

@@ -102,9 +102,10 @@ class FakeSip implements SipPort {
         this.calls.push({ target, media });
         return {
           terminate: () => {},
-          setMicMuted: () => {},
+          setMedia: () => {},
+            setPaused: () => {},
           sendDtmf: () => true,
-          setVideo: () => {},
+          
           attachMedia: () => {},
           rtt: () => null,
           mediaStats: () => null,
@@ -246,7 +247,7 @@ describe("deux comptes — bascule", () => {
       target: "carol@example.fr",
       direction: "incoming",
       outcome: "missed",
-      media: { audio: true, video: false },
+      media: { audio: true, video: false, text: false },
       startedAt: 1,
       connectedAt: null,
       endedAt: 2,
@@ -285,7 +286,7 @@ describe("deux comptes — bascule", () => {
   it("interdite dès la première sonnerie, et pas seulement en communication", async () => {
     const { phone, sip } = await boot({ accounts: [ALICE, BOB], activeId: ALICE.id });
     await ready(phone, sip, ALICE.id);
-    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false } });
+    phone.send({ type: "ui:call", target: "sip:carol@example.fr", media: { audio: true, video: false, text: false } });
     expect(phone.state).toBe("in_call");
 
     // le bloc consomme l'événement sans effet : la garantie ne repose pas
