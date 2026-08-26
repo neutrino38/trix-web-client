@@ -192,6 +192,7 @@ const messages: Translation = {
   "mode.text.label": "Text call",
   "mode.text.button": "Start text call",
   "chat.strip": "Chat opens with the call",
+  "chat.stripRefused": "Real-time text not accepted by the correspondent",
   // ---------------------------------------------------------------------
   // Real-time text chat (T.140)
   // ---------------------------------------------------------------------
@@ -268,6 +269,7 @@ const messages: Translation = {
   "ctrl.chat.aria": "Chat",
   "ctrl.chat.show": "Show chat",
   "ctrl.chat.hide": "Hide chat",
+  "ctrl.chat.unavailable": "Real-time text not accepted by the correspondent",
   "ctrl.fullscreen": "Full screen",
   "ctrl.hangup": "Hang up",
   "ctrl.pause": "Pause",

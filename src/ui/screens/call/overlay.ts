@@ -119,10 +119,15 @@ export interface OverlayCtx {
   panel?: { collapsed: boolean; controls: string };
   /**
    * Mobile : bouton de pli du tchat, faute de sidebar pour l'accueillir.
-   * Absent quand l'appel ne porte pas de texte — un bouton qui n'ouvre rien
-   * ne vaut pas mieux qu'un bouton grisé.
+   * Absent quand l'appel ne porte pas de canal texte du tout — il n'y a
+   * alors rien à promettre ni à retirer.
+   *
+   * `unavailable` est l'autre cas : l'appel portait un canal, et le texte
+   * n'a pas été négocié (§4.9). Le bouton **reste**, barré et inactif,
+   * comme le micro et la caméra le sont quand leur média n'est pas là — le
+   * faire disparaître laisserait croire que ce poste n'a jamais eu de tchat.
    */
-  chat?: { open: boolean; controls: string };
+  chat?: { open: boolean; controls: string; unavailable?: boolean };
   /**
    * **La barre mobile (D8).** Quatre icônes dans la pastille, le reste dans
    * la feuille du bas, la Pause et le raccrochage dehors. Le bureau ne
@@ -263,7 +268,19 @@ export function overlayBar(ctx: OverlayCtx): string {
     });
   }
 
-  if (ctx.chat) {
+  if (ctx.chat?.unavailable) {
+    // le texte n'a pas été négocié : rien à déplier, et le dire est le seul
+    // service que ce bouton puisse encore rendre. Barré et grisé — et non
+    // rouge : rien n'a été coupé ici, le distant n'a simplement pas suivi,
+    // ce qui n'est pas un geste à défaire
+    cmds.push({
+      act: "chat",
+      icon: ICONS_OFF.chat,
+      label: t("ctrl.chat.unavailable"),
+      aria: t("ctrl.chat.aria"),
+      disabled: true,
+    });
+  } else if (ctx.chat) {
     // le tchat déployé est un affichage local de plus, comme le pavé DTMF :
     // violet, jamais rouge — rien n'est coupé quand il est ouvert
     cmds.push({

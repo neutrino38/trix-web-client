@@ -190,6 +190,7 @@ const messages: Translation = {
   "mode.text.label": "文字通话",
   "mode.text.button": "发起文字通话",
   "chat.strip": "聊天随通话一起打开",
+  "chat.stripRefused": "对方未接受实时文本",
   // ---------------------------------------------------------------------
   // 实时文本（T.140）聊天
   // ---------------------------------------------------------------------
@@ -265,6 +266,7 @@ const messages: Translation = {
   "ctrl.chat.aria": "聊天",
   "ctrl.chat.show": "显示聊天",
   "ctrl.chat.hide": "隐藏聊天",
+  "ctrl.chat.unavailable": "对方未接受实时文本",
   "ctrl.fullscreen": "全屏",
   "ctrl.hangup": "挂断",
   "ctrl.pause": "暂停",

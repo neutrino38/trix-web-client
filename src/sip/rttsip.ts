@@ -216,8 +216,11 @@ export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
  */
 export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNegotiation {
   let deferred: ReturnType<typeof deferredWire> | null = null;
+  /** Le fil du canal, gardé pour pouvoir dire « fermé » sans passer par lui. */
+  let link: RttWireHooks | null = null;
 
   const channel = rttChannel("datachannel", (hooks) => {
+    link = hooks;
     deferred = deferredWire(hooks);
     return deferred.wire;
   });
@@ -225,9 +228,31 @@ export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNego
   /** La connexion, dès qu'il y en a une : c'est elle qui porte le SCTP. */
   let peer: RTCPeerConnection | null = null;
 
+  /**
+   * **Le distant n'a pas voulu du texte.** Le canal a été créé avant
+   * l'offre (RFC 8865 §5) : il existe donc déjà quand la réponse arrive, et
+   * DCEP ne l'ouvrira jamais si l'association SCTP n'a pas été négociée —
+   * le lien resterait `connecting` pour toute la durée de l'appel, et
+   * l'interface promettrait un tchat qui n'a pas de fil. Sans association à
+   * la première négociation aboutie, on le ferme, comme `giveUp()` le fait
+   * pour le WebSocket qui n'a pas reçu d'URL.
+   */
+  const settle = (pc: RTCPeerConnection): void => {
+    // `stable` est aussi l'état d'une connexion neuve : c'est la description
+    // distante appliquée qui distingue « rien n'a encore été négocié » de
+    // « la négociation est finie, et elle n'a pas porté de SCTP »
+    if (pc.signalingState !== "stable" || pc.currentRemoteDescription === null) return;
+    if ((pc.sctp ?? null) !== null) return;
+    link?.state("closed");
+  };
+
   const start = (pc: RTCPeerConnection): void => {
     peer = pc;
     deferred?.open((hooks) => openDcWire(pc, role, hooks));
+    pc.addEventListener("signalingstatechange", () => settle(pc));
+    // la connexion peut être arrivée déjà stable — un appel entrant dont le
+    // `peerconnection` est signalé après la réponse
+    settle(pc);
   };
   if (session.connection) start(session.connection);
   else session.on("peerconnection", (e) => start(e.peerconnection));

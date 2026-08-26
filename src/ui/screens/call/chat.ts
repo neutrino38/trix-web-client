@@ -455,6 +455,30 @@ export function chatChannel(view: CallView | null): RttChannel | null {
 }
 
 /**
+ * **Y a-t-il un tchat à montrer ?** Trois conditions, et la première est
+ * celle qui tranche : **le texte doit être négocié**.
+ *
+ * `media.text` dit que les deux bouts en ont convenu dans la signalisation
+ * (ADR 0003, D1) — l'URL annoncée par la passerelle en WebSocket,
+ * l'association SCTP sur canal de données. Tant que la négociation n'a pas
+ * conclu, il vaut ce que l'appel a demandé : le fil s'affiche donc dès la
+ * sonnerie, et ce qui y est tapé attend dans le tampon du canal (§4.9).
+ * Il tombe à faux à la première négociation aboutie où le distant n'a pas
+ * suivi — et alors le panneau s'en va **entier**, champ de saisie compris :
+ * un composeur ouvert sur un lien qui n'existe pas promet un message qui
+ * ne partira jamais.
+ *
+ * Le canal doit exister — compte sans transport texte, sonnerie entrante
+ * qui n'a pas encore de session — et le lien ne doit pas être mort sans
+ * avoir jamais servi (`chatRefused`), ce que la négociation ne dit pas
+ * toujours : une passerelle peut annoncer son URL et ne jamais ouvrir le
+ * socket.
+ */
+export function chatAvailable(view: CallView | null): boolean {
+  return view !== null && view.media.text && chatChannel(view) !== null && !chatRefused();
+}
+
+/**
  * **Le tchat prend-il la place de la vidéo ?** Oui dès que l'appel n'a pas
  * d'image : en audio + texte comme en texte seul, la scène n'aurait qu'un
  * rectangle noir à montrer, et le fil est ce que l'on regarde. Il passe
@@ -473,11 +497,25 @@ export function chatChannel(view: CallView | null): RttChannel | null {
 export function chatOnStage(view: CallView | null): boolean {
   if (!view || view.state === "ringing_in" || view.media.video) return false;
   if (chatChannel(view) === null) return false;
-  // Un appel **texte seul** garde sa scène même si le distant a refusé le
-  // texte : il n'y a rien d'autre à mettre à l'écran, et la remarque du
-  // fil dit pourquoi cet appel ne mènera nulle part. Un appel audio, lui,
-  // a toujours sa scène d'appel audio à retrouver.
-  return !chatRefused() || !view.media.audio;
+  // Un appel **texte seul** garde sa scène même quand le texte n'est pas
+  // négocié : il n'y a rien d'autre à mettre à l'écran, et la remarque du
+  // fil dit pourquoi cet appel ne mènera nulle part — le champ de saisie,
+  // lui, reste fermé (`chatWritable`). Un appel audio, lui, a toujours sa
+  // scène d'appel audio à retrouver.
+  return chatAvailable(view) || !view.media.audio;
+}
+
+/**
+ * **Le champ de saisie s'ouvre-t-il ?** Deux verrous, et ils ne disent pas
+ * la même chose : le texte doit avoir été négocié (sans quoi rien ne
+ * partirait), et l'appel doit être décroché — avant, le fil se lit mais ne
+ * s'écrit pas (§4.9, média précoce).
+ *
+ * La seule scène qui s'affiche sans texte négocié est celle de l'appel
+ * texte seul, et c'est justement celle-là que ce verrou tient fermée.
+ */
+export function chatWritable(view: CallView | null): boolean {
+  return view?.state === "connected" && chatAvailable(view);
 }
 
 function attrStyle(run: ChatRun): string {

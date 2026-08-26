@@ -22,13 +22,14 @@ import { mediaAskDialog } from "./mediaask.js";
 import { dtmfPad } from "./dtmf.js";
 import {
   CHAT_PANE_ID,
+  chatAvailable,
   chatChannel,
   chatHead,
   chatMobileOpen,
   chatOnStage,
   chatPane,
-  chatRefused,
   chatStage,
+  chatWritable,
 } from "./chat.js";
 import { statsAvailable, statsPill } from "./stats.js";
 import { pauseBanner, peerPauseNotice } from "./pause.js";
@@ -62,9 +63,13 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
   const history = phone.context.history;
-  // le tchat n'existe que si le canal existe (§4.9) ; déplié, il prend la
-  // place que la vidéo lui cède — ce n'est pas une couche de plus
-  const chat = chatChannel(view) !== null && !chatRefused();
+  // le tchat n'existe que si le texte est **négocié** (§4.9) ; déplié, il
+  // prend la place que la vidéo lui cède — ce n'est pas une couche de plus
+  const chat = chatAvailable(view);
+  // l'appel porte un canal texte dont le distant n'a pas voulu : le bouton
+  // reste dans la barre, barré et inactif, au lieu de disparaître sans un
+  // mot d'un appel qui promettait le tchat
+  const chatOff = view !== null && !chat && chatChannel(view) !== null;
   // Un appel sans image lui donne l'écran entier (§4.9) : plus rien à
   // céder, donc plus de pli — ni classe sur la racine, ni bouton dans la
   // barre. Le fil est l'appel.
@@ -126,8 +131,9 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
               // rouge tiennent tout juste le bandeau. L'audio entrant se voit
               // quand même — le haut-parleur s'allume dessus (`startVuMeters`)
               meters: false,
-              // avant le décrochage, le fil se lit mais ne s'écrit pas
-              writable: view.state === "connected",
+              // avant le décrochage, le fil se lit mais ne s'écrit pas — et
+              // un texte que le distant a refusé ne s'écrit jamais
+              writable: chatWritable(view),
               dtmf: dtmfPad(view),
               // la scène de texte a aussi son bandeau : un appel qu'on lit
               // reste un appel dont on émet le son (§4.9)
@@ -168,7 +174,11 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                  // disparaître la barre d'adresse du navigateur mobile
                  withFullscreen: true,
                  withStats: statsAvailable(connected),
-                 ...(chat ? { chat: { open: chatOpen, controls: CHAT_PANE_ID } } : {}),
+                 ...(chat
+                   ? { chat: { open: chatOpen, controls: CHAT_PANE_ID } }
+                   : chatOff
+                     ? { chat: { open: false, controls: CHAT_PANE_ID, unavailable: true } }
+                     : {}),
                })}
              </div>
              ${chat ? mobileChat(view) : ""}`
@@ -229,6 +239,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
 function mobileChat(view: CallView): string {
   return `<div class="mchat">
       ${chatHead(ICONS.chat)}
-      ${chatPane(callerName(view), view.state === "connected")}
+      ${chatPane(callerName(view), chatWritable(view))}
     </div>`;
 }

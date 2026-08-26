@@ -192,6 +192,7 @@ const messages = {
   "mode.text.label": "Appel texte",
   "mode.text.button": "Appeler en texte",
   "chat.strip": "Le tchat s'ouvre avec l'appel",
+  "chat.stripRefused": "Texte temps réel non accepté par le correspondant",
   // ---------------------------------------------------------------------
   // Tchat texte temps réel (T.140)
   // ---------------------------------------------------------------------
@@ -270,6 +271,7 @@ const messages = {
   "ctrl.chat.aria": "Tchat",
   "ctrl.chat.show": "Afficher le tchat",
   "ctrl.chat.hide": "Masquer le tchat",
+  "ctrl.chat.unavailable": "Texte temps réel non accepté par le correspondant",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
   "ctrl.pause": "Mettre en pause",

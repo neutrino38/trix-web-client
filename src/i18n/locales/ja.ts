@@ -199,6 +199,7 @@ const messages: Translation = {
   "mode.text.label": "テキスト通話",
   "mode.text.button": "テキストで発信する",
   "chat.strip": "チャットは通話とともに開きます",
+  "chat.stripRefused": "相手がリアルタイムテキストを受け入れませんでした",
   // ---------------------------------------------------------------------
   // リアルタイムテキスト（T.140）のチャット
   // ---------------------------------------------------------------------
@@ -274,6 +275,7 @@ const messages: Translation = {
   "ctrl.chat.aria": "チャット",
   "ctrl.chat.show": "チャットを表示する",
   "ctrl.chat.hide": "チャットを閉じる",
+  "ctrl.chat.unavailable": "相手がリアルタイムテキストを受け入れませんでした",
   "ctrl.fullscreen": "全画面表示",
   "ctrl.hangup": "通話を切る",
   "ctrl.pause": "一時停止",

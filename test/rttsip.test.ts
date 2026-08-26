@@ -25,6 +25,14 @@ class FakePc {
    */
   sctp: unknown = null;
 
+  /**
+   * L'état de la signalisation et la description distante appliquée : c'est
+   * leur conjonction qui dit « une négociation vient d'aboutir » — une
+   * connexion neuve est `stable` elle aussi, mais sans rien avoir négocié.
+   */
+  signalingState: RTCSignalingState = "stable";
+  currentRemoteDescription: unknown = null;
+
   createDataChannel(label: string, init: { protocol?: string }): unknown {
     const dc = {
       label,
@@ -42,8 +50,23 @@ class FakePc {
     return dc;
   }
 
-  addEventListener(): void {}
+  /** Les écouteurs, rangés par événement : `rttdc.ts` en pose d'autres ici. */
+  private watchers = new Map<string, (() => void)[]>();
+
+  addEventListener(event: string, listener: () => void): void {
+    const list = this.watchers.get(event) ?? [];
+    list.push(listener);
+    this.watchers.set(event, list);
+  }
   removeEventListener(): void {}
+
+  /** Une négociation qui aboutit : le SDP distant est appliqué, on repasse `stable`. */
+  negotiated(sctp: unknown): void {
+    this.currentRemoteDescription = { type: "answer" };
+    this.sctp = sctp;
+    this.signalingState = "stable";
+    for (const w of this.watchers.get("signalingstatechange") ?? []) w();
+  }
 }
 
 /** Une session JsSIP réduite à ce que les deux transports lui demandent. */
@@ -378,5 +401,34 @@ describe("le texte négocié, et le lien ouvert", () => {
     const session = new FakeSession();
     const nego = openRttFor("datachannel", session, "offer")!;
     expect(nego.negotiated()).toBe(false);
+  });
+
+  /**
+   * **Le lien se ferme au lieu d'espérer.** Le canal est créé avant l'offre
+   * (RFC 8865 §5) : il existe donc déjà quand la réponse arrive, et DCEP ne
+   * l'ouvrira jamais si l'association SCTP n'a pas été négociée. Sans cette
+   * conclusion, le lien resterait `connecting` toute la durée de l'appel et
+   * l'interface offrirait un champ de saisie qui n'envoie rien — c'est
+   * exactement le pendant du `giveUp()` du WebSocket.
+   */
+  it("canal de données : une négociation sans SCTP ferme le lien", () => {
+    const session = new FakeSession();
+    const nego = openRttFor("datachannel", session, "offer")!;
+    // connexion neuve : `stable`, mais rien n'a encore été négocié — le
+    // lien attend, il ne conclut pas
+    expect(nego.channel.state()).toBe("connecting");
+
+    session.pc.negotiated(null); // le distant a rejeté la section
+    expect(nego.negotiated()).toBe(false);
+    expect(nego.channel.state()).toBe("closed");
+  });
+
+  it("canal de données : une négociation avec SCTP laisse le lien s'ouvrir", () => {
+    const session = new FakeSession();
+    const nego = openRttFor("datachannel", session, "offer")!;
+    session.pc.negotiated({ state: "connected" });
+    expect(nego.negotiated()).toBe(true);
+    // DCEP n'a pas encore ouvert le canal : `connecting` est ici le bon état
+    expect(nego.channel.state()).toBe("connecting");
   });
 });

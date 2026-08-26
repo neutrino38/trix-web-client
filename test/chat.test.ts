@@ -12,6 +12,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   bubbleText,
+  chatAvailable,
   chatEnter,
   chatLink,
   chatPane,
@@ -22,6 +23,7 @@ import {
   chatThread,
   chatThreadHtml,
   chatTranscript,
+  chatWritable,
   chatHead,
   chatOnStage,
   chatStage,
@@ -296,6 +298,47 @@ describe("le gabarit", () => {
     expect(withChat).toContain('data-act="chat"');
     expect(withChat).toContain(`aria-controls="${CHAT_PANE_ID}"`);
   });
+
+  /**
+   * **Texte non négocié : le bouton reste, barré et inactif.** Le faire
+   * disparaître laisserait croire que ce poste n'a jamais eu de tchat, alors
+   * que l'appel en portait la promesse ; le laisser cliquable promettrait un
+   * panneau qui n'existe plus. Et il n'est pas rouge : rien n'a été coupé
+   * ici, le distant n'a simplement pas suivi.
+   */
+  it("texte non négocié : le bouton de la barre est barré et inactif", () => {
+    const view = {
+      state: "connected",
+      direction: "outgoing",
+      target: "sip:bob@example.fr",
+      displayName: null,
+      offered: { audio: true, video: false, text: true },
+      media: { audio: true, video: false, text: false },
+      selfViewHidden: false,
+      mediaPending: false,
+      mediaAsked: null,
+      paused: false,
+      peerPaused: false,
+      dtmfSent: "",
+      notice: null,
+      earlyMedia: { audio: false, video: false, text: false },
+      connectedAt: Date.now(),
+      endedBy: null,
+      session: null,
+    } satisfies CallView;
+    const bar = overlayBar({
+      view,
+      speakerMuted: false,
+      chat: { open: false, controls: CHAT_PANE_ID, unavailable: true },
+    });
+    const btn = bar.slice(bar.indexOf('data-act="chat"'));
+    expect(btn).toContain("disabled");
+    // l'icône est barrée, et le bouton n'annonce plus de région à déplier
+    expect(btn).toContain("M3.5 3.5l17 17");
+    expect(btn).not.toContain(`aria-controls="${CHAT_PANE_ID}"`);
+    // ni rouge (`off`) ni violet (`toggled`) : le tchat n'a pas été coupé
+    expect(btn.slice(0, btn.indexOf(">"))).not.toMatch(/class="iconbtn (off|toggled)"/);
+  });
 });
 
 /**
@@ -329,21 +372,21 @@ describe("le tchat sur la scène", () => {
     }) as CallView;
 
   it("prend la scène quand l'appel n'a pas d'image", () => {
-    expect(chatOnStage(callOf({ audio: true, video: false, text: false }))).toBe(true);
-    expect(chatOnStage(callOf({ audio: false, video: false, text: false }))).toBe(true);
+    expect(chatOnStage(callOf({ audio: true, video: false, text: true }))).toBe(true);
+    expect(chatOnStage(callOf({ audio: false, video: false, text: true }))).toBe(true);
   });
 
   it("la rend à l'image dès que l'appel porte la vidéo", () => {
-    expect(chatOnStage(callOf({ audio: true, video: true, text: false }))).toBe(false);
+    expect(chatOnStage(callOf({ audio: true, video: true, text: true }))).toBe(false);
   });
 
   it("pas pendant la sonnerie entrante : la popup est le seul interlocuteur", () => {
-    expect(chatOnStage(callOf({ audio: true, video: false, text: false }, "ringing_in"))).toBe(false);
+    expect(chatOnStage(callOf({ audio: true, video: false, text: true }, "ringing_in"))).toBe(false);
   });
 
   it("pas d'appel, pas de canal, pas de scène", () => {
     expect(chatOnStage(null)).toBe(false);
-    const view = callOf({ audio: true, video: false, text: false });
+    const view = callOf({ audio: true, video: false, text: true });
     expect(chatOnStage({ ...view, session: null })).toBe(false);
   });
 
@@ -353,6 +396,40 @@ describe("le tchat sur la scène", () => {
     // un appel texte seul n'a rien d'autre à montrer, et la remarque du fil
     // dit pourquoi il ne mènera nulle part
     expect(chatOnStage(callOf({ audio: false, video: false, text: false }))).toBe(true);
+  });
+
+  /**
+   * **Le texte non négocié n'affiche rien**, quel que soit l'état du lien :
+   * `media.text` est la seule chose qui dise que les deux bouts en ont
+   * convenu (ADR 0003, D1). Un lien resté `connecting` — le distant a
+   * rejeté la section `m=application`, DCEP n'ouvrira jamais rien — ne doit
+   * pas donner un panneau où l'on tape dans le vide.
+   */
+  it("texte non négocié : ni tchat ni scène, même si le lien espère encore", () => {
+    chatLink("connecting");
+    const audioOnly = callOf({ audio: true, video: false, text: false });
+    expect(chatAvailable(audioOnly)).toBe(false);
+    expect(chatOnStage(audioOnly)).toBe(false);
+    expect(chatWritable(audioOnly)).toBe(false);
+    // le même appel, texte négocié : le panneau est là et s'écrit
+    const withText = callOf({ audio: true, video: false, text: true });
+    expect(chatAvailable(withText)).toBe(true);
+    expect(chatWritable(withText)).toBe(true);
+  });
+
+  it("texte seul non négocié : la scène reste, la saisie non", () => {
+    chatLink("connecting");
+    const textOnly = callOf({ audio: false, video: false, text: false });
+    // rien d'autre à montrer : le fil reste, avec ce qu'il a à dire
+    expect(chatOnStage(textOnly)).toBe(true);
+    // mais on n'y écrit pas — le champ le dit et le montre
+    expect(chatWritable(textOnly)).toBe(false);
+    expect(chatPane("Bob", chatWritable(textOnly))).toMatch(/<textarea[^>]*disabled/s);
+  });
+
+  it("avant le décrochage, le texte négocié ne suffit pas à ouvrir la saisie", () => {
+    chatLink("open");
+    expect(chatWritable(callOf({ audio: true, video: false, text: true }, "ringing"))).toBe(false);
   });
 
   it("la scène porte le fil, la barre reçue, et le son de l'appel", () => {

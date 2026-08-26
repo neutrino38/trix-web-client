@@ -748,6 +748,16 @@ Une nuance, et elle est la seule à ne jamais confondre :
 - **l'état du lien** — `connecting`, `open`, `lost`, `closed` — reste porté par
   `RttChannel`, et lui seul.
 
+**Ce que l'interface en fait :** `media.text` est **la** condition d'affichage du
+tchat. Tant que la négociation n'a pas conclu, il vaut ce que l'appel a demandé — le
+fil est donc là dès la sonnerie, et ce qui y est tapé attend dans le tampon du canal.
+Il tombe à faux à la première négociation aboutie où le distant n'a pas suivi, et le
+panneau s'en va alors **entier**, champ de saisie compris : un composeur ouvert sur un
+lien qui n'existe pas promet un message qui ne partira jamais. Ce qui reste à sa place
+le dit — le bouton de la barre mobile, barré et inactif ; sur bureau, une bande barrée
+à l'endroit où le panneau se serait ouvert. Le faire disparaître sans un mot laisserait
+croire que ce poste n'a jamais eu de tchat, alors que l'appel en portait la promesse.
+
 Sur canal de données, l'ouverture DCEP suit l'**association SCTP**, donc
 l'établissement de la connexion pair-à-pair — et non le décrochage : une réponse
 provisoire porteuse d'un SDP (183, RFC 3960) l'établit tout aussi bien qu'un 200 OK,
@@ -843,7 +853,10 @@ raccrochage : ce qui est tapé pendant la sonnerie attend dans son tampon et par
 l'ouverture, et son état (`connecting`, `open`, `lost`, `closed`) dit à l'interface où
 en est le lien sans qu'elle ait à guetter un objet qui apparaît. Un distant qui refuse
 le texte — port nul, ou pas un mot à ce sujet — le ferme au lieu de le laisser
-espérer. Il s'expose par `CallSession.rtt()`, et l'on s'y abonne par `listen()` : le
+espérer ; sur canal de données, ce refus se lit à la **première négociation aboutie
+sans association SCTP** — le canal ayant été créé avant l'offre, DCEP ne l'ouvrira
+jamais, et sans cette conclusion le lien resterait `connecting` toute la durée de
+l'appel. Il s'expose par `CallSession.rtt()`, et l'on s'y abonne par `listen()` : le
 premier abonné reçoit ce qui est arrivé avant lui, le panneau de tchat n'ayant aucune
 raison de s'ouvrir avant le premier caractère d'un correspondant pressé.
 
@@ -970,9 +983,10 @@ Ce qui en découle, et qui se voit :
   un mot ;
 - pendant la sonnerie entrante, la scène ne change pas : la popup est le seul
   interlocuteur, et l'on n'écrit pas à quelqu'un dont on n'a pas encore pris l'appel ;
-- un appel **texte seul** garde sa scène même quand le distant refuse le texte : la
+- un appel **texte seul** garde sa scène même quand le texte n'est pas négocié : la
   remarque du fil dit pourquoi cet appel ne mènera nulle part, là où l'écran noir de
-  l'appel audio ne dirait rien.
+  l'appel audio ne dirait rien. C'est la seule scène qui s'affiche sans texte négocié,
+  et son champ de saisie reste fermé — lire, oui ; écrire dans le vide, non.
 
 #### Le champ de saisie, et la règle des deux secondes
 

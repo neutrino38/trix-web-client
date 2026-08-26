@@ -1065,6 +1065,10 @@ fieldset.field { border: none; }
   color: var(--ink-soft); background: var(--panel-2); opacity: 0.75;
 }
 .chat-strip .icon { width: 18px; height: 18px; }
+/* Le texte n'a pas été négocié : la bande dit pourquoi le panneau promis par
+   l'appel n'est pas là. Barrée et éteinte — pas rouge : rien n'a été coupé,
+   le distant n'a simplement pas suivi (§4.9). */
+.chat-strip.off { opacity: 0.55; font-style: italic; }
 
 /* ---------- tchat texte temps réel (maquettes docs/mockups/tchat) ---------- */
 /* Le tchat prend la place de l'historique dans la sidebar — pas un onglet à

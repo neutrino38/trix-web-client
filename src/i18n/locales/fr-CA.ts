@@ -208,6 +208,7 @@ const messages: Translation = {
   "mode.text.label": "Appel texte",
   "mode.text.button": "Appeler en texte",
   "chat.strip": "Le clavardage s'ouvre avec l'appel",
+  "chat.stripRefused": "Texte temps réel non accepté par le correspondant",
   // ---------------------------------------------------------------------
   // Clavardage en temps réel (T.140)
   // ---------------------------------------------------------------------
@@ -284,6 +285,7 @@ const messages: Translation = {
   "ctrl.chat.aria": "Clavardage",
   "ctrl.chat.show": "Afficher le clavardage",
   "ctrl.chat.hide": "Masquer le clavardage",
+  "ctrl.chat.unavailable": "Texte temps réel non accepté par le correspondant",
   "ctrl.fullscreen": "Plein écran",
   "ctrl.hangup": "Raccrocher",
   "ctrl.pause": "Mettre en pause",

@@ -15,12 +15,21 @@ import { incomingDialog } from "./incoming.js";
 import { mediaAskDialog } from "./mediaask.js";
 import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
-import { chatChannel, chatHead, chatOnStage, chatPane, chatRefused, chatStage } from "./chat.js";
+import {
+  chatAvailable,
+  chatChannel,
+  chatHead,
+  chatOnStage,
+  chatPane,
+  chatStage,
+  chatWritable,
+} from "./chat.js";
 import { statsPill } from "./stats.js";
 import { pauseBanner, peerPauseNotice } from "./pause.js";
 import { panelCollapsed, panelWidth } from "../../prefs.js";
 import {
   ICONS,
+  ICONS_OFF,
   callLabel,
   callerName,
   currentMode,
@@ -56,10 +65,16 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // rendrait l'écran inutilisable, sans même un bouton pour le rouvrir
   // (la barre de surimpression n'existe pas dans ces deux états).
   const collapsed = !!view && !incoming && panelCollapsed();
-  // Le tchat n'existe que si le canal existe : compte sans texte, appel qui
-  // n'a pas encore de session (sonnerie entrante), correspondant qui l'a
-  // refusé — dans tous ces cas la sidebar reste celle d'avant.
-  const chat = chatChannel(view) !== null && !chatRefused();
+  // Le tchat n'existe que si le texte est **négocié** (§4.9) : compte sans
+  // texte, appel qui n'a pas encore de session (sonnerie entrante),
+  // correspondant qui n'a pas suivi — dans tous ces cas la sidebar reste
+  // celle d'avant, et le fil ne s'affiche pas plus qu'il ne s'écrit.
+  const chat = chatAvailable(view);
+  // L'appel porte un canal texte, mais le distant n'en a pas voulu : la
+  // sidebar le dit d'une bande barrée là où le panneau se serait ouvert.
+  // Sans elle, le tchat disparaîtrait sans un mot d'un appel qui l'avait
+  // promis — le bouton barré de la barre mobile joue le même rôle.
+  const chatOff = view !== null && !chat && chatChannel(view) !== null;
   // Un appel sans image donne la scène au tchat (§4.9) : le fil passe au
   // centre, et la sidebar n'en garde rien — un panneau vide à côté d'un fil
   // plein serait la même conversation affichée deux fois.
@@ -125,8 +140,9 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                     panel: { collapsed, controls: "call-panel" },
                   }),
                   meters: connected && view.media.audio,
-                  // avant le décrochage, le fil se lit mais ne s'écrit pas
-                  writable: connected,
+                  // avant le décrochage, le fil se lit mais ne s'écrit pas —
+                  // et un texte que le distant a refusé ne s'écrit jamais
+                  writable: chatWritable(view),
                   dtmf: dtmfPad(view),
                   banner: `${peerPauseNotice(view)}${pauseBanner(view)}`,
                 })
@@ -250,7 +266,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             // le tchat ne tient la sidebar que si la scène ne l'a pas pris :
             // c'est le cas de l'appel vidéo, où l'image occupe le centre
             chat && view && !stageChat
-              ? chatHead(ICONS.chat) + chatPane(callerName(view), connected)
+              ? chatHead(ICONS.chat) + chatPane(callerName(view), chatWritable(view))
               : ""
           }
           ${
@@ -259,7 +275,11 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             // transporte pas de texte n'en a même pas la promesse à afficher
             // — c'est le cas d'un déploiement `realtime_text: "none"`, où
             // plus rien de l'interface ne parle de tchat.
-            view || cfg?.rtt === "none"
+            chatOff && !stageChat
+              ? `<div class="chat-strip off">${ICONS_OFF.chat}<span>${esc(
+                  t("chat.stripRefused"),
+                )}</span></div>`
+              : view || cfg?.rtt === "none"
               ? ""
               : `<div class="chat-strip">${ICONS.chat}<span>${esc(t("chat.strip"))}</span></div>`
           }

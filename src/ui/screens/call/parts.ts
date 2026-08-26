@@ -143,6 +143,7 @@ export const ICONS_OFF = {
   cam: ICONS.cam.replace("</svg>", `${SLASH}</svg>`),
   speaker: ICONS.speaker.replace("</svg>", `${SLASH}</svg>`),
   selfview: ICONS.selfview.replace("</svg>", `${SLASH}</svg>`),
+  chat: ICONS.chat.replace("</svg>", `${SLASH}</svg>`),
 };
 
 /**
