@@ -144,7 +144,7 @@ describe("la feuille du bas", () => {
    */
   it("chaque commande y porte son libellé, dans la langue courante", () => {
     const html = bar();
-    expect(html).toContain('<span class="cmd-label">Couper le son</span>');
+    expect(html).toContain('<span class="cmd-label">Couper l\'écoute</span>');
     expect(html).toContain('<span class="cmd-label">Masquer le self-view</span>');
   });
 
@@ -157,25 +157,90 @@ describe("la feuille du bas", () => {
 });
 
 /**
- * Règle 1 de D8 : **un état coupé ne se cache jamais.** C'est aussi pourquoi
- * la feuille ne contient que des commandes locales et réversibles — rien de
- * ce qui coupe un flux ne peut y tomber, et le haut-parleur en est le seul
- * membre capable de couper quoi que ce soit.
+ * Règle 1 de D8 : **un état coupé ne se cache jamais** — et elle se tient
+ * d'elle-même depuis que l'écoute n'est plus un flux coupé. Elle ne vise que
+ * ce qui sort un média de l'appel, c'est-à-dire l'audio et la vidéo, et ces
+ * deux-là ne descendent jamais dans la feuille. Rien de ce qui peut y tomber
+ * ne coupe quoi que ce soit : la pastille garde donc ses quatre places, quoi
+ * qu'on y touche.
  */
-describe("un état coupé ne se cache jamais", () => {
-  it("le haut-parleur coupé remonte dans la pastille, qui prend sa seconde ligne", () => {
+describe("la pastille ne se recompose pas sous le pouce", () => {
+  it("l'écoute coupée ne remonte pas : elle reste où elle était", () => {
     const html = bar({}, { chat: { open: false, controls: "c" }, speakerMuted: true });
-    // le promu se pose après le « ⋯ » : les quatre places de tête ne
-    // bougent pas sous le pouce
-    expect(pill(html)).toEqual(["toggle-audio", "toggle-video", "chat", "more", "speaker"]);
-    expect(sheet(html)).not.toContain("speaker");
-    expect(html).toContain("crowded");
+    expect(pill(html)).toEqual(["toggle-audio", "toggle-video", "chat", "more"]);
+    expect(sheet(html)).toContain("speaker");
   });
 
-  it("rétabli, il redescend et la pastille retrouve ses quatre places", () => {
-    const html = bar({}, { chat: { open: false, controls: "c" }, speakerMuted: false });
-    expect(pill(html)).toHaveLength(4);
-    expect(html).not.toContain("crowded");
+  it("quatre places, écoute coupée ou non — et jamais de seconde ligne", () => {
+    for (const muted of [true, false]) {
+      const html = bar({}, { chat: { open: false, controls: "c" }, speakerMuted: muted });
+      expect(pill(html)).toHaveLength(4);
+      expect(html).not.toContain("crowded");
+    }
+  });
+
+  /**
+   * La couleur dit **de quoi** on parle, et c'est tout l'objet de la
+   * distinction : violet pour une bascule locale, rouge pour un média qui a
+   * quitté l'appel. Deux ronds rouges barrés côte à côte, dont un seul
+   * change l'appel, sont exactement ce que l'ADR 0003 (D6) écarte.
+   */
+  it("l'écoute coupée est violette, le média retiré est rouge", () => {
+    const muted = bar({}, { speakerMuted: true });
+    expect(muted).toMatch(/class="iconbtn toggled"[^>]*data-act="speaker"/s);
+    // l'audio hors de l'appel, lui, reste rouge
+    const noAudio = bar({ media: media(false, true, false) });
+    expect(noAudio).toMatch(/class="iconbtn off"[^>]*data-act="toggle-audio"/s);
+  });
+});
+
+/**
+ * Le trait de la barre du bureau (ADR 0003, D6) : ce qui change l'appel
+ * d'un côté, ce qui ne change que ce poste de l'autre. Il n'existe pas en
+ * compact — la pastille contre la feuille y porte déjà la même frontière,
+ * et plus fortement.
+ */
+describe("les deux groupes de la barre du bureau", () => {
+  const wide = (over: Partial<CallView> = {}): string =>
+    overlayBar({
+      view: view(over),
+      speakerMuted: false,
+      withHangup: true,
+      withFullscreen: true,
+      panel: { collapsed: false, controls: "call-panel" },
+    });
+
+  it("l'axe 1 d'un côté du trait, tout le reste de l'autre", () => {
+    const html = wide({ media: media(true, true, false) });
+    const [before, after] = html.split('<span class="pill-sep"');
+    expect(acts(before!)).toEqual(["toggle-audio", "toggle-video"]);
+    expect(acts(after!)).toEqual([
+      "speaker",
+      "selfview",
+      "dtmf",
+      "fullscreen",
+      "panel",
+      "pause",
+      "hangup",
+    ]);
+  });
+
+  /**
+   * Un filet vertical ne dit rien à un lecteur d'écran : la frontière est
+   * portée par les intitulés des deux groupes, et le trait lui-même est
+   * retiré de l'arbre d'accessibilité (RGAA 9.1).
+   */
+  it("la frontière est annoncée, pas seulement dessinée", () => {
+    const html = wide();
+    expect(html).toContain('role="group" aria-label="Médias de l\'appel"');
+    expect(html).toContain('role="group" aria-label="Ce poste"');
+    expect(html).toMatch(/<span class="pill-sep" aria-hidden="true">/);
+  });
+
+  it("la barre compacte n'a pas de trait : la feuille est sa frontière", () => {
+    expect(bar()).not.toContain("pill-sep");
+    // la feuille du bas, elle, garde le sien : c'est son propre intitulé
+    expect(bar()).not.toContain("cmd-group");
   });
 });
 

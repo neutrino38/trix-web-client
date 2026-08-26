@@ -1164,8 +1164,24 @@ disparu avec lui : le bouton du micro est devenu le second bouton de l'axe 1, ce
 fait entrer et sortir l'audio de l'appel. La fonction « me taire un instant », elle,
 revient sous la forme que la norme décrit — une fonction et un geste pour les deux
 médias ensemble.
-Le haut-parleur ne relève d'aucun des deux axes : c'est de la réception locale, hors
-du champ de la norme.
+Le haut-parleur ne relève d'aucun des deux axes : c'est de la **réception locale**,
+hors du champ de la norme. Rien ne part sur le fil quand on le coupe, et le
+correspondant continue de parler dans un appel intact — d'où deux conséquences, tirées
+d'un usage qui les avait confondus :
+
+- **la couleur**. Le rouge ne dit qu'une chose dans toute l'interface : *ce média n'est
+  plus dans l'appel*. L'écoute coupée est donc **violette**, comme le self-view masqué
+  et le pavé ouvert. Deux ronds rouges barrés côte à côte, dont un seul change l'appel,
+  étaient précisément le piège que D6 écarte. Ce qui protège de l'oubli n'est plus
+  l'icône, c'est le **vu-mètre distant** : il bat pendant qu'on n'entend plus rien, et
+  nomme la situation bien mieux qu'un bouton ;
+- **le trait**. Sur la barre du bureau, un séparateur vertical passe après les deux
+  boutons de l'axe 1 : ce qui le suit — écoute, self-view, pavé, plein écran,
+  statistiques, plis de panneau — ne parle jamais au correspondant. Un filet ne disant
+  rien à un lecteur d'écran, chaque côté porte son `role="group"` et son intitulé
+  (« Médias de l'appel », « Ce poste ») : la frontière est annoncée, pas seulement
+  dessinée. La barre compacte n'en a pas — la pastille contre la feuille y porte déjà
+  la même frontière, et plus fortement.
 
 #### La barre mobile : quatre commandes et une feuille
 
@@ -1182,12 +1198,13 @@ ajoute une : `8 × 44 + 7 × 6 + 16 = 410 px` à 44 px de cible (WCAG 2.5.5), po
 Dans la feuille : haut-parleur, self-view, DTMF, plein écran, statistiques. Quatre
 règles, et elles font tout le travail :
 
-1. **un état coupé ne se cache jamais** — toute commande dont l'état est *coupé*
-   (rouge) remonte dans la pastille. C'est aussi pourquoi la feuille ne contient que
-   des commandes locales et réversibles : rien de ce qui coupe un flux ne peut y
-   tomber, et le haut-parleur en est le seul membre capable de couper quoi que ce
-   soit. La promotion se fait dans le DOM, sans attendre un rendu : le haut-parleur ne
-   passe par aucune machine, donc rien ne re-rendrait l'écran ;
+1. **un état coupé ne se cache jamais** — la règle ne vise que ce qui sort un média de
+   l'appel (rouge), c'est-à-dire l'audio et la vidéo, et ces deux-là ne descendent
+   jamais dans la feuille : elle se tient donc d'elle-même. La feuille ne contient que
+   des bascules locales et réversibles, l'écoute comprise — la couper ne retire rien
+   de l'appel, et son état se lit sur le vu-mètre distant, qui continue de battre
+   pendant qu'on n'entend plus rien. Rien ne remonte donc dans la pastille en cours
+   d'appel, et elle garde ses quatre places en toutes circonstances ;
 2. **rien ne bouge sous le pouce pendant l'appel** — la répartition suit les médias de
    l'appel, et ce qui la fait bouger est toujours un changement que l'utilisateur
    vient de demander ou d'accepter (la vidéo qui entre rend la scène à l'image et fait

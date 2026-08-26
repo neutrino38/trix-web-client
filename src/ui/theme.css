@@ -578,6 +578,17 @@ fieldset.field { border: none; }
   padding: 0.3rem; border-radius: 999px;
   background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.18);
 }
+/* Les deux côtés du trait (barre bureau) : ce qui change l'appel, puis ce qui
+   ne change que ce poste. Un `flex` de même écart que la pastille — et non
+   `display: contents`, qui priverait le groupe de son rôle ARIA dans une
+   partie des navigateurs, c'est-à-dire de tout ce qui le justifie. */
+.cmd-group { display: flex; align-items: center; gap: 0.35rem; }
+/* Le trait lui-même : décoratif, donc `aria-hidden` côté balisage — la
+   frontière est portée par les intitulés des deux groupes (voir overlay.ts). */
+.pill-sep {
+  width: 1px; align-self: stretch; margin-inline: 0.15rem; flex: none;
+  background: rgba(255, 255, 255, 0.3);
+}
 .overlay-pill .iconbtn {
   width: 44px; height: 44px; border: none; color: #fff;
   background: rgba(255, 255, 255, 0.14);
@@ -588,9 +599,11 @@ fieldset.field { border: none; }
 .overlaybar .hangup-round:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .overlay-pill .iconbtn svg { width: 22px; height: 22px; }
 .overlay-pill .iconbtn:disabled { opacity: 0.4; cursor: default; }
-/* flux coupé (micro, caméra, son) : rouge — l'icône barrée le dit déjà */
+/* média sorti de l'appel (micro, caméra) : rouge — l'icône barrée le dit
+   déjà, et le correspondant s'en aperçoit de son côté */
 .overlay-pill .iconbtn.off { background: var(--red); }
-/* bascule d'affichage locale (self-view) : violet, rien n'est coupé */
+/* bascule locale (self-view masqué, écoute coupée, pavé ouvert) : violet.
+   L'appel n'a pas changé, personne d'autre n'est concerné (voir overlay.ts) */
 .overlay-pill .iconbtn.toggled { background: var(--accent); }
 /* audio entrant détecté : le haut-parleur s'allume (voir startVuMeters) */
 .overlay-pill .iconbtn.speaking {
@@ -603,9 +616,9 @@ fieldset.field { border: none; }
 
 /* ---------- les deux axes de la barre mobile (ADR 0003, D6 et D8) ---------- */
 /* Le libellé accompagne toujours l'icône dans le balisage : muet dans la
-   pastille, lisible dans la feuille du bas. C'est ce qui permet à une
-   commande coupée de remonter d'un endroit à l'autre par simple déplacement
-   de nœud (règle 1 de D8) sans être reconstruite. */
+   pastille, lisible dans la feuille du bas. C'est ce qui permet à une même
+   commande de vivre aux deux endroits — la troisième place de la pastille,
+   selon ce que l'appel transporte — sans être reconstruite. */
 .cmd-icon { display: inline-flex; }
 .overlay-pill .cmd-label { display: none; }
 
@@ -617,18 +630,13 @@ fieldset.field { border: none; }
 .overlaybar.compact .overlay-pill { gap: 0.3rem; padding: 0.25rem; }
 .overlaybar.compact .hangup-round { margin-inline-start: 0; }
 
-/* Règle 1 : un état coupé ne se cache jamais. Le haut-parleur coupé remonte
-   dans la pastille, qui porte alors cinq icônes — elle prend sa propre ligne
-   plutôt que de rétrécir quoi que ce soit. Le cas est rare et volontaire ;
-   Pause et Raccrocher, eux, ne bougent pas d'un pixel. */
-.overlaybar.compact.crowded { flex-wrap: wrap; }
-/* Le saut de ligne est porté par un élément dédié, et non par un
-   `flex-basis: 100%` sur la pastille : celle-ci s'étirerait alors sur toute
-   la largeur, et son fond dirait « quatre boutons dans un long tube » là où
-   il doit dire « quatre boutons groupés ». Le séparateur, lui, ne se voit
-   pas — il ne fait que rompre la ligne. */
+/* Le saut de ligne de la barre compacte (voir la requête `max-width: 359px`
+   plus bas) est porté par un élément dédié, et non par un `flex-basis: 100%`
+   sur la pastille : celle-ci s'étirerait alors sur toute la largeur, et son
+   fond dirait « quatre boutons dans un long tube » là où il doit dire
+   « quatre boutons groupés ». Le séparateur, lui, ne se voit pas — il ne
+   fait que rompre la ligne. */
 .bar-break { display: none; }
-.overlaybar.compact.crowded .bar-break { display: block; flex-basis: 100%; height: 0; }
 
 /* Axe 2 — « est-ce que je suis là, à l'instant ». Hors de la pastille, près
    du raccrochage : carré arrondi et cerclé d'ambre, là où les boutons média
@@ -728,8 +736,9 @@ fieldset.field { border: none; }
 /* Icône + libellé, une ligne par commande, 52 px de haut : au-dessus du
    plancher de 44 px, parce qu'on vise ici au pouce et sans regarder. */
 /* les commandes gardent la classe `iconbtn` de la pastille — c'est ce qui
-   leur permet d'y remonter par simple déplacement de nœud (règle 1 de D8) —
-   et il faut donc en défaire ici la forme ronde et centrée */
+   permet à la troisième place de passer de l'une à l'autre selon ce que
+   l'appel transporte — et il faut donc en défaire ici la forme ronde et
+   centrée */
 .sheet button {
   display: flex; align-items: center; justify-content: flex-start; gap: 0.75rem;
   width: 100%; height: auto; min-height: 52px; padding: 0.35rem 0.75rem;
@@ -742,7 +751,9 @@ fieldset.field { border: none; }
 .sheet button:disabled { opacity: 0.4; cursor: default; }
 .sheet .icon { width: 22px; height: 22px; flex: none; }
 /* la couleur y garde exactement le sens qu'elle a dans la pastille : rouge,
-   un flux est coupé ; violet, une bascule d'affichage locale (voir overlay.ts) */
+   un média a quitté l'appel ; violet, une bascule locale (voir overlay.ts).
+   La feuille ne porte que des bascules locales — le rouge n'y descend
+   jamais, puisque l'audio et la vidéo ne quittent pas la pastille */
 .sheet button.off .cmd-icon { color: var(--red); }
 .sheet button.toggled .cmd-icon { color: var(--accent); }
 
@@ -750,9 +761,8 @@ fieldset.field { border: none; }
    56 = 284 px` de cibles incompressibles, et il ne resterait pas 36 px pour
    tous les écarts. Plutôt que de rogner une cible sous 44 px — ce que WCAG
    2.5.5 interdit, et ce que le public de Trix pardonne le moins — la
-   pastille prend sa propre ligne, exactement comme quand elle est
-   surchargée. Pause et Raccrocher, eux, ne bougent pas : ils restent en bas,
-   là où le pouce les cherche. */
+   pastille prend sa propre ligne. Pause et Raccrocher, eux, ne bougent pas :
+   ils restent en bas, là où le pouce les cherche. */
 @media (max-width: 359px) {
   .overlaybar.compact { flex-wrap: wrap; }
   .overlaybar.compact .bar-break { display: block; flex-basis: 100%; height: 0; }

@@ -192,7 +192,17 @@ confondra pas :
 
 Le mot « sourdine » disparaît de l'interface ; la fonction reste. Le haut-parleur,
 lui, ne relève d'aucun des deux axes — c'est de la réception locale, hors du champ de
-la norme : il va dans la feuille (D8), inchangé.
+la norme : il va dans la feuille (D8).
+
+Le tenir pour un « flux coupé » était l'erreur : peint en rouge et barré comme un
+média retiré, il se confondait avec le bouton du micro, au point qu'on cliquait sur
+l'un en croyant agir sur l'autre. Il est donc **violet**, comme les autres bascules
+locales, et le rouge ne dit plus qu'une chose : *ce média n'est plus dans l'appel*.
+Ce qui protège de l'oublier est le vu-mètre distant, qui bat pendant qu'on n'entend
+plus rien. Et sur la barre du bureau, un **trait vertical** sépare désormais les deux
+boutons de l'axe 1 de tout le reste, chaque côté portant son intitulé de groupe —
+« Médias de l'appel », « Ce poste » — pour que la frontière existe aussi au clavier et
+au lecteur d'écran.
 
 *Variantes écartées :* une sourdine **par média**, à côté de boutons média — c'est
 précisément le piège, deux gestes de même forme sur le même axe. L'appui long pour
@@ -254,9 +264,11 @@ plein écran, statistiques.
 
 Quatre règles, et elles font tout le travail :
 
-1. **Un état coupé ne se cache jamais.** Toute commande dont l'état est *coupé* (rouge)
-   remonte dans la pastille. C'est aussi pourquoi la feuille ne contient que des
-   commandes locales et réversibles : rien de ce qui coupe un flux ne peut y tomber.
+1. **Un état coupé ne se cache jamais.** La règle ne vise que ce qui sort un média de
+   l'appel (rouge) — l'audio et la vidéo, qui ne descendent jamais dans la feuille :
+   elle se tient d'elle-même. La feuille ne contient que des bascules locales et
+   réversibles, l'écoute comprise : la couper ne retire rien de l'appel, et c'est le
+   vu-mètre distant, qui bat pendant qu'on n'entend plus rien, qui le dit.
 2. **Rien ne bouge sous le pouce pendant l'appel.** La répartition barre / feuille est
    décidée au décroché, à partir des médias de l'appel, et n'en bouge plus — sauf par
    la règle 1, qui ne fait que promouvoir.

@@ -92,7 +92,7 @@ export const ICONS = {
   settings: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>`,
   logout: `<svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>`,
   cam: `<svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>`,
-  selfview: `<svg class="icon" viewBox="0 0 24 24"><path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z"/></svg>`,
+  selfview: `<svg class="icon" viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zm-2-8h-8v6h8v-6z"/></svg>`,
   speaker: `<svg class="icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.8-1-3.3-2.5-4v8c1.5-.7 2.5-2.2 2.5-4z"/></svg>`,
   dtmf: `<svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="6" cy="11" r="2"/><circle cx="12" cy="11" r="2"/><circle cx="18" cy="11" r="2"/><circle cx="6" cy="17" r="2"/><circle cx="12" cy="17" r="2"/><circle cx="12" cy="22" r="2"/></svg>`,
   phone: `<svg class="icon" viewBox="0 0 24 24"><path d="M6.6 10.8c1.5 3 3.6 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg>`,
@@ -468,36 +468,6 @@ function setCmd(btn: HTMLElement, icon: string, label: string): void {
   if (labelNode) labelNode.textContent = label;
 }
 
-/**
- * **Règle 1 de D8 : un état coupé ne se cache jamais.** Une commande de la
- * feuille du bas qui vient de couper un flux remonte dans la pastille, et y
- * reste tant qu'elle coupe.
- *
- * Le déplacement se fait ici, dans le DOM, et non au rendu suivant : le
- * haut-parleur est de l'interface pure — il ne passe par aucune machine, donc
- * rien ne re-rend l'écran quand on le coupe. Attendre le prochain rendu
- * laisserait un flux coupé invisible pendant tout ce temps, ce qui est
- * exactement ce que la règle interdit.
- *
- * La pastille rendue par le prochain rendu retrouvera la même disposition :
- * `dispatch` (overlay.ts) applique la même règle sur les mêmes états.
- */
-function promoteIfCut(node: HTMLElement, btn: HTMLElement, cut: boolean): void {
-  const pill = node.querySelector<HTMLElement>(".overlaybar.compact .overlay-pill");
-  const sheet = node.querySelector<HTMLElement>('[data-ref="sheet"]');
-  const bar = node.querySelector<HTMLElement>(".overlaybar.compact");
-  if (!pill || !sheet || !bar) return; // vue bureau : la commande ne bouge pas
-  if (cut) {
-    // en fin de pastille, après le « ⋯ » : les places de tête appartiennent
-    // aux deux médias de l'axe 1, qui ne bougent jamais
-    pill.appendChild(btn);
-  } else {
-    // rendue à la feuille, en tête : c'est la place que `dispatch` lui donne
-    sheet.insertBefore(btn, sheet.firstChild);
-  }
-  bar.classList.toggle("crowded", pill.children.length > 4);
-}
-
 export function fmtChrono(startedAt: number): string {
   const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   const p = (n: number): string => String(n).padStart(2, "0");
@@ -671,20 +641,21 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   on('[data-act="accept-media"]', () => phone.send({ type: "ui:acceptMedia" }));
   on('[data-act="reject-media"]', () => phone.send({ type: "ui:rejectMedia" }));
   on('[data-act="selfview"]', () => phone.send({ type: "ui:toggleSelfView" }));
-  // haut-parleur : UI pure (mute de l'élément <video> distant), pas de machine
+  // écoute : UI pure (mute de l'élément <video> distant), pas de machine
   on('[data-act="speaker"]', (btn) => {
     speakerMuted = !speakerMuted;
     const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
     if (remote) remote.muted = speakerMuted;
-    // `off` et non `toggled` : un son coupé est un flux interrompu (voir overlay.ts)
-    btn.classList.toggle("off", speakerMuted);
+    // `toggled` et non `off` : rien n'est sorti de l'appel, le correspondant
+    // parle toujours et le vu-mètre distant continue de le montrer. Le rouge
+    // est réservé à un média qui a quitté l'appel (voir overlay.ts)
+    btn.classList.toggle("toggled", speakerMuted);
     btn.setAttribute("aria-pressed", String(speakerMuted));
     const label = t(speakerMuted ? "ctrl.speaker.unmute" : "ctrl.speaker.mute");
     btn.title = label;
     // l'icône seule est remplacée : le libellé vit dans son propre nœud, et
     // c'est lui qui rend le bouton lisible une fois dans la feuille du bas
     setCmd(btn, speakerMuted ? ICONS_OFF.speaker : ICONS.speaker, label);
-    promoteIfCut(node, btn, speakerMuted);
   });
 
   // la feuille mène au bilan média (ADR 0003, D8) ; la pastille d'état de la

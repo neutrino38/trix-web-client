@@ -31,13 +31,37 @@
  *
  * # Règle d'état, tenue ici et nulle part ailleurs
  *
- * - **rouge + icône barrée** — un flux est coupé (micro, caméra, haut-parleur) :
- *   quelque chose ne passe plus, et le correspondant s'en aperçoit ;
- * - **violet** — une bascule d'affichage purement locale (self-view masqué) :
- *   rien n'est coupé, personne d'autre n'est concerné.
+ * - **rouge + icône barrée** — un média a quitté l'appel (micro, caméra) :
+ *   c'est négocié, et le correspondant s'en aperçoit ;
+ * - **violet** — une bascule purement locale (self-view masqué, écoute
+ *   coupée, pavé ouvert) : l'appel n'a pas changé, personne d'autre n'est
+ *   concerné.
+ *
+ * Le rouge ne dit donc qu'une seule chose dans toute l'interface : *ce média
+ * n'est plus dans l'appel*. L'écoute coupée n'en est pas — elle ne se voit
+ * qu'ici, et le correspondant continue de parler dans un appel intact.
  *
  * Dans les deux cas l'icône barrée et `aria-pressed` portent déjà l'état : la
  * couleur ne fait que le confirmer (RGAA 3.1).
+ *
+ * # Deux groupes, et un trait entre eux
+ *
+ * La même frontière se lit dans la barre du bureau : les deux boutons de
+ * l'axe 1 d'un côté, tout le reste de l'autre — écoute, self-view, pavé,
+ * plein écran, statistiques, plis de panneau. Ce qui suit le trait ne parle
+ * jamais au correspondant.
+ *
+ * Le trait ne suffit pas : un séparateur décoratif n'existe ni au clavier ni
+ * au lecteur d'écran, et c'est justement le public de Trix. Chaque groupe
+ * porte donc son `role="group"` et son intitulé — la frontière est annoncée,
+ * pas seulement dessinée.
+ *
+ * La barre **compacte** n'en a pas besoin : la même frontière y est déjà
+ * portée par une séparation plus forte, la pastille contre la feuille du bas
+ * (D8). Un trait de plus y coûterait de la largeur sur un budget calculé au
+ * pixel, et devrait apparaître ou disparaître selon ce que la troisième
+ * place a pris — une barre qui se recompose sous le pouce, ce que D8
+ * interdit.
  */
 
 import type { CallView } from "../../../machines/events.js";
@@ -72,7 +96,14 @@ interface Cmd {
    * rien dire.
    */
   highlight?: boolean;
-  cut?: boolean; // flux coupé → rouge, sinon bascule locale → violet
+  cut?: boolean; // média sorti de l'appel → rouge, sinon bascule locale → violet
+  /**
+   * Commande de l'**axe 1** : elle change ce que l'appel transporte. C'est
+   * ce qui la place avant le trait, et ce qui lui interdit la feuille du bas
+   * (`sheetable`). Les deux drapeaux se répondent, mais ne disent pas la
+   * même chose : l'un est une frontière de sens, l'autre une place.
+   */
+  axis1?: boolean;
   disabled?: boolean;
   /**
    * La commande **peut** descendre dans la feuille du bas quand la place
@@ -87,9 +118,9 @@ interface Cmd {
 /**
  * Un bouton de commande. Le libellé accompagne **toujours** l'icône dans le
  * balisage : masqué par le CSS dans la pastille, visible dans la feuille du
- * bas. C'est ce qui permet à une commande de passer de l'une à l'autre sans
- * être reconstruite — la promotion d'un haut-parleur coupé (règle 1 de D8)
- * n'est alors qu'un déplacement de nœud.
+ * bas. C'est ce qui permet à une commande de passer de l'une à l'autre — la
+ * troisième place de la pastille, qui va au tchat ou à l'écoute selon ce que
+ * l'appel transporte — sans être reconstruite pour autant.
  */
 function button(c: Cmd): string {
   const active = c.highlight ?? (c.expanded !== undefined ? !c.expanded : c.pressed);
@@ -193,6 +224,7 @@ function mediaButton(ctx: OverlayCtx, kind: MediaKind, on: boolean): Cmd {
     aria: t(ui.aria),
     pressed: !on,
     cut: true,
+    axis1: true,
     disabled: !connected || view.mediaPending || view.mediaAsked !== null || last,
   };
 }
@@ -206,15 +238,21 @@ export function overlayBar(ctx: OverlayCtx): string {
     mediaButton(ctx, "audio", connected && view.media.audio),
     mediaButton(ctx, "video", video),
     {
-      // hors des deux axes : c'est de la réception locale, et le §6.2.4 n'en
-      // parle pas. Sa place est donc la feuille — sauf coupé, où la règle 1
-      // le fait remonter (voir `dispatch`)
+      // Hors des deux axes : c'est de la **réception locale**, et le §6.2.4
+      // n'en parle pas. Rien ne part sur le fil, le correspondant continue
+      // de parler dans un appel intact — d'où le violet, et non le rouge
+      // des médias qui quittent l'appel. Sa place est la feuille, après le
+      // trait, avec les autres réglages de ce poste.
+      //
+      // Ne pas l'y laisser tomber dans l'oubli est l'affaire du vu-mètre
+      // distant, qui continue de battre pendant qu'on n'entend plus rien
+      // (`parts.ts`, `startVuMeters`) : c'est là que « ça parle, et tu
+      // n'entends pas » se lit, mieux que sur une icône.
       act: "speaker",
       icon: speakerMuted ? ICONS_OFF.speaker : ICONS.speaker,
       label: t(speakerMuted ? "ctrl.speaker.unmute" : "ctrl.speaker.mute"),
       aria: t("ctrl.speaker.aria"),
       pressed: speakerMuted,
-      cut: true,
       disabled: !connected,
       sheetable: true,
     },
@@ -318,22 +356,25 @@ export function overlayBar(ctx: OverlayCtx): string {
     // feuille, pas l'existence du geste — un bureau sans Pause laisserait
     // sans recours quelqu'un à qui l'on sonne à la porte.
     return `<div class="overlaybar ${ctx.view.paused ? "dimmed" : ""}">
-              <div class="overlay-pill">${cmds.map(button).join("")}</div>
+              <div class="overlay-pill">
+                ${cmdGroup(t("ctrl.group.call"), cmds.filter((c) => c.axis1 === true))}
+                <span class="pill-sep" aria-hidden="true"></span>
+                ${cmdGroup(t("ctrl.group.device"), cmds.filter((c) => c.axis1 !== true))}
+              </div>
               ${pauseButton(view)}
               ${hangup}
             </div>`;
   }
 
-  const { pill, promoted, sheet } = dispatch(cmds);
+  const { pill, sheet } = dispatch(cmds);
   // En pause, l'écran entier le dit et « Reprendre » est le seul geste
   // offert (D7) : les commandes média s'éteignent derrière le bandeau. Le
   // raccrochage, lui, reste — un geste d'urgence ne se suspend pas.
   const dimmed = ctx.view.paused ? "dimmed" : "";
-  return `<div class="overlaybar compact ${dimmed} ${promoted.length > 0 ? "crowded" : ""}">
+  return `<div class="overlaybar compact ${dimmed}">
             <div class="overlay-pill">
               ${pill.map(button).join("")}
               ${moreButton(sheet.length > 0)}
-              ${promoted.map(button).join("")}
             </div>
             <span class="bar-break" aria-hidden="true"></span>
             ${pauseButton(view)}
@@ -343,28 +384,40 @@ export function overlayBar(ctx: OverlayCtx): string {
 }
 
 /**
+ * Un côté du trait. L'intitulé n'est pas décoratif : c'est ce qui fait
+ * exister la frontière ailleurs qu'à l'œil — annoncée à la tabulation, là où
+ * un simple filet vertical ne dit rien du tout (RGAA 9.1, WCAG 1.3.1).
+ */
+function cmdGroup(label: string, cmds: Cmd[]): string {
+  return `<span class="cmd-group" role="group" aria-label="${esc(label)}">
+            ${cmds.map(button).join("")}
+          </span>`;
+}
+
+/**
  * Qui va dans la pastille, qui va dans la feuille (D8).
  *
  * Trois places sur quatre sont écrites d'avance : **audio**, **vidéo** — les
  * deux boutons de l'axe 1, qui ne descendent jamais — et le **« ⋯ »**. La
  * troisième revient à la première commande qui n'est pas descendable : le
  * tchat quand l'appel en porte un panneau à plier, faute de quoi la place
- * échoit au haut-parleur, qui est justement la commande la plus utile d'un
- * appel sans image.
+ * échoit à l'écoute, qui est justement la commande la plus utile d'un appel
+ * sans image.
  *
- * Puis la **règle 1 : un état coupé ne se cache jamais.** Toute commande
- * *coupée* (rouge) que la feuille aurait prise remonte dans la pastille, qui
- * porte alors cinq icônes — le CSS lui donne sa seconde ligne (`crowded`)
- * plutôt que de rogner une cible sous 44 px. En pratique cela ne concerne
- * que le haut-parleur : c'est le seul membre de la feuille qui coupe quoi
- * que ce soit, et c'est pourquoi rien d'autre ne peut y tomber.
+ * **La règle 1 se tient d'elle-même** : « un état coupé ne se cache jamais »
+ * ne vise que ce qui coupe un flux de l'appel — l'audio et la vidéo — et ces
+ * deux-là ne descendent jamais dans la feuille. Rien de ce qui peut y tomber
+ * ne coupe quoi que ce soit : l'écoute est une bascule locale (violet), et
+ * son état se lit sur le vu-mètre distant, qui bat pendant qu'on n'entend
+ * plus rien. La pastille garde donc ses quatre places en toutes
+ * circonstances, et rien n'y remonte en cours d'appel.
  *
  * Ce qui bouge en cours d'appel — le tchat qui monte quand la vidéo entre —
  * n'est pas un remaniement silencieux : c'est la conséquence visible d'un
  * changement de nature de l'appel, que l'utilisateur vient de demander ou
  * d'accepter. La règle 2 vise ce qui bouge **sans qu'on ait rien fait**.
  */
-function dispatch(cmds: Cmd[]): { pill: Cmd[]; promoted: Cmd[]; sheet: Cmd[] } {
+function dispatch(cmds: Cmd[]): { pill: Cmd[]; sheet: Cmd[] } {
   const pill: Cmd[] = [];
   const sheet: Cmd[] = [];
   for (const c of cmds) {
@@ -372,16 +425,10 @@ function dispatch(cmds: Cmd[]): { pill: Cmd[]; promoted: Cmd[]; sheet: Cmd[] } {
     if (c.sheetable !== true && pill.length < PILL_SLOTS - 1) pill.push(c);
     else sheet.push(c);
   }
-  // la troisième place revient au haut-parleur quand rien d'autre ne l'a prise
+  // la troisième place revient à l'écoute quand rien d'autre ne l'a prise
   while (pill.length < PILL_SLOTS - 1 && sheet.length > 0) pill.push(sheet.shift()!);
 
-  // Règle 1 : ce qui est coupé remonte, quoi qu'il en coûte à la largeur. Le
-  // promu se pose **après** le « ⋯ », en queue de pastille : les quatre
-  // places de tête ne bougent pas d'un pixel sous le pouce, et c'est aussi
-  // là que `promoteIfCut` (parts.ts) le pose quand la promotion arrive en
-  // cours d'appel, sans re-rendre l'écran.
-  const promoted = sheet.filter((c) => c.cut === true && c.pressed === true);
-  return { pill, promoted, sheet: sheet.filter((c) => !promoted.includes(c)) };
+  return { pill, sheet };
 }
 
 /** Le « ⋯ » : la dernière place de la pastille, et la porte de la feuille. */

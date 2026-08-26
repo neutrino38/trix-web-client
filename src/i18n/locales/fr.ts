@@ -262,9 +262,15 @@ const messages = {
   "ctrl.selfview.aria": "Self-view",
   "ctrl.selfview.hide": "Masquer le self-view",
   "ctrl.selfview.show": "Afficher le self-view",
-  "ctrl.speaker.aria": "Haut-parleur",
-  "ctrl.speaker.mute": "Couper le son",
-  "ctrl.speaker.unmute": "Rétablir le son",
+  /**
+   * L'écoute **sur ce poste**, et rien d'autre : le correspondant continue
+   * de parler dans un appel intact. « Couper le son » ne disait pas de quel
+   * son il s'agissait, et se confondait avec le retrait de l'audio, qui,
+   * lui, se négocie et se voit d'en face (ADR 0003, D6).
+   */
+  "ctrl.speaker.aria": "Écoute sur ce poste",
+  "ctrl.speaker.mute": "Couper l'écoute",
+  "ctrl.speaker.unmute": "Rétablir l'écoute",
   "ctrl.dtmf.aria": "Clavier DTMF",
   "ctrl.dtmf.show": "Afficher le clavier DTMF",
   "ctrl.dtmf.hide": "Masquer le clavier DTMF",
@@ -281,6 +287,13 @@ const messages = {
   "pause.hint": "Votre micro et votre image sont arrêtés. Le texte, lui, continue de passer.",
   "pause.resume": "Reprendre",
   "pause.peer": "{peer} est en pause",
+  /**
+   * Les deux côtés du trait de la barre : ce qui change l'appel, et ce qui
+   * ne change que ce poste. Intitulés de groupe, annoncés à la tabulation —
+   * un séparateur visuel seul ne dirait rien à un lecteur d'écran.
+   */
+  "ctrl.group.call": "Médias de l'appel",
+  "ctrl.group.device": "Ce poste",
   "ctrl.more": "Autres commandes",
   "sheet.title": "Autres commandes de l'appel",
 

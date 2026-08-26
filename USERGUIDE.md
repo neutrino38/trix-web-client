@@ -184,19 +184,25 @@ The controls float in a bar over the video:
 
 | Control | Effect |
 |---|---|
-| **Microphone** | Mutes and unmutes your microphone |
-| **Camera** | Turns your camera off and on (video calls only) |
+| **Microphone** | Takes the audio out of the call, or puts it back. This is renegotiated with the other party, who sees it happen — it is not a mute |
+| **Camera** | Takes the video out of the call, or puts it back (video calls only) |
 | **Self-view** | Hides or shows your own picture. Purely local — the other side is unaffected |
-| **Speaker** | Mutes the incoming audio in this tab. It lights up green while the other party is speaking |
+| **Listening** | Stops the incoming audio *on this device*. Nothing leaves the call: the other party keeps talking, and the remote level meter keeps moving while you hear nothing. It lights up green while they are speaking |
 | **DTMF keypad** | Opens a 12-key pad over the video. The physical keyboard works too, and the tones that actually went out are echoed on screen |
 | **Chat** | Shows or hides the real-time text thread (mobile view; on the desktop it lives in the side panel) |
 | **Full screen** | Same as double-clicking the video, but reachable from the keyboard |
 | **Side panel** | Collapses the panel so the video takes the whole width |
 | **Hang up** (red circle) | Ends the call. It stays available with the panel collapsed |
 
-A cut stream is shown in **red with a struck-through icon**; a purely local toggle
-(self-view) is shown in **purple**. The struck-through icon carries the state on its own,
-so the colour is never the only clue.
+A medium that has left the call is shown in **red with a struck-through icon**; a purely
+local toggle (self-view, listening, keypad) is shown in **purple**. Red therefore says
+one thing only: *this medium is no longer in the call*. The struck-through icon carries
+the state on its own, so the colour is never the only clue.
+
+On the desktop bar, a vertical rule separates the two call media from everything after
+it — listening, self-view, keypad, full screen, statistics, panel toggles — none of
+which the other party ever sees. Each side is announced as a group ("Call media", "This
+device") to screen readers and keyboard users.
 
 The call timer runs in the top bar, next to the *In call* pill.
 

@@ -131,11 +131,10 @@ export function wireSheet(screen: HTMLElement): void {
       if (!(e.target as HTMLElement).closest("button")) return;
       setOpen(false, false);
       // Le focus ne se déplace pas ici : il appartient à ce que l'action va
-      // ouvrir — le pavé DTMF y met le sien, le haut-parleur coupé emmène le
-      // sien en remontant dans la pastille (parts.ts). Mais l'action peut
-      // aussi n'en déplacer aucun, et le focus resterait alors sur un bouton
-      // que la feuille vient de cacher : au clavier, il serait simplement
-      // perdu. On le rattrape après coup, et seulement dans ce cas-là.
+      // ouvrir — le pavé DTMF y met le sien. Mais l'action peut aussi n'en
+      // déplacer aucun, et le focus resterait alors sur un bouton que la
+      // feuille vient de cacher : au clavier, il serait simplement perdu. On
+      // le rattrape après coup, et seulement dans ce cas-là.
       queueMicrotask(() => {
         const active = document.activeElement;
         const lost = active === null || active === document.body || sheet.contains(active);
