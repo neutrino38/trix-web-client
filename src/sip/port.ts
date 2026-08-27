@@ -209,6 +209,17 @@ export interface CallSession {
    */
   setMedia(kind: MediaKind, on: boolean): void;
   /**
+   * **On cesse d'attendre.** Le re-INVITE parti n'aura pas de conclusion —
+   * c'est le délai côté utilisateur qui le décide, et lui seul : le port
+   * n'a aucune minuterie propre, et celles de JsSIP ne tranchent pas tous
+   * les cas (voir `abandon` dans `mediaControl`).
+   *
+   * L'appel continue, tel qu'il était avant l'offre : retour arrière sur la
+   * connexion, capteur ouvert pour rien refermé, dialogue rendu disponible
+   * pour la renégociation suivante. Sans effet si rien n'est en vol.
+   */
+  abandonMedia(): void;
+  /**
    * **La Pause** (ADR 0003, D6 et D7) : tout ce que j'émets s'arrête d'un
    * coup — micro et image ensemble, comme F.703 §6.2.4 les groupe.
    *
@@ -636,6 +647,8 @@ interface MediaControl {
   refuseMedia(kinds: readonly MediaKind[]): void;
   /** Re-INVITE ajoutant (ou retirant) un média de l'appel. */
   setMedia(kind: MediaKind, on: boolean): void;
+  /** L'offre en vol n'aura pas de conclusion : on la retire. */
+  abandonMedia(): void;
   /**
    * **La Pause** (ADR 0003, D6 et D7) : tout ce que j'émets s'arrête d'un
    * coup — micro et image ensemble, comme F.703 §6.2.4 les groupe.
@@ -749,10 +762,27 @@ interface Renegotiable {
    */
   direction: string;
   isReadyToReOffer(): boolean;
+  /**
+   * Le délai de la transaction INVITE (Timer B, RFC 3261 §17.1.1.2). JsSIP
+   * le câble sur ce crochet, qui **raccroche l'appel** — 408, terminé.
+   * C'est juste pour l'INVITE initial, qui n'a jamais établi de
+   * communication ; ça ne l'est plus pour un re-INVITE, que le distant peut
+   * laisser sans conclusion sans avoir mis fin à quoi que ce soit.
+   */
+  onRequestTimeout(): void;
   _sendReinvite(options: {
     eventHandlers: { succeeded(response: unknown): void; failed(response?: unknown): void };
   }): void;
   _receiveReinvite(request: InDialogRequest): void;
+  /**
+   * Le dialogue, pour le seul drapeau qui nous concerne : tant qu'un INVITE
+   * que **nous** avons émis y attend sa réponse finale (RFC 3261 §14.2),
+   * `isReadyToReOffer()` reste faux. JsSIP le lève à la fin de la
+   * transaction ; une offre qu'aucune réponse ne conclura jamais le
+   * laisserait levé jusqu'au raccrochage, et l'appel ne renégocierait plus
+   * rien du tout.
+   */
+  _dialog?: { uac_pending_reply: boolean } | null;
 }
 
 /** Le re-INVITE tel que nous avons besoin de le lire et d'y répondre. */
@@ -822,6 +852,13 @@ export function mediaControl(
   let resuming = false;
   /** Une seule reprise par renégociation : deux clients face à face boucleraient. */
   let retried = false;
+  /**
+   * La reprise après 491 qui attend son tour, et ce qu'elle rejouera. Le
+   * délai côté utilisateur peut tomber pendant cette attente : il faut
+   * pouvoir la décommander, et savoir quel capteur elle laissait ouvert.
+   */
+  let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+  let deferred: { kind: MediaKind; on: boolean } | null = null;
   /**
    * Les pistes mises de côté le temps d'une pause (D7). Elles ne sont **pas**
    * arrêtées : la reprise doit être instantanée, et rouvrir un capteur
@@ -1008,6 +1045,34 @@ export function mediaControl(
     session.direction === "outgoing" ? Math.random() * 2000 : 2100 + Math.random() * 1900;
 
   /**
+   * Notre offre est abandonnée : retour arrière, capteur ouvert pour rien
+   * refermé, écran prévenu. **L'appel, lui, continue** — une renégociation
+   * qui n'aboutit pas ne coupe pas la communication, elle la laisse telle
+   * qu'elle était. `by` sépare le non du distant du silence : ce n'est pas
+   * la même phrase à l'écran.
+   */
+  const abandon = (by: "remote" | "local", statusCode?: number): void => {
+    const conn = pc;
+    const wanted = asking;
+    asking = null;
+    retried = false;
+    if (conn) {
+      rollback(conn);
+      if (wanted) closeTrack(conn, wanted.kind);
+    }
+    // Le dialogue est rendu à la renégociation suivante. Sur un refus ou un
+    // délai de transaction, JsSIP l'a déjà fait — c'est un geste pour rien.
+    // Il ne compte que là où **rien** ne conclura la transaction : le
+    // distant a accusé réception (100 Trying, que la transaction serveur
+    // envoie toute seule) puis s'est tu, la transaction reste en
+    // `Proceeding`, plus aucune minuterie n'y touchera — et sans cela
+    // l'appel ne pourrait plus rien négocier jusqu'au raccrochage.
+    const dialog = raw._dialog;
+    if (dialog) dialog.uac_pending_reply = false;
+    send({ type: "sip:mediaRefused", by, statusCode });
+  };
+
+  /**
    * Notre re-INVITE. L'offre locale est déjà appliquée quand la réponse
    * arrive : un refus laisse la connexion en `have-local-offer`, d'où le
    * retour arrière — sans lui, plus aucune renégociation ne serait
@@ -1031,7 +1096,6 @@ export function mediaControl(
           const conn = pc;
           const statusCode = statusOf(response ?? {});
           const wanted = asking;
-          asking = null;
 
           // Glare (RFC 3261 §14.1) : les deux bouts ont renégocié en même
           // temps. On reprend **une** fois, après un délai aléatoire — et le
@@ -1039,10 +1103,14 @@ export function mediaControl(
           // réoffrir. S'entêter au-delà ferait boucler deux clients face à
           // face, ce que le délai seul n'empêche pas.
           if (statusCode === 491 && wanted !== null && !retried && conn !== null) {
+            asking = null;
             retried = true;
             resuming = true;
+            deferred = wanted;
             rollback(conn);
-            setTimeout(() => {
+            resumeTimer = setTimeout(() => {
+              resumeTimer = null;
+              deferred = null;
               resuming = false;
               if (session.isEnded()) return;
               if (!raw.isReadyToReOffer()) {
@@ -1058,17 +1126,32 @@ export function mediaControl(
             return;
           }
 
-          retried = false;
-          if (conn) {
-            rollback(conn);
-            if (wanted) closeTrack(conn, wanted.kind);
-          }
           // sans réponse du tout (transport, délai), ce n'est pas un refus
           // du distant : la phrase affichée n'est pas la même
-          send({ type: "sip:mediaRefused", by: statusCode ? "remote" : "local", statusCode });
+          abandon(statusCode ? "remote" : "local", statusCode);
         },
       },
     });
+  };
+
+  /**
+   * **Le re-INVITE resté sans réponse finale.** Le distant n'a rien conclu
+   * — un client qui ne sait pas répondre à une offre en cours d'appel, un
+   * correspondant parti sans trancher la question posée à son écran — et
+   * JsSIP en tire un 408 qui **coupe la communication**. Or personne n'a
+   * raccroché : l'appel continue, simplement sans le média demandé.
+   *
+   * Le crochet n'est dévié que tant que **notre** offre attend sa réponse.
+   * Tout le reste garde le sien, à commencer par le rafraîchissement de
+   * session : si celui-là expire, c'est bien que le distant a disparu.
+   */
+  const nativeTimeout = raw.onRequestTimeout.bind(raw);
+  raw.onRequestTimeout = (): void => {
+    if (asking === null) {
+      nativeTimeout();
+      return;
+    }
+    abandon("local");
   };
 
   /**
@@ -1152,6 +1235,28 @@ export function mediaControl(
         asking = { kind, on: true };
         reinvite();
       });
+    },
+    /**
+     * Le délai côté utilisateur a tranché : l'offre en vol n'aura pas de
+     * conclusion. C'est le **seul** endroit d'où cette décision vient — le
+     * port n'a pas de minuterie à lui, et celles de JsSIP ne couvrent pas
+     * tous les cas : le Timer B ne tranche que tant qu'aucune réponse
+     * provisoire n'est arrivée (`Calling`), or un 100 Trying suffit à le
+     * rendre inerte. Un distant qui accuse réception puis se tait laisserait
+     * l'offre en vol pour toujours.
+     */
+    abandonMedia() {
+      // la reprise après 491 attendait son tour : elle n'a plus d'objet, et
+      // le capteur qu'elle gardait ouvert est à refermer avec le reste
+      if (resumeTimer !== null) {
+        clearTimeout(resumeTimer);
+        resumeTimer = null;
+        resuming = false;
+        asking = deferred;
+        deferred = null;
+      }
+      if (asking === null) return;
+      abandon("local");
     },
     /**
      * **Rien ne part sur le fil.** Les deux émetteurs lâchent leur piste, et
@@ -1359,6 +1464,9 @@ export function wrapSession(
     callStats: () => media.summary(),
     setMedia(kind, on) {
       control.setMedia(kind, on);
+    },
+    abandonMedia() {
+      control.abandonMedia();
     },
     setPaused(on) {
       control.setPaused(on);

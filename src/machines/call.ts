@@ -968,12 +968,26 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         },
       },
       after: {
-        // le distant n'a jamais conclu : l'appel, lui, continue. Le délai
-        // couvre la reprise après 491, qui peut demander jusqu'à 4 s avant
-        // même de repartir
-        delay: 30_000,
+        /**
+         * Le délai **côté utilisateur** : le distant n'a jamais conclu,
+         * l'appel continue, et les icônes média cessent d'attendre. Il
+         * couvre la reprise après 491, qui peut demander jusqu'à 4 s avant
+         * même de repartir.
+         *
+         * Il tombe **avant** celui de la transaction SIP (Timer B, 32 s,
+         * RFC 3261 §17.1.1.2), qui est ce qui conclut réellement l'offre
+         * dans `sip/port.ts` : l'écran rend la main pendant que le port
+         * finit de renoncer, et non l'inverse — un `mediaPending` qui
+         * survivrait à la fin de la négociation ne se débloquerait plus.
+         */
+        delay: 28_000,
         then: (ctx, fx) => {
           const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
+          // ce délai-ci est le seul à trancher : le port n'en a pas, et
+          // ceux de JsSIP ne couvrent pas le distant qui accuse réception
+          // puis se tait. Sans ce mot-là, l'offre resterait en vol —
+          // capteur allumé, et plus rien de négociable de tout l'appel
+          fx.data.session?.abandonMedia();
           fx.data.asked = fx.data.media;
           fx.data.mediaPending = false;
           notify(ctx, fx, msg(NOTICE[kind].unavailable));

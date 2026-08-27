@@ -115,6 +115,7 @@ class FakeCallSession {
   setMedia(kind: MediaKind, on: boolean): void {
     this.asked.push({ kind, on });
   }
+  abandonMedia(): void {}
   /** Ce qui a été demandé pour un média donné — le raccourci des tests. */
   askedFor(kind: MediaKind): boolean[] {
     return this.asked.filter((a) => a.kind === kind).map((a) => a.on);

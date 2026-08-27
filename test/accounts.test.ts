@@ -103,6 +103,7 @@ class FakeSip implements SipPort {
         return {
           terminate: () => {},
           setMedia: () => {},
+          abandonMedia: () => {},
             setPaused: () => {},
           sendDtmf: () => true,
           

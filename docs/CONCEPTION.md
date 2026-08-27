@@ -516,7 +516,7 @@ l'observateur y verrait un appel qui vient de perdre son média : un drapeau l'e
 le temps de la reprise — sans quoi il éteindrait le capteur qu'on s'apprête à réoffrir, et
 annoncerait un changement qui n'a pas eu lieu.
 
-Deux détails de JsSIP méritent d'être écrits :
+Quatre détails de JsSIP méritent d'être écrits :
 
 - `renegotiate()` n'est pas utilisé : son gestionnaire d'échec **raccroche l'appel**
   (500 Media Renegotiation Failed). Un 488 n'est pas une fin d'appel, c'est un non.
@@ -531,6 +531,38 @@ Deux détails de JsSIP méritent d'être écrits :
   en `media_offer` — 200 OK si l'utilisateur accepte, 488 Not Acceptable Here s'il
   refuse ou ne répond pas en 25 s. Ce qui ne fait qu'ôter un média, ou n'y touche pas,
   suit le chemin normal de JsSIP.
+- le re-INVITE **resté sans réponse finale** ne coupe plus la communication. JsSIP câble
+  le délai de la transaction (Timer B, RFC 3261 §17.1.1.2) sur `onRequestTimeout`, qui
+  raccroche — 408. C'est juste pour l'INVITE initial, qui n'a jamais établi d'appel ;
+  ça ne l'est plus pour une offre en cours de conversation, qu'un correspondant peut
+  laisser sans conclusion — un client qui ne sait pas répondre, quelqu'un parti sans
+  trancher la question posée à son écran — sans avoir mis fin à quoi que ce soit.
+  Le crochet est donc dévié le temps de **notre** offre seulement : retour arrière,
+  capteur ouvert pour rien refermé, avis à l'écran, et l'appel continue tel qu'il était.
+  Tout le reste garde le sien, à commencer par le rafraîchissement de session : si
+  celui-là expire, c'est bien que le distant a disparu.
+
+- le drapeau `uac_pending_reply` du dialogue est levé à la main quand une offre est
+  abandonnée. Tant qu'un INVITE que nous avons émis attend sa réponse finale
+  (RFC 3261 §14.2), `isReadyToReOffer()` est faux ; JsSIP le retombe à la fin de la
+  transaction, mais une offre que **rien** ne conclura le laisserait levé jusqu'au
+  raccrochage — et l'appel ne négocierait plus rien du tout.
+
+**Un seul délai décide, et c'est celui de l'utilisateur** : 28 s dans l'état
+`renegotiating` du bloc. Le port n'a pas de minuterie à lui ; quand le délai tombe, le
+bloc lui dit `abandonMedia()`, et c'est là que se font le retour arrière, l'extinction du
+capteur ouvert pour rien, et la libération du dialogue. Les minuteries de JsSIP ne
+pouvaient pas tenir ce rôle : le Timer B ne tranche que tant qu'aucune réponse
+provisoire n'est arrivée (état `Calling`), or **la transaction serveur répond 100 Trying
+d'elle-même**, avant même que le re-INVITE n'atteigne notre interception. Un distant qui
+accuse réception puis se tait — utilisateur parti sans trancher, B2BUA qui ne relaie que
+les réponses finales — laisserait sinon l'offre en vol pour toujours.
+
+**Aucun CANCEL n'est envoyé** pour autant : RFC 3261 §9.1 l'interdit tant qu'aucune
+réponse provisoire n'est arrivée — et c'est précisément le cas où le Timer B, lui,
+tranche —, JsSIP ne l'expose que pour l'INVITE initial, et les piles réelles interprètent
+diversement un CANCEL sur re-INVITE, certaines y voyant la fin de l'appel : ce serait
+infliger au correspondant le bug que l'on vient de corriger ici.
 
 Les deux nouveaux états publient `connected` dans la vue : l'appel n'a pas changé de
 nature parce qu'une offre est en vol, et raccrocher, composer un DTMF ou masquer son

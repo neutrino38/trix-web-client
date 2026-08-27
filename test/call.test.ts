@@ -36,6 +36,11 @@ class FakeSession implements CallSession {
   setMedia(kind: MediaKind, on: boolean): void {
     this.asked.push({ kind, on });
   }
+  /** Les offres que le bloc a fait retirer, faute de conclusion. */
+  abandoned = 0;
+  abandonMedia(): void {
+    this.abandoned++;
+  }
   /** Ce qui a été demandé pour un média donné — le raccourci des tests. */
   askedFor(kind: MediaKind): boolean[] {
     return this.asked.filter((a) => a.kind === kind).map((a) => a.on);
@@ -682,17 +687,24 @@ describe("CallBlock — les médias entrent et sortent de l'appel", () => {
     expect(box.session.askedFor("video")).toEqual([true]);
   });
 
-  it("renégociation sans réponse : l'appel continue au bout de 30 s", async () => {
+  it("renégociation sans réponse : l'appel continue au bout de 28 s", async () => {
     vi.useFakeTimers();
     try {
-      const { call } = connectedCall(false);
+      const { call, box } = connectedCall(false);
       call.send({ type: "ui:toggleMedia", kind: "video" });
       // le délai couvre la reprise après un 491, qui peut demander jusqu'à
-      // 4 s avant même de repartir (RFC 3261 §14.1)
-      await vi.advanceTimersByTimeAsync(30_000);
+      // 4 s avant même de repartir (RFC 3261 §14.1), et tombe avant le
+      // Timer B de la transaction, qui conclut l'offre côté port
+      await vi.advanceTimersByTimeAsync(27_999);
+      expect(call.sbb?.state).toBe("renegotiating");
+      await vi.advanceTimersByTimeAsync(1);
       expect(call.sbb?.state).toBe("connected");
       expect(call.context.call?.mediaPending).toBe(false);
       expect(call.context.call?.notice?.message).toEqual({ key: "notice.videoUnavailable" });
+      // l'écran ne se contente pas de rendre la main : l'offre est retirée
+      // pour de bon, sans quoi elle resterait en vol — capteur allumé, et
+      // plus rien de négociable de tout l'appel
+      expect(box.session.abandoned).toBe(1);
     } finally {
       vi.useRealTimers();
     }

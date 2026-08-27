@@ -160,16 +160,59 @@ class FakeSession {
     return this.ended;
   }
 
+  /**
+   * Le dialogue tel que JsSIP le tient : tant qu'un INVITE que nous avons
+   * émis y attend sa réponse finale, plus rien ne peut se renégocier
+   * (RFC 3261 §14.2). C'est ce drapeau, et non un état à nous, qui décide
+   * de `isReadyToReOffer()`.
+   */
+  readonly _dialog = { uac_pending_reply: false };
+
   isReadyToReOffer(): boolean {
-    return this.ready;
+    return this.ready && !this._dialog.uac_pending_reply;
   }
 
+  /**
+   * Les gestionnaires sont enveloppés comme JsSIP le fait : la transaction
+   * se termine — donc le drapeau retombe — **avant** que le résultat ne
+   * soit remis à son appelant. Une offre que rien ne conclut, elle, le
+   * laisse levé : c'est tout l'objet de `abandonMedia()`.
+   */
   _sendReinvite(opts: { eventHandlers: Handlers }): void {
-    this.reinvites.push(opts.eventHandlers);
+    const h = opts.eventHandlers;
+    this._dialog.uac_pending_reply = true;
+    this.reinvites.push({
+      succeeded: (r) => {
+        this._dialog.uac_pending_reply = false;
+        h.succeeded(r);
+      },
+      failed: (r) => {
+        this._dialog.uac_pending_reply = false;
+        h.failed(r);
+      },
+    });
     this.pc.signalingState = "have-local-offer";
   }
 
   _receiveReinvite(): void {}
+
+  /**
+   * Ce que JsSIP fait d'une transaction expirée : il raccroche (408). Le
+   * drapeau sert à vérifier qu'on ne l'a **pas** laissé faire quand c'est
+   * notre re-INVITE qui est resté sans réponse — et qu'on le laisse faire
+   * partout ailleurs.
+   */
+  hungUpOnTimeout = false;
+
+  onRequestTimeout(): void {
+    this.hungUpOnTimeout = true;
+    this.ended = true;
+  }
+
+  /** Le délai de la transaction expire — Timer B, RFC 3261 §17.1.1.2. */
+  timeOut(): void {
+    this.onRequestTimeout();
+  }
 
   private listeners: Record<string, ((e: never) => void)[]> = {};
 
@@ -308,6 +351,120 @@ describe("le refus du distant", () => {
     // et le retour arrière n'y ajoute aucun refus de plus
     await vi.runAllTimersAsync();
     expect(events.filter((e) => e.type === "sip:mediaRefused")).toHaveLength(1);
+  });
+});
+
+/**
+ * **Le re-INVITE resté sans réponse.** Le distant ne conclut rien — un
+ * client qui ne sait pas répondre à une offre en cours d'appel, un
+ * correspondant parti sans trancher la question posée à son écran. JsSIP
+ * en tire un 408 et **raccroche** ; or personne n'a mis fin à l'appel, qui
+ * doit continuer sans le média demandé.
+ */
+describe("le silence du distant ne coupe pas l'appel", () => {
+  it("ajout resté sans réponse : la communication tient, le capteur se referme", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    expect(session.reinvites).toHaveLength(1);
+
+    session.timeOut();
+
+    expect(session.hungUpOnTimeout).toBe(false);
+    expect(session.ended).toBe(false);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local", statusCode: undefined }]);
+    await vi.runAllTimersAsync();
+    expect(session.pc.rollbacks).toBe(1);
+    expect(session.pc.transceivers.find((t) => t.kind === "video")!.direction).toBe("inactive");
+  });
+
+  /**
+   * Sans le retour arrière, la connexion resterait en `have-local-offer` et
+   * plus rien ne se négocierait de tout l'appel : le silence du distant
+   * coûterait les médias pour de bon, faute de couper la communication.
+   */
+  it("et la renégociation suivante part quand même", async () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    session.timeOut();
+    await vi.runAllTimersAsync();
+
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    expect(session.reinvites).toHaveLength(2);
+  });
+
+  it("un délai qui n'est pas celui de notre offre garde son effet", () => {
+    const { session } = control(["audio", "video"]);
+    session.timeOut();
+    expect(session.hungUpOnTimeout).toBe(true);
+  });
+});
+
+/**
+ * **Le distant qui accuse réception puis se tait.** La transaction serveur
+ * répond 100 Trying toute seule ; ce 1xx rend le Timer B du demandeur
+ * inerte (il ne tranche qu'en `Calling`), et plus rien côté SIP ne conclura
+ * l'offre. C'est le délai **côté utilisateur** qui tranche, et il n'a qu'un
+ * mot à dire au port : `abandonMedia()`.
+ */
+describe("l'offre retirée par le délai côté utilisateur", () => {
+  it("retour arrière, capteur refermé, et le dialogue rendu disponible", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    // l'offre est en vol : rien ne se renégocierait tant qu'elle y reste
+    expect(session._dialog.uac_pending_reply).toBe(true);
+    expect(session.isReadyToReOffer()).toBe(false);
+
+    ctl.abandonMedia();
+
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local", statusCode: undefined }]);
+    expect(session._dialog.uac_pending_reply).toBe(false);
+    expect(session.isReadyToReOffer()).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(session.pc.rollbacks).toBe(1);
+    expect(session.pc.transceivers.find((t) => t.kind === "video")!.direction).toBe("inactive");
+  });
+
+  it("et la vidéo peut être redemandée juste après", async () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    ctl.abandonMedia();
+    await vi.runAllTimersAsync();
+
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    expect(session.reinvites).toHaveLength(2);
+  });
+
+  /**
+   * Le délai peut tomber pendant l'attente d'une reprise après 491. Celle-ci
+   * gardait le capteur ouvert pour le réoffrir : il n'y a plus rien à
+   * réoffrir, et personne d'autre ne l'éteindra.
+   */
+  it("pendant l'attente d'une reprise après 491 : la reprise ne part pas", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    session.reinvites[0]!.failed({ message: { status_code: 491 } });
+
+    ctl.abandonMedia();
+    vi.advanceTimersByTime(10_000);
+
+    expect(session.reinvites).toHaveLength(1);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local", statusCode: undefined }]);
+    await vi.runAllTimersAsync();
+    expect(session.pc.transceivers.find((t) => t.kind === "video")!.direction).toBe("inactive");
+  });
+
+  it("sans offre en vol, il n'y a rien à retirer", () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.abandonMedia();
+    expect(events).toEqual([]);
+    expect(session.pc.rollbacks).toBe(0);
   });
 });
 

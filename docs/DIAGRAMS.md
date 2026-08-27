@@ -155,7 +155,7 @@ stateDiagram-v2
   connected --> renegotiating: ui:toggleMedia
   connected --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
   renegotiating --> hangingup: sip:disconnected, sys:sleep, ui:hangup
-  renegotiating --> connected: sip:mediaChanged, sip:mediaChanged (média négocié), sip:mediaRefused (refus), after 30 s (sans réponse)
+  renegotiating --> connected: sip:mediaChanged, sip:mediaChanged (média négocié), sip:mediaRefused (refus), after 28 s (sans réponse)
   renegotiating --> renegotiating: ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:togglePause, sip:peerPaused, ui:toggleSelfView (self-view)
   renegotiating --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
   media_offer --> hangingup: sip:disconnected, sys:sleep, ui:hangup
