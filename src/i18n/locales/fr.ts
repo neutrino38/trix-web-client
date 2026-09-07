@@ -271,6 +271,19 @@ const messages = {
   "ctrl.selfview.hide": "Masquer le self-view",
   "ctrl.selfview.show": "Afficher le self-view",
   /**
+   * **La permutation de la scène** (ADR 0005, D11). L'écran partagé prend
+   * la grande surface, et le visage passe en vignette : remettre l'un ou
+   * l'autre en grand est une bascule **locale** — rien ne part sur le fil,
+   * et le correspondant continue de recevoir exactement la même chose.
+   *
+   * Le geste tactile — un appui sur la vignette — ne suffit pas : au
+   * clavier il n'existe pas (RGAA 7.3), d'où ce bouton.
+   */
+  "share.stageAria": "Écran partagé par {peer}",
+  "ctrl.swap.aria": "Permuter l'écran et le visage",
+  "ctrl.swap.screen": "Mettre l'écran en grand",
+  "ctrl.swap.face": "Mettre le visage en grand",
+  /**
    * L'écoute **sur ce poste**, et rien d'autre : le correspondant continue
    * de parler dans un appel intact. « Couper le son » ne disait pas de quel
    * son il s'agissait, et se confondait avec le retrait de l'audio, qui,
@@ -327,6 +340,16 @@ const messages = {
   "mediaask.both.title": "{peer} souhaite ajouter l'audio et la vidéo",
   "mediaask.both.body": "Accepter allumera votre micro et votre caméra.",
   "mediaask.both.accept": "Accepter les deux",
+  /**
+   * **L'écran partagé qui arrive** (ADR 0005, D5). La question ne se pose
+   * pas pour la même raison que les autres : accepter n'allume aucun
+   * capteur ici. Elle se pose pour une raison plus forte — un écran
+   * partagé **prend la place de la langue des signes**, et sur un
+   * téléphone il n'y a pas deux grandes surfaces.
+   */
+  "mediaask.share.title": "{peer} souhaite partager son écran",
+  "mediaask.share.body": "Son écran prendra la grande surface, et son image passera en vignette. Refuser ne change rien à l'appel.",
+  "mediaask.share.accept": "Voir l'écran",
   "mediaask.reject": "Refuser",
 
   // ---------------------------------------------------------------------
@@ -345,6 +368,9 @@ const messages = {
    */
   "notice.shareRefused": "{peer} n'a pas accepté le partage d'écran",
   "notice.shareUnavailable": "Impossible de partager l'écran pour le moment",
+  "notice.sharePeerStarted": "{peer} partage son écran",
+  "notice.sharePeerStopped": "{peer} a cessé de partager son écran",
+  "notice.shareDeclinedHere": "Partage refusé",
   "notice.audioDeclined": "{peer} n'a pas accepté l'audio",
   "notice.audioRefused": "{peer} refuse d'ajouter l'audio à cet appel",
   "notice.audioAdded": "{peer} a ajouté l'audio",

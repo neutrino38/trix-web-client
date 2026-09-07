@@ -140,6 +140,17 @@ export interface CallView {
    */
   mediaAsked: MediaKind[] | null;
   /**
+   * La question posée porte sur un **écran partagé** (ADR 0005, D5). Elle
+   * ne se pose pas pour la même raison que les autres : accepter n'allume
+   * aucun capteur ici, mais un écran partagé prend la place de la langue
+   * des signes, et sur un téléphone il n'y a pas deux grandes surfaces.
+   *
+   * Avec `mediaAsked` vide, c'est une offre qui n'apporte qu'un écran ;
+   * avec des médias dedans, c'est une offre qui apporte les deux — et la
+   * question reste unique.
+   */
+  shareAsked: boolean;
+  /**
    * **Je suis en pause** : rien de ce que j'émets ne part. L'appel n'a pas
    * changé de nature — `media` dit toujours la même chose — et le texte
    * continue de passer dans les deux sens (D7).
@@ -164,6 +175,17 @@ export interface CallView {
    * dire. Annoncer « arrêt en cours » promettrait un écran encore visible.
    */
   sharing: "off" | "starting" | "on";
+  /**
+   * **Le correspondant partage son écran.** L'appel n'a pas changé de
+   * nature — `media` dit toujours la même chose —, c'est la **scène** qui
+   * change : l'écran prend la grande surface, sa caméra passe en vignette,
+   * et l'auto-vue se replie (D11).
+   *
+   * Un booléen et non trois états : recevoir ne se demande pas, cela
+   * arrive. Ce qui s'attend, c'est la réponse à la question posée avant —
+   * et elle vit dans `shareAsked`.
+   */
+  peerSharing: boolean;
   /**
    * Les tonalités DTMF composées depuis le début de l'appel, dans l'ordre,
    * et seulement celles qui sont **parties**. Rien d'autre ne les rejoue :

@@ -29,6 +29,7 @@ import { setStateTitle } from "../../title.js";
 import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
 import { wireChat } from "./chat.js";
+import { wireShareStage } from "./share.js";
 import { LENS_ICON, showStatsDialog, startMediaStats } from "./stats.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
@@ -107,6 +108,14 @@ export const ICONS = {
    * de cet écran va vers l'appel.
    */
   share: `<svg class="icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h5v2h6v-2h5c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 12H4V6h16v10zm-8-9-4 4h2.5v3h3v-3H16l-4-4z"/></svg>`,
+  /**
+   * **La permutation de la scène** (ADR 0005, D11) : deux flèches
+   * verticales, l'une qui monte et l'autre qui descend — l'écran et le
+   * visage échangent leur place. À ne pas confondre avec `swap`, qui
+   * change de compte : celle-là est horizontale, et elle ne parle pas de
+   * l'appel.
+   */
+  stageSwap: `<svg class="icon" viewBox="0 0 24 24"><path d="M7 3 3 7h3v7h2V7h3L7 3zm10 18 4-4h-3v-7h-2v7h-3l4 4z"/></svg>`,
   // deux flèches qui se croisent : passer d'un compte à l'autre
   swap: `<svg class="icon" viewBox="0 0 24 24"><path d="M7 3 3 7l4 4V8h9V6H7V3zm10 18 4-4-4-4v3H8v2h9v3z"/></svg>`,
 };
@@ -725,6 +734,12 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     flash: cfg?.flashAlert !== false,
   });
 
+  // --- écran partagé reçu ---------------------------------------------------
+  // La permutation scène / vignette vit hors de la machine, comme le pavé
+  // DTMF : rien ne part sur le fil, et le correspondant continue de recevoir
+  // exactement la même chose (ADR 0005, D11).
+  wireShareStage(node);
+
   // --- panneau latéral (repli, largeur) ------------------------------------
   // absent de la vue mobile : `wirePanel` ne trouve alors ni bouton ni
   // poignée et ne fait rien, comme tout le reste de ce câblage
@@ -740,8 +755,11 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
   if (view && remote) {
     const self = node.querySelector('[data-ref="self"]') as HTMLVideoElement | null;
+    // la surface de l'écran partagé n'existe que pendant un partage reçu ;
+    // le port y route la piste **par son MID**, jamais par ordre d'arrivée
+    const shared = node.querySelector('[data-ref="share"]') as HTMLVideoElement | null;
     remote.muted = speakerMuted;
-    view.session?.attachMedia(remote, self);
+    view.session?.attachMedia(remote, self, shared);
 
     // plein écran : le double-clic est un raccourci, le bouton est le chemin
     // praticable au clavier (RGAA 7.3) — les deux mènent au même geste

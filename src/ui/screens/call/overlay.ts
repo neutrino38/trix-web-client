@@ -71,6 +71,7 @@ import { ICONS, ICONS_OFF } from "./parts.js";
 import { panelIcon, panelToggleLabel } from "./panel.js";
 import { DTMF_PAD_ID, dtmfOpen } from "./dtmf.js";
 import { MORE_ICON, SHEET_ID, bottomSheet, sheetOpen } from "./sheet.js";
+import { shareSwapped } from "./share.js";
 import { LENS_ICON } from "./stats.js";
 import { t } from "../../../i18n/index.js";
 import { esc } from "../../el.js";
@@ -324,6 +325,32 @@ export function overlayBar(ctx: OverlayCtx): string {
     },
   ];
 
+  if (ctx.view.peerSharing) {
+    /**
+     * **La permutation de la scène** (ADR 0005, D11). Elle n'existe que
+     * pendant un partage reçu : sans deux images, il n'y a rien à échanger.
+     *
+     * Elle est **après le trait** — c'est une bascule locale, comme le
+     * self-view : le correspondant continue de recevoir exactement la même
+     * chose, et rien de ce que l'appel transporte ne bouge. Violet, donc, et
+     * jamais rouge.
+     *
+     * L'appui sur la vignette fait le même geste ; ce bouton est ce qui le
+     * rend praticable au clavier (RGAA 7.3), et il descend dans la feuille
+     * du bas si la place manque — l'ADR le demande à un endroit ou à
+     * l'autre, pas aux deux à la fois.
+     */
+    cmds.push({
+      act: "swap-stage",
+      icon: ICONS.stageSwap,
+      label: t(shareSwapped() ? "ctrl.swap.screen" : "ctrl.swap.face"),
+      aria: t("ctrl.swap.aria"),
+      pressed: shareSwapped(),
+      disabled: !connected,
+      sheetable: true,
+    });
+  }
+
   if (ctx.withFullscreen) {
     // le double-clic sur la vidéo reste, mais il ne peut pas être le seul
     // chemin : au clavier il n'existe pas (RGAA 7.3)
@@ -332,7 +359,9 @@ export function overlayBar(ctx: OverlayCtx): string {
       icon: ICONS.fullscreen,
       label: t("ctrl.fullscreen"),
       aria: t("ctrl.fullscreen"),
-      disabled: !view.media.video,
+      // un écran partagé est une image à agrandir comme une autre — et
+      // c'est même celle qui en a le plus besoin (ADR 0005, D11)
+      disabled: !view.media.video && !view.peerSharing,
       sheetable: true,
     });
   }

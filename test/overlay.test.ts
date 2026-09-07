@@ -42,8 +42,10 @@ function view(over: Partial<CallView> = {}): CallView {
     selfViewHidden: false,
     mediaPending: false,
     mediaAsked: null,
+    shareAsked: false,
     paused: false,
     sharing: "off" as const,
+    peerSharing: false,
     peerPaused: false,
     dtmfSent: "",
     notice: null,
@@ -505,5 +507,59 @@ describe("le bouton de partage", () => {
     );
     const pill = html.slice(html.indexOf("overlay-pill"), html.indexOf("bar-break"));
     expect(pill.match(/<button/g)).toHaveLength(4);
+  });
+});
+
+/**
+ * **La permutation de la scène** (ADR 0005, D11).
+ *
+ * L'écran reçu prend la grande surface et le visage passe en vignette ;
+ * remettre le visage en grand ne refuse pas le partage, cela le range. Pour
+ * le public de Trix ce n'est pas un réglage d'affichage — la vidéo de
+ * l'appel est le canal de la langue des signes (F.703 §4.5) —, mais rien
+ * n'en part sur le fil : c'est une bascule locale, et sa place est **après
+ * le trait**, avec le self-view et l'écoute.
+ */
+describe("le bouton de permutation", () => {
+  it("n'existe pas tant que personne ne partage : il n'y a rien à échanger", () => {
+    expect(acts(overlayBar({ view: view(), speakerMuted: false }))).not.toContain("swap-stage");
+  });
+
+  it("apparaît dès qu'un écran est reçu, des deux côtés du gabarit", () => {
+    for (const compact of [false, true]) {
+      const html = overlayBar({ view: view({ peerSharing: true }), speakerMuted: false, compact });
+      expect(acts(html)).toContain("swap-stage");
+    }
+  });
+
+  it("est après le trait : rien n'en part sur le fil", () => {
+    const html = overlayBar({ view: view({ peerSharing: true }), speakerMuted: false });
+    expect(html.indexOf("pill-sep")).toBeLessThan(html.indexOf('data-act="swap-stage"'));
+  });
+
+  /**
+   * Le budget de quatre icônes de D8 ne bouge pas : la permutation descend
+   * dans la feuille, où son libellé la rend lisible — « permuter » ne se
+   * devine dans aucune icône.
+   */
+  it("descend dans la feuille du bas plutôt que d'élargir la pastille", () => {
+    const html = bar({ peerSharing: true });
+    expect(pill(html)).toHaveLength(4);
+    expect(sheet(html)).toContain("swap-stage");
+  });
+
+  /**
+   * Un écran partagé est une image à agrandir comme une autre — et c'est
+   * même celle qui en a le plus besoin : un écran de bureau sur 390 px.
+   */
+  it("le plein écran cesse d'être grisé pendant un partage reçu", () => {
+    const sans = bar();
+    const avec = bar({ peerSharing: true });
+    const bouton = (html: string): string => {
+      const at = html.indexOf('data-act="fullscreen"');
+      return html.slice(html.lastIndexOf("<button", at), html.indexOf(">", at));
+    };
+    expect(bouton(sans)).toContain("disabled");
+    expect(bouton(avec)).not.toContain("disabled");
   });
 });

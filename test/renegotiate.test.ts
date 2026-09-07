@@ -972,21 +972,30 @@ describe("une seconde m=video reçue", () => {
   });
 
   /**
-   * L'écran n'ajoute aucun média à l'appel (D3) : il n'y a donc **rien à
-   * demander** à l'utilisateur, et le re-INVITE suit le chemin ordinaire de
-   * JsSIP. Sans l'exclusion de la m-section du partage, un appel audio se
-   * verrait poser « votre correspondant souhaite ajouter la vidéo » pour un
-   * document qu'il fait défiler.
+   * **L'écran pose sa propre question** (SC-3, D5), et elle ne parle pas de
+   * média : ce que l'appel transporte ne bouge pas. Sans l'exclusion de la
+   * m-section du partage, un appel audio se verrait poser « votre
+   * correspondant souhaite ajouter la vidéo » pour un document qu'il fait
+   * défiler — et c'est la caméra qui s'allumerait en acceptant.
    */
-  it("un re-INVITE qui n'apporte qu'un écran ne pose aucune question", () => {
+  it("un re-INVITE qui n'apporte qu'un écran pose la question du partage", () => {
     const { session, events } = control(["audio"]);
     // le re-INVITE est intercepté **avant** que l'offre ne soit appliquée :
     // la m-section de l'écran n'existe pas encore sur la connexion
     const ecran = ["m=video 51374 RTP/AVP 96", "a=mid:1", "a=content:slides", "a=sendonly"];
     session.receiveReinvite(offre(...AUDIO, ...ecran));
 
-    expect(events).toEqual([]);
-    expect(session.passedThrough).toBe(true);
+    expect(events).toEqual([
+      {
+        type: "sip:mediaOffer",
+        media: { audio: true, video: false, text: false },
+        share: true,
+        offer: expect.anything(),
+      },
+    ]);
+    // rien n'est répondu tant que l'utilisateur n'a pas tranché : la
+    // transaction serveur a envoyé son 100 Trying, l'appelant patiente
+    expect(session.passedThrough).toBe(false);
     expect(session.replied).toBeNull();
   });
 
@@ -995,6 +1004,173 @@ describe("une seconde m=video reçue", () => {
     session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
 
     expect(events.map((e) => e.type)).toEqual(["sip:mediaOffer"]);
+  });
+});
+
+/**
+ * **Recevoir un écran partagé** (ADR 0005, phase SC-3).
+ *
+ * Trois choses s'y jouent, et elles ne se voient pas au même endroit :
+ *
+ * - **la question**. Accepter n'allume aucun capteur ici — la raison qui
+ *   fait demander pour le micro et la caméra ne s'applique pas. Elle se
+ *   pose quand même, et pour plus fort : un écran partagé prend la place de
+ *   la langue des signes (F.703 §4.5). Le refus est un 488, et la session
+ *   revient exactement à ce qu'elle était ;
+ * - **une seule question pour tout ce que l'offre porte**, et pas deux
+ *   popups qui se chassent ;
+ * - **un partage qui se poursuit n'est pas une demande de plus** : le
+ *   distant qui retire son micro pendant qu'il partage ne doit pas faire
+ *   reposer la question à chaque renégociation.
+ */
+describe("l'écran du correspondant", () => {
+  const head = ["v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=-", "c=IN IP4 192.0.2.1", "t=0 0"];
+  const AUDIO = ["m=audio 49170 RTP/AVP 0", "a=mid:0", "a=sendrecv"];
+  const CAMERA = ["m=video 51372 RTP/AVP 96", "a=mid:1", "a=sendrecv"];
+  const ECRAN = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=content:slides", "a=sendonly"];
+  /** L'écran retiré : la m-section reste, rendue inerte (D6). */
+  const ECRAN_MORT = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=content:slides", "a=inactive"];
+  const offre = (...media: string[]): string => [...head, ...media].join("\r\n");
+
+  /** La question posée, telle que le bloc la recevrait. */
+  function question(events: CallSipEvent[]) {
+    const ev = events.find((e) => e.type === "sip:mediaOffer");
+    if (ev?.type !== "sip:mediaOffer") throw new Error("aucune question posée");
+    return ev;
+  }
+
+  /**
+   * Le distant offre son écran sur un appel audio + vidéo. La m-section
+   * arrive avec l'offre : sur une vraie connexion, c'est
+   * `setRemoteDescription` qui la crée — ici, on la pose à la main.
+   */
+  function ecranOffert() {
+    const fait = control(["audio", "video"]);
+    fait.session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
+    const ecran = fait.session.pc.addTransceiver("video");
+    ecran.mid = "2";
+    ecran.currentDirection = null;
+    return { ...fait, ecran };
+  }
+
+  /** L'offre est appliquée, la réponse s'écrit, la négociation se conclut. */
+  function negocie(session: FakeSession, ecran: FakeTransceiver, sdp: string): void {
+    session.sdp("remote", "offer", sdp);
+    session.pc.settle("have-remote-offer");
+    // ce que le navigateur conclut de la direction que la réponse déclare
+    ecran.currentDirection = ecran.direction === "inactive" ? "inactive" : "recvonly";
+    session.pc.settle("stable");
+  }
+
+  it("accepté : le laissez-passer part, et la m-section n'est pas neutralisée", async () => {
+    const { session, events, ecran } = ecranOffert();
+    question(events).offer.accept();
+    await vi.runAllTimersAsync();
+
+    expect(session.passedThrough).toBe(true);
+    expect(session.replied).toBeNull();
+    negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
+    expect(ecran.direction).not.toBe("inactive");
+    expect(events.filter((e) => e.type === "sip:peerSharing")).toEqual([
+      { type: "sip:peerSharing", on: true },
+    ]);
+  });
+
+  /**
+   * Le partage n'est pas un média de l'appel (D3) : l'accepter ne change
+   * rien à ce que la conversation transporte, et l'écran ne doit pas dire
+   * « il a ajouté la vidéo » pour un document qui défile.
+   */
+  it("accepté : ce que l'appel transporte n'a pas bougé", async () => {
+    const { session, events, ecran } = ecranOffert();
+    question(events).offer.accept();
+    await vi.runAllTimersAsync();
+    negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
+
+    expect(events.filter((e) => e.type === "sip:mediaChanged")).toEqual([
+      { type: "sip:mediaChanged", media: { audio: true, video: true, text: false } },
+    ]);
+  });
+
+  it("refusé : 488, rien n'est appliqué, et l'appel continue", () => {
+    const { session, events } = ecranOffert();
+    question(events).offer.reject();
+
+    expect(session.replied).toBe(488);
+    expect(session.passedThrough).toBe(false);
+    expect(events.filter((e) => e.type === "sip:peerSharing")).toEqual([]);
+  });
+
+  /**
+   * Un refus n'est pas définitif : le distant peut redemander, et la
+   * question se repose. C'est ce qui distingue « non, pas maintenant » de
+   * « ce poste ne sait pas afficher d'écran ».
+   */
+  it("refusé : le partage suivant repose la question", () => {
+    const { session, events } = ecranOffert();
+    question(events).offer.reject();
+    session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
+
+    expect(events.filter((e) => e.type === "sip:mediaOffer")).toHaveLength(2);
+  });
+
+  /**
+   * Le distant retire son micro pendant qu'il partage : c'est une question
+   * — le micro —, et l'écran qui continue n'en ajoute pas une seconde.
+   */
+  it("un partage qui se poursuit ne repose pas la question", async () => {
+    const { session, events, ecran } = ecranOffert();
+    question(events).offer.accept();
+    await vi.runAllTimersAsync();
+    negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
+
+    session.passedThrough = false;
+    session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
+    expect(events.filter((e) => e.type === "sip:mediaOffer")).toHaveLength(1);
+    expect(session.passedThrough).toBe(true);
+  });
+
+  it("l'écran qui s'arrête se dit, et la scène revient au visage", async () => {
+    const { session, events, ecran } = ecranOffert();
+    question(events).offer.accept();
+    await vi.runAllTimersAsync();
+    negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
+    negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN_MORT));
+
+    expect(events.filter((e) => e.type === "sip:peerSharing")).toEqual([
+      { type: "sip:peerSharing", on: true },
+      { type: "sip:peerSharing", on: false },
+    ]);
+  });
+
+  /**
+   * Une offre qui apporte les deux ne pose qu'**une** question : deux
+   * popups qui se chassent ne se répondent pas, et l'acceptation vaut pour
+   * tout ce que l'offre porte.
+   */
+  it("un média et un écran d'un coup : une seule question, pour les deux", () => {
+    const { session, events } = control(["audio"]);
+    session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
+
+    const asked = events.filter((e) => e.type === "sip:mediaOffer");
+    expect(asked).toHaveLength(1);
+    expect(question(events).share).toBe(true);
+    expect(question(events).media).toEqual({ audio: true, video: true, text: false });
+  });
+
+  /**
+   * Le partage tant qu'il n'est pas accepté n'existe pas pour l'écran : sa
+   * piste ne doit pas se glisser dans la surface principale, ni s'afficher
+   * dans une seconde que personne n'a ouverte.
+   */
+  it("la piste de l'écran ne se donne qu'une fois le partage accepté", async () => {
+    const { session, events, ecran, ctl } = ecranOffert();
+    expect(ctl.shareTrack("peer")).toBeNull();
+
+    question(events).offer.accept();
+    await vi.runAllTimersAsync();
+    negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
+    expect(ctl.shareTrack("peer")).toBe(ecran.received);
   });
 });
 

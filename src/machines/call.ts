@@ -106,6 +106,16 @@ export interface CallData {
    */
   sharing: "off" | "starting" | "on";
   /**
+   * **Ce que je reçois d'écran** (ADR 0005, D11). Comme `sharing`, il vit à
+   * côté de `media` et non dedans : l'appel ne transporte pas un média de
+   * plus parce qu'un document défile.
+   *
+   * Ce qu'il change est la **scène** : l'écran prend la grande surface, la
+   * caméra du correspondant passe en vignette, et l'auto-vue se replie —
+   * trois images sur un téléphone n'en font aucune lisible.
+   */
+  peerSharing: boolean;
+  /**
    * Ce que le réseau émet **avant le décrochage** (RFC 3960), lu dans le
    * SDP des réponses provisoires : les trois médias, parce qu'un accueil
    * peut être parlé, signé ou écrit. `NO_MEDIA` tant qu'aucune réponse
@@ -117,6 +127,12 @@ export interface CallData {
   mediaOffer: MediaOffer | null;
   /** Ce que cette offre ajouterait — de quoi nommer le média dans la question. */
   offerAdds: MediaKind[];
+  /**
+   * L'offre en attente apporte un **écran partagé** (ADR 0005, D5). Une
+   * seule question pour tout ce qu'elle porte : c'est déjà la sémantique
+   * d'`offerAdds`, et accepter vaut pour l'ensemble.
+   */
+  offerShare: boolean;
   /** Les tonalités DTMF réellement parties, dans l'ordre de composition. */
   dtmfSent: string;
   /** Dernier message fugace publié, et le numéro d'ordre qui le distingue. */
@@ -165,8 +181,10 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
     paused: data.paused,
     peerPaused: data.peerPaused,
     sharing: data.sharing,
+    peerSharing: data.peerSharing,
     mediaPending: data.mediaPending,
     mediaAsked: data.mediaOffer !== null ? data.offerAdds : null,
+    shareAsked: data.mediaOffer !== null && data.offerShare,
     dtmfSent: data.dtmfSent,
     notice: data.notice,
     earlyMedia: data.earlyMedia,
@@ -361,6 +379,8 @@ function interruptions(ending: Ending): CallOn {
     "ui:toggleShare": () => undefined,
     "sip:sharing": () => undefined,
     "sip:shareEnded": () => undefined,
+    // et il n'y a pas davantage d'écran à recevoir : rien n'est négocié
+    "sip:peerSharing": () => undefined,
     // le clavier DTMF n'existe qu'en communication : hors de là, il n'y a
     // pas de flux RTP où glisser la tonalité
     "ui:dtmf": () => undefined,
@@ -414,6 +434,21 @@ const NOTICE: Record<
     unavailable: "notice.videoUnavailable",
   },
 };
+
+/**
+ * Ce qui se dit à l'écran quand **on vient de refuser** ce que le distant
+ * proposait. Un média refusé le dit par son nom ; une offre qui n'apportait
+ * qu'un écran a sa propre phrase — parler de « la vidéo » ferait croire à
+ * une caméra qui vient de s'éteindre, alors que rien de ce que l'appel
+ * transporte n'a bougé (ADR 0005, D3).
+ *
+ * Une offre qui portait les deux se dit par le média : c'est lui qui change
+ * la nature de l'appel, l'écran n'en change que la scène.
+ */
+function declinedHere(data: CallData): Msg {
+  const kind = data.offerAdds[0];
+  return kind === undefined ? msg("notice.shareDeclinedHere") : msg(NOTICE[kind].declinedHere);
+}
 
 /** Les médias qui ont changé entre deux états de l'appel — l'audio d'abord. */
 function changed(before: CallMedia, after: CallMedia): MediaKind[] {
@@ -549,6 +584,32 @@ function inCall(): CallOn {
       publish("connected", ctx, fx.data);
       return stay(ev.paused ? "le distant est en pause" : "le distant est revenu");
     },
+    /**
+     * **Le correspondant partage son écran** (ADR 0005, D11), ou il vient
+     * de cesser. Ce n'est pas un média de plus — `media` ne bouge pas —,
+     * c'est la **scène** qui change : l'écran prend la grande surface et
+     * son visage passe en vignette.
+     *
+     * Le self-view se replie avec l'arrivée de l'écran : trois images sur
+     * un téléphone n'en font aucune lisible. Le bouton reste, et un appui
+     * le rouvre — c'est un pli, pas une interdiction.
+     *
+     * Il ne se rouvre pas tout seul à la fin du partage : ce serait défaire
+     * un geste que l'utilisateur a peut-être fait sien entre-temps.
+     */
+    "sip:peerSharing": (ev, ctx, fx) => {
+      if (fx.data.peerSharing === ev.on) return undefined;
+      fx.data.peerSharing = ev.on;
+      if (ev.on) fx.data.selfViewHidden = true;
+      notify(
+        ctx,
+        fx,
+        msg(ev.on ? "notice.sharePeerStarted" : "notice.sharePeerStopped", {
+          peer: peerName(fx.data),
+        }),
+      );
+      return stay(ev.on ? "le distant partage son écran" : "le distant a cessé de partager");
+    },
     "ui:toggleSelfView": (_ev, ctx, fx) => {
       fx.data.selfViewHidden = !fx.data.selfViewHidden;
       publish("connected", ctx, fx.data);
@@ -603,11 +664,13 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
     selfViewHidden: false,
     paused: false,
     sharing: "off" as CallData["sharing"],
+    peerSharing: false,
     peerPaused: false,
     mediaPending: false,
     earlyMedia: NO_MEDIA,
     mediaOffer: null,
     offerAdds: [] as MediaKind[],
+    offerShare: false,
     dtmfSent: "",
     notice: null,
     noticeSeq: 0,
@@ -917,10 +980,19 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           );
           return stay(`${kind} ${ev.media[kind] ? "ajouté" : "retiré"} par le distant`);
         },
+        /**
+         * Le distant propose d'ajouter un média, un **écran partagé**, ou
+         * les deux — une seule question, et l'acceptation vaut pour tout ce
+         * qu'elle porte (ADR 0005, D5).
+         */
         "sip:mediaOffer": (ev, _ctx, fx) => {
           fx.data.mediaOffer = ev.offer;
           fx.data.offerAdds = MEDIA_KINDS.filter((k) => ev.media[k] && !fx.data.media[k]);
-          return goto("media_offer", "le distant propose un média");
+          fx.data.offerShare = ev.share;
+          // un seul motif, littéral : c'est lui qui se lit dans le diagramme
+          // généré, et deux phrases y feraient deux flèches pour une seule
+          // question (docs/DIAGRAMS.md)
+          return goto("media_offer", "le distant propose un média ou son écran");
         },
         /**
          * **Le partage d'écran** (ADR 0005). Il emprunte le chemin des
@@ -1108,14 +1180,18 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           fx.data.asked = { ...fx.data.media };
           for (const kind of adds) fx.data.asked[kind] = true;
           offer?.accept();
+          // **un écran seul n'ajoute aucun média** : il n'y a pas de
+          // `sip:mediaChanged` à attendre, et rien à verrouiller — la scène
+          // s'ouvrira sur `sip:peerSharing`, une fois la réponse écrite
+          if (adds.length === 0) return goto("connected", "écran accepté");
           return goto("renegotiating", `accepté : ${adds.join(", ")}`);
         },
         "ui:rejectMedia": (_ev, ctx, fx) => {
           const offer = fx.data.mediaOffer;
-          const kind = fx.data.offerAdds[0] ?? "video";
+          const said = declinedHere(fx.data);
           fx.data.mediaOffer = null;
           offer?.reject();
-          notify(ctx, fx, msg(NOTICE[kind].declinedHere));
+          notify(ctx, fx, said);
           return goto("connected", "488");
         },
         // les icônes média ne répondent pas à la question posée : c'est la
@@ -1147,10 +1223,10 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         delay: 25_000,
         then: (ctx, fx) => {
           const offer = fx.data.mediaOffer;
-          const kind = fx.data.offerAdds[0] ?? "video";
+          const said = declinedHere(fx.data);
           fx.data.mediaOffer = null;
           offer?.reject();
-          notify(ctx, fx, msg(NOTICE[kind].declinedHere));
+          notify(ctx, fx, said);
           return goto("connected", "sans réponse");
         },
       },
@@ -1198,6 +1274,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         "sip:mediaRefused": () => undefined,
         "sip:sharing": () => undefined,
         "sip:shareEnded": () => undefined,
+        "sip:peerSharing": () => undefined,
         "sip:mediaOffer": (ev) => {
           ev.offer.reject();
         },

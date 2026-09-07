@@ -13,6 +13,7 @@ import { trixIcon } from "../../logo.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { mediaAskDialog } from "./mediaask.js";
+import { shareStage } from "./share.js";
 import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
 import {
@@ -146,13 +147,20 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                   dtmf: dtmfPad(view),
                   banner: `${peerPauseNotice(view)}${pauseBanner(view)}`,
                 })
-              : `<div class="video" data-ref="videozone">
+              : `<div class="video ${view?.peerSharing ? "sharing" : ""}" data-ref="videozone">
             ${
               incoming
                 ? `<div class="call-overlay">${esc(callLabel("ringing_in"))}…<br>
                      <span class="target">${esc(displayTarget(view.target))}</span></div>`
                 : view
                 ? `<video class="remote" data-ref="remote" autoplay playsinline></video>
+                   ${
+                     // l'écran du correspondant prend la scène, et son visage
+                     // la vignette (ADR 0005, D11) — c'est le CSS qui décide
+                     // laquelle des deux surfaces occupe laquelle, pour que la
+                     // permutation n'ait pas à reconstruire l'image
+                     shareStage(view, callerName(view))
+                   }
                    ${
                      view.media.video && !view.selfViewHidden
                        ? `<video class="selfview" data-ref="self" autoplay playsinline muted></video>`

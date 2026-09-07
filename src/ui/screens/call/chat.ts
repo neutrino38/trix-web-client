@@ -495,7 +495,11 @@ export function chatAvailable(view: CallView | null): boolean {
  * l'appel.
  */
 export function chatOnStage(view: CallView | null): boolean {
-  if (!view || view.state === "ringing_in" || view.media.video) return false;
+  // **Un écran partagé est une image** (ADR 0005, D11) : un appel audio +
+  // texte où le correspondant partage son écran a de nouveau quelque chose
+  // à montrer, et le fil retourne au panneau. Sans cette ligne, l'écran
+  // reçu n'aurait nulle part où s'afficher.
+  if (!view || view.state === "ringing_in" || view.media.video || view.peerSharing) return false;
   if (chatChannel(view) === null) return false;
   // Un appel **texte seul** garde sa scène même quand le texte n'est pas
   // négocié : il n'y a rien d'autre à mettre à l'écran, et la remarque du

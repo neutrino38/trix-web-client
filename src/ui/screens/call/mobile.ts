@@ -19,6 +19,7 @@ import { el, esc } from "../../el.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { mediaAskDialog } from "./mediaask.js";
+import { shareStage } from "./share.js";
 import { dtmfPad } from "./dtmf.js";
 import {
   CHAT_PANE_ID,
@@ -140,8 +141,14 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
               banner: `${peerPauseNotice(view)}${pauseBanner(view)}`,
             })
           : view
-          ? `<div class="mvideo" data-ref="videozone">
+          ? `<div class="mvideo ${view.peerSharing ? "sharing" : ""}" data-ref="videozone">
                <video class="remote" data-ref="remote" autoplay playsinline></video>
+               ${
+                 // l'écran reçu prend la scène, le visage la vignette (D11) :
+                 // sur 390 px, c'est la seule mise en scène qui laisse les
+                 // deux lisibles — et la permutation la rend au visage
+                 shareStage(view, callerName(view))
+               }
                ${
                  view.media.video && !view.selfViewHidden
                    ? `<video class="selfview" data-ref="self" autoplay playsinline muted></video>`

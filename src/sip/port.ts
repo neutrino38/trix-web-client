@@ -202,11 +202,40 @@ export type CallSipEvent =
    */
   | { type: "sip:shareEnded" }
   /**
+   * **Ce que je reçois d'écran vient de changer** (ADR 0005, D11). Lu sur
+   * la direction négociée de la m-section du partage distant, jamais sur
+   * l'ordre des flux : c'est le MID qui l'identifie (RFC 5888), et lui seul
+   * survit à une renégociation.
+   *
+   * Un événement à part, comme `sip:sharing` : ce que l'appel transporte
+   * n'a pas bougé, seule la scène change — l'écran prend la grande surface
+   * et la caméra du correspondant passe en vignette.
+   */
+  | { type: "sip:peerSharing"; on: boolean }
+  /**
    * Le distant demande à ajouter la vidéo à un appel qui n'en a pas : sa
    * caméra s'allumerait sans que personne l'ait décidé ici, donc la
    * réponse SIP attend la décision de l'utilisateur.
    */
-  | { type: "sip:mediaOffer"; media: CallMedia; offer: MediaOffer }
+  | {
+      type: "sip:mediaOffer";
+      media: CallMedia;
+      /**
+       * **L'offre apporte un écran partagé** (ADR 0005, D5). Il ne compte
+       * pas dans `media` — un écran n'est pas un média de l'appel (D3) —,
+       * et c'est pourtant lui qui fait poser la question la plus forte :
+       * accepter n'allume aucun capteur ici, mais **un écran partagé prend
+       * la place de la langue des signes**. Sur un téléphone il n'y a pas
+       * deux grandes surfaces : accepter, c'est reléguer le visage de son
+       * correspondant dans une vignette, et personne d'autre que le
+       * récepteur ne peut décider cela pour lui (F.703 §4.5 et §6.2.4).
+       *
+       * Une offre qui ajoute un média **et** un partage ne pose qu'une
+       * question, et l'acceptation vaut pour tout ce qu'elle porte.
+       */
+      share: boolean;
+      offer: MediaOffer;
+    }
   /**
    * Le correspondant s'est mis en pause, ou en est revenu. Rien n'est passé
    * par SIP : ses pistes ont cessé d'émettre, et les nôtres sont passées
@@ -224,9 +253,17 @@ export type CallSipEvent =
  * déjà parti) et l'appelant patiente.
  */
 export interface MediaOffer {
-  /** 200 OK : la caméra s'allume et la vidéo rejoint l'appel. */
+  /**
+   * 200 OK : la caméra s'allume et la vidéo rejoint l'appel — et l'écran
+   * partagé, s'il y en avait un dans l'offre, entre sur la scène.
+   */
   accept(): void;
-  /** 488 Not Acceptable Here : l'appel continue sans la vidéo. */
+  /**
+   * 488 Not Acceptable Here : l'appel continue sans la vidéo, et sans
+   * l'écran. **La session revient exactement à ce qu'elle était**
+   * (RFC 3261 §14.1) — refuser un partage ne coûte rien à la conversation,
+   * et c'est ce qui rend la question posable.
+   */
   reject(): void;
 }
 
@@ -324,7 +361,20 @@ export interface CallSession {
    * d'un DTMF. Il n'y a donc rien à attendre — ou c'est parti, ou non.
    */
   sendDtmf(tone: string): boolean;
-  attachMedia(remote: HTMLVideoElement, local: HTMLVideoElement | null): void;
+  /**
+   * Branche les flux de l'appel sur les surfaces de l'écran — le seul point
+   * où l'UI touche à WebRTC.
+   *
+   * `share` est la surface de **l'écran partagé par le correspondant**
+   * (ADR 0005, D11), `null` là où l'écran n'en a pas rendu. Les pistes y
+   * sont routées **par MID** et non par ordre d'arrivée : avec deux
+   * `m=video` dans l'appel, l'ordre ne dit plus laquelle est le visage.
+   */
+  attachMedia(
+    remote: HTMLVideoElement,
+    local: HTMLVideoElement | null,
+    share: HTMLVideoElement | null,
+  ): void;
   /**
    * L'état du média sur les dix dernières secondes — ce que l'UI affiche
    * pendant la conversation. `null` tant que rien n'a été mesuré, et quand
@@ -787,6 +837,18 @@ interface MediaControl {
    * — lui seul suit la vie des capteurs.
    */
   mirror(track: MediaStreamTrack): MediaStreamTrack;
+  /**
+   * **La piste d'un écran partagé** — le mien ou le sien —, ou `null` s'il
+   * n'y en a pas (ADR 0005, D11).
+   *
+   * C'est ce qui permet à l'écran de router les flux **par identité** et
+   * non par ordre d'arrivée : le sien se trouve par le **MID** de sa
+   * m-section (RFC 5888), le mien par l'objet que nous avons capturé. Deux
+   * `m=video` arrivent dans un ordre que rien ne garantit d'une
+   * renégociation à la suivante, et se tromper de flux afficherait le
+   * visage à la place de l'écran — ou l'inverse, ce qui est pire.
+   */
+  shareTrack(side: "own" | "peer"): MediaStreamTrack | null;
   /** Fin d'appel : les capteurs que nous avons allumés s'éteignent avec lui. */
   release(): void;
 }
@@ -1009,6 +1071,20 @@ export function mediaControl(
    */
   let shareNegotiated = false;
   /**
+   * **L'utilisateur a dit oui à l'écran du correspondant** (ADR 0005, D5).
+   *
+   * Tant que ce n'est pas le cas, la m-section de son partage est répondue
+   * `inactive` : ni le poste qui ne saurait pas l'afficher, ni celui dont
+   * l'utilisateur vient de refuser, ne doivent laisser le distant payer le
+   * débit d'une image que personne ne regarde.
+   *
+   * Il retombe dès que le partage quitte l'offre distante : un partage
+   * suivant est une nouvelle demande, et il se repose.
+   */
+  let peerShareAllowed = false;
+  /** Le dernier état publié du partage distant — on ne signale que les changements. */
+  let peerSharing = false;
+  /**
    * Une reprise après 491 est en cours. Le retour arrière qui la précède
    * ramène la connexion à `stable`, et l'observateur y verrait un appel qui
    * vient de perdre le média demandé : il éteindrait le capteur qu'on
@@ -1081,23 +1157,53 @@ export function mediaControl(
   };
 
   /**
-   * **Le garde-fou du partage reçu** (ADR 0005, SC-1), tant que rien dans
-   * l'interface ne sait l'afficher : la m-section de l'écran du distant est
+   * Le MID par lequel **le distant** partage son écran dans ce SDP, ou
+   * `null` s'il n'y en a pas.
+   *
+   * Notre propre partage revient décrit dans son offre : le repli « seconde
+   * `m=video` » de `sharedVideoMid` le désignerait, et nous croirions que le
+   * distant partage. D'où la comparaison avec le nôtre, qui a l'identité
+   * d'objet pour lui.
+   */
+  const peerShareMid = (sdp: string | null | undefined): string | null => {
+    const mid = sharedVideoMid(sdp);
+    return mid !== null && mid !== share.ours?.mid ? mid : null;
+  };
+
+  /**
+   * **Le distant émet-il un écran que nous montrons ?** Deux conditions, et
+   * les deux comptent : l'utilisateur a dit oui, et la m-section a été
+   * négociée dans un sens qui nous en fait recevoir quelque chose.
+   *
+   * La direction se lit sur `currentDirection` — ce qui a été **conclu** —
+   * et non sur le SDP, qui ne dit que ce qui a été demandé.
+   */
+  const peerShareLive = (conn: RTCPeerConnection): boolean => {
+    if (share.peerMid === null || !peerShareAllowed) return false;
+    const dir = conn.getTransceivers().find((t) => t.mid === share.peerMid)?.currentDirection;
+    return dir === "recvonly" || dir === "sendrecv";
+  };
+
+  /**
+   * **L'écran que personne n'a accepté** (ADR 0005, D5) : sa m-section est
    * répondue `inactive`.
    *
-   * Le poste ne montre pas cet écran, mais il ne le prend pas non plus pour
-   * la caméra de son correspondant, et **l'appel continue** — dégrader,
-   * jamais refuser (F.703 §8.3.5). Laissé à lui-même, le navigateur
-   * répondrait `recvonly` : il accepterait un flux que personne ne peut
-   * voir, et le distant paierait le débit d'une image qui ne s'affiche
-   * nulle part.
+   * Deux cas y mènent, et un seul mot pour les deux : l'utilisateur vient
+   * de refuser, ou bien l'écran est arrivé là où aucune question ne se pose
+   * — dans l'offre initiale d'un appel entrant, par exemple. Dans les deux
+   * cas **l'appel continue** — dégrader, jamais refuser (F.703 §8.3.5).
+   * Laissé à lui-même, le navigateur répondrait `recvonly` : il accepterait
+   * un flux que personne ne regarde, et le distant paierait le débit d'une
+   * image qui ne s'affiche nulle part.
    *
    * Le rendez-vous est `have-remote-offer` : l'offre est appliquée, les
    * transceivers existent et portent leur MID, la réponse n'est pas encore
    * écrite — le même que `blockInAnswer`.
    */
   const refusePeerShare = (conn: RTCPeerConnection): void => {
-    if (share.peerMid === null) return;
+    // l'utilisateur a dit oui : la m-section reste `recvonly`, et l'écran
+    // du correspondant entre dans l'appel (SC-3, D5)
+    if (share.peerMid === null || peerShareAllowed) return;
     const tr = conn.getTransceivers().find((t) => t.mid === share.peerMid);
     if (tr) tr.direction = "inactive";
   };
@@ -1123,6 +1229,15 @@ export function mediaControl(
       // un média est sorti de l'appel : son capteur n'a plus de raison de
       // rester allumé
       for (const kind of MEDIA_KINDS) if (!media[kind]) stopSending(conn, roleOf(kind));
+      // **L'écran du correspondant**, publié à part : ce que l'appel
+      // transporte n'a pas bougé, seule la scène change (D3, D11)
+      const sharing = peerShareLive(conn);
+      if (sharing !== peerSharing) {
+        peerSharing = sharing;
+        // son partage a pris fin : le suivant sera une nouvelle demande
+        if (!sharing) peerShareAllowed = false;
+        send({ type: "sip:peerSharing", on: sharing });
+      }
       if (published && sameMedia(published, media)) return;
       published = media;
       send({ type: "sip:mediaChanged", media });
@@ -1189,8 +1304,10 @@ export function mediaControl(
       // partage y revient décrit lui aussi : le repli « seconde m=video »
       // le désignerait, et nous croirions que le distant partage — d'où la
       // comparaison avec le nôtre, qui a l'identité pour lui.
-      const mid = sharedVideoMid(e.sdp);
-      share.peerMid = mid !== null && mid !== share.ours?.mid ? mid : null;
+      share.peerMid = peerShareMid(e.sdp);
+      // l'écran a quitté son offre : ce qui avait été accepté ne vaut plus,
+      // et un partage suivant se redemandera (D5)
+      if (share.peerMid === null) peerShareAllowed = false;
       return;
     }
     if (e.originator === "local" && e.type === "offer") {
@@ -1468,6 +1585,16 @@ export function mediaControl(
    * l'utilisateur ait tranché. La question vaut pour le micro comme pour la
    * caméra — allumer l'un ou l'autre demande l'accord de son propriétaire
    * (ADR 0003, D5).
+   *
+   * **Un écran partagé la pose aussi** (ADR 0005, D5), pour une autre
+   * raison et une plus forte : accepter n'allume aucun capteur ici, mais un
+   * écran partagé **prend la place de la langue des signes**. Sur un
+   * téléphone il n'y a pas deux grandes surfaces — accepter, c'est reléguer
+   * le visage de son correspondant dans une vignette, et cela ne se décide
+   * pas pour lui (F.703 §4.5 et §6.2.4).
+   *
+   * Une offre qui apporte les deux ne pose **qu'une** question, et
+   * l'acceptation vaut pour tout ce qu'elle porte.
    */
   const passThrough = raw._receiveReinvite.bind(raw);
   raw._receiveReinvite = (request: InDialogRequest): void => {
@@ -1481,7 +1608,12 @@ export function mediaControl(
     // le texte ne pèse pas dans cette question-là : il ne s'ajoute pas par
     // re-INVITE tant que CT-6 n'existe pas, et il ne se retire jamais (D4)
     const added = conn && here ? MEDIA_KINDS.filter((k) => wanted[k] && !here[k]) : [];
-    if (!conn || added.length === 0) {
+    // **un écran qui arrive** : l'offre en porte un que nous n'avons pas
+    // déjà accepté. Un partage qui se poursuit d'une renégociation à la
+    // suivante — le distant retire son micro pendant qu'il partage — n'est
+    // pas une demande de plus, et ne repose pas la question
+    const asksShare = conn !== null && peerShareMid(body) !== null && !peerShareAllowed;
+    if (!conn || (added.length === 0 && !asksShare)) {
       passThrough(request);
       return;
     }
@@ -1494,9 +1626,14 @@ export function mediaControl(
     send({
       type: "sip:mediaOffer",
       media: wanted,
+      share: asksShare,
       offer: {
         accept: once(() => {
           for (const kind of added) refusing.delete(kind);
+          // dit **avant** le laissez-passer : c'est ce que `refusePeerShare`
+          // lira quand l'offre appliquée fera passer la connexion en
+          // `have-remote-offer`, juste avant que la réponse ne s'écrive
+          if (asksShare) peerShareAllowed = true;
           void Promise.all(added.map((kind) => openTrack(conn, kind))).then((oks) => {
             // capteur impossible à ouvrir : mieux vaut le dire au distant
             // que de lui répondre un flux qui n'arrivera jamais
@@ -1506,6 +1643,10 @@ export function mediaControl(
         }),
         reject: once(() => {
           for (const kind of added) refusing.add(kind);
+          // l'écran refusé n'a pas de `refusing` à lui : l'offre n'est pas
+          // appliquée du tout, et la session revient à ce qu'elle était
+          // (RFC 3261 §14.1). Il n'y a rien à désactiver dans une réponse
+          // qui ne sera pas écrite
           request.reply(488, "Not Acceptable Here");
         }),
       },
@@ -1662,6 +1803,14 @@ export function mediaControl(
       copy.enabled = true;
       mirrors.set(track, copy);
       return copy;
+    },
+    shareTrack(side) {
+      if (side === "own") return own.share ?? null;
+      // accepté, et pas seulement offert : une m-section répondue `inactive`
+      // ne porte rien, et son `receiver.track` existe pourtant
+      if (!pc || share.peerMid === null || !peerShareAllowed) return null;
+      const tr = pc.getTransceivers().find((t) => t.mid === share.peerMid);
+      return tr?.receiver.track ?? null;
     },
     release() {
       for (const role of STREAM_ROLES) stopSending(pc, role);
@@ -1852,22 +2001,39 @@ export function wrapSession(
       traceNote(`DTMF « ${tone} » → RFC 4733`);
       return true;
     },
-    attachMedia(remote, local) {
+    attachMedia(remote, local, screen) {
       const pc = session.connection;
       if (!pc) return;
+      /** La surface porte-t-elle déjà cette piste, et elle seule ? */
+      const shows = (video: HTMLVideoElement, track: MediaStreamTrack | null): boolean => {
+        const tracks = video.srcObject instanceof MediaStream ? video.srcObject.getTracks() : [];
+        return track === null ? tracks.length === 0 : tracks.length === 1 && tracks[0] === track;
+      };
       const sync = () => {
+        // les deux écrans, repérés par identité : le sien par le MID de sa
+        // m-section, le mien par l'objet capturé (D11). Sans cela, l'écran
+        // reçu se glisserait dans la scène à la place du visage, et le mien
+        // dans l'auto-vue à la place de ma caméra
+        const peerShare = control.shareTrack("peer");
+        const ownShare = control.shareTrack("own");
         const rTracks = pc
           .getReceivers()
           .map((r) => r.track)
-          .filter((t): t is MediaStreamTrack => t !== null);
+          .filter((t): t is MediaStreamTrack => t !== null && t !== peerShare);
         if (rTracks.length) remote.srcObject = new MediaStream(rTracks);
         if (local) {
           const lTracks = pc
             .getSenders()
             .map((s) => s.track)
-            .filter((t): t is MediaStreamTrack => t !== null)
+            .filter((t): t is MediaStreamTrack => t !== null && t !== ownShare)
             .map(control.mirror);
           if (lTracks.length) local.srcObject = new MediaStream(lTracks);
+        }
+        // la surface de l'écran partagé : rebranchée seulement quand elle
+        // change de piste — la réattacher à chaque `track` relancerait la
+        // lecture pour rien
+        if (screen && !shows(screen, peerShare)) {
+          screen.srcObject = peerShare ? new MediaStream([peerShare]) : null;
         }
       };
       pc.addEventListener("track", sync);

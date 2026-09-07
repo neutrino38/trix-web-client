@@ -1012,6 +1012,7 @@ describe("CallBlock — la matrice des ajouts et des retraits", () => {
       box.sendCall({
         type: "sip:mediaOffer",
         media: media(true, true, true),
+        share: false,
         offer: {
           accept: () => decisions.push("accept"),
           reject: () => decisions.push("reject"),
@@ -1033,6 +1034,7 @@ describe("CallBlock — la matrice des ajouts et des retraits", () => {
     box.sendCall({
       type: "sip:mediaOffer",
       media: media(true, false, true),
+      share: false,
       offer: {
         accept: () => decisions.push("accept"),
         reject: () => decisions.push("reject"),
@@ -1056,6 +1058,7 @@ describe("CallBlock — vidéo proposée par le distant", () => {
     box.sendCall({
       type: "sip:mediaOffer",
       media: { audio: true, video: true, text: false },
+      share: false,
       offer: {
         accept: () => decisions.push("accept"),
         reject: () => decisions.push("reject"),
@@ -1107,6 +1110,7 @@ describe("CallBlock — vidéo proposée par le distant", () => {
     box.sendCall({
       type: "sip:mediaOffer",
       media: { audio: true, video: true, text: false },
+      share: false,
       offer: { accept: () => decisions.push("accept"), reject: () => decisions.push("reject") },
     });
     expect(decisions).toEqual(["reject"]);
@@ -1123,6 +1127,7 @@ describe("CallBlock — raccrocher pendant une question de vidéo", () => {
     box.sendCall({
       type: "sip:mediaOffer",
       media: { audio: true, video: true, text: false },
+      share: false,
       offer: { accept: () => decisions.push("accept"), reject: () => decisions.push("reject") },
     });
     call.send({ type: "ui:hangup" });
@@ -1327,5 +1332,132 @@ describe("le partage d'écran", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * **L'écran du correspondant vu du bloc** (ADR 0005, SC-3).
+ *
+ * La question réutilise `media_offer` — pas d'état de plus, pas de
+ * minuterie de plus —, et ce qui la distingue tient en trois points :
+ *
+ * - **accepter n'ouvre aucune renégociation de notre fait** : un écran
+ *   n'ajoute aucun média, il n'y a donc pas de `sip:mediaChanged` à
+ *   attendre, et rester dans `renegotiating` verrouillerait l'appel pour
+ *   28 s en attendant un événement qui ne viendrait jamais ;
+ * - **le refus a sa propre phrase** : parler de « la vidéo » ferait croire
+ *   à la caméra qui vient de s'éteindre, alors que rien de ce que l'appel
+ *   transporte n'a bougé (D3) ;
+ * - **la scène se replie sur l'écran qui arrive** (D11) : trois images sur
+ *   un téléphone n'en font aucune lisible.
+ */
+describe("CallBlock — l'écran partagé par le distant", () => {
+  /** Un appel audio établi, et l'écran que le distant vient d'offrir. */
+  function ecranOffert(adds: CallMedia = { audio: true, video: false, text: false }) {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:accepted" });
+    const decisions: string[] = [];
+    box.sendCall({
+      type: "sip:mediaOffer",
+      media: adds,
+      share: true,
+      offer: {
+        accept: () => decisions.push("accept"),
+        reject: () => decisions.push("reject"),
+      },
+    });
+    return { call, box, decisions };
+  }
+
+  it("la question se pose, et elle dit qu'il s'agit d'un écran", () => {
+    const { call } = ecranOffert();
+    expect(call.sbb?.state).toBe("media_offer");
+    expect(call.context.call?.shareAsked).toBe(true);
+    // aucun média ne s'ajoute : la popup n'a pas de capteur à annoncer
+    expect(call.context.call?.mediaAsked).toEqual([]);
+    expect(call.context.call?.state).toBe("connected");
+  });
+
+  it("acceptée : 200 OK, et l'appel n'attend rien — un écran n'est pas un média", () => {
+    const { call, decisions } = ecranOffert();
+    call.send({ type: "ui:acceptMedia" });
+    expect(decisions).toEqual(["accept"]);
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.mediaPending).toBe(false);
+    expect(call.context.call?.shareAsked).toBe(false);
+  });
+
+  it("refusée : 488, sa propre phrase, et l'appel exactement où il était", () => {
+    const { call, decisions } = ecranOffert();
+    call.send({ type: "ui:rejectMedia" });
+    expect(decisions).toEqual(["reject"]);
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
+    expect(call.context.call?.peerSharing).toBe(false);
+    expect(call.context.call?.notice?.message).toEqual({ key: "notice.shareDeclinedHere" });
+  });
+
+  it("sans réponse au bout de 25 s : refusée, comme un média", async () => {
+    vi.useFakeTimers();
+    try {
+      const { call, decisions } = ecranOffert();
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(decisions).toEqual(["reject"]);
+      expect(call.context.call?.notice?.message).toEqual({ key: "notice.shareDeclinedHere" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * Une offre qui apporte un média **et** un écran pose une question unique,
+   * et l'acceptation vaut pour tout ce qu'elle porte. Le média y commande :
+   * c'est lui qui allume un capteur, et lui qu'il faut attendre.
+   */
+  it("un média et un écran d'un coup : une question, et l'attente du média", () => {
+    const { call, decisions } = ecranOffert({ audio: true, video: true, text: false });
+    expect(call.context.call?.mediaAsked).toEqual(["video"]);
+    expect(call.context.call?.shareAsked).toBe(true);
+    call.send({ type: "ui:acceptMedia" });
+    expect(decisions).toEqual(["accept"]);
+    expect(call.sbb?.state).toBe("renegotiating");
+  });
+
+  /**
+   * L'écran arrive : il prend la grande surface, et l'auto-vue se replie —
+   * le bouton reste, et un appui la rouvre. Elle ne se rouvre pas d'elle-même
+   * à la fin du partage : ce serait défaire un geste que l'utilisateur a
+   * peut-être fait sien entre-temps.
+   */
+  it("l'écran reçu replie l'auto-vue, et le dit", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle, true);
+    box.sendCall({ type: "sip:accepted" });
+    expect(call.context.call?.selfViewHidden).toBe(false);
+
+    box.sendCall({ type: "sip:peerSharing", on: true });
+    expect(call.context.call?.peerSharing).toBe(true);
+    expect(call.context.call?.selfViewHidden).toBe(true);
+    expect(call.context.call?.notice?.message).toEqual({
+      key: "notice.sharePeerStarted",
+      vars: { peer: "bob@example.fr" },
+    });
+
+    box.sendCall({ type: "sip:peerSharing", on: false });
+    expect(call.context.call?.peerSharing).toBe(false);
+    expect(call.context.call?.selfViewHidden).toBe(true);
+    expect(call.context.call?.notice?.message).toEqual({
+      key: "notice.sharePeerStopped",
+      vars: { peer: "bob@example.fr" },
+    });
+  });
+
+  it("l'appel reste ce qu'il est : un écran reçu n'entre pas dans `media`", () => {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:accepted" });
+    box.sendCall({ type: "sip:peerSharing", on: true });
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
   });
 });
