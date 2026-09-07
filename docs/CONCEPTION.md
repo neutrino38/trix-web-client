@@ -69,7 +69,7 @@ src/
     trace.ts              # trace des paquets SIP et des états d'appel (§5.2)
     record.ts             # carnet d'un appel, attaché à son historique (§5.3)
     stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
-    mediaerror.ts         # échecs WebRTC : console, carnet, motif d'appel (§5.5)
+    mediaerror.ts         # échecs WebRTC et fil texte : console, carnet, motif (§5.5)
   storage/
     store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
     ha1.ts                # MD5(username:realm:password)
@@ -909,6 +909,15 @@ effacer ce qui est déjà parti coûte un `U+0008`. Confondre les deux produit u
 effacement chez le correspondant — c'est le bug le plus probable d'une implémentation
 de texte temps réel, et `RttChannel.backspace()` est ce qui l'empêche.
 
+**Les deux fils disent leurs pannes**, console et carnet de l'appel, sans condition
+(§5.5) : la rupture, l'échec d'établissement, l'abandon après dix reprises. Aucune de
+ces pannes ne laisse de trace SIP — le canal de données vit sur l'association que
+l'appel porte déjà, le socket sur un fil parallèle dont la signalisation ne sait plus
+rien une fois l'URL lue —, et sans ces lignes il n'en resterait qu'un panneau de tchat
+devenu muet. Sur WebSocket, seule la **première panne d'une série** et l'**abandon**
+sont dits : les neuf reprises du milieu rediraient mot pour mot la même chose, et un
+carnet où la même ligne paraît dix fois est un carnet qu'on ne lit plus.
+
 **Il n'y a pas de plafond de débit.** RFC 8865 §5.3 recommande d'annoncer un `cps` et
 de s'y tenir en moyenne sur dix secondes ; nous ne l'appliquons pas, et c'est assumé :
 à trente caractères par seconde, un collage de deux cents caractères s'étalerait sur
@@ -944,6 +953,21 @@ connexion à `failed` ou l'expiration d'une allocation TURN détruit l'associati
 et emporte tout. La détection est branchée sur `connectionstatechange` et sur la
 fermeture du canal, jamais sur un délai d'inactivité. L'offrant recrée alors le canal
 — dix fois au plus — dès que la connexion est revenue.
+
+**Et chaque panne se dit** — console et carnet de l'appel, sans condition (§5.5) : la
+rupture, l'erreur remontée par la pile (`RTCError`, avec son `errorDetail` et son
+`sctpCauseCode`), la création impossible, l'abandon après dix reprises. Un canal de
+données qui tombe ne laisse **aucune** trace SIP : il vit sur l'association que l'appel
+porte déjà, se rouvre sans renégociation, et le seul signe qu'il en resterait est un
+panneau de tchat devenu muet. S'y ajoute le cas qui n'émet aucun événement du tout — le
+canal qui ne s'ouvre **jamais**, en face d'une passerelle qui annonce le SCTP sans
+créer son canal `t140` : un délai de dix secondes le dit, armé sur l'établissement de
+la connexion et non sur l'ouverture du fil, faute de quoi un appel qui sonne longtemps
+serait déclaré en panne. Deux silences sont voulus : un raccrochage ferme les canaux
+comme une rupture le ferait (la connexion est alors `closed`, on ne dit rien), et un
+distant qui a refusé la section `m=application` a **répondu**, il n'est pas tombé en
+panne — c'est l'absence d'association SCTP qui le distingue, et `sip/rttsip.ts` en
+tire déjà la fermeture du lien.
 
 **Un appel texte seul est un appel comme un autre.** Une `RTCPeerConnection` qui ne
 porte qu'un canal de données est le cas de base de WebRTC : le SDP n'a qu'une section
@@ -1657,6 +1681,60 @@ partent du même `catch`, donc du même tick : le port rapporte `sip:failed` au
 microtask suivant pour les causes qui peuvent porter un détail, et le motif arrive
 complet. Rien d'autre n'étant émis entre-temps, l'ordre des événements vus par la
 machine ne change pas.
+
+Enfin, le même engagement vaut pour le **canal texte T.140** (§4.9) :
+`reportTextChannelError()` pose une ligne de console et une ligne de carnet à chaque
+rupture ou échec d'établissement, sur **les deux fils** — canal de données comme
+socket —, avec l'erreur technique de la pile et les faits qu'elle ne porte pas : quel
+transport, quel socket ou quel rôle, l'état de la connexion pair-à-pair, les canaux
+tenus, les reprises déjà tentées. C'est exactement la même raison qu'au-dessus, poussée
+un cran plus loin : là où un échec média laisse au moins un 488 sur le fil, un fil
+texte qui tombe ne laisse rien du tout.
+
+```
+[trix] Texte temps réel : erreur sur le canal : OperationError: Data channel failure
+rôle : offer
+connexion : connected
+canaux : 0
+reprises : 0
+errorDetail : sctp-failure
+sctpCauseCode : 12
+```
+
+#### Le certificat du serveur, quand le navigateur veut bien le dire
+
+Un certificat expiré ou invalide est une panne d'exploitation ordinaire, et elle mérite
+d'être **nommée** plutôt que traduite en « échec DTLS ». Ce qu'on peut en dire dépend
+entièrement du tuyau, et l'écart entre les deux est instructif.
+
+**Sur le canal de données, oui.** Une poignée de main DTLS ratée se solde par une
+alerte TLS numérotée (RFC 5246 §7.2, RFC 8446 §6.2), et WebRTC est le seul endroit où
+le navigateur nous la rend : `RTCError` porte `sentAlert` et `receivedAlert` quand
+`errorDetail` vaut `dtls-failure`. `sip/rttdc.ts` écoute donc l'événement `error` du
+transport DTLS sous l'association (`pc.sctp.transport`), et `certificateFault()`
+traduit : les alertes **42 à 46 et 48** désignent le certificat, la **45** dit qu'il a
+expiré. Le sens de l'alerte compte autant que son numéro — celle que **nous envoyons**
+rejette le certificat d'en face, celle que nous **recevons** rejette le nôtre —, et les
+confondre enverrait le support réparer le mauvais serveur. La 51 (`decrypt_error`) est
+délibérément hors de la liste : elle accompagne le plus souvent une empreinte SDP qui
+ne correspond pas, ce qui est un problème de signalisation, pas un certificat périmé.
+
+```
+[trix] Texte temps réel : échec de la poignée de main DTLS : OperationError: DTLS
+handshake failed — certificat du serveur expiré, refusé par ce poste (alerte 45
+certificate_expired)
+```
+
+**Sur WebSocket, non — et c'est dit plutôt que deviné.** La RFC 6455 §7.4.1 réserve le
+code 1015 à une poignée de main TLS échouée mais **interdit** de le remonter à
+l'application : le navigateur ferme sur **1006**, sans motif, qu'il s'agisse d'un
+certificat expiré, d'un DNS mort ou d'un port fermé. Il n'existe aucun détour — une
+sonde HTTPS vers la même origine serait de toute façon refusée par la CSP de production
+(`connect-src 'self' wss:`). Un socket qui n'a **jamais** été ouvert nomme donc les
+trois causes possibles, le certificat en tête, et laisse le lecteur trancher avec ce
+que, lui, peut aller voir ; un socket rompu **après** ouverture ne les nomme pas, sa
+poignée de main ayant eu lieu. Le 1015 reste traité pour la pile qui le remonterait
+quand même — un mandataire, un portage non navigateur.
 
 ### 5.6 DTMF : RFC 4733, et le dire explicitement
 
