@@ -436,6 +436,7 @@ const messages: Translation = {
   "stats.sent": "送信",
   "stats.audio": "音声",
   "stats.video": "映像",
+  "stats.share": "共有画面",
   "stats.text": "テキスト",
   "stats.missing": "欠落テキスト",
   "stats.codec": "コーデック",

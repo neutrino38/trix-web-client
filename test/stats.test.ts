@@ -484,6 +484,7 @@ describe("écart audio / vidéo", () => {
     const stats = (syncMs: number): MediaStats => ({
       audio: { recv: flow, sent: flow },
       video: { recv: flow, sent: flow },
+      share: null,
       text: null,
       rttMs: null,
       syncMs,
@@ -524,6 +525,7 @@ describe("texte manquant", () => {
     const stats: MediaStats = {
       audio: null,
       video: null,
+      share: null,
       text: { missing: 4 },
       rttMs: null,
       syncMs: null,
@@ -544,6 +546,7 @@ describe("relecture depuis l'historique", () => {
       sent: { codec: "opus", clockRate: 48000, kbps: 31.8, loss: 0.06 },
     },
     video: null,
+    share: null,
     text: null,
     rttMs: 42,
     syncMs: null,
@@ -594,5 +597,232 @@ describe("relecture depuis l'historique", () => {
 
   it("ne copie rien d'un appel sans bilan", () => {
     expect(statsAsText(entry())).toBe("");
+  });
+});
+
+/**
+ * **L'écran partagé compte à part** (ADR 0005, SC-5).
+ *
+ * Un rapport WebRTC range ses compteurs par média : deux `m=video` s'y
+ * additionnent, et personne ne s'en aperçoit — le débit « vidéo » devient
+ * celui de la caméra **plus** celui de l'écran, et un écran de bureau à
+ * 2 Mbit/s fait passer pour excellente une caméra qui n'envoie plus rien.
+ *
+ * Pire pour le public de Trix : l'écart audio / vidéo de F.703 §5.2.2 se
+ * mesurerait sur le premier flux vidéo venu. Mesuré sur un document qui
+ * défile, le chiffre ne dit plus rien de la lecture labiale.
+ *
+ * La séparation se fait par le `a=mid` (RFC 5888), la seule identité d'une
+ * m-section qui survive à une renégociation — le port les tient, lui seul
+ * sait ce qu'un flux est.
+ */
+describe("l'écran partagé dans la mesure", () => {
+  interface Piste {
+    mid?: string;
+    bytes: number;
+    packets: number;
+    lost?: number;
+    playout?: number;
+  }
+
+  /**
+   * Un rapport à deux `m=video` : la caméra (MID 1) et l'écran (MID 2), en
+   * réception comme en émission. L'écran est **le premier** de la liste :
+   * c'est ainsi qu'on éprouve que l'ordre ne décide de rien.
+   */
+  function deuxVideos(o: {
+    audioIn?: Piste;
+    ecranIn?: Piste;
+    cameraIn?: Piste;
+    ecranOut?: Piste;
+    cameraOut?: Piste;
+    /** Perte rapportée par le distant sur le flux nommé. */
+    rrLostFor?: { localId: string; lost: number };
+  }): StatsReportLike {
+    const m = new Map<string, Record<string, unknown>>([
+      ["c-opus", { type: "codec", mimeType: "audio/opus", clockRate: 48000 }],
+      ["c-vp8", { type: "codec", mimeType: "video/VP8", clockRate: 90000 }],
+    ]);
+    const recv = (id: string, kind: string, p: Piste, codecId: string): void => {
+      m.set(id, {
+        type: "inbound-rtp",
+        kind,
+        codecId,
+        ...(p.mid === undefined ? {} : { mid: p.mid }),
+        bytesReceived: p.bytes,
+        packetsReceived: p.packets,
+        packetsLost: p.lost ?? 0,
+        ...(p.playout === undefined ? {} : { estimatedPlayoutTimestamp: p.playout }),
+      });
+    };
+    if (o.ecranIn) recv("i-share", "video", o.ecranIn, "c-vp8");
+    if (o.cameraIn) recv("i-cam", "video", o.cameraIn, "c-vp8");
+    if (o.audioIn) recv("i-a", "audio", o.audioIn, "c-opus");
+    for (const [id, p] of [
+      ["o-share", o.ecranOut],
+      ["o-cam", o.cameraOut],
+    ] as const) {
+      if (!p) continue;
+      m.set(id, {
+        type: "outbound-rtp",
+        kind: "video",
+        codecId: "c-vp8",
+        ...(p.mid === undefined ? {} : { mid: p.mid }),
+        bytesSent: p.bytes,
+        packetsSent: p.packets,
+      });
+    }
+    if (o.rrLostFor) {
+      m.set("r-v", {
+        type: "remote-inbound-rtp",
+        kind: "video",
+        localId: o.rrLostFor.localId,
+        packetsLost: o.rrLostFor.lost,
+      });
+    }
+    return m;
+  }
+
+  /** Deux relevés séparés d'une seconde, l'écran nommé par son MID. */
+  const entre = (
+    from: Parameters<typeof deuxVideos>[0],
+    to: Parameters<typeof deuxVideos>[0],
+    mids: string[] = ["2"],
+  ): MediaStats =>
+    windowStats(
+      snapshot(deuxVideos(from), 0, null, mids),
+      snapshot(deuxVideos(to), 1000, null, mids),
+    );
+
+  it("le débit vidéo est celui de la caméra, l'écran a sa propre colonne", () => {
+    const stats = entre(
+      {
+        cameraIn: { mid: "1", bytes: 0, packets: 0 },
+        ecranIn: { mid: "2", bytes: 0, packets: 0 },
+      },
+      {
+        // 25 ko de caméra, 250 ko d'écran sur la seconde
+        cameraIn: { mid: "1", bytes: 25_000, packets: 25 },
+        ecranIn: { mid: "2", bytes: 250_000, packets: 250 },
+      },
+    );
+
+    expect(stats.video?.recv.kbps).toBe(200);
+    expect(stats.share?.recv.kbps).toBe(2000);
+  });
+
+  /**
+   * La perte à l'émission ne vient pas du flux lui-même mais des rapports
+   * de réception du distant — et ceux-là ne portent pas de `mid` : c'est
+   * leur `localId` qui renvoie au flux émis, et lui le porte.
+   */
+  it("la perte rapportée par le distant suit le bon des deux flux", () => {
+    const stats = entre(
+      {
+        cameraOut: { mid: "1", bytes: 0, packets: 0 },
+        ecranOut: { mid: "2", bytes: 0, packets: 0 },
+        rrLostFor: { localId: "o-share", lost: 0 },
+      },
+      {
+        cameraOut: { mid: "1", bytes: 25_000, packets: 100 },
+        ecranOut: { mid: "2", bytes: 250_000, packets: 100 },
+        rrLostFor: { localId: "o-share", lost: 10 },
+      },
+    );
+
+    expect(stats.share?.sent.loss).toBeCloseTo(0.1, 5);
+    expect(stats.video?.sent.loss).toBe(0);
+  });
+
+  /**
+   * **La métrique du public de Trix** : l'écart que F.703 §5.2.2 borne est
+   * celui de la voix et du visage. Un document qui défile avec une seconde
+   * de retard ne gêne personne — mesuré sur lui, le chiffre condamnerait un
+   * appel parfaitement synchrone.
+   */
+  it("l'écart audio / vidéo ignore l'écran, même quand il vient en premier", () => {
+    const avec = entre(
+      {},
+      {
+        audioIn: { bytes: 1, packets: 1, playout: 10_000 },
+        ecranIn: { mid: "2", bytes: 1, packets: 1, playout: 8_000 },
+        cameraIn: { mid: "1", bytes: 1, packets: 1, playout: 9_960 },
+      },
+    );
+    // 40 ms entre la voix et le visage, et non 2 s entre la voix et l'écran
+    expect(avec.syncMs).toBe(40);
+  });
+
+  it("un écran seul, sans caméra, ne donne aucun écart à mesurer", () => {
+    const stats = entre(
+      {},
+      {
+        audioIn: { bytes: 1, packets: 1, playout: 10_000 },
+        ecranIn: { mid: "2", bytes: 1, packets: 1, playout: 8_000 },
+      },
+    );
+    expect(stats.syncMs).toBeNull();
+    expect(stats.video).toBeNull();
+    expect(stats.share).not.toBeNull();
+  });
+
+  /**
+   * Un navigateur qui ne rapporte pas `mid` range tout dans la vidéo, comme
+   * avant SC-5 : le chiffre est moins juste, l'encart reste lisible, et rien
+   * n'échoue — dégrader, jamais refuser (F.703 §8.3.5).
+   */
+  it("sans MID rapporté, tout reste de la vidéo", () => {
+    const stats = entre(
+      { cameraIn: { bytes: 0, packets: 0 }, ecranIn: { bytes: 0, packets: 0 } },
+      { cameraIn: { bytes: 25_000, packets: 25 }, ecranIn: { bytes: 250_000, packets: 250 } },
+    );
+    expect(stats.share).toBeNull();
+    expect(stats.video?.recv.kbps).toBe(2200);
+  });
+
+  /** Un appel sans partage n'a pas de colonne d'écran : elle ne s'invente pas. */
+  it("pas de partage, pas de colonne", () => {
+    const stats = entre(
+      { cameraIn: { mid: "1", bytes: 0, packets: 0 } },
+      { cameraIn: { mid: "1", bytes: 25_000, packets: 25 } },
+    );
+    expect(stats.share).toBeNull();
+  });
+
+  it("l'encart et le presse-papiers portent la ligne de l'écran", () => {
+    const stats = entre(
+      {
+        cameraIn: { mid: "1", bytes: 0, packets: 0 },
+        ecranIn: { mid: "2", bytes: 0, packets: 0 },
+      },
+      {
+        cameraIn: { mid: "1", bytes: 25_000, packets: 25 },
+        ecranIn: { mid: "2", bytes: 250_000, packets: 250 },
+      },
+    );
+    expect(statsCardHtml(stats)).toContain("Écran partagé");
+
+    const entry = {
+      target: "sip:bob@example.fr",
+      startedAt: Date.now(),
+      stats,
+    } as CallLogEntry;
+    expect(statsAsText(entry)).toContain("Écran partagé");
+  });
+
+  /**
+   * Un bilan enregistré **avant** SC-5 n'a pas de colonne d'écran : son
+   * absence n'est pas un partage à zéro, et l'historique doit continuer de
+   * s'ouvrir.
+   */
+  it("un bilan d'avant le partage s'affiche encore", () => {
+    const stats = entre(
+      { cameraIn: { mid: "1", bytes: 0, packets: 0 } },
+      { cameraIn: { mid: "1", bytes: 25_000, packets: 25 } },
+    );
+    const ancien = { ...stats } as Partial<MediaStats>;
+    delete ancien.share;
+    expect(() => statsCardHtml(ancien as MediaStats)).not.toThrow();
+    expect(statsCardHtml(ancien as MediaStats)).not.toContain("Écran partagé");
   });
 });

@@ -427,6 +427,7 @@ const messages: Translation = {
   "stats.sent": "发送",
   "stats.audio": "音频",
   "stats.video": "视频",
+  "stats.share": "共享屏幕",
   "stats.text": "文本",
   "stats.missing": "缺失文本",
   "stats.codec": "编解码器",

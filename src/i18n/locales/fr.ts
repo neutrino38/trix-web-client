@@ -473,6 +473,13 @@ const messages = {
   "stats.sent": "Émis",
   "stats.audio": "Audio",
   "stats.video": "Vidéo",
+  /**
+   * **L'écran partagé a sa propre ligne** (ADR 0005, SC-5). Fondu dans
+   * « Vidéo », son débit ferait passer pour excellente une caméra qui
+   * n'envoie plus rien — et c'est exactement la question qu'on pose à cet
+   * encart quand l'image hache.
+   */
+  "stats.share": "Écran partagé",
   "stats.text": "Texte",
   "stats.missing": "Texte manquant",
   "stats.codec": "Codec",

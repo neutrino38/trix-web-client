@@ -186,16 +186,20 @@ The controls float in a bar over the video:
 |---|---|
 | **Microphone** | Takes the audio out of the call, or puts it back. This is renegotiated with the other party, who sees it happen — it is not a mute |
 | **Camera** | Takes the video out of the call, or puts it back (video calls only) |
+| **Share screen** | Puts a window, a tab or your whole screen into the call, alongside your camera. Desktop browsers only — see below |
 | **Self-view** | Hides or shows your own picture. Purely local — the other side is unaffected |
 | **Listening** | Stops the incoming audio *on this device*. Nothing leaves the call: the other party keeps talking, and the remote level meter keeps moving while you hear nothing. It lights up green while they are speaking |
 | **DTMF keypad** | Opens a 12-key pad over the video. The physical keyboard works too, and the tones that actually went out are echoed on screen |
 | **Chat** | Shows or hides the real-time text thread (mobile view; on the desktop it lives in the side panel) |
+| **Swap** | While the other party is sharing, swaps the big surface and the inset — their face back to full size, their screen to the corner. Purely local; tapping the inset does the same |
 | **Full screen** | Same as double-clicking the video, but reachable from the keyboard |
 | **Side panel** | Collapses the panel so the video takes the whole width |
 | **Hang up** (red circle) | Ends the call. It stays available with the panel collapsed |
 
 A medium that has left the call is shown in **red with a struck-through icon**; a purely
-local toggle (self-view, listening, keypad) is shown in **purple**. Red therefore says
+local toggle (self-view, listening, keypad, swap) is shown in **purple**; **green** says
+your screen is in the call — something *more* is going out, the exact opposite of what
+red means. Red therefore says
 one thing only: *this medium is no longer in the call*. The struck-through icon carries
 the state on its own, so the colour is never the only clue.
 
@@ -203,6 +207,33 @@ On the desktop bar, a vertical rule separates the two call media from everything
 it — listening, self-view, keypad, full screen, statistics, panel toggles — none of
 which the other party ever sees. Each side is announced as a group ("Call media", "This
 device") to screen readers and keyboard users.
+
+### Sharing your screen
+
+**Share screen** asks the browser which window, tab or screen to share, then adds it to
+the call as a *second* video — your camera keeps running and the other party keeps seeing
+your face. For two people signing, a share that replaced the camera would amount to
+hanging up.
+
+- **The other party is asked first.** A shared screen takes the big surface, and their
+  view of you shrinks to an inset: that is their decision, not yours. They can decline
+  without anything else changing — the call carries on exactly as it was — and a share
+  that gets no answer within 25 seconds counts as declined.
+- **Stopping.** Press the button again, or use the browser's own *Stop sharing* bar:
+  either way the screen leaves the call and the other party is told.
+- **One share at a time.** While they are sharing, your own button is greyed and says so;
+  while you are, theirs is.
+- **Pause stops the sharing too.** Nothing you send goes out during a pause — screen
+  included. A work screen shows notifications, e-mails and names, so this one is not
+  negotiable.
+- **The button only exists where the machine can capture a screen**, which in practice
+  means a desktop browser. Receiving a share needs nothing special and works everywhere,
+  phones included.
+
+**When someone shares with you**, their screen takes the stage — fitted whole, never
+cropped, because cropping a shared screen cuts off text — their camera moves to an inset,
+and your self-view folds away (the button brings it back). Tap the inset, or use **Swap**,
+to put their face back in the big surface without refusing the share.
 
 The call timer runs in the top bar, next to the *In call* pill.
 
@@ -285,6 +316,10 @@ bitrate and packet loss of each direction, for each of audio and video, plus the
 trip time. The figures cover a **sliding 10-second window**, never the whole call: a
 perfect minute must not hide the ten seconds that broke up.
 
+A shared screen gets **its own row**, separate from *Video*: added to the camera's
+figures, a screen at 2 Mbit/s would make a camera that has stopped sending look
+excellent — and it would throw off the skew below.
+
 Two more figures matter to accessibility and get their own place there:
 
 - **Missing text.** Real-time text has no bitrate worth reading; what counts is how often
@@ -294,7 +329,9 @@ Two more figures matter to accessibility and get their own place there:
   lip-reading and sign language stay comfortable (ITU-T F.703 §5.2.2). It is signed, so
   you can tell sound running ahead of picture from sound running behind, and it is
   highlighted past the threshold. A dash means it cannot be measured — an audio-only call,
-  or a browser that does not report it.
+  or a browser that does not report it. A shared screen is left out of it: what the
+  standard is about is voice against face, and a document scrolling a second late bothers
+  nobody.
 
 **Two icons in the history**, on calls that took place with tracing on:
 

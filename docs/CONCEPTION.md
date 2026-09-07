@@ -1370,6 +1370,112 @@ et le nom des périphériques que le navigateur a retenus.
 - La mesure de niveau est celle des vu-mètres de l'écran d'appel (`ui/vumeter.ts`) :
   un seul `AudioContext` pour l'application, un analyseur par flux.
 
+### 4.12 Le partage d'écran (ADR 0005)
+
+Le partage d'écran ressemble à « ajouter la vidéo », et c'est précisément le piège :
+ce n'en est pas un. Un partage est **un second flux vidéo qui coexiste avec la
+caméra**, pas un remplacement — sans quoi partager reviendrait à disparaître de
+l'écran de son correspondant, ce qui, pour deux personnes qui signent, revient à
+raccrocher.
+
+**Une seconde `m=video`, jamais un `replaceTrack`.** La solution facile — substituer
+la piste d'écran à la piste caméra sur le même émetteur — ne coûte aucune
+renégociation, et c'est son seul mérite : elle rend le partage *invisible à la
+signalisation*, rien à refuser, rien à tracer, rien qui distingue l'écran du visage
+chez le récepteur. Le partage est donc un transceiver de plus, `sendonly`
+(`addTransceiver`), négocié par re-INVITE — le chemin de §4.4, à ceci près que ce
+qu'il ajoute n'est pas un média de l'appel.
+
+**Le port raisonne en rôles, plus en `kind`.** `transceiverFor(pc, role)` remplace
+« le premier transceiver du média » : `audio`, `camera`, `share`. Avec deux
+`m=video`, l'ancienne forme était un générateur de bugs silencieux — éteindre la
+mauvaise caméra, ne suspendre que la moitié de ce que l'on émet, refuser la mauvaise
+m-section. Aucun de ces cas ne lève d'exception : ils rendent l'appel faux. Le
+partage se reconnaît **par identité d'objet** pour le nôtre, **par son `a=mid`**
+(RFC 5888) pour celui du distant — ni l'ordre, ni le `msid`, ni « être la deuxième
+vidéo » ne survivent à une renégociation (RFC 8829 §5.2.2).
+
+**Le flux se nomme sur le fil.** Le navigateur n'écrit pas `a=content` : le port pose
+`a=content:slides` (RFC 4796) sur la m-section du partage dans notre offre locale —
+la seule chose que Trix écrive dans une offre. En lecture, `sharedVideoMid()` prend
+la première `m=video` active qui le porte, et retombe sur la **seconde** `m=video`
+active pour les terminaux qui ne le posent pas. L'ordre ne peut pas remplacer
+l'attribut : un appel audio auquel on ajoute un partage sans jamais avoir eu de
+caméra a son partage en *première* `m=video`. La caméra, elle, ne reçoit pas de
+`a=content:main` — retoucher une m-section qui fonctionne contre des passerelles
+qu'on ne maîtrise pas, pour un gain nul.
+
+**Le partage n'est pas un média de l'appel.** `CallMedia` reste `{ audio, video,
+text }`. Trois conséquences, toutes voulues : `isLastMedia` ne le compte pas (un
+appel dont il ne reste que l'écran n'est pas une conversation) ; l'historique ne le
+consigne pas (c'est un épisode dans un appel, pas une nature d'appel) ; on ne
+décroche pas « en partage ». L'état vit à côté, dans `CallView` — `sharing` pour ce
+que j'émets (`off` / `starting` / `on`), `peerSharing` pour ce que je reçois.
+
+**Recevoir se demande.** Accepter n'allume aucun capteur : la raison qui fait poser
+la question pour le micro et la caméra (§4.4) ne s'applique pas. Elle se pose quand
+même, et pour plus fort — **un écran partagé prend la place de la langue des
+signes**. Sur un téléphone il n'y a pas deux grandes surfaces : accepter, c'est
+reléguer le visage de son correspondant dans une vignette, et personne d'autre que
+le récepteur ne peut décider cela pour lui (F.703 §4.5 et §6.2.4). La question
+réutilise l'état `media_offer` — pas d'état de plus, pas de minuterie de plus —, le
+refus est un **488** qui laisse la session exactement où elle était (RFC 3261
+§14.1), et le silence vaut refus au bout de 25 s. Une offre qui apporte un média
+**et** un écran ne pose qu'une question, et l'acceptation vaut pour tout ce qu'elle
+porte.
+
+**La scène.** L'écran reçu prend la grande surface en `object-fit: contain` —
+recadrer un écran partagé coupe du texte, c'est-à-dire tout ce qu'il transportait —,
+la caméra distante passe en vignette, et l'auto-vue se replie : trois images sur un
+téléphone n'en font aucune lisible (le bouton reste, un appui la rouvre). La
+**permutation** rend la scène au visage sans refuser le partage : un appui sur la
+vignette *et* une entrée dans la barre, parce que le geste tactile seul n'existe pas
+au clavier (RGAA 7.3). Elle est purement locale — rien ne part sur le fil, et son
+état vit hors du DOM comme le pavé DTMF. Les pistes sont routées **par MID** dans
+`attachMedia` : avec deux `m=video`, l'ordre d'arrivée ne dit plus laquelle est le
+visage.
+
+**Une m-section retirée est recyclée, jamais supprimée.** Arrêter de partager, c'est
+`direction = "inactive"`, piste arrêtée, re-INVITE — et le transceiver **reste**,
+avec son MID. Un transceiver arrêté laisserait un port 0 dans toutes les offres
+suivantes, et le partage d'après en ajouterait une de plus : un SDP qui grandit à
+chaque partage sur un appel qui dure. **L'exception** est le transceiver qu'aucune
+négociation n'a jamais vu : le rollback d'une offre refusée ne défait pas un
+`addTransceiver`, et sans un `stop()` explicite la *prochaine* offre — fût-elle un
+simple ajout d'audio — réoffrirait l'écran que le distant vient de refuser.
+
+**Un seul partage à la fois** (ADR 0005, D9). Si le distant partage, le bouton est
+grisé et le libellé dit pourquoi ; si j'émets déjà, son écran ne pose aucune
+question — sa m-section est répondue `inactive`, et son poste y lit le refus poli.
+Deux écrans, ce sont deux surfaces à caser sur un téléphone et une préséance que
+rien ne tranche. Le glare n'a besoin de rien de plus : le capteur gardé ouvert pour
+la reprise fait refuser le sien, ou c'est le nôtre qui revient refusé.
+
+**La Pause coupe le partage** (ADR 0003, D7) : `replaceTrack(null)` sur les trois
+émetteurs. Un écran qui continuerait de s'afficher pendant que je suis parti ouvrir
+la porte casse la promesse de la Pause de la façon la plus coûteuse — un écran de
+travail montre des notifications, des courriels, des noms.
+
+**La capacité décide, pas le gabarit.** Le bouton n'existe que si
+`navigator.mediaDevices.getDisplayMedia` existe. C'est ce qui rend vraie la règle
+« le partage n'existe que sur bureau » sans qu'aucune ligne ne parle de mobile —
+aucun navigateur mobile n'expose cette API —, et c'est plus juste que de lire une
+largeur de fenêtre : un bureau réduit à 400 px perdrait le partage sans raison. La
+**réception**, elle, ne demande aucune capacité : elle marche partout, et c'est tout
+l'intérêt. Le bouton est du côté axe 1 de la barre (il change ce que le
+correspondant voit) et **vert** : ni le rouge — un média a *quitté* l'appel — ni le
+violet — une bascule locale — ne disent qu'un flux de plus est entré.
+
+**« Cesser de partager »**, appuyé dans la barre du navigateur, arrête la piste sans
+rien dire à l'application : `track.onended` remonte en `sip:shareEnded`, et c'est la
+machine qui lance le re-INVITE — le port n'en émet jamais de sa propre initiative.
+Sans cela, le distant garderait une m-section vivante sur une image gelée.
+
+Hors périmètre, et assumé : l'audio d'onglet (`getDisplayMedia({ audio: true })`) —
+une quatrième m-section et un mixage avec le micro que rien ne décrit ; et le
+pincement pour zoomer sur un écran reçu, qui est la première demande à attendre sur
+mobile.
+
 ## 5. Intégration JsSIP
 
 ```ts
@@ -1561,6 +1667,19 @@ Perte à l'émission d'après les rapports de réception du correspondant.
   L'encart le dit en toutes lettres : ce n'est pas une mesure locale.
 - Les flux multiples d'un même média (simulcast, plusieurs SSRC) s'additionnent :
   ce qu'on lit est le débit de la vidéo, pas celui de chacune de ses couches.
+- **Sauf l'écran partagé, qui a sa propre ligne** (ADR 0005, §4.12). Deux `m=video`
+  s'additionneraient comme deux couches, et personne ne s'en apercevrait : le débit
+  « vidéo » deviendrait celui de la caméra *plus* celui de l'écran, et un écran de
+  bureau à 2 Mbit/s ferait passer pour excellente une caméra qui n'envoie plus rien
+  — c'est-à-dire exactement la question qu'on pose à cet encart quand l'image hache.
+  Pire pour le public de Trix : l'écart audio / vidéo se mesurerait sur le premier
+  flux vidéo venu, et un document qui défile avec une seconde de retard condamnerait
+  un appel parfaitement synchrone. La séparation se fait par le `a=mid` (RFC 5888),
+  que le port fournit à chaque relevé — c'est lui, et lui seul, qui sait ce qu'un
+  flux est. Les rapports de réception du distant (`remote-inbound-rtp`) ne portent
+  pas de MID : c'est leur `localId` qui renvoie au flux émis, et lui le porte. Un
+  navigateur qui ne rapporte pas `mid` range tout dans la vidéo, comme avant :
+  dégrader, jamais refuser.
 - **Sous la même case que la trace SIP** (§5.2) : c'est le même outillage de
   diagnostic. Décochée, la pastille reste une pastille, et aucun `getStats()` n'est
   demandé sur la connexion pair-à-pair d'un appel ordinaire. Le réglage est consulté

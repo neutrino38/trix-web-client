@@ -461,6 +461,7 @@ const messages: Translation = {
   "stats.sent": "المُرسَل",
   "stats.audio": "الصوت",
   "stats.video": "الفيديو",
+  "stats.share": "الشاشة المشتركة",
   "stats.text": "نص",
   "stats.missing": "نص مفقود",
   "stats.codec": "الترميز",

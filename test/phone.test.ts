@@ -1086,6 +1086,7 @@ describe("PhoneMachine — historique d'appels", () => {
         sent: { codec: "opus", clockRate: 48000, kbps: 31, loss: 0.02 },
       },
       video: null,
+      share: null,
       text: null,
       rttMs: 42,
       syncMs: null,

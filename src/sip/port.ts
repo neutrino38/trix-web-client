@@ -849,6 +849,17 @@ interface MediaControl {
    * visage à la place de l'écran — ou l'inverse, ce qui est pire.
    */
   shareTrack(side: "own" | "peer"): MediaStreamTrack | null;
+  /**
+   * **Les m-sections qui portent un écran** — la mienne, la sienne, ou les
+   * deux —, par leur `a=mid` (ADR 0005, SC-5).
+   *
+   * Les statistiques en ont besoin : un rapport WebRTC range ses compteurs
+   * par média, et deux `m=video` s'y additionneraient — le débit « vidéo »
+   * serait celui de la caméra **plus** celui de l'écran, et l'écart
+   * audio / vidéo de F.703 §5.2.2 se mesurerait sur le premier flux venu.
+   * Le port est le seul à savoir ce qu'un flux est.
+   */
+  shareMids(): string[];
   /** Fin d'appel : les capteurs que nous avons allumés s'éteignent avec lui. */
   release(): void;
 }
@@ -1240,6 +1251,7 @@ export function mediaControl(
       const sharing = peerShareLive(conn);
       if (sharing !== peerSharing) {
         peerSharing = sharing;
+        traceNote(`écran du correspondant ${sharing ? "affiché" : "retiré"}`);
         // son partage a pris fin : le suivant sera une nouvelle demande
         if (!sharing) peerShareAllowed = false;
         send({ type: "sip:peerSharing", on: sharing });
@@ -1472,6 +1484,11 @@ export function mediaControl(
     if (dialog) dialog.uac_pending_reply = false;
     if (wanted?.role === "share") {
       dropFreshShare();
+      traceNote(
+        wanted.on
+          ? `partage d'écran refusé (${by === "remote" ? (statusCode ?? "refus") : "abandon local"})`
+          : "partage d'écran arrêté",
+      );
       // **un arrêt refusé n'est pas un refus** : nous n'émettons plus, quoi
       // qu'en dise le distant, et la m-section restée inactive le dira à la
       // prochaine offre. Il n'y a que le début d'un partage qui puisse se
@@ -1510,8 +1527,14 @@ export function mediaControl(
             // ce qu'elle proposait
             if (wanted.on && !(mid !== null && midActive(body, mid))) {
               if (pc) closeRole(pc, "share");
+              // le refus poli ne laisse **aucune trace SIP** : c'est un
+              // 200 OK comme un autre, et seule la direction d'une m-section
+              // le distingue d'un oui. Sans cette ligne, le carnet d'un
+              // partage refusé se lit comme celui d'un partage accepté
+              traceNote("partage d'écran refusé par le distant");
               send({ type: "sip:mediaRefused", by: "remote", share: true });
             } else {
+              traceNote(`partage d'écran ${wanted.on ? "démarré" : "arrêté"}`);
               send({ type: "sip:sharing", on: wanted.on });
             }
             return;
@@ -1640,6 +1663,11 @@ export function mediaControl(
     // un téléphone, et une préséance que rien ne tranche
     const asksShare =
       conn !== null && !weShare() && peerShareMid(body) !== null && !peerShareAllowed;
+    // D9, et il ne laisse aucune trace SIP non plus : sa m-section est
+    // répondue `inactive` dans un 200 OK ordinaire
+    if (conn !== null && weShare() && !peerShareAllowed && peerShareMid(body) !== null) {
+      traceNote("écran du correspondant refusé — un seul partage à la fois");
+    }
     if (!conn || (added.length === 0 && !asksShare)) {
       passThrough(request);
       return;
@@ -1674,6 +1702,7 @@ export function mediaControl(
           // appliquée du tout, et la session revient à ce qu'elle était
           // (RFC 3261 §14.1). Il n'y a rien à désactiver dans une réponse
           // qui ne sera pas écrite
+          if (asksShare) traceNote("écran du correspondant refusé");
           request.reply(488, "Not Acceptable Here");
         }),
       },
@@ -1839,6 +1868,9 @@ export function mediaControl(
       mirrors.set(track, copy);
       return copy;
     },
+    shareMids() {
+      return [share.ours?.mid ?? null, share.peerMid].filter((m): m is string => m !== null);
+    },
     shareTrack(side) {
       if (side === "own") return own.share ?? null;
       // accepté, et pas seulement offert : une m-section répondue `inactive`
@@ -1906,7 +1938,11 @@ interface RtcSessionLike {
  * cocher la case en pleine communication fait démarrer la mesure, sans que
  * l'appel s'en aperçoive. Décochée, aucun `getStats()` n'est demandé.
  */
-function collectStats(session: RtcSessionLike, rtt: RttNegotiation | null) {
+function collectStats(
+  session: RtcSessionLike,
+  control: MediaControl,
+  rtt: RttNegotiation | null,
+) {
   const media = createCallStats();
   const timer = setInterval(() => {
     if (session.isEnded()) return clearInterval(timer);
@@ -1917,8 +1953,12 @@ function collectStats(session: RtcSessionLike, rtt: RttNegotiation | null) {
     const missing = rtt?.channel.missingText() ?? null;
     // getStats() sans sélecteur : le rapport entier, celui que sip/stats.ts
     // sait réduire aux quatre sens qui nous intéressent
+    // les m-sections du partage sont relues à chaque relevé : un écran peut
+    // entrer et sortir en cours d'appel, et le MID du sien n'existe qu'une
+    // fois son offre appliquée (ADR 0005, SC-5)
+    const shares = control.shareMids();
     void session.connection?.getStats().then(
-      (report) => media.push(report, Date.now(), missing),
+      (report) => media.push(report, Date.now(), missing, shares),
       () => {
         // connexion fermée entre deux relevés : le suivant s'arrêtera sur
         // `isEnded()`, il n'y a rien à rattraper
@@ -1953,7 +1993,7 @@ export function wrapSession(
   control: MediaControl,
   rtt: RttNegotiation | null,
 ): CallSession {
-  const media = collectStats(session, rtt);
+  const media = collectStats(session, control, rtt);
   /**
    * **Rien de réel ne part avant le décrochage** — ni son, ni image, ni
    * texte tapé. Le média précoce (RFC 3960) établit la connexion

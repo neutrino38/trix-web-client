@@ -445,6 +445,7 @@ const messages: Translation = {
   "stats.sent": "Émis",
   "stats.audio": "Audio",
   "stats.video": "Vidéo",
+  "stats.share": "Écran partagé",
   "stats.text": "Texte",
   "stats.missing": "Texte manquant",
   "stats.codec": "Codec",

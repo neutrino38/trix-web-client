@@ -430,6 +430,7 @@ const messages: Translation = {
   "stats.sent": "Sent",
   "stats.audio": "Audio",
   "stats.video": "Video",
+  "stats.share": "Shared screen",
   "stats.text": "Text",
   "stats.missing": "Missing text",
   "stats.codec": "Codec",

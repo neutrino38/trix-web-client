@@ -1,8 +1,9 @@
 # ADR 0005 — Le partage d'écran
 
-**Statut :** proposé — 2026-08-27
-**Portée :** `sip/port.ts`, `sip/sdp.ts`, `machines/call.ts`, `machines/events.ts`,
-`ui/screens/call/*`, `i18n/locales/*`, `docs/CONCEPTION.md` §4.4 et §4.12
+**Statut :** accepté — 2026-08-27 · **implémenté** — 2026-09-07 (SC-1 à SC-5)
+**Portée :** `sip/port.ts`, `sip/sdp.ts`, `sip/stats.ts`, `machines/call.ts`,
+`machines/events.ts`, `ui/screens/call/*`, `i18n/locales/*`, `docs/CONCEPTION.md` §4.12
+et §5.4
 **Références normatives :** RFC 8829 (JSEP), RFC 3264, RFC 4796 (`a=content`),
 RFC 5888 (`a=mid`), RFC 9143 (BUNDLE), RFC 3261 §14.1, ITU-T F.703
 

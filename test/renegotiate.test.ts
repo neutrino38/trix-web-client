@@ -349,9 +349,28 @@ function stubUserMedia(ok = true, share: boolean | "refused" = true): void {
   vi.stubGlobal("navigator", { mediaDevices: devices });
 }
 
+/**
+ * Le carnet de trace lit son réglage dans `localStorage` (§5.2), et le port
+ * y consigne les décisions du partage — un refus poli, un écran écarté —
+ * qui ne laissent aucune trace SIP. Sans ce faux, l'appel n'échouerait pas :
+ * c'est la ligne de journal qui lèverait.
+ */
+function stubStorage(): void {
+  const data = new Map<string, string>();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => data.set(k, v),
+      removeItem: (k: string) => data.delete(k),
+    },
+  });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   stubUserMedia();
+  stubStorage();
 });
 afterEach(() => {
   vi.useRealTimers();
