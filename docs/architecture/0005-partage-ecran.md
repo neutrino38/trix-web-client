@@ -392,9 +392,18 @@ sont ceux de la caméra, et `npm run diagrams` ne diverge pas.
 2. **Faut-il un cadre d'arrêt visible chez l'émetteur ?** Le navigateur en pose un ;
    Trix pourrait s'en remettre à lui, ou afficher son propre bandeau comme pour la Pause.
    À trancher au rendu.
-3. **Le pincement pour zoomer sur un écran reçu**, sur mobile. Un écran de bureau sur
-   360 px reste illisible même en `contain`. Hors périmètre pour l'instant, mais c'est
-   la première demande à attendre.
+3. ~~**Le pincement pour zoomer sur un écran reçu**, sur mobile.~~ **Tranchée le
+   2026-09-07 : oui, et pas seulement au pincement.** Un écran de bureau ramené à
+   360 px reste illisible même en `contain` — rien n'y est coupé, tout y est trop
+   petit. L'agrandissement est **local** (rien ne part sur le fil, le correspondant
+   envoie la même image), borné à 5 ×, et l'image ne peut pas dériver hors de son
+   cadre. Il suit la règle des deux chemins : un **pincement** (et son équivalent
+   molette + Ctrl, qui est ce qu'un pavé tactile de portable envoie), un **pavé
+   `− / % / +`** posé sur la scène, et le **clavier** — `+`, `−`, `0`, et les flèches
+   pour déplacer. Un geste à plusieurs points sans équivalent à un seul point serait
+   hors de portée deux fois (WCAG 2.5.1, RGAA 7.3). Le zoom retombe à 100 % quand
+   l'écran quitte la scène : une vignette agrandie ne montrerait qu'un coin, et le
+   geste pour en sortir n'y serait plus.
 
 ## Références
 

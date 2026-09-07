@@ -1435,6 +1435,20 @@ au clavier (RGAA 7.3). Elle est purement locale — rien ne part sur le fil, et 
 `attachMedia` : avec deux `m=video`, l'ordre d'arrivée ne dit plus laquelle est le
 visage.
 
+**Un écran reçu se lit, donc il s'agrandit.** `contain` garantit que rien n'est coupé,
+pas que c'est lisible : un écran de bureau ramené à 360 px est entier et illisible. La
+scène offre donc un agrandissement **local** — rien ne part sur le fil, le
+correspondant envoie la même image —, borné à 5 ×, et l'image ne peut pas dériver hors
+de son cadre (`clampPan`). Trois chemins pour un seul geste, et ce n'est pas du luxe :
+un **pincement** — et la molette + Ctrl, qui est ce qu'un pavé tactile de portable
+envoie —, un **pavé `− / % / +`** posé sur la scène, et le **clavier** (`+`, `−`, `0`,
+flèches pour déplacer). Un geste à plusieurs points sans équivalent à un seul point
+serait hors de portée deux fois (WCAG 2.5.1, RGAA 7.3), et c'est la même leçon que le
+double-clic du plein écran. Le pincement agrandit **sous les doigts** (`anchoredPan`),
+sans quoi il faudrait repositionner l'image après chaque geste ; l'agrandissement
+retombe à 100 % dès que l'écran quitte la scène, une vignette agrandie ne montrant
+qu'un coin.
+
 **Une m-section retirée est recyclée, jamais supprimée.** Arrêter de partager, c'est
 `direction = "inactive"`, piste arrêtée, re-INVITE — et le transceiver **reste**,
 avec son MID. Un transceiver arrêté laisserait un port 0 dans toutes les offres

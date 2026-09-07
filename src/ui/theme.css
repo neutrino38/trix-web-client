@@ -450,6 +450,39 @@ fieldset.field { border: none; }
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: contain; background: #000; cursor: default;
 }
+/* L'écran **sur la scène** se pince pour être lu : `touch-action: none` est
+   ce qui donne les deux doigts à la page plutôt qu'au navigateur, et
+   `transform-origin` au centre est ce qui fait que zoomer sans viser ne
+   déplace rien (ADR 0005, question ouverte 3). En vignette, rien de tout
+   cela : l'appui y permute, et c'est tout. */
+.video.sharing:not(.swapped) video.share,
+.mvideo.sharing:not(.swapped) video.share {
+  touch-action: none; transform-origin: center center;
+}
+.video.sharing video.share.zoomed,
+.mvideo.sharing video.share.zoomed { cursor: grab; }
+.video.sharing video.share:focus-visible,
+.mvideo.sharing video.share:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+/* Le pavé de zoom : l'équivalent à un seul point du pincement (WCAG 2.5.1),
+   posé du côté des vu-mètres mais devant eux, et jamais sur la vignette —
+   qui, elle, est en bas. */
+.sharezoom {
+  position: absolute; z-index: 3; top: 10px; inset-inline-end: 30px;
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.sharezoom button {
+  min-width: 40px; height: 36px; padding: 0 0.4rem;
+  border: none; border-radius: 999px; background: transparent; color: #fff;
+  font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.sharezoom button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.22); }
+.sharezoom button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.sharezoom button:disabled { opacity: 0.4; cursor: default; }
+.sharezoom .zoomlevel { font-size: 0.8rem; }
+/* le visage a repris la scène : il n'y a plus d'écran à agrandir */
+.sharing.swapped .sharezoom { display: none; }
 /* la vignette, au-dessus de la barre de commandes et du côté du texte : elle
    ne rencontre ni le self-view (en haut) ni les vu-mètres (à l'autre bord) */
 .video.sharing video.remote,
@@ -1344,6 +1377,9 @@ fieldset.field { border: none; }
 .mvideo {
   flex: 1; min-height: 0; position: relative; background: var(--video-bg);
   display: flex; align-items: center; justify-content: center;
+  /* un écran partagé agrandi déborde de son cadre : sans cela il passerait
+     par-dessus le tchat et la barre du bas (ADR 0005, zoom) */
+  overflow: hidden;
 }
 .mvideo video.remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .mvideo video.selfview {

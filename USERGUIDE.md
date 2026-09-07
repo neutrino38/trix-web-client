@@ -235,6 +235,17 @@ cropped, because cropping a shared screen cuts off text — their camera moves t
 and your self-view folds away (the button brings it back). Tap the inset, or use **Swap**,
 to put their face back in the big surface without refusing the share.
 
+**Zooming in on it.** Fitting the whole screen in is not the same as being able to read
+it: a desktop screen shrunk to phone width is complete and illegible. Pinch to zoom in,
+then drag with one finger to move around. The same is reachable without a touch screen:
+the **− / % / +** pad in the corner of the shared screen does it with single clicks, and
+with the screen focused the keyboard does too — <kbd>+</kbd> and <kbd>−</kbd> to zoom,
+the arrow keys to move, <kbd>0</kbd> to go back to the whole picture. On a laptop
+trackpad, <kbd>Ctrl</kbd> + two-finger scroll works as a pinch.
+
+Zooming is yours alone: nothing goes over the wire, and the other party keeps sending the
+same picture. It goes back to 100% when their screen leaves the stage.
+
 The call timer runs in the top bar, next to the *In call* pill.
 
 **The side panel** can be resized by dragging the handle on its inner edge, or with the

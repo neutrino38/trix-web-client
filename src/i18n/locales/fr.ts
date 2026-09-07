@@ -286,6 +286,18 @@ const messages = {
    * clavier il n'existe pas (RGAA 7.3), d'où ce bouton.
    */
   "share.stageAria": "Écran partagé par {peer}",
+  /**
+   * **Le zoom sur un écran reçu** (ADR 0005, question ouverte 3). Un écran
+   * de bureau ramené à 360 px reste illisible : rien n'y est coupé, tout y
+   * est trop petit. L'agrandissement est **local** — rien ne part sur le
+   * fil, et le correspondant continue d'envoyer la même image.
+   */
+  "share.zoomGroup": "Zoom sur l'écran partagé",
+  "share.zoomIn": "Agrandir l'écran partagé",
+  "share.zoomOut": "Réduire l'écran partagé",
+  "share.zoomReset": "Revenir à la taille d'origine",
+  "share.zoomLevel": "{n} %",
+  "share.zoomHint": "Pincez pour agrandir ; flèches du clavier pour déplacer",
   "ctrl.swap.aria": "Permuter l'écran et le visage",
   "ctrl.swap.screen": "Mettre l'écran en grand",
   "ctrl.swap.face": "Mettre le visage en grand",
