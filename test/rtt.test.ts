@@ -21,8 +21,10 @@ import {
   type RttWire,
   type RttWireHooks,
 } from "../src/sip/rtt.js";
-import { withTextOverWs, wsUrlFromSdp } from "../src/sip/rttws.js";
-import { T140_CHANNEL } from "../src/sip/rttdc.js";
+import { openWsWire, withTextOverWs, wsUrlFromSdp } from "../src/sip/rttws.js";
+import { openDcWire, T140_CHANNEL } from "../src/sip/rttdc.js";
+import type { ErrorSink } from "../src/sip/mediaerror.js";
+import { openCallTrace, resetCallTraces, type TraceLine } from "../src/sip/record.js";
 
 /** Ce que le canal a fait passer sur le fil, et ce qu'il a rapporté. */
 interface Recorder {
@@ -440,7 +442,7 @@ class FakeSocket {
   readyState = 0;
   sent: string[] = [];
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev: { code?: number; reason?: string; wasClean?: boolean }) => void) | null = null;
   onmessage: ((ev: { data: unknown }) => void) | null = null;
 
   constructor(readonly url: string) {
@@ -452,9 +454,10 @@ class FakeSocket {
     this.onopen?.();
   }
 
-  drop(): void {
+  /** Le socket tombe. 1006 est ce que le navigateur donne d'une coupure. */
+  drop(code = 1006, reason = ""): void {
     this.readyState = FakeSocket.CLOSED;
-    this.onclose?.();
+    this.onclose?.({ code, reason, wasClean: false });
   }
 
   send(text: string): void {
@@ -464,6 +467,20 @@ class FakeSocket {
   close(): void {
     this.readyState = FakeSocket.CLOSED;
   }
+}
+
+const WS_URL = "wss://gw.example.fr/rtt/42";
+
+/**
+ * Le fil WebSocket de l'appel. Les pannes partent dans un puits à nous :
+ * la console reste lisible, et ce qui y aurait été écrit se vérifie ligne
+ * à ligne.
+ */
+function wsChannel(rec: Recorder, sink: ErrorSink = errorSink(), url = WS_URL): RttChannel {
+  return listening(
+    rttChannel("websocket", (hooks) => openWsWire(url, hooks, sink)),
+    rec,
+  );
 }
 
 describe("fil WebSocket", () => {
@@ -499,7 +516,7 @@ describe("fil WebSocket", () => {
 
   it("la signature repart sur un socket rouvert : la passerelle a pu perdre l'association", () => {
     const rec = recorder();
-    listening(openRtt({ transport: "websocket", url: "wss://gw.example.fr/rtt/42" }), rec);
+    wsChannel(rec);
     FakeSocket.instances[0]!.open();
     FakeSocket.instances[0]!.drop();
     vi.advanceTimersByTime(1000);
@@ -509,7 +526,7 @@ describe("fil WebSocket", () => {
 
   it("une coupure se reprend, et la perte se voit dans le fil", () => {
     const rec = recorder();
-    const ch = listening(openRtt({ transport: "websocket", url: "wss://gw.example.fr/rtt/42" }), rec);
+    const ch = wsChannel(rec);
     FakeSocket.instances[0]!.open();
 
     FakeSocket.instances[0]!.drop();
@@ -526,7 +543,7 @@ describe("fil WebSocket", () => {
 
   it("une coupure qui dure ferme le lien pour de bon", () => {
     const rec = recorder();
-    const ch = listening(openRtt({ transport: "websocket", url: "wss://gw.example.fr/rtt/42" }), rec);
+    const ch = wsChannel(rec);
     FakeSocket.instances[0]!.open();
 
     for (let i = 0; i < 11; i++) {
@@ -538,7 +555,8 @@ describe("fil WebSocket", () => {
 
   it("fermer le canal ne relance aucune reprise", () => {
     const rec = recorder();
-    const ch = listening(openRtt({ transport: "websocket", url: "wss://gw.example.fr/rtt/42" }), rec);
+    const s = errorSink();
+    const ch = wsChannel(rec, s);
     FakeSocket.instances[0]!.open();
 
     ch.close();
@@ -546,6 +564,150 @@ describe("fil WebSocket", () => {
     vi.advanceTimersByTime(5000);
     expect(FakeSocket.instances.length).toBe(1);
     expect(ch.state()).toBe("closed");
+    // un raccrochage ferme le socket comme une panne le ferait : rien à dire
+    expect(s.lines).toEqual([]);
+  });
+
+  /**
+   * **Les pannes du socket, dites à voix haute.** Même engagement que pour
+   * le canal de données : la rupture du fil texte ne laisse aucune trace
+   * SIP — elle a lieu sur un socket parallèle, dont la signalisation ne
+   * sait plus rien une fois l'URL lue dans la réponse.
+   *
+   * Ce qui est dit est la **première panne de la série et l'abandon** : les
+   * neuf reprises du milieu rediraient mot pour mot la même chose, et un
+   * carnet où la même ligne paraît dix fois est un carnet qu'on ne lit
+   * plus.
+   */
+  describe("pannes dites à voix haute", () => {
+    beforeEach(() => resetCallTraces());
+
+    it("une rupture part à la console et au carnet, code de fermeture compris", () => {
+      const book = openCallTrace("call-ws");
+      const s = errorSink();
+      const rec = recorder();
+      wsChannel(rec, s);
+      FakeSocket.instances[0]!.open();
+
+      FakeSocket.instances[0]!.drop(1006);
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("socket rompu (code 1006)");
+      expect(s.lines[0]!.text).toContain(`socket : ${WS_URL}`);
+
+      const lines: TraceLine[] = book.take();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.kind).toBe("err");
+      expect(lines[0]!.head).toBe("Canal texte T.140 : socket rompu (code 1006)");
+      expect(lines[0]!.body).toContain(`socket : ${WS_URL}`);
+    });
+
+    it("un socket qui ne s'est jamais ouvert est un refus, pas une rupture", () => {
+      const s = errorSink();
+      const rec = recorder();
+      wsChannel(rec, s);
+
+      FakeSocket.instances[0]!.drop(1006); // ce que le navigateur donne, toujours
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("connexion au socket refusée (code 1006)");
+      // **la limite est dite, pas devinée** : la RFC 6455 interdit de
+      // remonter l'échec TLS à l'application, et le navigateur ferme sur
+      // 1006 qu'il s'agisse d'un certificat expiré, d'un DNS mort ou d'un
+      // port fermé. La ligne nomme les trois, le certificat en tête.
+      expect(s.lines[0]!.text).toContain("causes possibles");
+      expect(s.lines[0]!.text).toContain("certificat du serveur invalide ou expiré");
+    });
+
+    it("un socket rompu en cours d'appel ne fait pas soupçonner le certificat", () => {
+      const s = errorSink();
+      const rec = recorder();
+      wsChannel(rec, s);
+      FakeSocket.instances[0]!.open(); // la poignée de main TLS a eu lieu
+
+      FakeSocket.instances[0]!.drop(1006);
+
+      expect(s.lines[0]!.text).toContain("socket rompu (code 1006)");
+      expect(s.lines[0]!.text).not.toContain("certificat");
+    });
+
+    it("le code 1015, si une pile le remonte, nomme le certificat", () => {
+      const s = errorSink();
+      const rec = recorder();
+      wsChannel(rec, s);
+
+      FakeSocket.instances[0]!.drop(1015, "TLS handshake");
+
+      expect(s.lines[0]!.text).toContain("poignée de main TLS échouée");
+      expect(s.lines[0]!.text).toContain("certificat du serveur invalide ou expiré (code 1015)");
+      expect(s.lines[0]!.text).toContain("motif : TLS handshake");
+    });
+
+    it("les reprises du milieu se taisent, l'abandon parle", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const ch = wsChannel(rec, s);
+      FakeSocket.instances[0]!.open();
+
+      for (let i = 0; i < 11; i++) {
+        FakeSocket.instances.at(-1)!.drop();
+        vi.advanceTimersByTime(1000);
+      }
+
+      expect(ch.state()).toBe("closed");
+      expect(s.lines).toHaveLength(2);
+      expect(s.lines[0]!.text).toContain("socket rompu");
+      expect(s.lines[1]!.text).toContain("abandon après 10 reprises");
+      expect(s.lines[1]!.text).toContain("reprises : 10");
+    });
+
+    it("un socket qui ne s'ouvre jamais est dit au bout de dix secondes, une fois", () => {
+      const s = errorSink();
+      const rec = recorder();
+      wsChannel(rec, s); // la passerelle accepte le TCP et ne répond rien
+
+      vi.advanceTimersByTime(9000);
+      expect(s.lines).toEqual([]);
+      vi.advanceTimersByTime(1000);
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("socket toujours pas ouvert 10 s");
+
+      // et il ne le redit pas : la reprise dirait la même chose
+      FakeSocket.instances[0]!.drop();
+      vi.advanceTimersByTime(60000);
+      expect(s.lines.filter((l) => l.text.includes("toujours pas ouvert"))).toHaveLength(1);
+    });
+
+    it("se tait quand le socket s'ouvre dans les temps", () => {
+      const s = errorSink();
+      const rec = recorder();
+      wsChannel(rec, s);
+      FakeSocket.instances[0]!.open();
+
+      vi.advanceTimersByTime(60000);
+      expect(s.lines).toEqual([]);
+    });
+
+    it("une URL que le navigateur refuse est dite avec son erreur", () => {
+      const s = errorSink();
+      const rec = recorder();
+      vi.stubGlobal(
+        "WebSocket",
+        class {
+          constructor() {
+            throw new DOMException("The URL is invalid", "SyntaxError");
+          }
+        },
+      );
+
+      const ch = wsChannel(rec, s, "wss://gw.example.fr/ rtt");
+
+      expect(ch.state()).toBe("closed");
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("ouverture du socket impossible");
+      expect(s.lines[0]!.text).toContain("SyntaxError: The URL is invalid");
+    });
   });
 });
 
@@ -560,7 +722,7 @@ class FakeChannel {
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+  onerror: ((ev: { error?: unknown }) => void) | null = null;
   onmessage: ((ev: { data: unknown }) => void) | null = null;
   closed = false;
 
@@ -591,6 +753,38 @@ class FakeChannel {
     this.readyState = "closed";
     this.onclose?.();
   }
+
+  /** La pile signale une erreur sur le canal, `RTCError` à l'appui. */
+  fault(error: unknown): void {
+    this.readyState = "closed";
+    this.onerror?.({ error });
+  }
+}
+
+/**
+ * Le transport DTLS sous l'association SCTP : le seul endroit où un
+ * navigateur rend l'alerte TLS qui a mis fin à une poignée de main.
+ */
+class FakeDtls {
+  private watchers: ((ev: { error: unknown }) => void)[] = [];
+
+  addEventListener(type: string, fn: (ev: never) => void): void {
+    if (type === "error") this.watchers.push(fn as (ev: { error: unknown }) => void);
+  }
+
+  removeEventListener(type: string, fn: (ev: never) => void): void {
+    if (type === "error") this.watchers = this.watchers.filter((l) => l !== fn);
+  }
+
+  /** Combien d'écouteurs le transport porte — zéro veut dire « on l'a lâché ». */
+  get watched(): number {
+    return this.watchers.length;
+  }
+
+  /** La poignée de main échoue, alerte à l'appui. */
+  fails(error: unknown): void {
+    for (const fn of [...this.watchers]) fn({ error });
+  }
 }
 
 /** Une connexion pair-à-pair réduite à ce que le fil en utilise. */
@@ -598,6 +792,14 @@ class FakeConnection {
   created: FakeChannel[] = [];
   lastInit: { ordered?: boolean; protocol?: string } = {};
   connectionState = "connected";
+  readonly dtls = new FakeDtls();
+  /**
+   * L'association SCTP, négociée sauf si on la retire : `null` est ce que
+   * laisse un distant qui a refusé la section `m=application`.
+   */
+  sctp: unknown = { transport: this.dtls };
+  /** La connexion n'accepte plus de canal — elle est déjà partie. */
+  refuses = false;
   /** L'identifiant du prochain canal créé ici. */
   nextId = 0;
 
@@ -605,6 +807,7 @@ class FakeConnection {
   private stateWatchers: (() => void)[] = [];
 
   createDataChannel(label: string, init: { ordered?: boolean; protocol?: string }): FakeChannel {
+    if (this.refuses) throw new DOMException("RTCPeerConnection is closed", "InvalidStateError");
     const dc = new FakeChannel(label, init.protocol ?? "", this.nextId);
     this.nextId += 2;
     this.created.push(dc);
@@ -641,9 +844,27 @@ class FakeConnection {
 
 const asPc = (pc: FakeConnection): RTCPeerConnection => pc as unknown as RTCPeerConnection;
 
-/** Le canal de données de l'appel, du côté demandé. */
-function dcChannel(pc: FakeConnection, role: "offer" | "answer", rec: Recorder): RttChannel {
-  return listening(openRtt({ transport: "datachannel", connection: asPc(pc), role }), rec);
+/** Le puits d'erreurs, en réduction : ce qu'un développeur lit dans la console. */
+function errorSink(): ErrorSink & { lines: { text: string; detail: unknown }[] } {
+  const lines: { text: string; detail: unknown }[] = [];
+  return { lines, error: (text, detail) => void lines.push({ text, detail }) };
+}
+
+/**
+ * Le canal de données de l'appel, du côté demandé. Les pannes partent dans
+ * un puits à nous : la console reste lisible, et ce qui y aurait été écrit
+ * se vérifie ligne à ligne.
+ */
+function dcChannel(
+  pc: FakeConnection,
+  role: "offer" | "answer",
+  rec: Recorder,
+  sink: ErrorSink = errorSink(),
+): RttChannel {
+  return listening(
+    rttChannel("datachannel", (hooks) => openDcWire(asPc(pc), role, hooks, sink)),
+    rec,
+  );
 }
 
 describe("fil canal de données", () => {
@@ -893,5 +1114,262 @@ describe("fil canal de données", () => {
     ch.close();
     expect(pc.watchers).toBe(0);
     expect(ch.state()).toBe("closed");
+  });
+
+  it("openRtt ouvre bien le fil du canal de données", () => {
+    const pc = new FakeConnection();
+    const ch = openRtt({ transport: "datachannel", connection: asPc(pc), role: "offer" });
+
+    expect(ch.transport).toBe("datachannel");
+    expect(pc.created).toHaveLength(1);
+    ch.close();
+  });
+
+  /**
+   * **Les pannes du canal, dites à voix haute.**
+   *
+   * Un canal de données qui tombe ne laisse aucune trace SIP : il vit sur
+   * l'association SCTP que l'appel porte déjà, se rouvre sans
+   * renégociation, et son échec ne se voit nulle part ailleurs. Sans ces
+   * lignes, il n'en resterait qu'un panneau de tchat devenu muet — et
+   * l'historique d'un appel où le texte n'est jamais passé ne dirait rien
+   * de pourquoi.
+   *
+   * Ce qui se vérifie ici est ce qui est dit, et surtout **ce qui ne l'est
+   * pas** : un raccrochage ferme les canaux comme une panne, et une panne
+   * sur deux serait du bruit qui ferait ignorer les vraies.
+   */
+  describe("pannes dites à voix haute", () => {
+    beforeEach(() => resetCallTraces());
+
+    it("une rupture en cours d'appel part à la console et au carnet", () => {
+      const book = openCallTrace("call-t140");
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "offer", rec, s);
+      pc.created[0]!.open();
+
+      pc.created[0]!.drop();
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("Texte temps réel");
+      expect(s.lines[0]!.text).toContain("canal fermé");
+      // les faits qui font relire la ligne un mois plus tard
+      expect(s.lines[0]!.text).toContain("connexion : connected");
+      expect(s.lines[0]!.text).toContain("rôle : offer");
+
+      const lines: TraceLine[] = book.take();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.kind).toBe("err");
+      expect(lines[0]!.head).toContain("Canal texte T.140");
+      expect(lines[0]!.body).toContain("connexion : connected");
+    });
+
+    it("l'erreur technique de la pile voyage avec la ligne", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "offer", rec, s);
+      const dc = pc.created[0]!;
+      dc.open();
+
+      // ce que Chrome met dans un `RTCErrorEvent` : le détail nomme la
+      // famille de l'échec, le code SCTP en donne le motif exact
+      const error = Object.assign(new DOMException("Data channel failure", "OperationError"), {
+        errorDetail: "sctp-failure",
+        sctpCauseCode: 12,
+      });
+      dc.fault(error);
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("OperationError: Data channel failure");
+      expect(s.lines[0]!.text).toContain("errorDetail : sctp-failure");
+      expect(s.lines[0]!.text).toContain("sctpCauseCode : 12");
+      // l'objet d'origine suit : lui seul porte la pile, que la console déplie
+      expect(s.lines[0]!.detail).toBe(error);
+    });
+
+    it("un raccrochage n'est pas une panne : rien n'est dit", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      const ch = dcChannel(pc, "offer", rec, s);
+      const dc = pc.created[0]!;
+      dc.open();
+
+      // la connexion se ferme, et les canaux tombent avec elle
+      pc.connectionState = "closed";
+      dc.drop();
+      pc.becomes("closed");
+
+      expect(s.lines).toEqual([]);
+      expect(ch.state()).toBe("closed");
+    });
+
+    it("une connexion rompue est dite, même sans canal à perdre", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "answer", rec, s); // le répondant n'a encore rien reçu
+
+      pc.becomes("failed");
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("connexion pair-à-pair rompue");
+    });
+
+    it("l'abandon après dix reprises est dit, et le lien se ferme", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      const ch = dcChannel(pc, "offer", rec, s);
+
+      // dix reprises, puis la onzième perte qui n'en obtient pas d'autre
+      for (let i = 0; i <= 10; i++) pc.created[i]!.drop();
+
+      expect(pc.created).toHaveLength(11);
+      expect(ch.state()).toBe("closed");
+      expect(s.lines.at(-1)!.text).toContain("abandon après 10 reprises");
+    });
+
+    it("créer le canal sur une connexion déjà partie est dit", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      pc.refuses = true;
+      const ch = dcChannel(pc, "offer", rec, s);
+
+      expect(ch.state()).toBe("closed");
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("création du canal impossible");
+      expect(s.lines[0]!.text).toContain("InvalidStateError");
+    });
+
+    /**
+     * **Le certificat du serveur.** WebRTC est le seul endroit où le
+     * navigateur rend l'alerte TLS qui a fini la poignée de main : les
+     * alertes 42 à 46 et 48 désignent le certificat, la 45 dit qu'il est
+     * expiré. C'est ce qu'un exploitant veut lire dans un carnet d'appel,
+     * plutôt qu'« échec DTLS ».
+     */
+    it("l'alerte DTLS nomme le certificat du serveur, et qui l'a refusé", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "offer", rec, s);
+
+      pc.dtls.fails(
+        Object.assign(new DOMException("DTLS handshake failed", "OperationError"), {
+          errorDetail: "dtls-failure",
+          sentAlert: 45, // c'est nous qui refusons : le certificat d'en face a expiré
+        }),
+      );
+
+      expect(s.lines).toHaveLength(1);
+      expect(s.lines[0]!.text).toContain("échec de la poignée de main DTLS");
+      expect(s.lines[0]!.text).toContain("certificat du serveur expiré, refusé par ce poste");
+      expect(s.lines[0]!.text).toContain("alerte envoyée : alerte 45 certificate_expired");
+    });
+
+    it("l'alerte reçue met en cause notre certificat, pas celui du serveur", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "offer", rec, s);
+
+      pc.dtls.fails(Object.assign(new Error("dtls"), { receivedAlert: 48 }));
+
+      expect(s.lines[0]!.text).toContain("notre certificat refusé par le serveur");
+      expect(s.lines[0]!.text).toContain("alerte 48 unknown_ca");
+    });
+
+    it("une alerte qui ne parle pas du certificat ne le met pas en cause", () => {
+      const s = errorSink();
+      const rec = recorder();
+      const pc = new FakeConnection();
+      dcChannel(pc, "offer", rec, s);
+
+      // empreinte SDP qui ne correspond pas : de la signalisation, pas un
+      // certificat périmé
+      pc.dtls.fails(Object.assign(new Error("dtls"), { sentAlert: 51 }));
+
+      expect(s.lines[0]!.text).not.toContain("certificat");
+      expect(s.lines[0]!.text).toContain("alerte 51 decrypt_error");
+    });
+
+    it("fermer le canal lâche aussi le transport DTLS", () => {
+      const rec = recorder();
+      const pc = new FakeConnection();
+      const ch = dcChannel(pc, "offer", rec);
+      expect(pc.dtls.watched).toBe(1);
+
+      ch.close();
+      expect(pc.dtls.watched).toBe(0);
+    });
+
+    /**
+     * Le canal qui ne s'ouvre **jamais** : aucun événement ne le signale —
+     * ni fermeture, ni erreur —, et c'est pourtant la panne la plus
+     * probable en face d'une passerelle qui annonce le SCTP sans jamais
+     * créer son canal t140. D'où le délai, armé sur l'établissement de la
+     * connexion et non sur l'ouverture du fil : un appel peut sonner des
+     * minutes, et un canal qui attend DTLS n'est pas un canal en panne.
+     */
+    describe("canal qui ne s'ouvre jamais", () => {
+      beforeEach(() => vi.useFakeTimers());
+      afterEach(() => vi.useRealTimers());
+
+      it("est dit dix secondes après l'établissement de la connexion", () => {
+        const s = errorSink();
+        const rec = recorder();
+        const pc = new FakeConnection();
+        dcChannel(pc, "answer", rec, s); // le distant n'ouvrira rien
+
+        vi.advanceTimersByTime(9000);
+        expect(s.lines).toEqual([]);
+        vi.advanceTimersByTime(1000);
+
+        expect(s.lines).toHaveLength(1);
+        expect(s.lines[0]!.text).toContain("aucun canal t140 ouvert");
+      });
+
+      it("se tait quand le canal s'est ouvert dans les temps", () => {
+        const s = errorSink();
+        const rec = recorder();
+        const pc = new FakeConnection();
+        dcChannel(pc, "offer", rec, s);
+        pc.created[0]!.open();
+
+        vi.advanceTimersByTime(60000);
+        expect(s.lines).toEqual([]);
+      });
+
+      it("se tait quand le distant a refusé le texte : c'est une réponse, pas une panne", () => {
+        const s = errorSink();
+        const rec = recorder();
+        const pc = new FakeConnection();
+        pc.sctp = null; // section m=application refusée, port 0
+        dcChannel(pc, "answer", rec, s);
+
+        vi.advanceTimersByTime(60000);
+        expect(s.lines).toEqual([]);
+      });
+
+      it("une reprise qui n'aboutit pas est dite à son tour", () => {
+        const s = errorSink();
+        const rec = recorder();
+        const pc = new FakeConnection();
+        dcChannel(pc, "offer", rec, s);
+        pc.created[0]!.open();
+
+        pc.created[0]!.drop(); // rouvert, mais le nouveau canal reste muet
+        expect(s.lines).toHaveLength(1);
+
+        vi.advanceTimersByTime(10000);
+        expect(s.lines).toHaveLength(2);
+        expect(s.lines[1]!.text).toContain("canal non rétabli");
+      });
+    });
   });
 });
