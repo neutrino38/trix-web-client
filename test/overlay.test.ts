@@ -43,6 +43,7 @@ function view(over: Partial<CallView> = {}): CallView {
     mediaPending: false,
     mediaAsked: null,
     paused: false,
+    sharing: "off" as const,
     peerPaused: false,
     dtmfSent: "",
     notice: null,
@@ -411,5 +412,98 @@ describe("le bureau ne change pas", () => {
     const html = desktop();
     expect(html).toContain('data-act="pause"');
     expect(pill(html)).not.toContain("pause");
+  });
+});
+
+/**
+ * **Le partage d'écran dans la barre** (ADR 0005, D8).
+ *
+ * Ce qui se vérifie ici est la règle qui remplace « seulement sur bureau » :
+ * c'est la **capacité** qui décide, jamais le gabarit. Lire une largeur de
+ * fenêtre ferait disparaître le partage d'un bureau réduit à 400 px, alors
+ * que la machine sait parfaitement le faire.
+ */
+describe("le bouton de partage", () => {
+  /** Un poste qui sait capturer un écran — ou un qui ne sait pas. */
+  function withCapture<T>(can: boolean, fn: () => T): T {
+    const before = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      value: { mediaDevices: can ? { getDisplayMedia: () => {} } : {} },
+      configurable: true,
+    });
+    try {
+      return fn();
+    } finally {
+      if (before) Object.defineProperty(globalThis, "navigator", before);
+      else delete (globalThis as { navigator?: unknown }).navigator;
+    }
+  }
+
+  it("n'existe pas là où l'on ne sait pas capturer d'écran", () => {
+    const html = withCapture(false, () => overlayBar({ view: view(), speakerMuted: false }));
+    expect(html).not.toContain('data-act="share"');
+  });
+
+  it("existe dès que `getDisplayMedia` existe, quel que soit le gabarit", () => {
+    for (const compact of [false, true]) {
+      const html = withCapture(true, () =>
+        overlayBar({ view: view(), speakerMuted: false, compact }),
+      );
+      expect(html).toContain('data-act="share"');
+    }
+  });
+
+  /**
+   * Il change ce que le correspondant voit et passe par un re-INVITE qu'il
+   * peut refuser : sa place est avant le trait, avec le micro et la caméra.
+   */
+  it("est du côté axe 1 de la barre du bureau", () => {
+    const html = withCapture(true, () => overlayBar({ view: view(), speakerMuted: false }));
+    const trait = html.indexOf("pill-sep");
+    expect(html.indexOf('data-act="share"')).toBeLessThan(trait);
+  });
+
+  /**
+   * **Vert**, ni rouge ni violet : allumé, il dit qu'un flux de plus est
+   * dans l'appel — l'exact contraire de ce que le rouge signifie partout
+   * ailleurs dans cette barre.
+   */
+  it("s'allume en vert quand mon écran est dans l'appel", () => {
+    const off = withCapture(true, () => overlayBar({ view: view(), speakerMuted: false }));
+    expect(off).toMatch(/class="iconbtn "[^>]*data-act="share"/);
+    expect(off).toContain('aria-pressed="false"');
+
+    const on = withCapture(true, () =>
+      overlayBar({ view: view({ sharing: "on" }), speakerMuted: false }),
+    );
+    expect(on).toMatch(/class="iconbtn live"[^>]*data-act="share"/);
+  });
+
+  it("l'icône ne se barre jamais : un écran barré dirait « indisponible »", () => {
+    const html = withCapture(true, () =>
+      overlayBar({ view: view({ sharing: "on" }), speakerMuted: false }),
+    );
+    const bouton = html.slice(html.indexOf('data-act="share"'));
+    expect(bouton.slice(0, bouton.indexOf("</button>"))).not.toContain("line");
+  });
+
+  it("est grisé pendant toute renégociation, quelle qu'elle porte", () => {
+    for (const over of [{ mediaPending: true }, { mediaAsked: ["video" as const] }]) {
+      const html = withCapture(true, () => overlayBar({ view: view(over), speakerMuted: false }));
+      const bouton = html.slice(html.indexOf('data-act="share"'));
+      expect(bouton.slice(0, bouton.indexOf(">"))).toContain("disabled");
+    }
+  });
+
+  /**
+   * Le budget de quatre icônes de D8 tient : le partage prend la troisième
+   * place de la pastille, et ce qui l'occupait descend dans la feuille.
+   */
+  it("ne fait pas grossir la pastille compacte", () => {
+    const html = withCapture(true, () =>
+      overlayBar({ view: view(), speakerMuted: false, compact: true }),
+    );
+    const pill = html.slice(html.indexOf("overlay-pill"), html.indexOf("bar-break"));
+    expect(pill.match(/<button/g)).toHaveLength(4);
   });
 });

@@ -257,6 +257,14 @@ const messages = {
   "ctrl.cam.aria": "Vidéo",
   "ctrl.cam.add": "Ajouter la vidéo",
   "ctrl.cam.remove": "Retirer la vidéo",
+  /**
+   * **Le partage d'écran** (ADR 0005). Le bouton n'existe que là où la
+   * machine sait capturer un écran — c'est la capacité qui décide, jamais
+   * le gabarit (D8).
+   */
+  "ctrl.share.aria": "Partage d'écran",
+  "ctrl.share.start": "Partager l'écran",
+  "ctrl.share.stop": "Arrêter le partage",
   "ctrl.media.pending": "Changement de média en cours…",
   "ctrl.media.last": "Impossible : l'appel ne transporterait plus rien",
   "ctrl.selfview.aria": "Self-view",
@@ -330,6 +338,13 @@ const messages = {
   "notice.videoRemoved": "{peer} a retiré la vidéo",
   "notice.videoDeclinedHere": "Vidéo refusée",
   "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour le moment",
+  /**
+   * Le partage a sa propre phrase : rien de ce que l'appel transporte n'a
+   * bougé, et parler de « la vidéo » ici ferait croire à la caméra qui
+   * vient de s'éteindre (ADR 0005, D3).
+   */
+  "notice.shareRefused": "{peer} n'a pas accepté le partage d'écran",
+  "notice.shareUnavailable": "Impossible de partager l'écran pour le moment",
   "notice.audioDeclined": "{peer} n'a pas accepté l'audio",
   "notice.audioRefused": "{peer} refuse d'ajouter l'audio à cet appel",
   "notice.audioAdded": "{peer} a ajouté l'audio",

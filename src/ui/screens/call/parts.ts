@@ -101,6 +101,12 @@ export const ICONS = {
   clock: `<svg class="icon" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>`,
   fullscreen: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm11-5h5v5h-2V6h-3V4zM4 15h2v3h3v2H4v-5zm14 0h2v5h-5v-2h3v-3z"/></svg>`,
   chat: `<svg class="icon" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>`,
+  /**
+   * **Le partage d'écran** : un moniteur et une flèche qui en sort. Elle
+   * monte, et c'est ce qui la distingue d'un téléversement — ce qui part
+   * de cet écran va vers l'appel.
+   */
+  share: `<svg class="icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h5v2h6v-2h5c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 12H4V6h16v10zm-8-9-4 4h2.5v3h3v-3H16l-4-4z"/></svg>`,
   // deux flèches qui se croisent : passer d'un compte à l'autre
   swap: `<svg class="icon" viewBox="0 0 24 24"><path d="M7 3 3 7l4 4V8h9V6H7V3zm10 18 4-4-4-4v3H8v2h9v3z"/></svg>`,
 };
@@ -635,6 +641,9 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   for (const kind of MEDIA_KINDS) {
     on(`[data-act="toggle-${kind}"]`, () => phone.send({ type: "ui:toggleMedia", kind }));
   }
+  // le partage rejoint l'axe 1 : il change ce que le correspondant voit, et
+  // le bouton n'existe que là où la machine sait capturer un écran (D8)
+  on('[data-act="share"]', () => phone.send({ type: "ui:toggleShare" }));
   // deux boutons pour un seul geste : celui de la barre, et « Reprendre »
   // dans le bandeau plein écran. `on` les câble tous les deux
   on('[data-act="pause"]', () => phone.send({ type: "ui:togglePause" }));

@@ -50,6 +50,14 @@ class FakeSession implements CallSession {
   setPaused(on: boolean): void {
     this.pauses.push(on);
   }
+  /** Les partages d'écran demandés, dans l'ordre : vrai = démarrer. */
+  shares: boolean[] = [];
+  startShare(): void {
+    this.shares.push(true);
+  }
+  stopShare(): void {
+    this.shares.push(false);
+  }
   /** Les tonalités reçues par le port, et ce qu'il en fait (cf. `dtmfFails`). */
   tones: string[] = [];
   /** Le port refuse d'émettre : pas de piste audio, session en train de finir. */
@@ -1181,5 +1189,143 @@ describe("CallBlock — DTMF", () => {
     call.send({ type: "ui:dtmf", tone: "5" });
     expect(box.session.tones).toEqual([]);
     expect(call.sbb?.state).toBe("ringing");
+  });
+});
+
+/**
+ * **Le partage d'écran vu du bloc** (ADR 0005, SC-2).
+ *
+ * Il emprunte le verrou et l'état d'attente des commandes média — une
+ * renégociation à la fois, quoi qu'elle porte (ADR 0003, D5) — sans être
+ * l'une d'elles : `media` ne bouge pas, l'invariant du dernier média ne le
+ * compte pas, et l'historique ne le consigne pas.
+ */
+describe("le partage d'écran", () => {
+  function connectedCall() {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle, false);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false, text: false } });
+    box.sendCall({ type: "sip:accepted" });
+    return { call, box };
+  }
+
+  it("démarrer : re-INVITE, attente, puis l'écran est dans l'appel", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    expect(box.session.shares).toEqual([true]);
+    expect(call.sbb?.state).toBe("renegotiating");
+    expect(call.context.call?.sharing).toBe("starting");
+    expect(call.context.call?.mediaPending).toBe(true);
+
+    box.sendCall({ type: "sip:sharing", on: true });
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.sharing).toBe("on");
+    expect(call.context.call?.mediaPending).toBe(false);
+    // ce que l'appel transporte n'a pas bougé : un écran n'est pas un média
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
+  });
+
+  /**
+   * L'arrêt n'a pas de temps d'attente : la piste meurt sur-le-champ, plus
+   * rien ne part, et le re-INVITE ne fait que le dire. Annoncer « arrêt en
+   * cours » promettrait un écran encore visible.
+   */
+  it("arrêter : l'écran quitte l'appel tout de suite, le fil suit", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    box.sendCall({ type: "sip:sharing", on: true });
+
+    call.send({ type: "ui:toggleShare" });
+    expect(box.session.shares).toEqual([true, false]);
+    expect(call.context.call?.sharing).toBe("off");
+    expect(call.sbb?.state).toBe("renegotiating");
+    box.sendCall({ type: "sip:sharing", on: false });
+    expect(call.sbb?.state).toBe("connected");
+  });
+
+  it("un second clic pendant la renégociation ne part pas", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    call.send({ type: "ui:toggleShare" });
+    expect(box.session.shares).toEqual([true]);
+  });
+
+  it("le verrou est commun : pas de partage pendant un ajout de média", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    call.send({ type: "ui:toggleShare" });
+    expect(box.session.shares).toEqual([]);
+  });
+
+  it("ni d'ajout de média pendant que le partage se négocie", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    call.send({ type: "ui:toggleMedia", kind: "video" });
+    expect(box.session.askedFor("video")).toEqual([]);
+  });
+
+  it("refus du distant : sa propre phrase, et l'appel intact", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    box.sendCall({ type: "sip:mediaRefused", by: "remote", statusCode: 488, share: true });
+
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.sharing).toBe("off");
+    expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
+    expect(call.context.call?.notice?.message).toEqual({
+      key: "notice.shareRefused",
+      vars: { peer: "bob@example.fr" },
+    });
+  });
+
+  it("sélecteur d'écran fermé : la phrase est locale", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    box.sendCall({ type: "sip:mediaRefused", by: "local", share: true });
+    expect(call.context.call?.notice?.message).toEqual({ key: "notice.shareUnavailable" });
+    expect(call.context.call?.sharing).toBe("off");
+  });
+
+  /**
+   * « Cesser de partager », appuyé dans la barre du navigateur. La piste
+   * est déjà morte : il reste à le dire au distant, qui garderait sinon une
+   * m-section vivante sur une image gelée. Le re-INVITE part du bloc, comme
+   * tous les autres.
+   */
+  it("« Cesser de partager » du navigateur retire le partage de l'appel", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    box.sendCall({ type: "sip:sharing", on: true });
+
+    box.sendCall({ type: "sip:shareEnded" });
+    expect(call.context.call?.sharing).toBe("off");
+    expect(box.session.shares).toEqual([true, false]);
+    expect(call.sbb?.state).toBe("renegotiating");
+  });
+
+  it("et pendant la négociation, il ne relance rien : l'offre en vol conclura", () => {
+    const { call, box } = connectedCall();
+    call.send({ type: "ui:toggleShare" });
+    box.sendCall({ type: "sip:shareEnded" });
+
+    expect(call.context.call?.sharing).toBe("off");
+    expect(box.session.shares).toEqual([true]);
+    expect(call.sbb?.state).toBe("renegotiating");
+  });
+
+  it("sans réponse au bout de 28 s : le partage retombe, l'appel continue", async () => {
+    vi.useFakeTimers();
+    try {
+      const { call, box } = connectedCall();
+      call.send({ type: "ui:toggleShare" });
+      await vi.advanceTimersByTimeAsync(28_000);
+
+      expect(box.session.abandoned).toBe(1);
+      expect(call.sbb?.state).toBe("connected");
+      expect(call.context.call?.sharing).toBe("off");
+      expect(call.context.call?.notice?.message).toEqual({ key: "notice.shareUnavailable" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

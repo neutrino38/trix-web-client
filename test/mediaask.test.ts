@@ -30,6 +30,7 @@ function view(over: Partial<CallView> = {}): CallView {
     mediaPending: false,
     mediaAsked: null,
     paused: false,
+    sharing: "off" as const,
     peerPaused: false,
     dtmfSent: "",
     notice: null,

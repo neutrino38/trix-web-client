@@ -344,3 +344,108 @@ export function sharedVideoMid(sdp: string | null | undefined): string | null {
   const marked = videos.find((v) => v.slides);
   return marked ? marked.mid : (videos[1]?.mid ?? null);
 }
+
+/**
+ * Le même SDP, la m-section de ce MID marquée `a=content:slides`
+ * (RFC 4796) — **la seule écriture que Trix fasse dans une offre**
+ * (ADR 0005, D4).
+ *
+ * Le navigateur n'écrit pas `a=content` : rien dans WebRTC ne distingue
+ * l'écran du visage, et sans cet attribut le correspondant n'aurait que
+ * l'ordre des m-sections pour deviner — ce qui ne suffit pas quand le
+ * partage arrive dans un appel qui n'a jamais eu de caméra.
+ *
+ * La caméra, elle, ne reçoit **pas** de `a=content:main` : ce serait
+ * retoucher une m-section qui fonctionne aujourd'hui contre des
+ * passerelles qu'on ne maîtrise pas, pour un gain nul.
+ *
+ * Sans effet si le MID est introuvable, ou si la section porte déjà un
+ * `a=content` — le sien vaut mieux que le nôtre.
+ */
+export function withSharedVideo(sdp: string, mid: string): string {
+  const eol = sdp.includes("\r\n") ? "\r\n" : "\n";
+  const out: string[] = [];
+  /** La section courante, retenue le temps de savoir si c'est la bonne. */
+  let section: string[] | null = null;
+  let found = false;
+  let marked = false;
+
+  const close = (): void => {
+    if (!section) return;
+    // l'attribut se pose juste après le `a=mid`, là où il se lit
+    if (found && !marked) {
+      const at = section.findIndex((l) => l.startsWith("a=mid:"));
+      section.splice(at + 1, 0, "a=content:slides");
+    }
+    out.push(...section);
+    section = null;
+    found = false;
+    marked = false;
+  };
+
+  for (const raw of sdp.split(/\r?\n/)) {
+    const line = raw.trim();
+    // la dernière ligne d'un SDP est vide : elle ne doit pas s'intercaler
+    if (line === "") continue;
+    if (line.startsWith("m=")) {
+      close();
+      section = [];
+    }
+    if (!section) {
+      out.push(line);
+      continue;
+    }
+    if (line === `a=mid:${mid}`) found = true;
+    if (line.startsWith("a=content:")) marked = true;
+    section.push(line);
+  }
+  close();
+
+  return out.join(eol) + eol;
+}
+
+/**
+ * La m-section de ce MID est-elle active dans ce SDP ? C'est ainsi que se
+ * lit le **refus poli** d'un partage : un 200 OK dont la m-section de
+ * l'écran est déclarée `inactive` (RFC 3264 §6.1) — le distant a accepté
+ * la renégociation, pas ce qu'elle proposait.
+ *
+ * Rend `false` pour un MID introuvable : une m-section absente de la
+ * réponse n'est pas une m-section acceptée.
+ */
+export function midActive(sdp: string | null | undefined, mid: string): boolean {
+  if (!sdp) return false;
+
+  let sessionDir: Direction = "sendrecv";
+  let inMedia = false;
+  let alive = false;
+  let mediaDir: Direction | null = null;
+  let hit = false;
+  let answer = false;
+
+  const flush = (): void => {
+    if (hit) answer = alive && (mediaDir ?? sessionDir) !== "inactive";
+  };
+
+  for (const raw of sdp.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("m=")) {
+      flush();
+      inMedia = true;
+      hit = false;
+      alive = (line.slice(2).split(/\s+/)[1] ?? "0") !== "0";
+      mediaDir = null;
+    } else if (line.startsWith("a=")) {
+      const dir = directionOf(line);
+      if (dir) {
+        if (inMedia) mediaDir = dir;
+        else sessionDir = dir;
+      } else if (line === `a=mid:${mid}`) {
+        hit = true;
+      }
+    }
+  }
+  flush();
+
+  return answer;
+}

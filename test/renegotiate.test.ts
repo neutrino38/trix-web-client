@@ -44,6 +44,11 @@ class FakeTrack {
     (this.listeners[event] ??= []).push(fn);
   }
 
+  /** Joue un événement de piste — `ended`, celui de la barre du navigateur. */
+  fire(event: string): void {
+    for (const fn of this.listeners[event] ?? []) fn();
+  }
+
   /** Le flux arrive, ou se tait : c'est ainsi qu'une pause distante se voit. */
   setMuted(muted: boolean): void {
     if (this.muted === muted) return;
@@ -71,6 +76,18 @@ class FakeTransceiver {
   readonly sent: FakeTrack;
   readonly received: FakeTrack;
 
+  /**
+   * **Arrêté pour de bon** (ADR 0005, D7). Une m-section jamais négociée
+   * n'a rien à recycler : c'est le seul cas où D6 ne s'applique pas, et le
+   * seul endroit du port qui appelle `stop()`.
+   */
+  stopped = false;
+
+  stop(): void {
+    this.stopped = true;
+    this.currentDirection = null;
+  }
+
   constructor(
     readonly kind: MediaKind,
     mid: string | null = null,
@@ -97,18 +114,31 @@ class FakePc {
   rollbacks = 0;
 
   constructor(kinds: MediaKind[]) {
-    for (const k of kinds) this.addTransceiver(k);
+    // les m-sections de l'appel : négociées d'emblée, elles ont leur MID
+    for (const k of kinds) this.transceivers.push(new FakeTransceiver(k, String(this.transceivers.length)));
   }
 
   /**
-   * Une m-section de plus, avec le MID suivant — comme le navigateur les
-   * numérote. C'est ainsi qu'arrive un partage : en fin de liste, jamais en
-   * remplacement (RFC 8829 §5.2.2).
+   * Une m-section de plus, en fin de liste — jamais en remplacement
+   * (RFC 8829 §5.2.2). **Elle n'a pas encore de MID** : le navigateur ne le
+   * lui donne qu'en appliquant la description locale, et c'est exactement
+   * cette différence qui sépare recycler d'arrêter (ADR 0005, D6 et D7).
    */
-  addTransceiver(kind: MediaKind): FakeTransceiver {
-    const tr = new FakeTransceiver(kind, String(this.transceivers.length));
+  addTransceiver(x: MediaKind | MediaStreamTrack, init?: { direction?: string }): FakeTransceiver {
+    const kind = (typeof x === "string" ? x : x.kind) as MediaKind;
+    const tr = new FakeTransceiver(kind);
+    tr.currentDirection = null;
+    if (init?.direction) tr.direction = init.direction;
+    if (typeof x !== "string") tr.sender.track = x;
     this.transceivers.push(tr);
     return tr;
+  }
+
+  /** L'offre locale s'applique : les m-sections neuves reçoivent leur MID. */
+  numberMids(): void {
+    this.transceivers.forEach((t, i) => {
+      t.mid ??= String(i);
+    });
   }
 
   getTransceivers(): RTCRtpTransceiver[] {
@@ -288,19 +318,35 @@ function control(kinds: MediaKind[] = ["audio"], textNegotiated = false) {
   return { session, events, ctl };
 }
 
-/** Le capteur s'ouvre sans qu'aucun navigateur ne soit là pour le fournir. */
-function stubUserMedia(ok = true): void {
-  vi.stubGlobal("navigator", {
-    mediaDevices: {
-      getUserMedia: (c: Record<string, boolean>) => {
-        if (!ok) return Promise.reject(new Error("NotAllowedError"));
-        const kind = Object.keys(c)[0]!;
-        return Promise.resolve({
-          getTracks: () => [{ kind, stop: () => {} }],
-        });
-      },
+/** La dernière piste rendue par `getDisplayMedia` — celle qu'on fait mourir. */
+let screenTrack: FakeTrack | null = null;
+
+/**
+ * Le capteur s'ouvre sans qu'aucun navigateur ne soit là pour le fournir.
+ * `share` sépare les deux API : un poste peut savoir ouvrir une caméra sans
+ * savoir capturer un écran, et c'est cette capacité-là — et non un gabarit —
+ * qui décide de l'existence du partage (ADR 0005, D8).
+ */
+function stubUserMedia(ok = true, share: boolean | "refused" = true): void {
+  screenTrack = null;
+  const devices: Record<string, unknown> = {
+    getUserMedia: (c: Record<string, boolean>) => {
+      if (!ok) return Promise.reject(new Error("NotAllowedError"));
+      const kind = Object.keys(c)[0]!;
+      return Promise.resolve({
+        getTracks: () => [{ kind, stop: () => {}, addEventListener: () => {} }],
+      });
     },
-  });
+  };
+  if (share) {
+    devices.getDisplayMedia = () => {
+      // le sélecteur d'écran fermé sans rien choisir : `NotAllowedError`
+      if (share === "refused") return Promise.reject(new Error("NotAllowedError"));
+      screenTrack = new FakeTrack("video");
+      return Promise.resolve({ getTracks: () => [screenTrack] });
+    };
+  }
+  vi.stubGlobal("navigator", { mediaDevices: devices });
 }
 
 beforeEach(() => {
@@ -888,6 +934,8 @@ describe("une seconde m=video reçue", () => {
   function partageRecu() {
     const fait = control(["audio", "video"]);
     const ecran = fait.session.pc.addTransceiver("video");
+    // celle-là vient de l'offre distante : elle porte son MID
+    ecran.mid = "2";
     fait.session.sdp("remote", "offer", offre(...AUDIO, ...CAMERA, ...ECRAN));
     return { ...fait, ecran };
   }
@@ -947,5 +995,248 @@ describe("une seconde m=video reçue", () => {
     session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
 
     expect(events.map((e) => e.type)).toEqual(["sip:mediaOffer"]);
+  });
+});
+
+/**
+ * **Émettre son écran** (ADR 0005, phase SC-2).
+ *
+ * Le partage emprunte le chemin d'un ajout de média — capteur, offre,
+ * attente — sans en être un. Trois choses s'y jouent, et aucune ne se voit
+ * en test manuel :
+ *
+ * - **c'est un transceiver de plus**, jamais un `replaceTrack` sur la
+ *   caméra (D1). La solution facile ne coûte aucune renégociation, et
+ *   c'est son seul mérite : elle éteindrait le visage de celui qui partage,
+ *   ce qui, pour deux personnes qui signent, revient à raccrocher ;
+ * - **la m-section se recycle** (D6). Démarrer, arrêter, redémarrer dans le
+ *   même appel ne doit ajouter qu'une `m=video` : un SDP qui grandit à
+ *   chaque partage sur un appel qui dure finirait par ne plus passer ;
+ * - **le rollback ne défait pas `addTransceiver`** (D7). Le transceiver
+ *   créé pour une offre refusée survivrait au refus, sans MID, et la
+ *   *prochaine* offre — fût-elle un simple ajout d'audio — réoffrirait le
+ *   partage que le distant vient de refuser.
+ */
+describe("le partage d'écran", () => {
+  /** L'offre locale part : les MID sont attribués, comme au navigateur. */
+  function offerGoesOut(session: FakeSession): void {
+    session.pc.numberMids();
+  }
+
+  /** La réponse du distant, avec la m-section du partage dans cet état. */
+  function answer(dir: "a=sendrecv" | "a=recvonly" | "a=inactive"): string {
+    return [
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=-",
+      "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=mid:0",
+      "a=sendrecv",
+      "m=video 51374 RTP/AVP 96",
+      "a=mid:1",
+      dir,
+    ].join("\r\n");
+  }
+
+  /** Un partage démarré et accepté : le point de départ des autres cas. */
+  async function partageEtabli() {
+    const fait = control(["audio"]);
+    fait.ctl.startShare();
+    await vi.runAllTimersAsync();
+    offerGoesOut(fait.session);
+    fait.session.reinvites[0]!.succeeded({ body: answer("a=recvonly") });
+    return fait;
+  }
+
+  it("ajoute un transceiver sendonly, et n'en remplace aucun", async () => {
+    const { session, ctl } = control(["audio", "video"]);
+    const camera = session.pc.transceivers.find((t) => t.kind === "video")!;
+    const avant = camera.sender.track;
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+
+    expect(session.pc.transceivers).toHaveLength(3);
+    const ecran = session.pc.transceivers[2]!;
+    expect(ecran.direction).toBe("sendonly");
+    expect(ecran.sender.track).toBe(screenTrack);
+    // la caméra n'a pas bougé : partager n'est pas disparaître
+    expect(camera.sender.track).toBe(avant);
+    expect(session.reinvites).toHaveLength(1);
+  });
+
+  it("pose `a=content:slides` sur la m-section du partage, et sur elle seule", async () => {
+    const { session, ctl } = control(["audio", "video"]);
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+    offerGoesOut(session);
+
+    const offre = session.sdp(
+      "local",
+      "offer",
+      [
+        "v=0",
+        "m=audio 9 RTP/AVP 0",
+        "a=mid:0",
+        "m=video 9 RTP/AVP 96",
+        "a=mid:1",
+        "m=video 9 RTP/AVP 96",
+        "a=mid:2",
+      ].join("\r\n"),
+    );
+    expect(offre).toContain("a=mid:2\r\na=content:slides");
+    expect(offre.match(/a=content/g)).toHaveLength(1);
+  });
+
+  it("le partage accepté se dit, et ce n'est pas un média de l'appel", async () => {
+    const { events } = await partageEtabli();
+    expect(events).toEqual([{ type: "sip:sharing", on: true }]);
+  });
+
+  it("le sélecteur d'écran fermé : rien n'est offert", async () => {
+    stubUserMedia(true, "refused");
+    const { session, events, ctl } = control(["audio"]);
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+
+    expect(session.reinvites).toHaveLength(0);
+    expect(session.pc.transceivers).toHaveLength(1);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local", share: true }]);
+  });
+
+  /**
+   * **Le refus poli** : 200 OK, m-section de l'écran déclarée `inactive`.
+   * Le distant a accepté la renégociation, pas ce qu'elle proposait — et
+   * rien dans le code de réponse ne le dit.
+   */
+  it("un 200 OK qui désactive l'écran est un refus", async () => {
+    const { session, events, ctl } = control(["audio"]);
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+    offerGoesOut(session);
+    session.reinvites[0]!.succeeded({ body: answer("a=inactive") });
+
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "remote", share: true }]);
+    expect(screenTrack!.stopped).toBe(true);
+    expect(session.pc.transceivers[1]!.direction).toBe("inactive");
+  });
+
+  it("un 488 laisse l'appel intact et le dit comme un refus de partage", async () => {
+    const { session, events, ctl } = control(["audio"]);
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+    session.reinvites[0]!.failed({ message: { status_code: 488 } });
+
+    expect(events).toEqual([
+      { type: "sip:mediaRefused", by: "remote", statusCode: 488, share: true },
+    ]);
+  });
+
+  /**
+   * D7, et c'est le piège de la phase. Le transceiver refusé n'a jamais eu
+   * de MID : rien à recycler, et le laisser vivant ferait réoffrir le
+   * partage à la première renégociation venue, quelle qu'elle porte.
+   */
+  it("le transceiver créé pour rien est arrêté, pas recyclé", async () => {
+    const { session, ctl } = control(["audio"]);
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+    const ecran = session.pc.transceivers[1]!;
+    // le distant refuse **avant** que l'offre n'ait attribué de MID
+    session.reinvites[0]!.failed({ message: { status_code: 488 } });
+
+    expect(ecran.stopped).toBe(true);
+    // le port l'a aussi oublié : le partage suivant en crée un neuf plutôt
+    // que de recycler une m-section que le distant n'a jamais vue
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+    const neuf = session.pc.transceivers.at(-1)!;
+    expect(neuf).not.toBe(ecran);
+    expect(neuf.direction).toBe("sendonly");
+  });
+
+  it("mais une m-section déjà négociée se recycle, elle", async () => {
+    const { session, ctl } = await partageEtabli();
+    const ecran = session.pc.transceivers[1]!;
+    ctl.stopShare();
+    session.reinvites[1]!.succeeded({ body: answer("a=inactive") });
+    expect(ecran.stopped).toBe(false);
+    expect(ecran.direction).toBe("inactive");
+
+    // second partage : la même m-section reprend du service
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+    expect(session.pc.transceivers).toHaveLength(2);
+    expect(ecran.direction).toBe("sendonly");
+    expect(ecran.sender.track).toBe(screenTrack);
+  });
+
+  it("l'arrêt éteint la capture et le dit", async () => {
+    const { session, events, ctl } = await partageEtabli();
+    const capture = screenTrack!;
+    ctl.stopShare();
+    session.reinvites[1]!.succeeded({ body: answer("a=inactive") });
+
+    expect(capture.stopped).toBe(true);
+    expect(events).toEqual([{ type: "sip:sharing", on: true }, { type: "sip:sharing", on: false }]);
+  });
+
+  /**
+   * **Un arrêt refusé n'est pas un refus** : nous n'émettons plus, quoi
+   * qu'en dise le distant, et la m-section restée inactive le dira à la
+   * prochaine offre. Dire « votre partage a été refusé » ici laisserait
+   * croire qu'un écran continue de passer.
+   */
+  it("un arrêt que le distant refuse reste un arrêt", async () => {
+    const { session, events, ctl } = await partageEtabli();
+    ctl.stopShare();
+    session.reinvites[1]!.failed({ message: { status_code: 488 } });
+
+    expect(events.at(-1)).toEqual({ type: "sip:sharing", on: false });
+  });
+
+  /**
+   * La barre native du navigateur (« Cesser de partager ») arrête la piste
+   * sans rien dire à l'application. Sans cet avis, le distant garderait une
+   * m-section vivante sur une image gelée.
+   */
+  it("« Cesser de partager » prévient la machine, et n'offre rien de lui-même", async () => {
+    const { session, events, ctl } = await partageEtabli();
+    void ctl;
+    screenTrack!.fire("ended");
+
+    expect(events.at(-1)).toEqual({ type: "sip:shareEnded" });
+    // le port n'émet pas de re-INVITE de sa propre initiative : c'est la
+    // machine qui tient le verrou de renégociation, et elle seule
+    expect(session.reinvites).toHaveLength(1);
+  });
+
+  it("la Pause coupe le partage avec le reste, et la reprise le rétablit", async () => {
+    const { session, ctl } = await partageEtabli();
+    const ecran = session.pc.transceivers[1]!;
+    const capture = screenTrack!;
+    ctl.setPaused(true);
+    expect(ecran.sender.track).toBeNull();
+
+    ctl.setPaused(false);
+    expect(ecran.sender.track).toBe(capture);
+  });
+
+  it("la fin d'appel éteint la capture d'écran comme les autres capteurs", async () => {
+    const { ctl } = await partageEtabli();
+    const capture = screenTrack!;
+    ctl.release();
+    expect(capture.stopped).toBe(true);
+  });
+
+  it("le partage n'est pas offert quand une négociation est déjà en vol", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    expect(session.reinvites).toHaveLength(1);
+    ctl.startShare();
+    await vi.runAllTimersAsync();
+
+    expect(session.reinvites).toHaveLength(1);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local", share: true }]);
   });
 });

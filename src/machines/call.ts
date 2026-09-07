@@ -99,6 +99,13 @@ export interface CallData {
   /** Le correspondant s'est mis en pause : ses pistes se sont tues. */
   peerPaused: boolean;
   /**
+   * **Ce que j'émets d'écran** (ADR 0005, D3). Il vit ici, à côté de
+   * `media`, et non dedans : un partage n'est pas un média de l'appel — il
+   * ne compte pas dans « ne pas retirer le dernier », il ne se consigne pas
+   * dans l'historique, et on ne décroche pas « en partage ».
+   */
+  sharing: "off" | "starting" | "on";
+  /**
    * Ce que le réseau émet **avant le décrochage** (RFC 3960), lu dans le
    * SDP des réponses provisoires : les trois médias, parce qu'un accueil
    * peut être parlé, signé ou écrit. `NO_MEDIA` tant qu'aucune réponse
@@ -157,6 +164,7 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
     selfViewHidden: data.selfViewHidden,
     paused: data.paused,
     peerPaused: data.peerPaused,
+    sharing: data.sharing,
     mediaPending: data.mediaPending,
     mediaAsked: data.mediaOffer !== null ? data.offerAdds : null,
     dtmfSent: data.dtmfSent,
@@ -347,6 +355,12 @@ function interruptions(ending: Ending): CallOn {
     // désactivés à l'écran pendant l'appel : consommés pour qu'un clic ne
     // reste pas en attente et ne s'exécute pas après coup
     "ui:toggleMedia": () => undefined,
+    // **le partage n'existe pas avant le décrochage** : il n'y a pas de
+    // dialogue confirmé où poser un re-INVITE (ADR 0005, SC-2), et rien
+    // n'est parti qui puisse conclure
+    "ui:toggleShare": () => undefined,
+    "sip:sharing": () => undefined,
+    "sip:shareEnded": () => undefined,
     // le clavier DTMF n'existe qu'en communication : hors de là, il n'y a
     // pas de flux RTP où glisser la tonalité
     "ui:dtmf": () => undefined,
@@ -442,6 +456,7 @@ function awaitingAnswer(from: "ringing" | "early_media"): CallOn {
      * à suspendre tant que rien n'est établi.
      */
     "ui:toggleMedia": () => undefined,
+    "ui:toggleShare": () => undefined,
     "ui:togglePause": () => undefined,
     "sip:accepted": () => goto("connected", "200 OK"),
     "sip:failed": (ev, ctx, fx) => {
@@ -587,6 +602,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
     endedBy: null,
     selfViewHidden: false,
     paused: false,
+    sharing: "off" as CallData["sharing"],
     peerPaused: false,
     mediaPending: false,
     earlyMedia: NO_MEDIA,
@@ -906,6 +922,41 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           fx.data.offerAdds = MEDIA_KINDS.filter((k) => ev.media[k] && !fx.data.media[k]);
           return goto("media_offer", "le distant propose un média");
         },
+        /**
+         * **Le partage d'écran** (ADR 0005). Il emprunte le chemin des
+         * commandes média — capteur, re-INVITE, attente — sans être l'une
+         * d'elles : il ne change pas ce que l'appel transporte, et
+         * `isLastMedia` ne le compte donc pas.
+         *
+         * Le démarrage a un temps d'attente (`starting`) parce qu'un écran
+         * ne s'affiche chez le correspondant qu'une fois la négociation
+         * conclue. L'arrêt n'en a pas : la piste meurt sur-le-champ, plus
+         * rien ne part, et le re-INVITE ne fait que le dire — annoncer
+         * « arrêt en cours » promettrait un écran encore visible.
+         */
+        "ui:toggleShare": (_ev, _ctx, fx) => {
+          if (fx.data.sharing === "on") {
+            fx.data.sharing = "off";
+            fx.data.session?.stopShare();
+            return goto("renegotiating", "fin du partage");
+          }
+          fx.data.sharing = "starting";
+          fx.data.session?.startShare();
+          return goto("renegotiating", "partage d'écran");
+        },
+        /**
+         * **« Cesser de partager »**, appuyé dans la barre du navigateur.
+         * La piste est déjà morte : il ne reste qu'à le dire au distant,
+         * qui garderait sinon une m-section vivante sur une image gelée. Le
+         * re-INVITE part d'ici, comme tous les autres — le port n'en émet
+         * jamais de sa propre initiative.
+         */
+        "sip:shareEnded": (_ev, _ctx, fx) => {
+          if (fx.data.sharing === "off") return undefined;
+          fx.data.sharing = "off";
+          fx.data.session?.stopShare();
+          return goto("renegotiating", "partage arrêté par le navigateur");
+        },
       },
       meta: { callState: "connected" },
     },
@@ -929,8 +980,31 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
       on: {
         ...inCall(),
         // une renégociation à la fois, quel que soit le média : le second
-        // clic est sans effet — sur l'autre bouton comme sur le même
+        // clic est sans effet — sur l'autre bouton comme sur le même, et le
+        // partage n'y fait pas exception (ADR 0005, D3)
         "ui:toggleMedia": () => undefined,
+        "ui:toggleShare": () => undefined,
+        /**
+         * Le partage vient d'être négocié. C'est un événement à lui, et non
+         * un `sip:mediaChanged` : ce que l'appel transporte n'a pas bougé.
+         */
+        "sip:sharing": (ev, ctx, fx) => {
+          fx.data.sharing = ev.on ? "on" : "off";
+          fx.data.mediaPending = false;
+          publish("connected", ctx, fx.data);
+          return goto("connected", ev.on ? "partage établi" : "partage retiré");
+        },
+        /**
+         * L'écran a été coupé depuis la barre du navigateur pendant que la
+         * négociation était en vol. Rien de plus à lancer — l'offre en
+         * cours conclura —, mais l'écran doit cesser de dire que je partage.
+         */
+        "sip:shareEnded": (_ev, ctx, fx) => {
+          if (fx.data.sharing === "off") return undefined;
+          fx.data.sharing = "off";
+          publish("connected", ctx, fx.data);
+          return stay("partage arrêté par le navigateur");
+        },
         "sip:mediaChanged": (ev, ctx, fx) => {
           // ce que nous avions demandé et que le distant n'a pas suivi :
           // c'est la différence entre `asked` et ce qui a été négocié
@@ -946,6 +1020,21 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           return goto("connected", "média négocié");
         },
         "sip:mediaRefused": (ev, ctx, fx) => {
+          // le partage a sa propre phrase : rien de ce que l'appel
+          // transporte n'a bougé, et parler de « la vidéo » ici ferait
+          // croire à la caméra qui vient de s'éteindre (ADR 0005, D3)
+          if (ev.share === true) {
+            fx.data.sharing = "off";
+            fx.data.mediaPending = false;
+            notify(
+              ctx,
+              fx,
+              ev.by === "remote"
+                ? msg("notice.shareRefused", { peer: peerName(fx.data) })
+                : msg("notice.shareUnavailable"),
+            );
+            return goto("connected", "partage refusé");
+          }
           // ce que nous demandions, avant de revenir à ce que l'appel porte
           const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
           fx.data.asked = fx.data.media;
@@ -982,6 +1071,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
          */
         delay: 28_000,
         then: (ctx, fx) => {
+          const sharing = fx.data.sharing === "starting";
           const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
           // ce délai-ci est le seul à trancher : le port n'en a pas, et
           // ceux de JsSIP ne couvrent pas le distant qui accuse réception
@@ -989,8 +1079,9 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           // capteur allumé, et plus rien de négociable de tout l'appel
           fx.data.session?.abandonMedia();
           fx.data.asked = fx.data.media;
+          fx.data.sharing = sharing ? "off" : fx.data.sharing;
           fx.data.mediaPending = false;
-          notify(ctx, fx, msg(NOTICE[kind].unavailable));
+          notify(ctx, fx, msg(sharing ? "notice.shareUnavailable" : NOTICE[kind].unavailable));
           return goto("connected", "sans réponse");
         },
       },
@@ -1028,8 +1119,9 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           return goto("connected", "488");
         },
         // les icônes média ne répondent pas à la question posée : c'est la
-        // popup qui le fait
+        // popup qui le fait — et le partage non plus, un seul verrou (D5)
         "ui:toggleMedia": () => undefined,
+        "ui:toggleShare": () => undefined,
         // raccrocher pendant la question : le re-INVITE mérite sa réponse
         // avant le BYE, sinon l'appelant reste sur une offre en suspens
         "ui:hangup": (_ev, _ctx, fx) => {
@@ -1104,10 +1196,13 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         // attendrait un 200 OK que ce dialogue ne donnera jamais
         "sip:mediaChanged": () => undefined,
         "sip:mediaRefused": () => undefined,
+        "sip:sharing": () => undefined,
+        "sip:shareEnded": () => undefined,
         "sip:mediaOffer": (ev) => {
           ev.offer.reject();
         },
         "ui:toggleMedia": () => undefined,
+        "ui:toggleShare": () => undefined,
         "ui:acceptMedia": () => undefined,
         "ui:rejectMedia": () => undefined,
         "ui:togglePause": () => undefined,

@@ -65,7 +65,7 @@
  */
 
 import type { CallView } from "../../../machines/events.js";
-import { isLastMedia, type MediaKind } from "../../../sip/port.js";
+import { canShareScreen, isLastMedia, type MediaKind } from "../../../sip/port.js";
 import type { MsgKey } from "../../../i18n/types.js";
 import { ICONS, ICONS_OFF } from "./parts.js";
 import { panelIcon, panelToggleLabel } from "./panel.js";
@@ -98,6 +98,13 @@ interface Cmd {
   highlight?: boolean;
   cut?: boolean; // média sorti de l'appel → rouge, sinon bascule locale → violet
   /**
+   * **J'émets quelque chose en plus** — le partage d'écran, et lui seul
+   * pour l'instant : vert. Ni le rouge (un média a *quitté* l'appel) ni le
+   * violet (une bascule qui ne concerne que ce poste) ne conviennent, et
+   * les confondre reviendrait à dire le contraire de ce qui se passe.
+   */
+  live?: boolean;
+  /**
    * Commande de l'**axe 1** : elle change ce que l'appel transporte. C'est
    * ce qui la place avant le trait, et ce qui lui interdit la feuille du bas
    * (`sheetable`). Les deux drapeaux se répondent, mais ne disent pas la
@@ -124,7 +131,7 @@ interface Cmd {
  */
 function button(c: Cmd): string {
   const active = c.highlight ?? (c.expanded !== undefined ? !c.expanded : c.pressed);
-  const cls = active ? (c.cut ? "off" : "toggled") : "";
+  const cls = active ? (c.cut ? "off" : c.live ? "live" : "toggled") : "";
   const state =
     c.expanded !== undefined
       ? `aria-expanded="${c.expanded}" ${c.controls ? `aria-controls="${c.controls}"` : ""}`
@@ -229,6 +236,42 @@ function mediaButton(ctx: OverlayCtx, kind: MediaKind, on: boolean): Cmd {
   };
 }
 
+/**
+ * **Le partage d'écran** (ADR 0005, D8). Il est de l'axe 1 — il change ce
+ * que le correspondant voit, et il passe par un re-INVITE qu'il peut
+ * refuser —, donc sa place est avant le trait, avec le micro et la caméra.
+ *
+ * Il n'existe que si `getDisplayMedia` existe. C'est ce qui rend vraie la
+ * règle « le partage n'existe que sur bureau » sans jamais la câbler :
+ * aucun navigateur mobile n'expose cette API. Lire le gabarit serait lire
+ * une **largeur de fenêtre**, et un bureau réduit à 400 px perdrait le
+ * partage sans raison.
+ *
+ * **Vert**, ni rouge ni violet : il ne coupe rien et n'est pas une bascule
+ * locale. Allumé, il dit « mon écran est dans l'appel » — un flux de plus,
+ * pas un flux de moins, et c'est l'exact contraire de ce que le rouge
+ * signifie partout ailleurs dans cette barre.
+ *
+ * L'icône ne se barre pas au repos : un écran barré voudrait dire « le
+ * partage n'est pas disponible », ce qui est faux. L'état se lit sur le
+ * libellé (« Partager l'écran » / « Arrêter le partage ») et sur
+ * `aria-pressed` — deux porteurs qui ne doivent rien à la couleur
+ * (RGAA 3.1).
+ */
+function shareButton(view: CallView): Cmd {
+  const on = view.sharing === "on";
+  return {
+    act: "share",
+    icon: ICONS.share,
+    label: t(view.mediaPending ? "ctrl.media.pending" : on ? "ctrl.share.stop" : "ctrl.share.start"),
+    aria: t("ctrl.share.aria"),
+    pressed: on,
+    live: true,
+    axis1: true,
+    disabled: view.state !== "connected" || view.mediaPending || view.mediaAsked !== null,
+  };
+}
+
 export function overlayBar(ctx: OverlayCtx): string {
   const { view, speakerMuted } = ctx;
   const connected = view.state === "connected";
@@ -237,6 +280,7 @@ export function overlayBar(ctx: OverlayCtx): string {
   const cmds: Cmd[] = [
     mediaButton(ctx, "audio", connected && view.media.audio),
     mediaButton(ctx, "video", video),
+    ...(canShareScreen() ? [shareButton(view)] : []),
     {
       // Hors des deux axes : c'est de la **réception locale**, et le §6.2.4
       // n'en parle pas. Rien ne part sur le fil, le correspondant continue

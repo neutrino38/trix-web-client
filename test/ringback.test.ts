@@ -37,6 +37,7 @@ function view(state: CallView["state"], earlyMedia: CallMedia = NONE): CallView 
     mediaPending: false,
     mediaAsked: null,
     paused: false,
+    sharing: "off" as const,
     peerPaused: false,
     dtmfSent: "",
     notice: null,

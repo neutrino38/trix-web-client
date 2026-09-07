@@ -124,6 +124,14 @@ class FakeCallSession {
   setPaused(on: boolean): void {
     this.pauses.push(on);
   }
+  /** Les partages d'écran demandés, dans l'ordre : vrai = démarrer. */
+  shares: boolean[] = [];
+  startShare(): void {
+    this.shares.push(true);
+  }
+  stopShare(): void {
+    this.shares.push(false);
+  }
   attachMedia(): void {}
   /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
   rtt(): null {

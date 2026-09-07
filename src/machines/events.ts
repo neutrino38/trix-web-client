@@ -67,6 +67,16 @@ export type CallControlEvent =
    * parle de moi, pas de l'appel.
    */
   | { type: "ui:togglePause" }
+  /**
+   * **Partager son écran**, ou cesser de le faire (ADR 0005). Ce n'est pas
+   * un bouton média : le partage n'est pas un média de l'appel, il ne compte
+   * pas dans « ne pas retirer le dernier », et l'historique ne le consigne
+   * pas. C'est un épisode dans une conversation, pas une nature d'appel.
+   *
+   * Il partage en revanche le **verrou** des commandes média (ADR 0003, D5) :
+   * une renégociation à la fois, quoi qu'elle porte.
+   */
+  | { type: "ui:toggleShare" }
   | { type: "ui:toggleSelfView" }
   /**
    * Une tonalité DTMF composée au clavier de l'appel (`0-9`, `*`, `#`) —
@@ -142,6 +152,18 @@ export interface CallView {
    * sinon.
    */
   peerPaused: boolean;
+  /**
+   * **Ce que j'émets d'écran** (ADR 0005, D3). Trois états et non deux :
+   * `starting` est le temps de la renégociation, distinct de `mediaPending`
+   * par ce qu'il affiche, confondu avec lui par ce qu'il verrouille — le
+   * bouton de partage est grisé pendant toute renégociation, quelle qu'elle
+   * soit.
+   *
+   * L'arrêt, lui, n'a pas d'état d'attente : la piste est morte dès qu'on
+   * le demande, plus rien ne part, et le re-INVITE qui suit ne fait que le
+   * dire. Annoncer « arrêt en cours » promettrait un écran encore visible.
+   */
+  sharing: "off" | "starting" | "on";
   /**
    * Les tonalités DTMF composées depuis le début de l'appel, dans l'ordre,
    * et seulement celles qui sont **parties**. Rien d'autre ne les rejoue :
