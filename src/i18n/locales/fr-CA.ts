@@ -274,6 +274,7 @@ const messages: Translation = {
   "ctrl.share.aria": "Partage d'écran",
   "ctrl.share.start": "Partager l'écran",
   "ctrl.share.stop": "Arrêter le partage",
+  "ctrl.share.busy": "Le correspondant partage déjà son écran",
   "ctrl.media.pending": "Changement de média en cours…",
   "ctrl.media.last": "Impossible : l'appel ne transporterait plus rien",
   "ctrl.selfview.aria": "Image de soi",

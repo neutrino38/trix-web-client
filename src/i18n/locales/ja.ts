@@ -264,6 +264,7 @@ const messages: Translation = {
   "ctrl.share.aria": "画面共有",
   "ctrl.share.start": "画面を共有",
   "ctrl.share.stop": "共有を停止",
+  "ctrl.share.busy": "相手がすでに画面を共有しています",
   "ctrl.media.pending": "メディアを変更しています…",
   "ctrl.media.last": "できません：通話に何も残らなくなります",
   "ctrl.selfview.aria": "セルフビュー",

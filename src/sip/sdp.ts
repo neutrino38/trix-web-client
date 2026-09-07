@@ -77,12 +77,17 @@ function activeMedia(
   sdp: string | null | undefined,
   carries: RttTransport = "none",
   /**
-   * La m-section à ne pas compter, désignée par son `a=mid` — celle du
-   * **partage d'écran** (ADR 0005, D3). Un écran partagé n'est pas un
+   * Les m-sections à ne pas compter, désignées par leur `a=mid` — celles
+   * des **partages d'écran** (ADR 0005, D3). Un écran partagé n'est pas un
    * média de l'appel : compté ici, il ferait dire « il a ajouté la vidéo »
    * à une offre qui n'a pas touché à la caméra.
+   *
+   * Une liste, et non un seul MID : l'offre d'un correspondant qui partage
+   * son écran **décrit aussi le nôtre**, et les deux sont à écarter — sans
+   * quoi l'appel se croirait en vidéo pour deux documents qui défilent
+   * (ADR 0005, D9).
    */
-  ignoreMid: string | null = null,
+  ignoreMid: string | readonly (string | null)[] | null = null,
 ): CallMedia {
   if (!sdp) return AUDIO_ONLY;
 
@@ -95,9 +100,15 @@ function activeMedia(
   let mediaDir: Direction | null = null;
   let mid: string | null = null;
 
+  const skip = new Set(
+    (typeof ignoreMid === "string" ? [ignoreMid] : (ignoreMid ?? [])).filter(
+      (m): m is string => m !== null,
+    ),
+  );
+
   const flush = (): void => {
     if (!kind || port === "0" || (mediaDir ?? sessionDir) === "inactive") return;
-    if (ignoreMid !== null && mid === ignoreMid) return;
+    if (mid !== null && skip.has(mid)) return;
     active[kind] = true;
   };
 
@@ -293,8 +304,17 @@ export function unsupportedOffer(
  * Rend `null` quand la section trouvée n'a pas de `a=mid` : sans identité,
  * elle n'est pas suivable d'une renégociation à la suivante, et le port ne
  * saurait de toute façon rien en faire.
+ *
+ * `ignoreMid` écarte une m-section de la recherche — **la nôtre** : l'offre
+ * d'un correspondant décrit aussi l'écran que nous lui envoyons, et sans
+ * cela nous prendrions notre propre partage pour le sien (ADR 0005, D9).
+ * L'écarter, plutôt que comparer après coup, est ce qui permet de trouver
+ * le sien quand les deux sont là.
  */
-export function sharedVideoMid(sdp: string | null | undefined): string | null {
+export function sharedVideoMid(
+  sdp: string | null | undefined,
+  ignoreMid: string | null = null,
+): string | null {
   if (!sdp) return null;
 
   /** Les `m=video` actives, dans l'ordre du SDP. */
@@ -309,6 +329,7 @@ export function sharedVideoMid(sdp: string | null | undefined): string | null {
 
   const flush = (): void => {
     if (!video || port === "0" || (mediaDir ?? sessionDir) === "inactive") return;
+    if (ignoreMid !== null && mid === ignoreMid) return;
     videos.push({ mid, slides });
   };
 

@@ -1165,10 +1165,16 @@ export function mediaControl(
    * distant partage. D'où la comparaison avec le nôtre, qui a l'identité
    * d'objet pour lui.
    */
-  const peerShareMid = (sdp: string | null | undefined): string | null => {
-    const mid = sharedVideoMid(sdp);
-    return mid !== null && mid !== share.ours?.mid ? mid : null;
-  };
+  const peerShareMid = (sdp: string | null | undefined): string | null =>
+    sharedVideoMid(sdp, share.ours?.mid ?? null);
+
+  /**
+   * **J'émets un écran** — le capteur est ouvert, quoi qu'en dise la
+   * négociation en cours. C'est ce qui interdit le second partage (D9) :
+   * deux écrans dans un appel, ce sont deux surfaces à caser sur un
+   * téléphone et une préséance que rien ne tranche.
+   */
+  const weShare = (): boolean => own.share !== undefined;
 
   /**
    * **Le distant émet-il un écran que nous montrons ?** Deux conditions, et
@@ -1537,11 +1543,23 @@ export function mediaControl(
               deferred = null;
               resuming = false;
               if (session.isEnded()) return;
+              // **Le distant a repris la main entre-temps** : sa négociation
+              // à lui a abouti, et la nôtre n'a plus lieu d'être rejouée.
+              //
+              // Deux partages lancés en même temps n'ont pas besoin de plus
+              // que cela (D9) : le capteur que nous gardons ouvert pour la
+              // reprise fait refuser le sien sur-le-champ (`weShare`), et
+              // c'est notre offre qui repart. S'il a été plus rapide, c'est
+              // son poste à lui qui refusera la nôtre — poliment, et nous
+              // le dirons comme n'importe quel refus.
               if (!raw.isReadyToReOffer()) {
-                // le distant a repris la main entre-temps : sa négociation à
-                // lui a abouti, et la nôtre n'a plus lieu d'être rejouée
-                if (!wanted.on) closeRole(conn, wanted.role);
-                send({ type: "sip:mediaRefused", by: "local" });
+                // `abandon` et non un simple avis : c'est lui qui referme le
+                // capteur ouvert pour rien et qui **arrête** le transceiver
+                // du partage jamais négocié (D7) — sans quoi la prochaine
+                // offre, fût-elle un simple ajout d'audio, réoffrirait
+                // l'écran que personne n'attend plus
+                asking = wanted;
+                abandon("local");
                 return;
               }
               asking = wanted;
@@ -1603,7 +1621,10 @@ export function mediaControl(
     // le partage ne compte pas dans la question posée : une offre qui
     // n'ajoute qu'un écran n'ajoute aucun média de l'appel, et ne doit donc
     // pas faire demander « accepter la vidéo ? » (ADR 0005, D3)
-    const wanted = offeredMedia(body, "none", sharedVideoMid(body));
+    // **les deux écrans sont écartés du compte** : le nôtre, que son offre
+    // décrit aussi, et le sien. Sans cela un appel où chacun partage se
+    // croirait en vidéo pour deux documents qui défilent (D3, D9)
+    const wanted = offeredMedia(body, "none", [share.ours?.mid ?? null, peerShareMid(body)]);
     const here = conn ? negotiatedMedia(conn, false, share) : null;
     // le texte ne pèse pas dans cette question-là : il ne s'ajoute pas par
     // re-INVITE tant que CT-6 n'existe pas, et il ne se retire jamais (D4)
@@ -1612,7 +1633,13 @@ export function mediaControl(
     // déjà accepté. Un partage qui se poursuit d'une renégociation à la
     // suivante — le distant retire son micro pendant qu'il partage — n'est
     // pas une demande de plus, et ne repose pas la question
-    const asksShare = conn !== null && peerShareMid(body) !== null && !peerShareAllowed;
+    // **un seul partage à la fois** (D9) : si j'émets déjà un écran, le sien
+    // ne pose aucune question — il est répondu `inactive` comme tout ce que
+    // personne n'a accepté, et son poste y lit le refus poli que SC-2 sait
+    // déjà écrire. Deux écrans partagés, ce sont deux surfaces à caser sur
+    // un téléphone, et une préséance que rien ne tranche
+    const asksShare =
+      conn !== null && !weShare() && peerShareMid(body) !== null && !peerShareAllowed;
     if (!conn || (added.length === 0 && !asksShare)) {
       passThrough(request);
       return;
@@ -1755,6 +1782,14 @@ export function mediaControl(
     startShare() {
       const conn = pc;
       if (!conn || session.isEnded()) return;
+      if (peerSharing) {
+        // **un seul partage à la fois** (D9). L'écran le dit déjà en grisant
+        // le bouton ; l'événement qui arriverait malgré tout — un clic parti
+        // juste avant que son écran n'entre — est refusé ici, et non offert
+        // au distant qui n'en voudrait pas
+        send({ type: "sip:mediaRefused", by: "local", share: true });
+        return;
+      }
       if (!raw.isReadyToReOffer()) {
         // une négociation est déjà en vol : deux offres qui se croisent,
         // c'est un 491 garanti (RFC 3261 §14.1)

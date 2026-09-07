@@ -563,3 +563,46 @@ describe("le bouton de permutation", () => {
     expect(bouton(avec)).not.toContain("disabled");
   });
 });
+
+/**
+ * **Un seul partage à la fois** (ADR 0005, D9). Deux écrans partagés, ce
+ * sont deux surfaces à caser sur un téléphone et une préséance que rien ne
+ * tranche : pendant que le correspondant partage, le bouton est grisé — et
+ * le libellé dit pourquoi, car un bouton grisé sans un mot est une porte
+ * fermée sans écriteau.
+ */
+describe("le partage pendant que le distant partage", () => {
+  /** Un poste qui sait capturer un écran : sans quoi le bouton n'existe pas. */
+  function withCapture<T>(fn: () => T): T {
+    const before = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      value: { mediaDevices: { getDisplayMedia: () => {} } },
+      configurable: true,
+    });
+    try {
+      return fn();
+    } finally {
+      if (before) Object.defineProperty(globalThis, "navigator", before);
+      else delete (globalThis as { navigator?: unknown }).navigator;
+    }
+  }
+
+  const share = (html: string): string => {
+    const at = html.indexOf('data-act="share"');
+    return html.slice(html.lastIndexOf("<button", at), html.indexOf("</button>", at));
+  };
+
+  it("est grisé, et le libellé dit pourquoi", () => {
+    const html = withCapture(() =>
+      overlayBar({ view: view({ peerSharing: true }), speakerMuted: false }),
+    );
+    expect(share(html).slice(0, share(html).indexOf(">"))).toContain("disabled");
+    expect(share(html)).toContain("Le correspondant partage déjà son écran");
+  });
+
+  it("redevient offert dès que son écran s'en va", () => {
+    const html = withCapture(() => overlayBar({ view: view(), speakerMuted: false }));
+    expect(share(html).slice(0, share(html).indexOf(">"))).not.toContain("disabled");
+    expect(share(html)).toContain("Partager l'écran");
+  });
+});

@@ -1461,3 +1461,41 @@ describe("CallBlock — l'écran partagé par le distant", () => {
     expect(call.context.call?.media).toEqual({ audio: true, video: false, text: false });
   });
 });
+
+/**
+ * **Un seul partage à la fois dans l'appel** (ADR 0005, D9).
+ *
+ * La règle vit dans le bloc, comme celle du dernier média : l'interface ne
+ * fait qu'en griser le bouton, et l'événement qui arriverait malgré tout —
+ * un clic parti juste avant que son écran n'entre, ou un raccourci
+ * clavier — est refusé au même endroit.
+ */
+describe("CallBlock — deux écrans à la fois, jamais", () => {
+  function connectedCall() {
+    const { handle, box } = fakeHandle();
+    const call = startCall(handle);
+    box.sendCall({ type: "sip:mediaChanged", media: { audio: true, video: false, text: false } });
+    box.sendCall({ type: "sip:accepted" });
+    return { call, box };
+  }
+
+  it("son écran est là : le mien ne part pas", () => {
+    const { call, box } = connectedCall();
+    box.sendCall({ type: "sip:peerSharing", on: true });
+    call.send({ type: "ui:toggleShare" });
+
+    expect(box.session.shares).toEqual([]);
+    expect(call.sbb?.state).toBe("connected");
+    expect(call.context.call?.sharing).toBe("off");
+  });
+
+  it("son écran s'en va : le mien redevient possible", () => {
+    const { call, box } = connectedCall();
+    box.sendCall({ type: "sip:peerSharing", on: true });
+    box.sendCall({ type: "sip:peerSharing", on: false });
+    call.send({ type: "ui:toggleShare" });
+
+    expect(box.session.shares).toEqual([true]);
+    expect(call.context.call?.sharing).toBe("starting");
+  });
+});

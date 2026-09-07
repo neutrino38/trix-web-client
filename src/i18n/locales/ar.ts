@@ -279,6 +279,7 @@ const messages: Translation = {
   "ctrl.share.aria": "مشاركة الشاشة",
   "ctrl.share.start": "مشاركة الشاشة",
   "ctrl.share.stop": "إيقاف المشاركة",
+  "ctrl.share.busy": "المحادث يشارك شاشته بالفعل",
   "ctrl.media.pending": "جارٍ تغيير الوسائط…",
   "ctrl.media.last": "غير ممكن: لن تحمل المكالمة أي وسيط",
   "ctrl.selfview.aria": "صورتك",

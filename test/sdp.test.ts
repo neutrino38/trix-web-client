@@ -402,6 +402,48 @@ describe("offeredMedia, la m-section du partage exclue", () => {
       text: false,
     });
   });
+
+  /**
+   * **Chacun son écran** (ADR 0005, D9). L'offre du correspondant décrit
+   * aussi celui que nous lui envoyons : les deux sont à écarter, et un seul
+   * MID ne suffit plus — sans quoi l'appel se croirait en vidéo pour deux
+   * documents qui défilent.
+   */
+  it("deux écrans dans la même offre : ni l'un ni l'autre n'est de la vidéo", () => {
+    const deux = sdp(
+      "m=audio 49170 RTP/AVP 0",
+      "a=mid:0",
+      "m=video 51374 RTP/AVP 96",
+      "a=mid:1",
+      "a=content:slides",
+      "a=recvonly",
+      "m=video 51376 RTP/AVP 96",
+      "a=mid:2",
+      "a=content:slides",
+      "a=sendonly",
+    );
+    // le mien est le premier marqué : l'écarter est ce qui permet de
+    // trouver le sien, et non de prendre le nôtre pour le sien
+    expect(sharedVideoMid(deux, "1")).toBe("2");
+    expect(offeredMedia(deux, "none", ["1", "2"])).toEqual({
+      audio: true,
+      video: false,
+      text: false,
+    });
+  });
+
+  /** Un MID seul reste accepté : c'est le cas courant, un seul écran. */
+  it("un seul MID s'écrit toujours sans liste", () => {
+    const un = sdp(
+      "m=audio 49170 RTP/AVP 0",
+      "a=mid:0",
+      "m=video 51374 RTP/AVP 96",
+      "a=mid:1",
+      "a=content:slides",
+      "a=sendonly",
+    );
+    expect(offeredMedia(un, "none", "1")).toEqual({ audio: true, video: false, text: false });
+  });
 });
 
 /**

@@ -265,6 +265,12 @@ const messages = {
   "ctrl.share.aria": "Partage d'écran",
   "ctrl.share.start": "Partager l'écran",
   "ctrl.share.stop": "Arrêter le partage",
+  /**
+   * **Un seul partage à la fois dans l'appel** (D9) : le bouton est grisé
+   * pendant que le correspondant partage, et le libellé dit pourquoi — un
+   * bouton grisé sans un mot est une porte fermée sans écriteau.
+   */
+  "ctrl.share.busy": "Le correspondant partage déjà son écran",
   "ctrl.media.pending": "Changement de média en cours…",
   "ctrl.media.last": "Impossible : l'appel ne transporterait plus rien",
   "ctrl.selfview.aria": "Self-view",

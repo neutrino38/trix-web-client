@@ -258,18 +258,34 @@ function mediaButton(ctx: OverlayCtx, kind: MediaKind, on: boolean): Cmd {
  * libellé (« Partager l'écran » / « Arrêter le partage ») et sur
  * `aria-pressed` — deux porteurs qui ne doivent rien à la couleur
  * (RGAA 3.1).
+ *
+ * **Un seul partage à la fois** (D9) : le bouton est grisé pendant que le
+ * correspondant partage, et le libellé dit pourquoi — un bouton grisé sans
+ * un mot est une porte fermée sans écriteau. La règle elle-même vit dans le
+ * bloc, comme celle du dernier média : ici on ne fait qu'en griser le
+ * bouton.
  */
 function shareButton(view: CallView): Cmd {
   const on = view.sharing === "on";
+  const busy = view.peerSharing;
   return {
     act: "share",
     icon: ICONS.share,
-    label: t(view.mediaPending ? "ctrl.media.pending" : on ? "ctrl.share.stop" : "ctrl.share.start"),
+    label: t(
+      view.mediaPending
+        ? "ctrl.media.pending"
+        : busy
+          ? "ctrl.share.busy"
+          : on
+            ? "ctrl.share.stop"
+            : "ctrl.share.start",
+    ),
     aria: t("ctrl.share.aria"),
     pressed: on,
     live: true,
     axis1: true,
-    disabled: view.state !== "connected" || view.mediaPending || view.mediaAsked !== null,
+    disabled:
+      view.state !== "connected" || view.mediaPending || view.mediaAsked !== null || busy,
   };
 }
 

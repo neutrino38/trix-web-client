@@ -255,6 +255,7 @@ const messages: Translation = {
   "ctrl.share.aria": "屏幕共享",
   "ctrl.share.start": "共享屏幕",
   "ctrl.share.stop": "停止共享",
+  "ctrl.share.busy": "对方已在共享屏幕",
   "ctrl.media.pending": "正在更改媒体…",
   "ctrl.media.last": "无法执行：通话将不再承载任何媒体",
   "ctrl.selfview.aria": "本地画面",

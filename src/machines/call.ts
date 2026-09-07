@@ -1012,6 +1012,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
             fx.data.session?.stopShare();
             return goto("renegotiating", "fin du partage");
           }
+          // **Un seul partage à la fois dans l'appel** (ADR 0005, D9). La
+          // règle est ici, et une seule fois : l'interface ne fait qu'en
+          // griser le bouton, et le clic parti juste avant que son écran
+          // n'entre est refusé au même endroit qu'un raccourci clavier.
+          if (fx.data.peerSharing) return stay("le distant partage déjà");
           fx.data.sharing = "starting";
           fx.data.session?.startShare();
           return goto("renegotiating", "partage d'écran");

@@ -258,6 +258,7 @@ const messages: Translation = {
   "ctrl.share.aria": "Screen sharing",
   "ctrl.share.start": "Share your screen",
   "ctrl.share.stop": "Stop sharing",
+  "ctrl.share.busy": "Your correspondent is already sharing their screen",
   "ctrl.media.pending": "Media change in progress…",
   "ctrl.media.last": "Not possible: the call would carry nothing at all",
   "ctrl.selfview.aria": "Self-view",

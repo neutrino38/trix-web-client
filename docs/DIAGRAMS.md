@@ -150,7 +150,7 @@ stateDiagram-v2
   answering --> connected: sip:accepted (200 OK), sip:confirmed (ACK)
   answering --> [*]: sip:failed (call:missed), sip:ended (call:missed), after 30 s (call:missed)
   connected --> hangingup: sip:disconnected, sys:sleep, ui:hangup
-  connected --> connected: sip:mediaChanged (média inchangé), sip:mediaChanged, ui:toggleMedia (dernier média), sip:peerSharing, ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:togglePause, sip:peerPaused, ui:toggleSelfView (self-view)
+  connected --> connected: sip:mediaChanged (média inchangé), sip:mediaChanged, ui:toggleMedia (dernier média), ui:toggleShare (le distant partage déjà), sip:peerSharing, ui:dtmf (DTMF perdu), ui:dtmf (DTMF), ui:togglePause, sip:peerPaused, ui:toggleSelfView (self-view)
   connected --> media_offer: sip:mediaOffer (le distant propose un média ou son écran)
   connected --> renegotiating: ui:toggleMedia, ui:toggleShare (fin du partage), ui:toggleShare (partage d'écran), sip:shareEnded (partage arrêté par le navigateur)
   connected --> [*]: sip:ended (call:dropped), sip:ended (call:answered), sip:failed (call:dropped)
