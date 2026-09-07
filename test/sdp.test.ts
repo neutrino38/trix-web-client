@@ -4,7 +4,7 @@
  * vidéo dans la réponse, quand on décroche en audio seul (§4.4).
  */
 import { describe, expect, it } from "vitest";
-import { offeredMedia, unsupportedOffer, withoutMedia } from "../src/sip/sdp.js";
+import { offeredMedia, sharedVideoMid, unsupportedOffer, withoutMedia } from "../src/sip/sdp.js";
 
 const head = ["v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=-", "c=IN IP4 192.0.2.1", "t=0 0"];
 
@@ -271,6 +271,128 @@ describe("unsupportedOffer", () => {
       ].join("\r\n");
       expect(unsupportedOffer(offer, "websocket")).toBeNull();
       expect(unsupportedOffer(offer, "datachannel")).toContain("m=audio/m=video");
+    });
+  });
+});
+
+/**
+ * **Laquelle des deux images est un écran ?** (ADR 0005, D4)
+ *
+ * Deux `m=video` dans un SDP ne le disent pas d'elles-mêmes. RFC 4796
+ * définit l'attribut qui le dit, et l'ordre sert de repli — mais un repli
+ * seulement : un appel audio auquel on ajoute un partage sans jamais avoir
+ * eu de caméra a son écran en **première** `m=video`, et là seul
+ * `a=content` tranche.
+ */
+describe("sharedVideoMid", () => {
+  const CAMERA = ["m=video 51372 RTP/AVP 96", "a=mid:1", "a=sendrecv"];
+  const ECRAN = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=content:slides", "a=sendonly"];
+  const AUDIO = ["m=audio 49170 RTP/AVP 0", "a=mid:0", "a=sendrecv"];
+
+  it("aucune vidéo : rien à désigner", () => {
+    expect(sharedVideoMid(sdp(...AUDIO))).toBeNull();
+  });
+
+  it("une caméra seule n'est pas un partage", () => {
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA))).toBeNull();
+  });
+
+  it("l'attribut RFC 4796 désigne l'écran", () => {
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA, ...ECRAN))).toBe("2");
+  });
+
+  it("et il le désigne même quand l'écran vient en premier", () => {
+    expect(sharedVideoMid(sdp(...AUDIO, ...ECRAN, ...CAMERA))).toBe("2");
+  });
+
+  it("un partage sans caméra : l'ordre ne dirait rien, l'attribut si", () => {
+    expect(sharedVideoMid(sdp(...AUDIO, ...ECRAN))).toBe("2");
+  });
+
+  it("sans l'attribut, la seconde m=video active fait office", () => {
+    const muet = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=sendonly"];
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA, ...muet))).toBe("2");
+  });
+
+  it("une seconde m=video refusée (port 0) n'est pas un partage", () => {
+    const mort = ["m=video 0 RTP/AVP 96", "a=mid:2"];
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA, ...mort))).toBeNull();
+  });
+
+  it("ni une seconde m=video inactive — la m-section recyclable de D6", () => {
+    const dormante = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=inactive"];
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA, ...dormante))).toBeNull();
+  });
+
+  it("`a=content` est une liste de valeurs (RFC 4796 §5)", () => {
+    const mixte = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=content:slides,speaker"];
+    expect(sharedVideoMid(sdp(...AUDIO, mixte[0]!, mixte[1]!, mixte[2]!))).toBe("2");
+  });
+
+  it("une autre valeur que `slides` ne fait pas un partage", () => {
+    const parole = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=content:speaker"];
+    // le repli de l'ordre s'applique quand même : c'est bien la seconde
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA, ...parole))).toBe("2");
+    // mais seule, elle n'est pas désignée
+    expect(sharedVideoMid(sdp(...AUDIO, ...parole))).toBeNull();
+  });
+
+  it("sans a=mid, la section n'a pas d'identité : rien n'est rendu", () => {
+    const anonyme = ["m=video 51374 RTP/AVP 96", "a=content:slides"];
+    expect(sharedVideoMid(sdp(...AUDIO, ...CAMERA, ...anonyme))).toBeNull();
+  });
+
+  it("pas de SDP du tout", () => {
+    expect(sharedVideoMid(null)).toBeNull();
+    expect(sharedVideoMid("")).toBeNull();
+  });
+});
+
+/**
+ * **Le partage n'est pas un média de l'appel** (ADR 0005, D3). Compté
+ * comme tel, il ferait dire « il a ajouté la vidéo » à une offre qui n'a
+ * pas touché à la caméra — et, pire, ferait croire à une caméra distante
+ * là où il n'y a qu'un écran.
+ */
+describe("offeredMedia, la m-section du partage exclue", () => {
+  const OFFRE = sdp(
+    "m=audio 49170 RTP/AVP 0",
+    "a=mid:0",
+    "a=sendrecv",
+    "m=video 51374 RTP/AVP 96",
+    "a=mid:1",
+    "a=content:slides",
+    "a=sendonly",
+  );
+
+  it("un écran seul n'offre pas de vidéo", () => {
+    expect(offeredMedia(OFFRE, "none", sharedVideoMid(OFFRE))).toEqual({
+      audio: true,
+      video: false,
+      text: false,
+    });
+  });
+
+  it("sans exclusion, il s'y ferait passer pour la caméra", () => {
+    expect(offeredMedia(OFFRE)).toEqual({ audio: true, video: true, text: false });
+  });
+
+  it("la caméra reste comptée quand les deux sont là", () => {
+    const deux = sdp(
+      "m=audio 49170 RTP/AVP 0",
+      "a=mid:0",
+      "m=video 51372 RTP/AVP 96",
+      "a=mid:1",
+      "a=sendrecv",
+      "m=video 51374 RTP/AVP 96",
+      "a=mid:2",
+      "a=content:slides",
+      "a=sendonly",
+    );
+    expect(offeredMedia(deux, "none", sharedVideoMid(deux))).toEqual({
+      audio: true,
+      video: true,
+      text: false,
     });
   });
 });

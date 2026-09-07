@@ -1,8 +1,7 @@
 /**
  * Lecture et retouche du SDP (docs/CONCEPTION.md §4.3, §4.4).
  *
- * Deux questions seulement sont posées au SDP, et une seule retouche lui
- * est faite :
+ * Trois questions sont posées au SDP, et une seule retouche lui est faite :
  *
  * - **quels médias sont actifs ?** — sur l'offre d'un INVITE entrant, cela
  *   décide des boutons de réponse (`offeredMedia`) ; sur la réponse à
@@ -18,6 +17,13 @@
  *   médias depuis l'ADR 0003 : répondre « texte seul » à une offre
  *   audio + texte pose exactement la même question, et laisserait sans
  *   cela l'appelant parler dans le vide.
+ *
+ * S'y ajoute, depuis le partage d'écran (ADR 0005), **laquelle des deux
+ * images est un écran ?** — `sharedVideoMid`. Deux `m=video` ne le disent
+ * pas d'elles-mêmes : c'est `a=content:slides` (RFC 4796) qui le dit, et
+ * l'ordre des m-sections qui sert de repli. La réponse est un MID
+ * (RFC 5888), parce que c'est la seule identité d'une m-section qui
+ * survive à une renégociation.
  *
  * S'y ajoute un **contrôle de recevabilité** de l'offre entrante
  * (`unsupportedOffer`) : ni un choix de codec ni une politique d'appel,
@@ -67,7 +73,17 @@ function textTransportOf(line: string): RttTransport | null {
  * lecture d'un SDP quelconque répondre sur les deux seuls médias que tout
  * le monde partage.
  */
-function activeMedia(sdp: string | null | undefined, carries: RttTransport = "none"): CallMedia {
+function activeMedia(
+  sdp: string | null | undefined,
+  carries: RttTransport = "none",
+  /**
+   * La m-section à ne pas compter, désignée par son `a=mid` — celle du
+   * **partage d'écran** (ADR 0005, D3). Un écran partagé n'est pas un
+   * média de l'appel : compté ici, il ferait dire « il a ajouté la vidéo »
+   * à une offre qui n'a pas touché à la caméra.
+   */
+  ignoreMid: string | null = null,
+): CallMedia {
   if (!sdp) return AUDIO_ONLY;
 
   const active: CallMedia = { audio: false, video: false, text: false };
@@ -77,9 +93,11 @@ function activeMedia(sdp: string | null | undefined, carries: RttTransport = "no
   let kind: "audio" | "video" | "text" | null = null;
   let port = "0";
   let mediaDir: Direction | null = null;
+  let mid: string | null = null;
 
   const flush = (): void => {
     if (!kind || port === "0" || (mediaDir ?? sessionDir) === "inactive") return;
+    if (ignoreMid !== null && mid === ignoreMid) return;
     active[kind] = true;
   };
 
@@ -92,12 +110,15 @@ function activeMedia(sdp: string | null | undefined, carries: RttTransport = "no
       kind = k === "audio" || k === "video" ? k : textTransportOf(line) === carries ? "text" : null;
       port = p ?? "0";
       mediaDir = null;
+      mid = null;
     } else if (line.startsWith("a=")) {
       const dir = directionOf(line);
       // avant le premier m=, la direction est celle de la session
       if (dir) {
         if (inMedia) mediaDir = dir;
         else sessionDir = dir;
+      } else if (line.startsWith("a=mid:")) {
+        mid = line.slice("a=mid:".length).trim() || null;
       }
     }
   }
@@ -247,4 +268,79 @@ export function unsupportedOffer(
   if (clear !== null) missing.push(`SRTP (${clear})`);
 
   return missing.length > 0 ? missing.join(", ") : null;
+}
+
+/**
+ * Le MID (RFC 5888) de la m-section qui porte un **écran partagé**, ou
+ * `null` si le SDP n'en décrit pas (ADR 0005, D4).
+ *
+ * Deux `m=video` dans un SDP ne disent pas d'elles-mêmes laquelle est le
+ * visage et laquelle est l'écran : RFC 4796 définit l'attribut qui le dit,
+ * et `slides` est la valeur que Trix pose sur son partage. Il est
+ * **informatif** — un terminal qui l'ignore n'échoue pas —, d'où le repli.
+ *
+ * La lecture, dans l'ordre :
+ *
+ * 1. la première `m=video` active portant `a=content:slides` ;
+ * 2. à défaut, la **seconde** `m=video` active. C'est le repli pour les
+ *    terminaux qui ne posent pas l'attribut, et il suffit dans le cas
+ *    courant — un appel n'a qu'une caméra, et elle vient en premier.
+ *
+ * L'ordre ne peut pas remplacer l'attribut dans l'autre sens : un appel
+ * audio auquel on ajoute un partage sans jamais avoir eu de caméra a son
+ * partage en **première** `m=video`, et seul `a=content` le dit.
+ *
+ * Rend `null` quand la section trouvée n'a pas de `a=mid` : sans identité,
+ * elle n'est pas suivable d'une renégociation à la suivante, et le port ne
+ * saurait de toute façon rien en faire.
+ */
+export function sharedVideoMid(sdp: string | null | undefined): string | null {
+  if (!sdp) return null;
+
+  /** Les `m=video` actives, dans l'ordre du SDP. */
+  const videos: { mid: string | null; slides: boolean }[] = [];
+  let sessionDir: Direction = "sendrecv";
+  let inMedia = false;
+  let video = false;
+  let port = "0";
+  let mediaDir: Direction | null = null;
+  let mid: string | null = null;
+  let slides = false;
+
+  const flush = (): void => {
+    if (!video || port === "0" || (mediaDir ?? sessionDir) === "inactive") return;
+    videos.push({ mid, slides });
+  };
+
+  for (const raw of sdp.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("m=")) {
+      flush();
+      const [k, p] = line.slice(2).split(/\s+/);
+      inMedia = true;
+      video = k === "video";
+      port = p ?? "0";
+      mediaDir = null;
+      mid = null;
+      slides = false;
+    } else if (line.startsWith("a=")) {
+      const dir = directionOf(line);
+      if (dir) {
+        if (inMedia) mediaDir = dir;
+        else sessionDir = dir;
+      } else if (line.startsWith("a=mid:")) {
+        mid = line.slice("a=mid:".length).trim() || null;
+      } else if (line.startsWith("a=content:")) {
+        // RFC 4796 §5 : une liste de valeurs séparées par des virgules
+        slides = line
+          .slice("a=content:".length)
+          .split(",")
+          .some((v) => v.trim() === "slides");
+      }
+    }
+  }
+  flush();
+
+  const marked = videos.find((v) => v.slides);
+  return marked ? marked.mid : (videos[1]?.mid ?? null);
 }

@@ -56,6 +56,12 @@ class FakeTrack {
 class FakeTransceiver {
   direction = "sendrecv";
   currentDirection: string | null = "sendrecv";
+  /**
+   * **L'identité de la m-section** (RFC 5888). C'est par elle, et par elle
+   * seule, que le port reconnaît le partage du distant (ADR 0005, D2) —
+   * ni l'ordre ni le `msid` ne survivent à une renégociation.
+   */
+  mid: string | null = null;
   readonly sender: {
     track: MediaStreamTrack | null;
     replaceTrack(t: MediaStreamTrack | null): Promise<void>;
@@ -65,7 +71,11 @@ class FakeTransceiver {
   readonly sent: FakeTrack;
   readonly received: FakeTrack;
 
-  constructor(readonly kind: MediaKind) {
+  constructor(
+    readonly kind: MediaKind,
+    mid: string | null = null,
+  ) {
+    this.mid = mid;
     this.sent = new FakeTrack(kind);
     this.received = new FakeTrack(kind);
     this.sender = {
@@ -87,7 +97,18 @@ class FakePc {
   rollbacks = 0;
 
   constructor(kinds: MediaKind[]) {
-    for (const k of kinds) this.transceivers.push(new FakeTransceiver(k));
+    for (const k of kinds) this.addTransceiver(k);
+  }
+
+  /**
+   * Une m-section de plus, avec le MID suivant — comme le navigateur les
+   * numérote. C'est ainsi qu'arrive un partage : en fin de liste, jamais en
+   * remplacement (RFC 8829 §5.2.2).
+   */
+  addTransceiver(kind: MediaKind): FakeTransceiver {
+    const tr = new FakeTransceiver(kind, String(this.transceivers.length));
+    this.transceivers.push(tr);
+    return tr;
   }
 
   getTransceivers(): RTCRtpTransceiver[] {
@@ -194,7 +215,28 @@ class FakeSession {
     this.pc.signalingState = "have-local-offer";
   }
 
-  _receiveReinvite(): void {}
+  /** Le re-INVITE laissé à JsSIP : le port n'a pas eu de question à poser. */
+  passedThrough = false;
+  /** Le code de la réponse que le port a écrite lui-même, s'il l'a fait. */
+  replied: number | null = null;
+
+  _receiveReinvite(_request: { body?: string | null; reply(code: number): void }): void {
+    this.passedThrough = true;
+  }
+
+  /**
+   * Le distant renégocie. Le port a remplacé `_receiveReinvite` par le
+   * sien : c'est bien celui-là qui répond, et le nôtre ne sert plus que de
+   * témoin du laissez-passer.
+   */
+  receiveReinvite(sdp: string): void {
+    this._receiveReinvite({
+      body: sdp,
+      reply: (code: number) => {
+        this.replied = code;
+      },
+    });
+  }
 
   /**
    * Ce que JsSIP fait d'une transaction expirée : il raccroche (408). Le
@@ -818,5 +860,92 @@ describe("le décrochage rend la parole", () => {
     expect(session.pc.transceivers[0]!.sent.enabled).toBe(false);
     session.emit("accepted");
     expect(session.pc.transceivers[0]!.sent.enabled).toBe(true);
+  });
+});
+
+/**
+ * **Le garde-fou du partage d'écran** (ADR 0005, phase SC-1).
+ *
+ * Rien dans l'interface ne sait encore afficher un second flux vidéo. Ce
+ * qui est éprouvé ici n'est donc pas le partage : c'est que le poste ne
+ * s'égare pas devant lui. Une seconde `m=video` reçue est répondue
+ * `inactive`, elle n'est jamais prise pour la caméra du correspondant, et
+ * **l'appel continue** — dégrader, jamais refuser (F.703 §8.3.5).
+ *
+ * Les trois façons de se tromper sont toutes silencieuses, et c'est ce qui
+ * les rend chères : accepter un flux que personne ne verra, croire que le
+ * distant a allumé sa caméra alors qu'il partage un document, ou poser à
+ * l'utilisateur une question qui n'a pas lieu d'être.
+ */
+describe("une seconde m=video reçue", () => {
+  const head = ["v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=-", "c=IN IP4 192.0.2.1", "t=0 0"];
+  const AUDIO = ["m=audio 49170 RTP/AVP 0", "a=mid:0", "a=sendrecv"];
+  const CAMERA = ["m=video 51372 RTP/AVP 96", "a=mid:1", "a=sendrecv"];
+  const ECRAN = ["m=video 51374 RTP/AVP 96", "a=mid:2", "a=content:slides", "a=sendonly"];
+  const offre = (...media: string[]): string => [...head, ...media].join("\r\n");
+
+  /** Un appel audio + vidéo auquel le distant vient d'ajouter un écran. */
+  function partageRecu() {
+    const fait = control(["audio", "video"]);
+    const ecran = fait.session.pc.addTransceiver("video");
+    fait.session.sdp("remote", "offer", offre(...AUDIO, ...CAMERA, ...ECRAN));
+    return { ...fait, ecran };
+  }
+
+  it("est répondue inactive, et la caméra n'y touche pas", () => {
+    const { session, ecran } = partageRecu();
+    session.pc.settle("have-remote-offer");
+
+    expect(ecran.direction).toBe("inactive");
+    expect(session.pc.transceivers.find((t) => t.mid === "1")!.direction).toBe("sendrecv");
+  });
+
+  it("n'est pas comptée dans ce que l'appel transporte", () => {
+    const { session, events, ecran } = partageRecu();
+    // le distant a retiré sa caméra en même temps qu'il partage : il ne
+    // reste que du son et un écran — et un écran n'est pas une conversation
+    session.pc.transceivers.find((t) => t.mid === "1")!.currentDirection = "inactive";
+    ecran.currentDirection = "recvonly";
+    session.pc.settle("stable");
+
+    expect(events).toEqual([
+      { type: "sip:mediaChanged", media: { audio: true, video: false, text: false } },
+    ]);
+  });
+
+  it("la caméra reste la caméra quand les deux sont là", () => {
+    const { session, events, ecran } = partageRecu();
+    ecran.currentDirection = "recvonly";
+    session.pc.settle("stable");
+
+    expect(events).toEqual([
+      { type: "sip:mediaChanged", media: { audio: true, video: true, text: false } },
+    ]);
+  });
+
+  /**
+   * L'écran n'ajoute aucun média à l'appel (D3) : il n'y a donc **rien à
+   * demander** à l'utilisateur, et le re-INVITE suit le chemin ordinaire de
+   * JsSIP. Sans l'exclusion de la m-section du partage, un appel audio se
+   * verrait poser « votre correspondant souhaite ajouter la vidéo » pour un
+   * document qu'il fait défiler.
+   */
+  it("un re-INVITE qui n'apporte qu'un écran ne pose aucune question", () => {
+    const { session, events } = control(["audio"]);
+    // le re-INVITE est intercepté **avant** que l'offre ne soit appliquée :
+    // la m-section de l'écran n'existe pas encore sur la connexion
+    const ecran = ["m=video 51374 RTP/AVP 96", "a=mid:1", "a=content:slides", "a=sendonly"];
+    session.receiveReinvite(offre(...AUDIO, ...ecran));
+
+    expect(events).toEqual([]);
+    expect(session.passedThrough).toBe(true);
+    expect(session.replied).toBeNull();
+  });
+
+  it("mais une caméra qui s'ajoute à côté d'un écran, si", () => {
+    const { session, events } = control(["audio"]);
+    session.receiveReinvite(offre(...AUDIO, ...CAMERA, ...ECRAN));
+
+    expect(events.map((e) => e.type)).toEqual(["sip:mediaOffer"]);
   });
 });

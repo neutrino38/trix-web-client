@@ -8,7 +8,13 @@
 import JsSIP from "jssip";
 import type { AccountConfig } from "../storage/store.js";
 import { iceServers } from "./ice.js";
-import { answeredMedia, offeredMedia, unsupportedOffer, withoutMedia } from "./sdp.js";
+import {
+  answeredMedia,
+  offeredMedia,
+  sharedVideoMid,
+  unsupportedOffer,
+  withoutMedia,
+} from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 import {
@@ -539,7 +545,7 @@ function wrapIncoming(
   const offer = request.body ?? null;
   // le transport du compte fait partie de la question : une offre texte
   // d'une forme que ce poste ne sait pas ouvrir n'offre pas de texte (§4.9)
-  const offered = offeredMedia(offer, cfg.rtt);
+  const offered = offeredMedia(offer, cfg.rtt, sharedVideoMid(offer));
   // constaté à l'arrivée, avant que quoi que ce soit ne parte : c'est ce
   // qui permet de répondre 488 sans qu'un 180 ait été envoyé. Le transport
   // texte du compte en fait partie : lui seul dit si une offre texte seul
@@ -714,12 +720,81 @@ interface MediaControl {
   release(): void;
 }
 
-/** Le transceiver d'un média sur la connexion, s'il en existe un. */
-function transceiverOf(pc: RTCPeerConnection, kind: MediaKind): RTCRtpTransceiver | null {
+/**
+ * **Le rôle d'un flux dans l'appel** (ADR 0005, D2).
+ *
+ * Le port a raisonné en `kind` tant qu'il n'y avait qu'une seule image :
+ * « la » piste vidéo, c'était la caméra. Avec le partage d'écran il y en a
+ * deux, et « la première `m=video` venue » devient un générateur de bugs
+ * silencieux — éteindre la mauvaise caméra, ne suspendre que la moitié de
+ * ce que l'on émet, refuser la mauvaise m-section. Aucun de ces cas ne
+ * lève d'exception : ils rendent l'appel faux.
+ *
+ * Le rôle est donc explicite partout, et **sans valeur par défaut** : un
+ * appelant oublié doit se voir au compilateur, pas à l'usage.
+ */
+export type StreamRole = "audio" | "camera" | "share";
+
+/** Les trois rôles émis, dans l'ordre où l'appel les ouvre. */
+const STREAM_ROLES: readonly StreamRole[] = ["audio", "camera", "share"];
+
+/** Le média que transporte un rôle — un écran partagé est de la vidéo. */
+function mediaOf(role: StreamRole): MediaKind {
+  return role === "audio" ? "audio" : "video";
+}
+
+/** Le rôle d'un média de l'appel : celui de la conversation, jamais l'écran. */
+function roleOf(kind: MediaKind): StreamRole {
+  return kind === "audio" ? "audio" : "camera";
+}
+
+/**
+ * Le partage tel que le port le reconnaît sur la connexion : **le nôtre par
+ * identité d'objet** — nous l'avons créé —, **celui du distant par son MID**
+ * (RFC 5888), retenu à la lecture de son offre.
+ *
+ * Ni l'ordre des m-sections, ni le `msid`, ni le fait d'être « la deuxième
+ * vidéo » ne sont des identités qui survivent à une renégociation
+ * (RFC 8829 §5.2.2). Le MID l'est, et lui seul.
+ */
+interface ShareRef {
+  /**
+   * Le transceiver que nous avons créé pour émettre notre écran. Vide tant
+   * que l'émission n'existe pas (phase SC-2).
+   */
+  ours: RTCRtpTransceiver | null;
+  /** Le MID de la m-section par laquelle le distant partage le sien. */
+  peerMid: string | null;
+}
+
+/** Le média d'un transceiver, qu'il émette, reçoive, ou les deux. */
+function kindOf(tr: RTCRtpTransceiver): string | undefined {
+  return tr.receiver.track?.kind ?? tr.sender.track?.kind;
+}
+
+/** Ce transceiver porte-t-il un écran partagé plutôt qu'une caméra ? */
+function isShare(tr: RTCRtpTransceiver, share: ShareRef): boolean {
+  return tr === share.ours || (share.peerMid !== null && tr.mid === share.peerMid);
+}
+
+/**
+ * Le transceiver d'un **rôle** sur la connexion, s'il en existe un.
+ *
+ * `audio` et `camera` rendent le premier transceiver de leur média qui
+ * n'est **pas** celui du partage ; `share` rend celui du partage. C'est
+ * toute la différence avec l'ancien « premier transceiver du média », et
+ * c'est elle qui empêche le partage de se faire passer pour la caméra.
+ */
+function transceiverFor(
+  pc: RTCPeerConnection,
+  role: StreamRole,
+  share: ShareRef,
+): RTCRtpTransceiver | null {
+  const kind = mediaOf(role);
+  const wantShare = role === "share";
   return (
-    pc
-      .getTransceivers()
-      .find((tr) => (tr.receiver.track?.kind ?? tr.sender.track?.kind) === kind) ?? null
+    pc.getTransceivers().find((tr) => kindOf(tr) === kind && isShare(tr, share) === wantShare) ??
+    null
   );
 }
 
@@ -729,12 +804,18 @@ function transceiverOf(pc: RTCPeerConnection, kind: MediaKind): RTCRtpTransceive
  * dit ce qui a été demandé, `currentDirection` dit ce qui a été conclu.
  * Un transceiver jamais négocié (`currentDirection === null`) ne compte
  * pas encore.
+ *
+ * **Le partage n'en fait pas partie** (ADR 0005, D3) : un écran qui passe
+ * n'est pas un média de l'appel. Sans cette exclusion, retirer sa caméra
+ * pendant un partage laisserait `media.video` à vrai — l'appel se dirait
+ * en vidéo alors que plus personne ne se voit.
  */
-function negotiatedMedia(pc: RTCPeerConnection, text: boolean): CallMedia {
+function negotiatedMedia(pc: RTCPeerConnection, text: boolean, share: ShareRef): CallMedia {
   const media: CallMedia = { ...NO_MEDIA, text };
   for (const tr of pc.getTransceivers()) {
-    const kind = tr.receiver.track?.kind ?? tr.sender.track?.kind;
+    const kind = kindOf(tr);
     if (kind !== "audio" && kind !== "video") continue;
+    if (isShare(tr, share)) continue;
     if (tr.currentDirection && tr.currentDirection !== "inactive") media[kind] = true;
   }
   return media;
@@ -810,8 +891,15 @@ export function mediaControl(
   textNegotiated: () => boolean,
 ): MediaControl {
   const raw = session as unknown as Session & Renegotiable;
+  /**
+   * Le partage de cet appel — le nôtre et celui du distant (ADR 0005, D2).
+   * Il est **lu partout** où le port désigne un flux, et **écrit** à deux
+   * endroits seulement : à la lecture d'une offre distante, et par
+   * l'émission de notre propre écran.
+   */
+  const share: ShareRef = { ours: null, peerMid: null };
   /** Les capteurs que nous avons ouverts : personne d'autre ne les éteindra. */
-  const own: Partial<Record<MediaKind, MediaStreamTrack>> = {};
+  const own: Partial<Record<StreamRole, MediaStreamTrack>> = {};
   /** Médias refusés dans la prochaine réponse SDP (réponse audio à une offre A/V). */
   const refusing = new Set<MediaKind>();
   /**
@@ -828,8 +916,8 @@ export function mediaControl(
    */
   const applySilence = (): void => {
     if (!pc) return;
-    for (const kind of MEDIA_KINDS) {
-      const track = transceiverOf(pc, kind)?.sender.track;
+    for (const role of STREAM_ROLES) {
+      const track = transceiverFor(pc, role, share)?.sender.track;
       if (track) track.enabled = !silent;
     }
   };
@@ -867,7 +955,7 @@ export function mediaControl(
    * pause ; c'est le prix d'une reprise qui ne demande rien à personne, et
    * le bandeau plein écran dit assez clairement ce qui se passe.
    */
-  const held: Partial<Record<MediaKind, MediaStreamTrack>> = {};
+  const held: Partial<Record<StreamRole, MediaStreamTrack>> = {};
   /** Les clones de l'auto-vue, par piste copiée — voir `mirror`. */
   const mirrors = new Map<MediaStreamTrack, MediaStreamTrack>();
   let paused = false;
@@ -887,8 +975,8 @@ export function mediaControl(
    * reçoit le flux : c'est le genre de détail sur lequel se juge un
    * logiciel de conversation totale.
    */
-  const stopSending = (conn: RTCPeerConnection | null, kind: MediaKind): void => {
-    const tr = conn ? transceiverOf(conn, kind) : null;
+  const stopSending = (conn: RTCPeerConnection | null, role: StreamRole): void => {
+    const tr = conn ? transceiverFor(conn, role, share) : null;
     const track = tr?.sender.track;
     if (tr && track) {
       // la piste s'arrête dans tous les cas — c'est elle qui tient le
@@ -904,14 +992,36 @@ export function mediaControl(
         void tr.sender.replaceTrack(null).catch(() => {});
       }
     }
-    stopMirror(own[kind]);
-    own[kind]?.stop();
-    delete own[kind];
+    stopMirror(own[role]);
+    own[role]?.stop();
+    delete own[role];
     // une pause en cours tient une piste hors du sender : elle ne doit pas
     // survivre au média qui vient de quitter l'appel
-    stopMirror(held[kind]);
-    held[kind]?.stop();
-    delete held[kind];
+    stopMirror(held[role]);
+    held[role]?.stop();
+    delete held[role];
+  };
+
+  /**
+   * **Le garde-fou du partage reçu** (ADR 0005, SC-1), tant que rien dans
+   * l'interface ne sait l'afficher : la m-section de l'écran du distant est
+   * répondue `inactive`.
+   *
+   * Le poste ne montre pas cet écran, mais il ne le prend pas non plus pour
+   * la caméra de son correspondant, et **l'appel continue** — dégrader,
+   * jamais refuser (F.703 §8.3.5). Laissé à lui-même, le navigateur
+   * répondrait `recvonly` : il accepterait un flux que personne ne peut
+   * voir, et le distant paierait le débit d'une image qui ne s'affiche
+   * nulle part.
+   *
+   * Le rendez-vous est `have-remote-offer` : l'offre est appliquée, les
+   * transceivers existent et portent leur MID, la réponse n'est pas encore
+   * écrite — le même que `blockInAnswer`.
+   */
+  const refusePeerShare = (conn: RTCPeerConnection): void => {
+    if (share.peerMid === null) return;
+    const tr = conn.getTransceivers().find((t) => t.mid === share.peerMid);
+    if (tr) tr.direction = "inactive";
   };
 
   /**
@@ -927,11 +1037,14 @@ export function mediaControl(
       // les pistes apparaissent avec la première offre, bien après l'appel :
       // le silence les rattrape ici, quel que soit l'état atteint
       applySilence();
+      // l'offre du distant est appliquée, la réponse n'est pas encore
+      // écrite : c'est le moment de refuser son partage (SC-1)
+      if (conn.signalingState === "have-remote-offer") refusePeerShare(conn);
       if (conn.signalingState !== "stable" || resuming) return;
-      const media = negotiatedMedia(conn, textNegotiated());
+      const media = negotiatedMedia(conn, textNegotiated(), share);
       // un média est sorti de l'appel : son capteur n'a plus de raison de
       // rester allumé
-      for (const kind of MEDIA_KINDS) if (!media[kind]) stopSending(conn, kind);
+      for (const kind of MEDIA_KINDS) if (!media[kind]) stopSending(conn, roleOf(kind));
       if (published && sameMedia(published, media)) return;
       published = media;
       send({ type: "sip:mediaChanged", media });
@@ -992,6 +1105,16 @@ export function mediaControl(
    * dont le navigateur a rédigé son answer.
    */
   session.on("sdp", (e: { originator: string; type: string; sdp: string }) => {
+    if (e.originator === "remote" && e.type === "offer") {
+      // **Qui partage ?** L'offre distante est le seul endroit d'où le MID
+      // du partage du correspondant se lise (ADR 0005, D4). Notre propre
+      // partage y revient décrit lui aussi : le repli « seconde m=video »
+      // le désignerait, et nous croirions que le distant partage — d'où la
+      // comparaison avec le nôtre, qui a l'identité pour lui.
+      const mid = sharedVideoMid(e.sdp);
+      share.peerMid = mid !== null && mid !== share.ours?.mid ? mid : null;
+      return;
+    }
     if (refusing.size === 0 || e.originator !== "local" || e.type !== "answer") return;
     e.sdp = withoutMedia(e.sdp, [...refusing]);
   });
@@ -1002,12 +1125,13 @@ export function mediaControl(
    * plus tôt), sinon elle en crée un.
    */
   const openTrack = async (conn: RTCPeerConnection, kind: MediaKind): Promise<boolean> => {
+    const role = roleOf(kind);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ [kind]: true });
       const track = stream.getTracks().find((t) => t.kind === kind);
       if (!track) return false;
-      own[kind] = track;
-      const tr = transceiverOf(conn, kind);
+      own[role] = track;
+      const tr = transceiverFor(conn, role, share);
       if (tr) {
         await tr.sender.replaceTrack(track);
         tr.direction = "sendrecv";
@@ -1017,15 +1141,16 @@ export function mediaControl(
       return true;
     } catch {
       // capteur refusé par le système ou déjà pris : l'appel continue
-      stopSending(conn, kind);
+      stopSending(conn, role);
       return false;
     }
   };
 
   /** Notre flux quitte l'appel : transceiver rendu inactif, capteur éteint. */
   const closeTrack = (conn: RTCPeerConnection, kind: MediaKind): void => {
-    stopSending(conn, kind);
-    const tr = transceiverOf(conn, kind);
+    const role = roleOf(kind);
+    stopSending(conn, role);
+    const tr = transceiverFor(conn, role, share);
     if (tr) tr.direction = "inactive";
   };
 
@@ -1165,8 +1290,12 @@ export function mediaControl(
   const passThrough = raw._receiveReinvite.bind(raw);
   raw._receiveReinvite = (request: InDialogRequest): void => {
     const conn = pc;
-    const wanted = offeredMedia(request.body ?? null);
-    const here = conn ? negotiatedMedia(conn, false) : null;
+    const body = request.body ?? null;
+    // le partage ne compte pas dans la question posée : une offre qui
+    // n'ajoute qu'un écran n'ajoute aucun média de l'appel, et ne doit donc
+    // pas faire demander « accepter la vidéo ? » (ADR 0005, D3)
+    const wanted = offeredMedia(body, "none", sharedVideoMid(body));
+    const here = conn ? negotiatedMedia(conn, false, share) : null;
     // le texte ne pèse pas dans cette question-là : il ne s'ajoute pas par
     // re-INVITE tant que CT-6 n'existe pas, et il ne se retire jamais (D4)
     const added = conn && here ? MEDIA_KINDS.filter((k) => wanted[k] && !here[k]) : [];
@@ -1205,7 +1334,7 @@ export function mediaControl(
     refuseMedia(kinds) {
       for (const kind of kinds) refusing.add(kind);
       const block = (conn: RTCPeerConnection): void =>
-        blockInAnswer(conn, kinds, (k) => refusing.has(k));
+        blockInAnswer(conn, kinds, (k) => refusing.has(k), share);
       if (session.connection) block(session.connection);
       else session.on("peerconnection", (e) => block(e.peerconnection));
     },
@@ -1273,17 +1402,20 @@ export function mediaControl(
       const conn = pc;
       if (!conn || paused === on || session.isEnded()) return;
       paused = on;
-      for (const kind of MEDIA_KINDS) {
-        const tr = transceiverOf(conn, kind);
+      // les trois rôles ensemble : un écran qui continuerait de s'afficher
+      // pendant que je suis parti casserait la promesse de la Pause de la
+      // façon la plus coûteuse qui soit (ADR 0005, D10)
+      for (const role of STREAM_ROLES) {
+        const tr = transceiverFor(conn, role, share);
         if (!tr) continue;
         if (on) {
           const track = tr.sender.track;
           if (!track) continue;
-          held[kind] = track;
+          held[role] = track;
           void tr.sender.replaceTrack(null).catch(() => {});
         } else {
-          const track = held[kind];
-          delete held[kind];
+          const track = held[role];
+          delete held[role];
           // la piste a pu disparaître entre-temps — le média a quitté
           // l'appel pendant la pause : il n'y a plus rien à rattacher
           if (track) void tr.sender.replaceTrack(track).catch(() => {});
@@ -1308,7 +1440,7 @@ export function mediaControl(
       return copy;
     },
     release() {
-      for (const kind of MEDIA_KINDS) stopSending(pc, kind);
+      for (const role of STREAM_ROLES) stopSending(pc, role);
       // filet : un miroir dont la piste d'origine n'est plus dans aucun
       // transceiver n'aurait rien pour l'éteindre
       for (const copy of mirrors.values()) copy.stop();
@@ -1331,12 +1463,15 @@ function blockInAnswer(
   pc: RTCPeerConnection,
   kinds: readonly MediaKind[],
   active: (kind: MediaKind) => boolean,
+  share: ShareRef,
 ): void {
   pc.addEventListener("signalingstatechange", () => {
     if (pc.signalingState !== "have-remote-offer") return;
     for (const kind of kinds) {
       if (!active(kind)) continue;
-      const tr = transceiverOf(pc, kind);
+      // le rôle, et non le média : refuser la vidéo doit fermer la caméra,
+      // pas la m-section du partage qui se trouverait passer en premier
+      const tr = transceiverFor(pc, roleOf(kind), share);
       if (tr) tr.direction = "inactive";
     }
   });
