@@ -30,11 +30,26 @@ class FakeSession implements CallSession {
   terminated = 0;
   /** Les ajouts et retraits de média demandés par re-INVITE, dans l'ordre. */
   asked: { kind: MediaKind; on: boolean }[] = [];
+  /** Ce par quoi le port rend ses avis : posé par `listen()`, comme le vrai. */
+  send: (ev: CallSipEvent) => void = () => {};
+  /**
+   * **L'offre part-elle tout de suite ?** Le vrai port ouvre d'abord le
+   * capteur — le sélecteur d'écran attend un choix, la caméra une
+   * autorisation — puis laisse le navigateur rassembler ses candidats ICE,
+   * et n'écrit son SDP qu'après : `false` simule ce temps-là, où la
+   * demande est en préparation et où rien n'est encore parti sur le fil.
+   */
+  offersAtOnce = true;
+  /** L'offre vient d'être écrite : à partir d'ici, le distant est en jeu. */
+  private offering(): void {
+    if (this.offersAtOnce) this.send({ type: "sip:offering" });
+  }
   terminate(): void {
     this.terminated++;
   }
   setMedia(kind: MediaKind, on: boolean): void {
     this.asked.push({ kind, on });
+    this.offering();
   }
   /** Les offres que le bloc a fait retirer, faute de conclusion. */
   abandoned = 0;
@@ -54,9 +69,11 @@ class FakeSession implements CallSession {
   shares: boolean[] = [];
   startShare(): void {
     this.shares.push(true);
+    this.offering();
   }
   stopShare(): void {
     this.shares.push(false);
+    this.offering();
   }
   /** Les tonalités reçues par le port, et ce qu'il en fait (cf. `dtmfFails`). */
   tones: string[] = [];
@@ -101,6 +118,7 @@ function fakeHandle(opts: { throwOnCall?: string } = {}) {
       if (opts.throwOnCall) throw new Error(opts.throwOnCall);
       box.calls.push({ target, media });
       box.sendCall = send;
+      session.send = send;
       return session;
     },
   };
@@ -126,6 +144,7 @@ function fakeIncoming(
     offerProblem,
     listen(send) {
       box.sendCall = send;
+      session.send = send;
       return session;
     },
     answer(media) {
@@ -1316,6 +1335,74 @@ describe("le partage d'écran", () => {
     expect(call.context.call?.sharing).toBe("off");
     expect(box.session.shares).toEqual([true]);
     expect(call.sbb?.state).toBe("renegotiating");
+  });
+
+  /**
+   * **Le sélecteur d'écran n'est pas un silence du correspondant.**
+   *
+   * Constaté en réel le 2026-09-08 : partage cliqué à 17:35:14, offre
+   * partie à 17:35:39 — le temps de choisir la fenêtre à partager —, et
+   * abandonnée à 17:35:42, trois secondes plus tard, par un délai qui
+   * courait depuis le clic. Le correspondant n'avait rien reçu qu'il pût
+   * refuser, et l'écran a pourtant annoncé un partage indisponible.
+   *
+   * D'où les deux temps : tant que rien n'est parti, rien ne se
+   * chronomètre — et le verrou, lui, tient depuis le clic.
+   */
+  it("le capteur qui traîne ne consomme pas le délai du distant", async () => {
+    vi.useFakeTimers();
+    try {
+      const { call, box } = connectedCall();
+      // le sélecteur d'écran est ouvert : rien n'est parti sur le fil
+      box.session.offersAtOnce = false;
+      call.send({ type: "ui:toggleShare" });
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(call.sbb?.state).toBe("preparing");
+      expect(box.session.abandoned).toBe(0);
+      expect(call.context.call?.mediaPending).toBe(true);
+      expect(call.context.call?.sharing).toBe("starting");
+      expect(call.context.call?.notice).toBe(null);
+
+      // l'écran est choisi, l'offre part : le délai commence maintenant
+      box.sendCall({ type: "sip:offering" });
+      expect(call.sbb?.state).toBe("renegotiating");
+      await vi.advanceTimersByTimeAsync(27_999);
+      expect(call.sbb?.state).toBe("renegotiating");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(call.sbb?.state).toBe("connected");
+      expect(box.session.abandoned).toBe(1);
+      expect(call.context.call?.notice?.message).toEqual({ key: "notice.shareUnavailable" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * **La reprise après un 491 a droit à son délai plein** (RFC 3261
+   * §14.1). Le port la rejoue de lui-même, après un délai qui peut aller
+   * à 4 s ; pour le distant, c'est une demande neuve.
+   */
+  it("une offre reprise remet le délai à zéro", async () => {
+    vi.useFakeTimers();
+    try {
+      const { call, box } = connectedCall();
+      call.send({ type: "ui:toggleShare" });
+      expect(call.sbb?.state).toBe("renegotiating");
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      // glare : le port a repris son offre, et elle vient de repartir
+      box.sendCall({ type: "sip:offering" });
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(call.sbb?.state).toBe("renegotiating");
+      expect(box.session.abandoned).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(call.sbb?.state).toBe("connected");
+      expect(box.session.abandoned).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sans réponse au bout de 28 s : le partage retombe, l'appel continue", async () => {

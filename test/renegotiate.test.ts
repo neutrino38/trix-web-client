@@ -1636,3 +1636,72 @@ describe("le partage aux bords", () => {
     expect(ecran.direction).toBe("inactive");
   });
 });
+
+/**
+ * **Les deux temps d'une renégociation** (ADR 0005, corrigé le 2026-09-08).
+ *
+ * Entre le clic et l'offre, il se passe tout ce qui est de notre côté du
+ * fil : le sélecteur d'écran attend un choix, la caméra une autorisation,
+ * le navigateur rassemble ses candidats ICE. Le distant n'en sait rien —
+ * il n'a rien reçu à quoi répondre —, et le délai qui le juge ne doit donc
+ * pas courir pendant ce temps-là. `sip:offering` est ce qui sépare les
+ * deux, et le port est seul à savoir quand l'offre part vraiment.
+ */
+describe("l'offre qui part", () => {
+  /** Le SDP d'une offre locale, tel que JsSIP le donne à relire. */
+  const offre = ["v=0", "m=audio 9 RTP/AVP 0", "a=mid:0", "a=sendrecv"].join("\r\n");
+
+  it("s'annonce quand le SDP part, et pas quand le capteur s'ouvre", async () => {
+    const { session, events, ctl } = control(["audio"]);
+    ctl.setMedia("video", true);
+    // le capteur est ouvert, mais rien n'est encore écrit : le distant
+    // n'attend rien, et personne ne doit être chronométré
+    expect(events).toEqual([]);
+
+    await vi.runAllTimersAsync();
+    session.sdp("local", "offer", offre);
+    expect(events).toEqual([{ type: "sip:offering" }]);
+  });
+
+  it("l'offre initiale de l'appel n'annonce rien : aucun verrou ne l'attend", () => {
+    const { session, events } = control(["audio"]);
+    session.sdp("local", "offer", offre);
+    expect(events).toEqual([]);
+  });
+
+  it("le retrait d'un média l'annonce aussi", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    await vi.runAllTimersAsync();
+    session.sdp("local", "offer", offre);
+    expect(events).toContainEqual({ type: "sip:offering" });
+  });
+
+  /**
+   * **Toute commande rend un avis**, celle qui ne peut rien faire comme
+   * les autres : le verrou de la machine tient jusqu'à ce que le port ait
+   * parlé, et un silence l'y laisserait pour de bon — l'appel ne
+   * négocierait plus rien jusqu'au raccrochage.
+   */
+  it("une commande impossible se dit, elle ne se tait pas", () => {
+    const { session, events, ctl } = control(["audio"]);
+    session.ended = true;
+    ctl.setMedia("video", true);
+    expect(events).toEqual([{ type: "sip:mediaRefused", by: "local" }]);
+  });
+
+  it("arrêter un partage qui n'existe pas se dit aussi", () => {
+    const { events, ctl } = control(["audio"]);
+    ctl.stopShare();
+    expect(events).toEqual([{ type: "sip:sharing", on: false }]);
+  });
+});
+
+/**
+ * **Où partent les requêtes du dialogue** (RFC 3261 §12.2.1.2). Le 2xx a
+ * le dernier mot sur la cible ; JsSIP ne la reprend pas quand un dialogue
+ * précoce existait déjà, et le B2BUA du déploiement annonce justement
+ * `sip:xxxx@0.0.0.0` dans ses 180 avant de donner sa vraie adresse dans le
+ * 200 OK. L'ACK survit à cette contradiction, le re-INVITE non : il meurt
+ * en silence, et le correspondant ne voit jamais la demande de partage.
+ */

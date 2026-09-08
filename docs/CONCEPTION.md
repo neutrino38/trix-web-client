@@ -498,8 +498,24 @@ s'affiche — « Bob n'a pas accepté la vidéo ».
 
 **Ajouter ou retirer un média est un re-INVITE.** Le bouton envoie
 `ui:toggleMedia {kind}`, le port ouvre (ou ferme) le capteur puis renégocie, et le bloc
-attend l'issue en `renegotiating` — l'appel continue derrière, seules les icônes
-patientent.
+attend l'issue — l'appel continue derrière, seules les icônes patientent.
+
+**L'attente a deux temps, et un seul se chronomètre.** `preparing` est ce qui se passe
+de notre côté du fil : le capteur s'ouvre — le sélecteur d'écran attend un choix, la
+caméra une autorisation — puis le navigateur rassemble ses candidats ICE avant que JsSIP
+n'écrive le SDP. Le correspondant n'en sait rien : il n'a rien reçu à quoi répondre.
+`renegotiating` commence quand l'offre part vraiment (`sip:offering`, émis par le port au
+moment où il relit le SDP local d'une renégociation), et c'est de là seulement que court
+le délai de 28 s. Les deux temps confondus, ce délai comptait l'hésitation de
+l'utilisateur devant son sélecteur d'écran comme un silence du correspondant : un partage
+cliqué à 17:35:14, offert à 17:35:39 et abandonné à 17:35:42 — trois secondes après avoir
+été offert, sans que le distant ait rien pu en dire (constaté le 2026-09-08). Le verrou,
+lui, tient dès le clic dans les deux états. Rien ne borne `preparing` : ce qu'on y attend
+est une décision de l'utilisateur devant une boîte modale, et **toute commande du port
+rend un avis** — y compris celle qui ne peut rien faire, sans quoi le verrou resterait
+posé jusqu'au raccrochage. L'acceptation d'une offre venue du distant (`media_offer`),
+elle, entre directement en `renegotiating` : aucune offre ne part d'ici, et le
+correspondant attend déjà.
 
 **Un seul verrou de renégociation, quel que soit le média.** Deux re-INVITE en vol sur la
 même boîte de dialogue, c'est un 491 garanti : `mediaPending` est donc un état de
@@ -549,7 +565,8 @@ Quatre détails de JsSIP méritent d'être écrits :
   raccrochage — et l'appel ne négocierait plus rien du tout.
 
 **Un seul délai décide, et c'est celui de l'utilisateur** : 28 s dans l'état
-`renegotiating` du bloc. Le port n'a pas de minuterie à lui ; quand le délai tombe, le
+`renegotiating` du bloc, remis à zéro à chaque offre partie — la reprise après un 491 a
+droit au sien. Le port n'a pas de minuterie à lui ; quand le délai tombe, le
 bloc lui dit `abandonMedia()`, et c'est là que se font le retour arrière, l'extinction du
 capteur ouvert pour rien, et la libération du dialogue. Les minuteries de JsSIP ne
 pouvaient pas tenir ce rôle : le Timer B ne tranche que tant qu'aucune réponse
@@ -1411,6 +1428,12 @@ appel dont il ne reste que l'écran n'est pas une conversation) ; l'historique n
 consigne pas (c'est un épisode dans un appel, pas une nature d'appel) ; on ne
 décroche pas « en partage ». L'état vit à côté, dans `CallView` — `sharing` pour ce
 que j'émets (`off` / `starting` / `on`), `peerSharing` pour ce que je reçois.
+
+**Le sélecteur d'écran est du temps à nous.** `starting` couvre un moment que les
+autres médias n'ont pas : choisir la fenêtre à partager prend des secondes, parfois des
+dizaines, et rien ne part sur le fil pendant ce temps-là. C'est ce qui a fait scinder
+l'attente d'une renégociation en deux états (§4.4) : `preparing` sans délai, puis
+`renegotiating` et ses 28 s, à partir de l'offre réellement partie.
 
 **Recevoir se demande.** Accepter n'allume aucun capteur : la raison qui fait poser
 la question pour le micro et la caméra (§4.4) ne s'applique pas. Elle se pose quand

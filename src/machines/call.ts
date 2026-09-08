@@ -163,6 +163,7 @@ type CallStateName =
   | "ringing_in"
   | "answering"
   | "connected"
+  | "preparing"
   | "renegotiating"
   | "media_offer"
   | "hangingup";
@@ -365,6 +366,11 @@ function interruptions(ending: Ending): CallOn {
       return undefined;
     },
     "sip:mediaRefused": () => undefined,
+    // **l'offre qui part** ne concerne que les deux temps d'une
+    // renégociation (`preparing`, `renegotiating`) : ailleurs, aucun verrou
+    // ne l'attend, et l'avis est consommé pour qu'il ne traîne pas dans la
+    // file jusqu'à un état qui en ferait quelque chose
+    "sip:offering": () => undefined,
     // hors communication, il n'y a rien à ajouter à un appel qui n'existe
     // pas encore : le distant est éconduit tout de suite
     "sip:mediaOffer": (ev) => {
@@ -630,6 +636,96 @@ function inCall(): CallOn {
       fx.data.dtmfSent = (fx.data.dtmfSent + ev.tone).slice(-DTMF_KEPT);
       publish("connected", ctx, fx.data);
       return stay("DTMF");
+    },
+  };
+}
+
+/**
+ * Ce que les **deux temps d'une renégociation** partagent — `preparing`,
+ * où la demande se fabrique ici, et `renegotiating`, où elle attend sa
+ * réponse là-bas. Les issues sont les mêmes des deux côtés : le média a
+ * changé, le distant (ou notre propre poste) a dit non, l'écran est entré
+ * ou sorti. Seul le **délai** les sépare, et c'est tout l'objet du
+ * découpage — il n'y en a pas tant que rien n'est parti.
+ */
+function negotiating(): CallOn {
+  return {
+    ...inCall(),
+    // une renégociation à la fois, quel que soit le média : le second
+    // clic est sans effet — sur l'autre bouton comme sur le même, et le
+    // partage n'y fait pas exception (ADR 0005, D3)
+    "ui:toggleMedia": () => undefined,
+    "ui:toggleShare": () => undefined,
+    /**
+     * Le partage vient d'être négocié. C'est un événement à lui, et non
+     * un `sip:mediaChanged` : ce que l'appel transporte n'a pas bougé.
+     */
+    "sip:sharing": (ev, ctx, fx) => {
+      fx.data.sharing = ev.on ? "on" : "off";
+      fx.data.mediaPending = false;
+      publish("connected", ctx, fx.data);
+      return goto("connected", ev.on ? "partage établi" : "partage retiré");
+    },
+    /**
+     * L'écran a été coupé depuis la barre du navigateur pendant que la
+     * négociation était en vol. Rien de plus à lancer — l'offre en
+     * cours conclura —, mais l'écran doit cesser de dire que je partage.
+     */
+    "sip:shareEnded": (_ev, ctx, fx) => {
+      if (fx.data.sharing === "off") return undefined;
+      fx.data.sharing = "off";
+      publish("connected", ctx, fx.data);
+      return stay("partage arrêté par le navigateur");
+    },
+    "sip:mediaChanged": (ev, ctx, fx) => {
+      // ce que nous avions demandé et que le distant n'a pas suivi :
+      // c'est la différence entre `asked` et ce qui a été négocié
+      const refused = MEDIA_KINDS.filter((k) => fx.data.asked[k] && !ev.media[k]);
+      fx.data.media = ev.media;
+      fx.data.mediaPending = false;
+      const kind = refused[0];
+      if (kind !== undefined) {
+        notify(ctx, fx, msg(NOTICE[kind].refused, { peer: peerName(fx.data) }));
+        return goto("connected", `${kind} refusé`);
+      }
+      publish("connected", ctx, fx.data);
+      return goto("connected", "média négocié");
+    },
+    "sip:mediaRefused": (ev, ctx, fx) => {
+      // le partage a sa propre phrase : rien de ce que l'appel
+      // transporte n'a bougé, et parler de « la vidéo » ici ferait
+      // croire à la caméra qui vient de s'éteindre (ADR 0005, D3)
+      if (ev.share === true) {
+        fx.data.sharing = "off";
+        fx.data.mediaPending = false;
+        notify(
+          ctx,
+          fx,
+          ev.by === "remote"
+            ? msg("notice.shareRefused", { peer: peerName(fx.data) })
+            : msg("notice.shareUnavailable"),
+        );
+        return goto("connected", "partage refusé");
+      }
+      // ce que nous demandions, avant de revenir à ce que l'appel porte
+      const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
+      fx.data.asked = fx.data.media;
+      fx.data.mediaPending = false;
+      // le distant a dit non, ou la demande n'a jamais pu partir d'ici
+      // (capteur pris ailleurs) : ce n'est pas la même phrase
+      notify(
+        ctx,
+        fx,
+        ev.by === "remote"
+          ? msg(NOTICE[kind].refused, { peer: peerName(fx.data) })
+          : msg(NOTICE[kind].unavailable),
+      );
+      return goto("connected", "refus");
+    },
+    // les deux offres se croisent (RFC 3261 §14.1) : la nôtre est déjà
+    // partie — ou sur le point de l'être —, celle du distant attendra
+    "sip:mediaOffer": (ev) => {
+      ev.offer.reject();
     },
   };
 }
@@ -949,7 +1045,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           if (!on && isLastMedia(fx.data.media, kind)) return stay("dernier média");
           fx.data.asked = { ...fx.data.media, [kind]: on };
           fx.data.session?.setMedia(kind, on);
-          return goto("renegotiating", `${on ? "ajout" : "retrait"} : ${kind}`);
+          return goto("preparing", `${on ? "ajout" : "retrait"} : ${kind}`);
         },
         /**
          * Changement venu du distant : personne ne l'a demandé ici, donc
@@ -1010,7 +1106,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           if (fx.data.sharing === "on") {
             fx.data.sharing = "off";
             fx.data.session?.stopShare();
-            return goto("renegotiating", "fin du partage");
+            return goto("preparing", "fin du partage");
           }
           // **Un seul partage à la fois dans l'appel** (ADR 0005, D9). La
           // règle est ici, et une seule fois : l'interface ne fait qu'en
@@ -1019,7 +1115,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           if (fx.data.peerSharing) return stay("le distant partage déjà");
           fx.data.sharing = "starting";
           fx.data.session?.startShare();
-          return goto("renegotiating", "partage d'écran");
+          return goto("preparing", "partage d'écran");
         },
         /**
          * **« Cesser de partager »**, appuyé dans la barre du navigateur.
@@ -1032,8 +1128,42 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           if (fx.data.sharing === "off") return undefined;
           fx.data.sharing = "off";
           fx.data.session?.stopShare();
-          return goto("renegotiating", "partage arrêté par le navigateur");
+          return goto("preparing", "partage arrêté par le navigateur");
         },
+      },
+      meta: { callState: "connected" },
+    },
+
+    /**
+     * **La demande se fabrique ici, et rien n'est encore parti.** Le
+     * sélecteur d'écran attend un choix, la caméra une autorisation, le
+     * navigateur rassemble ses candidats ICE : tout cela est de notre côté
+     * du fil, et le correspondant n'en sait rien.
+     *
+     * D'où l'état, et d'où son absence de délai. Les deux temps confondus,
+     * le délai de `renegotiating` comptait l'hésitation devant le sélecteur
+     * d'écran comme un silence du correspondant : un partage cliqué à
+     * 17:35:14, offert à 17:35:39 et abandonné à 17:35:42 — trois secondes
+     * après avoir été offert, sans que le distant ait rien pu en dire
+     * (constaté en réel le 2026-09-08). Ce qu'on attend ici est une
+     * décision de l'utilisateur devant une boîte modale : elle ne se
+     * chronomètre pas, et le port rend un avis quoi qu'il arrive — le
+     * sélecteur refermé sans rien choisir en est un.
+     *
+     * **Le verrou, lui, est posé dès le clic** (ADR 0003, D7) : deux
+     * capteurs qui s'ouvrent en même temps, ce sont deux offres qui se
+     * croisent, et le 491 qui va avec.
+     */
+    preparing: {
+      enter(ctx, fx) {
+        fx.data.mediaPending = true;
+        publish("connected", ctx, fx.data);
+      },
+      on: {
+        ...negotiating(),
+        // l'offre est écrite et part : à partir d'ici, c'est le distant
+        // qu'on attend, et lui seul se chronomètre
+        "sip:offering": () => goto("renegotiating", "offre partie"),
       },
       meta: { callState: "connected" },
     },
@@ -1045,9 +1175,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
      * c'est un 491 garanti.
      *
      * L'issue est l'un des trois événements du port — le média a changé, le
-     * distant a dit non, ou personne ne répond et le délai tranche. Le délai
-     * est généreux parce qu'un 491 peut coûter jusqu'à 4 s de reprise
-     * (RFC 3261 §14.1), et que cette reprise a droit d'aboutir.
+     * distant a dit non, ou personne ne répond et le délai tranche.
      */
     renegotiating: {
       enter(ctx, fx) {
@@ -1055,90 +1183,25 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         publish("connected", ctx, fx.data);
       },
       on: {
-        ...inCall(),
-        // une renégociation à la fois, quel que soit le média : le second
-        // clic est sans effet — sur l'autre bouton comme sur le même, et le
-        // partage n'y fait pas exception (ADR 0005, D3)
-        "ui:toggleMedia": () => undefined,
-        "ui:toggleShare": () => undefined,
+        ...negotiating(),
         /**
-         * Le partage vient d'être négocié. C'est un événement à lui, et non
-         * un `sip:mediaChanged` : ce que l'appel transporte n'a pas bougé.
+         * **Une autre offre est partie** : la reprise après un 491
+         * (RFC 3261 §14.1), que le port rejoue de lui-même après un délai
+         * pouvant aller à 4 s. Elle a droit à son délai plein — c'est une
+         * demande neuve pour le distant, qui n'a encore rien vu d'elle —,
+         * et rentrer dans l'état le lui rend.
          */
-        "sip:sharing": (ev, ctx, fx) => {
-          fx.data.sharing = ev.on ? "on" : "off";
-          fx.data.mediaPending = false;
-          publish("connected", ctx, fx.data);
-          return goto("connected", ev.on ? "partage établi" : "partage retiré");
-        },
-        /**
-         * L'écran a été coupé depuis la barre du navigateur pendant que la
-         * négociation était en vol. Rien de plus à lancer — l'offre en
-         * cours conclura —, mais l'écran doit cesser de dire que je partage.
-         */
-        "sip:shareEnded": (_ev, ctx, fx) => {
-          if (fx.data.sharing === "off") return undefined;
-          fx.data.sharing = "off";
-          publish("connected", ctx, fx.data);
-          return stay("partage arrêté par le navigateur");
-        },
-        "sip:mediaChanged": (ev, ctx, fx) => {
-          // ce que nous avions demandé et que le distant n'a pas suivi :
-          // c'est la différence entre `asked` et ce qui a été négocié
-          const refused = MEDIA_KINDS.filter((k) => fx.data.asked[k] && !ev.media[k]);
-          fx.data.media = ev.media;
-          fx.data.mediaPending = false;
-          const kind = refused[0];
-          if (kind !== undefined) {
-            notify(ctx, fx, msg(NOTICE[kind].refused, { peer: peerName(fx.data) }));
-            return goto("connected", `${kind} refusé`);
-          }
-          publish("connected", ctx, fx.data);
-          return goto("connected", "média négocié");
-        },
-        "sip:mediaRefused": (ev, ctx, fx) => {
-          // le partage a sa propre phrase : rien de ce que l'appel
-          // transporte n'a bougé, et parler de « la vidéo » ici ferait
-          // croire à la caméra qui vient de s'éteindre (ADR 0005, D3)
-          if (ev.share === true) {
-            fx.data.sharing = "off";
-            fx.data.mediaPending = false;
-            notify(
-              ctx,
-              fx,
-              ev.by === "remote"
-                ? msg("notice.shareRefused", { peer: peerName(fx.data) })
-                : msg("notice.shareUnavailable"),
-            );
-            return goto("connected", "partage refusé");
-          }
-          // ce que nous demandions, avant de revenir à ce que l'appel porte
-          const kind = changed(fx.data.asked, fx.data.media)[0] ?? "video";
-          fx.data.asked = fx.data.media;
-          fx.data.mediaPending = false;
-          // le distant a dit non, ou la demande n'a jamais pu partir d'ici
-          // (capteur pris ailleurs) : ce n'est pas la même phrase
-          notify(
-            ctx,
-            fx,
-            ev.by === "remote"
-              ? msg(NOTICE[kind].refused, { peer: peerName(fx.data) })
-              : msg(NOTICE[kind].unavailable),
-          );
-          return goto("connected", "refus");
-        },
-        // les deux offres se croisent (RFC 3261 §14.1) : la nôtre est déjà
-        // partie, celle du distant attendra son tour
-        "sip:mediaOffer": (ev) => {
-          ev.offer.reject();
-        },
+        "sip:offering": () => goto("renegotiating", "offre reprise"),
       },
       after: {
         /**
          * Le délai **côté utilisateur** : le distant n'a jamais conclu,
-         * l'appel continue, et les icônes média cessent d'attendre. Il
-         * couvre la reprise après 491, qui peut demander jusqu'à 4 s avant
-         * même de repartir.
+         * l'appel continue, et les icônes média cessent d'attendre.
+         *
+         * Il ne court que depuis l'offre partie (`preparing`), et se
+         * remet à zéro à chaque nouvelle offre : ce qu'il mesure est le
+         * silence du correspondant, jamais le temps qu'un capteur met à
+         * s'ouvrir ici.
          *
          * Il tombe **avant** celui de la transaction SIP (Timer B, 32 s,
          * RFC 3261 §17.1.1.2), qui est ce qui conclut réellement l'offre
@@ -1189,6 +1252,11 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           // `sip:mediaChanged` à attendre, et rien à verrouiller — la scène
           // s'ouvrira sur `sip:peerSharing`, une fois la réponse écrite
           if (adds.length === 0) return goto("connected", "écran accepté");
+          // **`renegotiating` directement, et non `preparing`** : ce qui est
+          // en vol ici est l'offre du *distant*, déjà reçue, à laquelle nous
+          // écrivons une réponse. Aucune offre ne part d'ici, donc aucun
+          // `sip:offering` ne viendra — et l'attente se chronomètre dès
+          // maintenant, puisque le correspondant, lui, attend déjà
           return goto("renegotiating", `accepté : ${adds.join(", ")}`);
         },
         "ui:rejectMedia": (_ev, ctx, fx) => {

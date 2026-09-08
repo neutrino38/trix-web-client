@@ -188,6 +188,24 @@ export type CallSipEvent =
       share?: boolean;
     }
   /**
+   * **Notre offre vient d'être écrite, et elle part.** Tout ce qui la
+   * précède se passe ici — le sélecteur d'écran attend un choix, la caméra
+   * une autorisation, le navigateur rassemble ses candidats ICE —, et le
+   * distant n'en sait rien : tant que cet avis n'est pas venu, il n'a
+   * **rien reçu** à quoi répondre.
+   *
+   * C'est ce qui sépare les deux temps d'une renégociation, et c'est le
+   * délai qui en dépend : mesuré depuis le clic, il comptait l'hésitation
+   * de l'utilisateur devant le sélecteur d'écran comme un silence du
+   * correspondant — un partage abandonné trois secondes après avoir été
+   * offert (constaté en réel le 2026-09-08). Mesuré depuis ici, il ne
+   * compte que ce qu'il prétend compter.
+   *
+   * Il revient à **chaque** offre, la reprise après un 491 comprise
+   * (RFC 3261 §14.1) : celle-là a droit à son délai plein, elle aussi.
+   */
+  | { type: "sip:offering" }
+  /**
    * **Ce que j'émets d'écran vient d'être négocié** (ADR 0005). Un
    * événement à part, parce que le partage n'est pas un média de l'appel :
    * `sip:mediaChanged` continue de ne parler que de la conversation.
@@ -1334,6 +1352,15 @@ export function mediaControl(
       // est le visage. C'est la seule chose que Trix écrive dans une offre.
       const mid = share.ours?.mid;
       if (mid) e.sdp = withSharedVideo(e.sdp, mid);
+      // **L'offre est écrite, et elle part dans la foulée** : JsSIP
+      // n'émet cet événement qu'une fois la description locale posée et la
+      // collecte ICE close, juste avant d'écrire le message. C'est donc
+      // d'ici, et de nulle part ailleurs, que se compte l'attente du
+      // distant — le capteur et l'ICE sont de notre côté du fil.
+      //
+      // `asking` sépare nos renégociations de l'offre initiale, qui part
+      // avec l'INVITE et n'attend aucun verrou.
+      if (asking !== null) send({ type: "sip:offering" });
       return;
     }
     if (refusing.size === 0 || e.originator !== "local" || e.type !== "answer") return;
@@ -1719,7 +1746,13 @@ export function mediaControl(
     },
     setMedia(kind, on) {
       const conn = pc;
-      if (!conn || session.isEnded()) return;
+      // **toute commande média rend un avis**, celle qui ne peut rien
+      // faire comme les autres : la machine tient son verrou jusqu'à ce
+      // que le port ait parlé, et un silence l'y laisserait pour de bon
+      if (!conn || session.isEnded()) {
+        send({ type: "sip:mediaRefused", by: "local" });
+        return;
+      }
       if (!raw.isReadyToReOffer()) {
         // une négociation est déjà en vol : réessayer plus tard vaut mieux
         // que deux offres qui se croisent (RFC 3261 §14.1, « glare »)
@@ -1810,7 +1843,12 @@ export function mediaControl(
      */
     startShare() {
       const conn = pc;
-      if (!conn || session.isEnded()) return;
+      // le même devoir d'avis que `setMedia` : rien ne se prépare, et la
+      // machine doit pouvoir rendre la main
+      if (!conn || session.isEnded()) {
+        send({ type: "sip:mediaRefused", by: "local", share: true });
+        return;
+      }
       if (peerSharing) {
         // **un seul partage à la fois** (D9). L'écran le dit déjà en grisant
         // le bouton ; l'événement qui arriverait malgré tout — un clic parti
@@ -1837,7 +1875,12 @@ export function mediaControl(
     },
     stopShare() {
       const conn = pc;
-      if (!conn || !share.ours || session.isEnded()) return;
+      // rien à retirer, ou plus de connexion pour le dire : l'écran ne
+      // part plus de toute façon, et c'est cela qu'on rapporte
+      if (!conn || !share.ours || session.isEnded()) {
+        send({ type: "sip:sharing", on: false });
+        return;
+      }
       if (!raw.isReadyToReOffer()) {
         // rien ne peut partir maintenant — mais rien ne part non plus : la
         // piste s'arrête, et la m-section rendue inerte le dira d'elle-même

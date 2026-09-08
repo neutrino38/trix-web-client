@@ -372,6 +372,38 @@ Puis la trace (`sip/record.ts` : « partage démarré », « partage refusé »)
 *Critère de sortie :* un appel avec partage rend un bilan média dont les débits vidéo
 sont ceux de la caméra, et `npm run diagrams` ne diverge pas.
 
+### Après SC-5 — ce que le premier essai en réel a corrigé
+
+**2026-09-08, bureau → mobile, à travers le B2BUA Kelixip.** Le partage n'a jamais
+atteint le correspondant, et le poste émetteur a annoncé un refus que personne n'avait
+prononcé. La trace SIP dit tout en trois lignes :
+
+```
+17:35:14.565  ui:toggleShare → renegotiating "partage d'écran"
+17:35:39.587  → INVITE (CSeq 7725, a=group:BUNDLE 0 1 2 3)
+17:35:42.568  partage d'écran refusé (abandon local)
+```
+
+Vingt-cinq secondes séparent le clic de l'offre : c'est le temps que le sélecteur de
+Chrome a mis à rendre une réponse — « quelle fenêtre partagez-vous ? » est une question
+posée à un humain. Or le délai de 28 s courait depuis l'entrée dans `renegotiating`,
+c'est-à-dire depuis le clic : il a fauché l'offre trois secondes après son départ, avant
+que le distant ait pu en dire quoi que ce soit.
+
+Le défaut n'est pas propre au partage : `setMedia` ouvre lui aussi son capteur avant
+d'offrir. Il ne s'était jamais vu parce que `getUserMedia` rend la main tout de suite sur
+une permission déjà accordée, là où le sélecteur d'écran demande une vraie décision.
+
+**Correctif : l'attente a deux temps.** `preparing` — le capteur s'ouvre, le navigateur
+rassemble ses candidats ICE, rien n'est parti — n'a aucun délai : ce qu'on y attend est
+une décision de l'utilisateur devant une boîte modale. `renegotiating` commence sur
+`sip:offering`, que le port émet là où il relit le SDP local d'une renégociation, juste
+avant que JsSIP n'écrive le message ; les 28 s ne comptent plus que le silence du
+correspondant, et repartent à zéro pour la reprise après un 491. Le verrou unique, lui,
+est posé dès le clic dans les deux états (ADR 0003, D7). Corollaire : **toute commande du
+port rend un avis**, y compris celle qui ne peut rien faire — sans délai pour rattraper un
+silence, un port muet laisserait le verrou posé jusqu'au raccrochage.
+
 ## 5. Conséquences
 
 - `sip/port.ts` cesse de croire qu'il n'y a qu'un flux vidéo par appel — c'est la moitié
