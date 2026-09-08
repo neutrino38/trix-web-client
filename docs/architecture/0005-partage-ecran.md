@@ -404,6 +404,26 @@ est posé dès le clic dans les deux états (ADR 0003, D7). Corollaire : **toute
 port rend un avis**, y compris celle qui ne peut rien faire — sans délai pour rattraper un
 silence, un port muet laisserait le verrou posé jusqu'au raccrochage.
 
+**2026-09-08, second essai.** `preparing` a bien absorbé les 5,7 s du sélecteur, et le
+délai n'a couru qu'à partir de l'offre. Le partage n'a pas abouti pour autant, et la
+trace a montré deux défauts de plus, tous deux chez nous :
+
+```
+19:38:47.324  sip:offering → renegotiating "offre partie"
+19:38:47.329  sip:offering → renegotiating "offre reprise"      ← cinq millisecondes
+19:39:15.331  abandon local (28 s après l'offre)
+19:39:19.330  → BYE Reason: cause=408                           ← l'appel meurt, chez nous
+```
+
+**Le 408 de la transaction raccrochait l'appel.** Le délai côté utilisateur (28 s) tombe
+avant le Timer B (32 s) et remet `asking` à null ; quatre secondes plus tard, le crochet
+natif de JsSIP reprenait la main et envoyait un BYE sur un appel que personne n'avait
+raccroché. La déviation suit désormais la **transaction**, et non la demande : il n'y a
+alors plus rien à abandonner, mais toujours rien à raccrocher non plus.
+
+**JsSIP émet `sdp` deux fois** pour une même offre de re-INVITE — à la fin de la collecte
+ICE, puis juste avant d'écrire le message. Un seul départ, donc un seul `sip:offering`.
+
 ## 5. Conséquences
 
 - `sip/port.ts` cesse de croire qu'il n'y a qu'un flux vidéo par appel — c'est la moitié

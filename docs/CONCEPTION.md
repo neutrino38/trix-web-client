@@ -575,6 +575,12 @@ d'elle-même**, avant même que le re-INVITE n'atteigne notre interception. Un d
 accuse réception puis se tait — utilisateur parti sans trancher, B2BUA qui ne relaie que
 les réponses finales — laisserait sinon l'offre en vol pour toujours.
 
+**Et le Timer B tombe après lui.** L'abandon rend la main à l'écran, mais la transaction
+vit encore quatre secondes : le 408 qui la conclut retrouvait alors le crochet natif de
+JsSIP, c'est-à-dire un BYE (`Reason: cause=408`) sur un appel que personne n'avait
+raccroché. La déviation du crochet suit donc la **transaction**, et non la demande — il
+n'y a plus rien à abandonner à ce moment-là, mais toujours rien à raccrocher non plus.
+
 **Aucun CANCEL n'est envoyé** pour autant : RFC 3261 §9.1 l'interdit tant qu'aucune
 réponse provisoire n'est arrivée — et c'est précisément le cas où le Timer B, lui,
 tranche —, JsSIP ne l'expose que pour l'INVITE initial, et les piles réelles interprètent

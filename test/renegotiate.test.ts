@@ -535,6 +535,29 @@ describe("l'offre retirée par le délai côté utilisateur", () => {
     expect(session.pc.transceivers.find((t) => t.kind === "video")!.direction).toBe("inactive");
   });
 
+  /**
+   * **Le 408 qui suit un abandon ne raccroche pas.** Le délai côté
+   * utilisateur (28 s) tombe avant le Timer B de la transaction (32 s) :
+   * quatre secondes plus tard, celle-ci meurt à son tour, et JsSIP en
+   * tirait un BYE `Reason: cause=408` — sur un appel que personne n'avait
+   * raccroché, et dont l'utilisateur avait seulement vu une demande
+   * échouer (constaté en réel le 2026-09-08, 19:39:19).
+   */
+  it("le délai de la transaction, tombé après l'abandon, ne coupe pas l'appel", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    ctl.abandonMedia();
+    events.length = 0;
+
+    session.timeOut();
+
+    expect(session.hungUpOnTimeout).toBe(false);
+    expect(session.ended).toBe(false);
+    // rien à dire à l'écran non plus : l'abandon a déjà tout annoncé
+    expect(events).toEqual([]);
+  });
+
   it("et la vidéo peut être redemandée juste après", async () => {
     const { session, ctl } = control(["audio", "video"]);
     ctl.setMedia("video", true);
@@ -1661,6 +1684,33 @@ describe("l'offre qui part", () => {
     await vi.runAllTimersAsync();
     session.sdp("local", "offer", offre);
     expect(events).toEqual([{ type: "sip:offering" }]);
+  });
+
+  /**
+   * JsSIP émet `sdp` **deux fois** pour la même offre de re-INVITE : à la
+   * fin de la collecte ICE, puis juste avant d'écrire le message. Un seul
+   * départ, donc un seul avis — sans quoi le bloc rentrait deux fois dans
+   * son état d'attente, à cinq millisecondes d'intervalle.
+   */
+  it("ne s'annonce qu'une fois, même si JsSIP relit le SDP", async () => {
+    const { session, events, ctl } = control(["audio"]);
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    session.sdp("local", "offer", offre);
+    session.sdp("local", "offer", offre);
+    expect(events.filter((e) => e.type === "sip:offering")).toHaveLength(1);
+  });
+
+  it("mais l'offre suivante s'annonce à son tour", async () => {
+    const { session, events, ctl } = control(["audio", "video"]);
+    ctl.setMedia("video", false);
+    await vi.runAllTimersAsync();
+    session.sdp("local", "offer", offre);
+    session.reinvites[0]!.succeeded({ body: null });
+    ctl.setMedia("video", true);
+    await vi.runAllTimersAsync();
+    session.sdp("local", "offer", offre);
+    expect(events.filter((e) => e.type === "sip:offering")).toHaveLength(2);
   });
 
   it("l'offre initiale de l'appel n'annonce rien : aucun verrou ne l'attend", () => {

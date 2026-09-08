@@ -1093,6 +1093,27 @@ export function mediaControl(
    */
   let asking: { role: StreamRole; on: boolean } | null = null;
   /**
+   * **Une transaction de re-INVITE, la nôtre, est ouverte.** Distinct
+   * d'`asking`, qui dit ce que la demande *veut* : le délai côté
+   * utilisateur (28 s) tombe **avant** le Timer B de la transaction (32 s,
+   * RFC 3261 §17.1.1.2) et remet `asking` à null, mais la transaction, elle,
+   * vit encore quatre secondes de plus. Sans ce drapeau, le 408 qui la
+   * conclut retrouvait le crochet natif de JsSIP — c'est-à-dire un BYE
+   * (`Reason: cause=408`) sur un appel que personne n'avait raccroché,
+   * constaté en réel le 2026-09-08 à 19:39:19, quatre secondes après un
+   * abandon local.
+   */
+  let inFlight = false;
+  /**
+   * **L'offre en vol s'est déjà annoncée.** JsSIP émet `sdp` **deux fois**
+   * pour une même offre de re-INVITE — une fois à la fin de la collecte
+   * ICE (`_createLocalDescription`, dont le SDP est celui qui part), une
+   * seconde juste avant d'écrire le message. Un seul départ, donc un seul
+   * `sip:offering` : sans cela le bloc rentrait deux fois dans son état
+   * d'attente, à cinq millisecondes d'intervalle.
+   */
+  let offered = false;
+  /**
    * **Notre partage a-t-il déjà été négocié ?** C'est ce qui décide, à
    * l'abandon, entre recycler la m-section (D6) et arrêter le transceiver
    * (D7) : une m-section qui n'a jamais existé sur le fil n'a rien à
@@ -1359,8 +1380,12 @@ export function mediaControl(
       // distant — le capteur et l'ICE sont de notre côté du fil.
       //
       // `asking` sépare nos renégociations de l'offre initiale, qui part
-      // avec l'INVITE et n'attend aucun verrou.
-      if (asking !== null) send({ type: "sip:offering" });
+      // avec l'INVITE et n'attend aucun verrou ; `offered` garde le premier
+      // des deux passages que JsSIP fait sur la même offre.
+      if (asking !== null && !offered) {
+        offered = true;
+        send({ type: "sip:offering" });
+      }
       return;
     }
     if (refusing.size === 0 || e.originator !== "local" || e.type !== "answer") return;
@@ -1537,9 +1562,12 @@ export function mediaControl(
    * possible de tout l'appel.
    */
   const reinvite = (): void => {
+    inFlight = true;
+    offered = false;
     raw._sendReinvite({
       eventHandlers: {
         succeeded: (response) => {
+          inFlight = false;
           const body = (response as { body?: string | null }).body;
           const wanted = asking;
           asking = null;
@@ -1573,6 +1601,7 @@ export function mediaControl(
             send({ type: "sip:mediaRefused", by: "remote" });
         },
         failed: (response) => {
+          inFlight = false;
           const conn = pc;
           const statusCode = statusOf(response ?? {});
           const wanted = asking;
@@ -1633,14 +1662,29 @@ export function mediaControl(
    * JsSIP en tire un 408 qui **coupe la communication**. Or personne n'a
    * raccroché : l'appel continue, simplement sans le média demandé.
    *
-   * Le crochet n'est dévié que tant que **notre** offre attend sa réponse.
-   * Tout le reste garde le sien, à commencer par le rafraîchissement de
-   * session : si celui-là expire, c'est bien que le distant a disparu.
+   * Le crochet est dévié tant qu'une **transaction de renégociation à
+   * nous** est ouverte — et non tant qu'une demande attend, ce qui n'est
+   * pas la même durée. Le délai côté utilisateur (28 s) tombe avant le
+   * Timer B (32 s) et remet `asking` à null : quatre secondes plus tard, le
+   * 408 de la transaction retrouvait le crochet natif et raccrochait un
+   * appel dont l'utilisateur avait simplement vu une demande échouer. Il
+   * n'y a alors plus rien à abandonner — c'est déjà fait — mais toujours
+   * rien à raccrocher non plus.
+   *
+   * Tout le reste garde le crochet natif, à commencer par le
+   * rafraîchissement de session : si celui-là expire, c'est bien que le
+   * distant a disparu.
    */
   const nativeTimeout = raw.onRequestTimeout.bind(raw);
   raw.onRequestTimeout = (): void => {
-    if (asking === null) {
+    if (asking === null && !inFlight) {
       nativeTimeout();
+      return;
+    }
+    inFlight = false;
+    // l'abandon a déjà eu lieu : la transaction ne fait que finir de mourir
+    if (asking === null) {
+      traceNote("re-INVITE expiré après abandon — l'appel continue");
       return;
     }
     abandon("local");
