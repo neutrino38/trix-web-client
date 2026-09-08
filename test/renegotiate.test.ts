@@ -19,7 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mediaControl, wrapSession } from "../src/sip/port.js";
+import { followRemoteTarget, mediaControl, wrapSession } from "../src/sip/port.js";
 import type { RttChannel } from "../src/sip/rtt.js";
 import type { CallSipEvent, MediaKind } from "../src/sip/port.js";
 
@@ -1755,3 +1755,50 @@ describe("l'offre qui part", () => {
  * 200 OK. L'ACK survit à cette contradiction, le re-INVITE non : il meurt
  * en silence, et le correspondant ne voit jamais la demande de partage.
  */
+describe("la cible du dialogue", () => {
+  /** Une session JsSIP réduite à ce que la correction touche. */
+  function dialogue(target: string) {
+    return { _dialog: { uac_pending_reply: false, _remote_target: target } };
+  }
+
+  /** Le 200 OK et son Contact, tel que JsSIP le donne à lire. */
+  function reponse(contact: string | null) {
+    return {
+      response: {
+        parseHeader: (name: string) => {
+          if (name !== "contact" || contact === null) return undefined;
+          return { uri: contact };
+        },
+      },
+    };
+  }
+
+  it("le Contact du 200 OK remplace celui du 180", () => {
+    const session = dialogue("sip:qt8rm1fg@0.0.0.0");
+    followRemoteTarget(session as never, reponse("sip:qt8rm1fg@[2001:db8::1]:8443;transport=wss"));
+    expect(session._dialog._remote_target).toBe("sip:qt8rm1fg@[2001:db8::1]:8443;transport=wss");
+  });
+
+  it("une réponse sans Contact laisse la cible telle quelle", () => {
+    const session = dialogue("sip:bob@192.0.2.1");
+    followRemoteTarget(session as never, reponse(null));
+    expect(session._dialog._remote_target).toBe("sip:bob@192.0.2.1");
+  });
+
+  it("un Contact illisible ne fait rien échouer", () => {
+    const session = dialogue("sip:bob@192.0.2.1");
+    const cassee = {
+      response: {
+        parseHeader: () => {
+          throw new Error("Contact malformé");
+        },
+      },
+    };
+    expect(() => followRemoteTarget(session as never, cassee)).not.toThrow();
+    expect(session._dialog._remote_target).toBe("sip:bob@192.0.2.1");
+  });
+
+  it("une session sans dialogue ne fait rien échouer non plus", () => {
+    expect(() => followRemoteTarget({} as never, reponse("sip:bob@192.0.2.1"))).not.toThrow();
+  });
+});

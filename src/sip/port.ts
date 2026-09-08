@@ -590,6 +590,45 @@ export function createJsSipPort(): SipPort {
 type Session = ReturnType<JsSIP.UA["call"]>;
 
 /** Seul point de traduction des événements d'une session JsSIP en événements de machine. */
+/**
+ * **Le 2xx dit où écrire la suite** — RFC 3261 §12.2.1.2 : « the UAC MUST
+ * update the dialog's remote target URI with the URI from the Contact
+ * header field » de la réponse finale. JsSIP ne le fait pas quand un
+ * dialogue précoce existait déjà : son `Dialog.update()` ne reprend que le
+ * jeu de routes, et la cible reste celle du **180 Ringing**.
+ *
+ * Cela ne se voit jamais tant que les deux Contact se valent. Le B2BUA du
+ * déploiement, lui, annonce `Contact: sip:xxxx@0.0.0.0` dans ses 180, et
+ * porte sa vraie adresse dans le 200 OK. Tout ce que nous envoyons ensuite
+ * dans le dialogue part alors vers une Request-URI qui n'existe pas :
+ * l'ACK passe — un B2BUA le rattache à sa transaction —, mais le
+ * **re-INVITE meurt en silence**. Ni 100, ni 200, ni 488, et le
+ * correspondant ne voit jamais la demande de partage (constaté en réel les
+ * 2026-09-07 et 2026-09-08 : deux essais, deux re-INVITE partis vers
+ * `0.0.0.0`, aucune réponse).
+ *
+ * On corrige donc ce que la norme exige, à l'endroit où JsSIP l'omet, et
+ * seulement quand la réponse porte réellement un Contact. JsSIP émet
+ * `accepted` **avant** d'envoyer l'ACK : la correction vaut donc pour tout
+ * ce qui suit le 200 OK, ACK compris.
+ *
+ * Exporté pour les tests : le cas ne se reproduit qu'avec un intermédiaire
+ * qui se contredit d'une réponse à l'autre.
+ */
+export function followRemoteTarget(session: Session, e: unknown): void {
+  const response = (e as { response?: { parseHeader?(name: string): unknown } } | undefined)
+    ?.response;
+  const dialog = (session as unknown as Renegotiable)._dialog;
+  if (!dialog || typeof response?.parseHeader !== "function") return;
+  try {
+    const contact = response.parseHeader("contact") as { uri?: unknown } | undefined;
+    if (contact?.uri) dialog._remote_target = contact.uri;
+  } catch {
+    // un Contact absent ou illisible laisse la cible telle quelle : c'est
+    // encore ce qui a le plus de chances de fonctionner
+  }
+}
+
 function bindSession(
   session: Session,
   send: (ev: CallSipEvent) => void,
@@ -608,7 +647,10 @@ function bindSession(
   session.on("progress", (e: unknown) =>
     send({ type: "sip:progress", media: earlyMediaOf(e, carries) }),
   );
-  session.on("accepted", () => send({ type: "sip:accepted" }));
+  session.on("accepted", (e: unknown) => {
+    followRemoteTarget(session, e);
+    send({ type: "sip:accepted" });
+  });
   session.on("confirmed", () => send({ type: "sip:confirmed" }));
   session.on("ended", (e) =>
     send({ type: "sip:ended", cause: causeOf(e), originator: originatorOf(e) }),
@@ -1025,7 +1067,15 @@ interface Renegotiable {
    * laisserait levé jusqu'au raccrochage, et l'appel ne renégocierait plus
    * rien du tout.
    */
-  _dialog?: { uac_pending_reply: boolean } | null;
+  _dialog?: {
+    uac_pending_reply: boolean;
+    /**
+     * **Où partent nos requêtes dans le dialogue** (RFC 3261 §12.2.1.1) :
+     * la Request-URI de tout ce que nous émettons ensuite — ACK, re-INVITE,
+     * BYE. Voir `followRemoteTarget` pour la raison d'y toucher.
+     */
+    _remote_target?: unknown;
+  } | null;
 }
 
 /** Le re-INVITE tel que nous avons besoin de le lire et d'y répondre. */

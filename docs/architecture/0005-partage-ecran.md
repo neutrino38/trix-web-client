@@ -424,6 +424,14 @@ alors plus rien à abandonner, mais toujours rien à raccrocher non plus.
 **JsSIP émet `sdp` deux fois** pour une même offre de re-INVITE — à la fin de la collecte
 ICE, puis juste avant d'écrire le message. Un seul départ, donc un seul `sip:offering`.
 
+**Et le re-INVITE partait vers `0.0.0.0`.** Le B2BUA annonce
+`Contact: sip:xxxx@0.0.0.0` dans son 180 Ringing et sa vraie adresse dans le 200 OK ;
+JsSIP ne reprend pas la cible du dialogue sur la réponse finale, contrairement à
+RFC 3261 §12.2.1.2. L'ACK survit à cette contradiction — un B2BUA le rattache à sa
+transaction —, le re-INVITE non : ni 100, ni 200, ni 488. C'est ce qui a fait échouer les
+deux premiers essais avant même que la question de la topologie SDP ne se pose. Le port
+reprend désormais le Contact du 2xx, avant même l'ACK (`followRemoteTarget`).
+
 ## 5. Conséquences
 
 - `sip/port.ts` cesse de croire qu'il n'y a qu'un flux vidéo par appel — c'est la moitié

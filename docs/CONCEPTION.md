@@ -558,6 +558,14 @@ Quatre détails de JsSIP méritent d'être écrits :
   Tout le reste garde le sien, à commencer par le rafraîchissement de session : si
   celui-là expire, c'est bien que le distant a disparu.
 
+- **le 2xx a le dernier mot sur la cible du dialogue** (RFC 3261 §12.2.1.2), et JsSIP
+  ne la reprend pas : quand un dialogue précoce existe déjà, son `Dialog.update()` ne
+  remet à jour que le jeu de routes, et la Request-URI de tout ce qui suit reste celle du
+  **180 Ringing**. Invisible tant que les deux Contact se valent ; fatal derrière un
+  intermédiaire qui annonce `sip:xxxx@0.0.0.0` dans son 180 et sa vraie adresse dans son
+  200 OK — l'ACK passe, le re-INVITE meurt en silence, sans 100 ni réponse finale, et le
+  correspondant ne voit jamais la demande. Le port reprend donc le Contact de la réponse
+  finale, avant même l'ACK.
 - le drapeau `uac_pending_reply` du dialogue est levé à la main quand une offre est
   abandonnée. Tant qu'un INVITE que nous avons émis attend sa réponse finale
   (RFC 3261 §14.2), `isReadyToReOffer()` est faux ; JsSIP le retombe à la fin de la
