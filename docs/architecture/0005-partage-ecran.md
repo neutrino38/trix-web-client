@@ -432,6 +432,28 @@ transaction —, le re-INVITE non : ni 100, ni 200, ni 488. C'est ce qui a fait 
 deux premiers essais avant même que la question de la topologie SDP ne se pose. Le port
 reprend désormais le Contact du 2xx, avant même l'ACK (`followRemoteTarget`).
 
+**2026-09-08, 21:00 — les deux traces à la fois, et la réponse.** Le re-INVITE ne parvient
+**pas** au correspondant : entre l'ACK et le BYE, sa trace ne contient aucun INVITE. Les
+logs du serveur nomment la cause — `SIP message exceeds max length of 10000`, levé par
+son analyseur et rattrapé par sa couche transport, qui jette le message **sans répondre**.
+Le re-INVITE du partage pèse ~13,4 ko (SDP 12 947) contre 8,5 ko pour l'INVITE initial :
+la limite tombe au milieu de l'usage WebRTC normal — trois m-sections passent, quatre
+non. RFC 3261 §18.1.1 ne borne la taille que sur transport **non fiable**, et prescrit
+justement de passer sur un transport fiable au-delà ; ici la borne est posée sur WSS.
+
+Aucun contournement client n'est crédible : `bundlePolicy: "max-bundle"` n'économiserait
+que ~1,3 ko de candidats dupliqués, et pré-négocier la m-section du partage dès l'INVITE
+garderait les mêmes quatre m-sections. **Le partage est prêt et bloqué en aval.**
+
+**Le poste émetteur, lui, fait ce que cet ADR décrit** : offre valide, `a=content:slides`
+posé, m-section ajoutée en `sendonly`, délai qui ne court que depuis le départ de
+l'offre, abandon qui laisse l'appel intact, requêtes in-dialogue à la bonne adresse.
+
+**Ce qui reste inconnu** : le comportement du récepteur. Trois essais, et aucun n'a mis
+SC-3 à l'épreuve — la question posée, le 488 du refus, la scène n'ont été vus qu'en test.
+Le carnet du récepteur consigne désormais ce qu'il fait de chaque offre reçue, ce qui
+rendra le premier essai qui aboutira lisible des deux côtés.
+
 ## 5. Conséquences
 
 - `sip/port.ts` cesse de croire qu'il n'y a qu'un flux vidéo par appel — c'est la moitié

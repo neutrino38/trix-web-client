@@ -1802,3 +1802,50 @@ describe("la cible du dialogue", () => {
     expect(() => followRemoteTarget({} as never, reponse("sip:bob@192.0.2.1"))).not.toThrow();
   });
 });
+
+/**
+ * **Le handler du re-INVITE reçu remplace celui de JsSIP** : ce qu'il ne
+ * fait pas, personne ne le fait. Une exception y laisse l'appelant sur une
+ * offre en suspens jusqu'à ce que sa transaction expire, et sa trace ne
+ * montre qu'un silence dont rien ne dit d'où il vient.
+ */
+describe("le re-INVITE reçu répond toujours", () => {
+  /** L'offre du distant : audio, sa caméra, et un écran qu'il partage. */
+  const avecEcran = [
+    "v=0",
+    "o=- 1 1 IN IP4 192.0.2.1",
+    "s=-",
+    "t=0 0",
+    "m=audio 49170 RTP/AVP 0",
+    "a=mid:0",
+    "a=sendrecv",
+    "m=video 51374 RTP/AVP 96",
+    "a=mid:1",
+    "a=sendrecv",
+    "m=video 51376 RTP/AVP 96",
+    "a=mid:3",
+    "a=content:slides",
+    "a=sendonly",
+  ].join("\r\n");
+
+  it("une erreur de traitement laisse JsSIP répondre", () => {
+    const { session } = control(["audio", "video"]);
+    // ce que la lecture de l'état de la connexion peut faire de pire
+    session.pc.getTransceivers = () => {
+      throw new Error("boom");
+    };
+
+    session.receiveReinvite(avecEcran);
+
+    expect(session.passedThrough).toBe(true);
+  });
+
+  it("mais pas une seconde fois quand la question est déjà posée", () => {
+    const { session, events } = control(["audio", "video"]);
+    session.receiveReinvite(avecEcran);
+    // la question est partie : c'est la popup qui répondra
+    expect(events.some((e) => e.type === "sip:mediaOffer")).toBe(true);
+    expect(session.passedThrough).toBe(false);
+    expect(session.replied).toBeNull();
+  });
+});

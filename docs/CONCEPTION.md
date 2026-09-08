@@ -547,6 +547,14 @@ Quatre détails de JsSIP méritent d'être écrits :
   en `media_offer` — 200 OK si l'utilisateur accepte, 488 Not Acceptable Here s'il
   refuse ou ne répond pas en 25 s. Ce qui ne fait qu'ôter un média, ou n'y touche pas,
   suit le chemin normal de JsSIP.
+- le handler du re-INVITE **reçu** ne laisse jamais une offre sans réponse de son fait.
+  Il remplace celui de JsSIP : ce qu'il ne fait pas, personne ne le fait, et une exception
+  y laisserait l'appelant attendre l'expiration de sa transaction — un silence que sa
+  trace ne distingue pas d'un message jamais arrivé. L'issue de secours est le chemin
+  normal de JsSIP, sauf si la question est déjà posée à l'écran : c'est alors la popup qui
+  répond. Et le carnet du récepteur consigne ce qu'il a fait de chaque offre reçue —
+  question posée, répondue sans question, erreur —, pour qu'une renégociation qui
+  n'aboutit pas se lise **des deux côtés**.
 - le re-INVITE **resté sans réponse finale** ne coupe plus la communication. JsSIP câble
   le délai de la transaction (Timer B, RFC 3261 §17.1.1.2) sur `onRequestTimeout`, qui
   raccroche — 408. C'est juste pour l'INVITE initial, qui n'a jamais établi d'appel ;

@@ -1759,7 +1759,24 @@ export function mediaControl(
    * l'acceptation vaut pour tout ce qu'elle porte.
    */
   const passThrough = raw._receiveReinvite.bind(raw);
-  raw._receiveReinvite = (request: InDialogRequest): void => {
+  /**
+   * **Le re-INVITE reçu ne doit jamais rester sans réponse de notre fait.**
+   *
+   * Ce handler remplace celui de JsSIP : ce qu'il ne fait pas, personne ne
+   * le fera. Une exception ici — un SDP d'une forme qu'on n'attendait pas,
+   * un état qui manque — laisse l'appelant sur une offre en suspens
+   * jusqu'à ce que sa transaction expire, et sa trace ne montre qu'un
+   * silence dont rien ne dit d'où il vient. La question ne se pose pas de
+   * savoir si cela peut arriver : un poste qui a répondu 200 OK à tous les
+   * re-INVITE d'un ajout de vidéo et rien à celui d'un partage se
+   * comporterait exactement comme ça.
+   *
+   * L'issue de secours est donc le chemin normal de JsSIP — il applique
+   * l'offre et répond, quitte à accepter ce que nous aurions questionné —
+   * sauf si la question est déjà posée, auquel cas c'est la popup qui
+   * répondra et une seconde réponse serait de trop.
+   */
+  const receiveReinvite = (request: InDialogRequest, asked: { yes: boolean }): void => {
     const conn = pc;
     const body = request.body ?? null;
     // le partage ne compte pas dans la question posée : une offre qui
@@ -1790,9 +1807,18 @@ export function mediaControl(
       traceNote("écran du correspondant refusé — un seul partage à la fois");
     }
     if (!conn || (added.length === 0 && !asksShare)) {
+      // le carnet du **récepteur** dit ce qu'il a fait de l'offre : sans
+      // cette ligne, une renégociation qui n'aboutit pas ne se lit que
+      // d'un seul côté, et le silence ne se distingue pas d'un message
+      // qui ne serait jamais arrivé
+      traceNote(conn ? "re-INVITE reçu — répondu sans question" : "re-INVITE reçu avant la connexion");
       passThrough(request);
       return;
     }
+    traceNote(
+      `re-INVITE reçu — question posée : ${[...added, ...(asksShare ? ["écran"] : [])].join(", ")}`,
+    );
+    asked.yes = true;
     let answered = false;
     const once = (fn: () => void): (() => void) => () => {
       if (answered || session.isEnded()) return;
@@ -1828,6 +1854,20 @@ export function mediaControl(
         }),
       },
     });
+  };
+
+  raw._receiveReinvite = (request: InDialogRequest): void => {
+    const asked = { yes: false };
+    try {
+      receiveReinvite(request, asked);
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      traceNote(`re-INVITE : erreur de traitement (${cause})`);
+      // la question est posée : la popup répondra, et une réponse de plus
+      // serait une réponse de trop
+      if (asked.yes) return;
+      passThrough(request);
+    }
   };
 
   return {
