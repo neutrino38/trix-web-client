@@ -18,6 +18,7 @@ import {
   withoutMedia,
 } from "./sdp.js";
 import { traceSocket } from "./trace.js";
+import { useSha256Ha1 } from "./digest.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 import {
   MEDIA_ERROR_EVENTS,
@@ -35,7 +36,19 @@ export type SipEvent =
   | { type: "sip:disconnected" }
   | { type: "sip:registered" }
   | { type: "sip:unregistered" }
-  | { type: "sip:registrationFailed"; cause: string; statusCode?: number }
+  | {
+      type: "sip:registrationFailed";
+      cause: string;
+      statusCode?: number;
+      /**
+       * Le registrar a défié en SHA-256 (RFC 8760) et le compte n'a pas
+       * d'empreinte pour cet algorithme-là : le défi est resté sans
+       * réponse. À dire tel quel plutôt qu'« identifiants refusés » — le
+       * mot de passe est peut-être le bon, il n'a simplement jamais été
+       * condensé ainsi (`sip/digest.ts`).
+       */
+      missingSha256?: boolean;
+    }
   /** URL de proxy rejetée par JsSIP avant toute tentative réseau (schéma/syntaxe). */
   | { type: "sip:invalidProxy"; detail: string }
   /** INVITE entrant : la machine décide de répondre ou de refuser. */
@@ -508,6 +521,19 @@ export function createJsSipPort(): SipPort {
         };
       }
 
+      // L'empreinte SHA-256 du compte, déposée le temps de cet UA : JsSIP
+      // ne transmet au calcul d'un défi que ce que porte sa configuration,
+      // où il n'y a de place que pour un HA1 (`sip/digest.ts`). Le drapeau
+      // retient un défi resté sans réponse, pour que l'échec qui suit
+      // aussitôt le dise.
+      let missingSha256 = false;
+      const releaseSha256 = useSha256Ha1(cfg.authUsername ?? cfg.username, cfg.domain, {
+        ha1: cfg.ha1Sha256,
+        onMissing: () => {
+          missingSha256 = true;
+        },
+      });
+
       // Serveurs ICE du compte : JsSIP les attend par session (`pcConfig`),
       // pas sur l'UA — même configuration pour l'appel sortant et la
       // réponse à un entrant.
@@ -524,12 +550,17 @@ export function createJsSipPort(): SipPort {
       ua.on("unregistered", () => send({ type: "sip:unregistered" }));
       ua.on(
         "registrationFailed",
-        (e: { cause?: string; response?: { status_code?: number } | null }) =>
+        (e: { cause?: string; response?: { status_code?: number } | null }) => {
+          // consommé : le défi suivant peut très bien trouver réponse
+          const unanswered = missingSha256;
+          missingSha256 = false;
           send({
             type: "sip:registrationFailed",
             cause: e.cause ?? "cause inconnue",
             statusCode: e.response?.status_code,
-          }),
+            ...(unanswered ? { missingSha256: true } : {}),
+          });
+        },
       );
       // INVITE entrant : on ne fait que le signaler, la décision (répondre,
       // refuser) appartient aux machines. Les sessions sortantes passent
@@ -555,6 +586,7 @@ export function createJsSipPort(): SipPort {
       return {
         stop() {
           stopped = true;
+          releaseSha256();
           ua.stop();
         },
         refresh() {

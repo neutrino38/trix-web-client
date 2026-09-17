@@ -33,6 +33,18 @@ export interface AccountConfig {
   authUsername: string | null; // identifiant d'authentification, si différent de username
   ha1: string; // jamais le mot de passe
   /**
+   * La même empreinte condensée par SHA-256 (RFC 8760), pour les serveurs
+   * qui défient avec cet algorithme-là. Les deux sont gardées : le serveur
+   * choisit, et MD5 reste ce que défient la plupart.
+   *
+   * **Vide** quand elle n'a pas pu être calculée — compte enregistré avant
+   * son introduction, lien de partage émis par une version précédente. Le
+   * mot de passe n'est nulle part, donc rien ne peut la reconstituer : un
+   * défi SHA-256 restera alors sans réponse, et c'est ce que l'écran dit
+   * (`sip/digest.ts`).
+   */
+  ha1Sha256: string;
+  /**
    * Flash visuel à l'appel entrant (accessibilité sourds — `ui/alert.ts`).
    * Réglage du compte, donc persisté chiffré avec lui : il suit l'utilisateur
    * et non le navigateur. Actif par défaut, y compris pour les comptes
@@ -283,11 +295,17 @@ function migrateEntry(entry: CallLogEntry): CallLogEntry {
  * aucun serveur ICE et aucun texte en temps réel. Exporté parce que la page
  * de partage relit un compte venu d'une autre installation, éventuellement
  * plus ancienne, et lui doit les mêmes défauts.
+ *
+ * L'empreinte SHA-256 est le seul de ces champs dont l'absence ne se
+ * rattrape pas par un défaut : elle se calcule du mot de passe, et le mot
+ * de passe n'est pas là. La chaîne vide dit « inconnue », et c'est le défi
+ * du serveur qui décidera si cela manque.
  */
 export function migrateAccount(cfg: AccountConfig): AccountConfig {
   return {
     ...cfg,
     authUsername: cfg.authUsername ?? null,
+    ha1Sha256: cfg.ha1Sha256 ?? "",
     flashAlert: cfg.flashAlert ?? true,
     ice: cfg.ice ?? { ...NO_ICE },
     rtt: parseRttTransport(cfg.rtt),

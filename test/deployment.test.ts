@@ -17,7 +17,7 @@ import {
   type Deployment,
 } from "../src/deployment.js";
 import type { AccountConfig } from "../src/storage/store.js";
-import { computeHa1 } from "../src/storage/ha1.js";
+import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 
 const ACCOUNT: AccountConfig = {
@@ -27,6 +27,7 @@ const ACCOUNT: AccountConfig = {
   username: "alice",
   authUsername: null,
   ha1: computeHa1("alice", "example.fr", "secret123"),
+  ha1Sha256: computeHa1Sha256("alice", "example.fr", "secret123"),
   flashAlert: true,
   ice: NO_ICE,
   rtt: "none",

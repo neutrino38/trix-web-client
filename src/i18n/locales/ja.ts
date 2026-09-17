@@ -81,7 +81,7 @@ const messages: Translation = {
   "config.passwordSet": "••••••（設定済み）",
   "config.passwordKeep": "現在のパスワードを保つには、空のままにしてください。",
   "config.ha1Note":
-    "パスワードそのものは保存されません。暗号化されたダイジェスト（HA1）だけが、このブラウザーに残ります。",
+    "パスワードそのものは保存されません。暗号化されたダイジェスト（MD5 と SHA-256 の HA1）だけが、このブラウザーに残ります。",
   "config.share": "アカウントの共有",
   "config.shareCopy": "共有リンクをコピー",
   "config.shareWarn":
@@ -496,6 +496,8 @@ const messages: Translation = {
   "error.wssRefused": "プロキシーに接続できません（WSS 接続が拒否されました）",
   "error.wssTimeout": "プロキシーが応答しません（WebSocket タイムアウト）",
   "error.badCredentials": "SIP アドレス、パスワード、または認証ユーザー名が正しくありません",
+  "error.missingSha256":
+    "このサーバーは SHA-256 認証を要求していますが、このアカウントにはその要約がありません。パスワードを入力し直して計算してください。",
   "error.regRefused": "登録が拒否されました：{cause}",
   "error.wssLostDuringReg": "登録中に接続が切れました",
   "error.registrarTimeout": "レジストラーが応答しません",

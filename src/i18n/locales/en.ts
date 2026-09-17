@@ -74,7 +74,7 @@ const messages: Translation = {
   "config.passwordSet": "•••••• (already set)",
   "config.passwordKeep": "Leave blank to keep the current password.",
   "config.ha1Note":
-    "The password itself is never stored — only a digest (HA1), encrypted, in this browser.",
+    "The password itself is never stored — only its digests (HA1 in MD5 and SHA-256), encrypted, in this browser.",
   "config.share": "Account sharing",
   "config.shareCopy": "Copy sharing link",
   "config.shareWarn":
@@ -490,6 +490,8 @@ const messages: Translation = {
   "error.wssRefused": "Cannot reach the proxy (WSS connection refused)",
   "error.wssTimeout": "The proxy is not responding (WebSocket timeout)",
   "error.badCredentials": "Incorrect SIP address, password or authentication username",
+  "error.missingSha256":
+    "This server asks for SHA-256 authentication, and this account has no such digest. Enter the password again to compute it.",
   "error.regRefused": "Registration refused: {cause}",
   "error.wssLostDuringReg": "Connection lost while registering",
   "error.registrarTimeout": "The registrar is not responding",

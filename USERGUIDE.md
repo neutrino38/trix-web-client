@@ -72,10 +72,11 @@ account itself.
 | **Authentication username** | Optional. Tick the box only if your provider authenticates you under a name different from the user part of your address. The reminder text follows what you type in the address field |
 | **Password** | Used once, then thrown away — see below |
 
-Press **Save and connect**. Trix computes an HA1 digest from your credentials, stores that,
-and forgets the password itself. On a later visit the password field shows
-`•••••• (already set)`: **leave it blank to keep the stored digest**, or type a new
-password to replace it.
+Press **Save and connect**. Trix computes HA1 digests from your credentials — one in
+MD5, one in SHA-256, because it is the server that picks which one its challenge uses —
+stores those, and forgets the password itself. On a later visit the password field shows
+`•••••• (already set)`: **leave it blank to keep the stored digests**, or type a new
+password to replace them.
 
 If the server rejects the registration, the form comes back with the reason in plain
 language, the raw SIP code underneath, and the offending field highlighted.
@@ -394,7 +395,7 @@ the browser itself. Nothing is sent anywhere except to the SIP proxy you configu
 
 | Kept | Where | Note |
 |---|---|---|
-| Your account (server, address, display name, HA1 digest, ICE servers, flash setting) | Encrypted, in the browser database | **Your SIP password is never stored** — only the digest computed from it |
+| Your account (server, address, display name, HA1 digests, ICE servers, flash setting) | Encrypted, in the browser database | **Your SIP password is never stored** — only the digests computed from it |
 | TURN password | Encrypted, same place | Stored in full, because the relay needs the secret itself |
 | Call history, with any traces and media summaries | Encrypted, same place, per account | **Clear** in the history head removes it |
 | Theme, language, text size, panel width, preferred call mode, tracing on/off | Browser local storage | Plain display preferences, no personal data |
@@ -410,6 +411,7 @@ Clearing the site's data in your browser removes all of it, account included.
 | *Cannot reach the proxy (WSS connection refused)* | Wrong host or port, or the proxy is down. Check the URL with your provider |
 | *The proxy is not responding (WebSocket timeout)* | Nothing answered. A firewall between you and the proxy is the usual culprit |
 | *Incorrect SIP address, password or authentication username* | Credentials rejected. If your provider authenticates you under a separate name, tick **Authentication username** and fill it in |
+| *This server asks for SHA-256 authentication, and this account has no such digest* | The account was saved before Trix computed SHA-256 digests, or arrived through a sharing link made by an older version. Your password is probably fine — open the settings and type it again, and the missing digest is computed |
 | *Registration refused: …* | The registrar said no, for the reason given. The raw SIP code sits underneath |
 | *The registrar is not responding* | The socket is up but the REGISTER went unanswered |
 | *Connection to the proxy lost* | The network dropped. Trix reconnects on its own |

@@ -88,7 +88,7 @@ const messages: Translation = {
   "config.passwordSet": "•••••• (محفوظة من قبل)",
   "config.passwordKeep": "اتركها فارغة للإبقاء على كلمة المرور الحالية.",
   "config.ha1Note":
-    "لا تُحفَظ كلمة المرور؛ لا يُخزَّن في هذا المتصفّح سوى بصمتها (HA1) مشفَّرةً.",
+    "لا تُحفَظ كلمة المرور؛ لا يُخزَّن في هذا المتصفّح سوى بصمتيها (HA1 بخوارزميتي MD5 و‏SHA-256) مشفَّرتين.",
   "config.share": "مشاركة الحساب",
   "config.shareCopy": "نسخ رابط المشاركة",
   "config.shareWarn":
@@ -521,6 +521,8 @@ const messages: Translation = {
   "error.wssRefused": "تعذّر الاتصال بالوسيط (رُفض اتصال WSS)",
   "error.wssTimeout": "الوسيط لا يستجيب (انتهت مهلة WebSocket)",
   "error.badCredentials": "عنوان SIP أو كلمة المرور أو معرّف المصادقة غير صحيح",
+  "error.missingSha256":
+    "يطلب هذا الخادم مصادقة SHA-256، ولا يملك هذا الحساب بصمتها. أعد إدخال كلمة المرور لحسابها.",
   "error.regRefused": "رُفض التسجيل: {cause}",
   "error.wssLostDuringReg": "انقطع الاتصال أثناء التسجيل",
   "error.registrarTimeout": "خادم التسجيل لا يستجيب",

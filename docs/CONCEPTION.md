@@ -72,7 +72,8 @@ src/
     mediaerror.ts         # échecs WebRTC et fil texte : console, carnet, motif (§5.5)
   storage/
     store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
-    ha1.ts                # MD5(username:realm:password)
+    ha1.ts                # MD5 et SHA-256 de username:realm:password (§6)
+    md5.ts, sha256.ts     # condensés synchrones — le chemin Digest ne sait pas attendre
   ui/
     screens/{home,config,call}.ts
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
@@ -1549,6 +1550,11 @@ const ua = new JsSIP.UA({
 });
 ```
 
+L'empreinte SHA-256 ne passe pas par là : la configuration d'un UA JsSIP n'a de place
+que pour un HA1. Elle est déposée le temps de la session par `useSha256Ha1()`, sous
+l'identité qui a servi à la calculer, et c'est la greffe de `sip/digest.ts` qui l'y
+reprend au moment d'un défi (§6.2).
+
 - Binding : `ua.on("connected"|"disconnected"|"registered"|"unregistered"|
   "registrationFailed"|"newRTCSession", …)` → `phone.send({type:"sip:…", …})` ;
   idem sur chaque `RTCSession` (`progress`, `accepted`, `confirmed`, `ended`, `failed`)
@@ -1942,8 +1948,13 @@ pour des identifiants SIP). La meilleure approximation :
 
 1. **Ne jamais stocker le mot de passe** : à la sauvegarde du formulaire, calcul de
    `ha1 = MD5(username:realm:password)` (MD5 absent de WebCrypto → mini-implémentation locale
-   ~150 lignes ou `js-md5`). Le HA1 suffit à JsSIP pour s'authentifier ; sa compromission
+   ~80 lignes). Le HA1 suffit à JsSIP pour s'authentifier ; sa compromission
    ne révèle pas le mot de passe (mais permet l'usage du compte SIP — d'où le point 2).
+   La **même** empreinte est calculée en SHA-256 (RFC 8760) et gardée à côté, parce que
+   c'est le serveur qui choisit l'algorithme de son défi : `md5.ts` et `sha256.ts` sont
+   tous deux des implémentations locales et **synchrones**, la seconde parce que le
+   `crypto.subtle.digest` de WebCrypto ne rend qu'une promesse, et que la réponse à un
+   défi se calcule au milieu d'un chemin synchrone de JsSIP (§6.2).
 2. **Chiffrement au repos** : clé AES-GCM 256 générée par WebCrypto avec
    `extractable: false`, stockée dans IndexedDB (le navigateur la garde dans son profil,
    elle n'est pas exportable par du JS) ; la configuration chiffrée (IV aléatoire par
@@ -1962,6 +1973,7 @@ interface AccountConfig {
   username: string;
   authUsername: string | null; // identifiant d'authentification, si distinct
   ha1: string;          // jamais le mot de passe
+  ha1Sha256: string;    // la même empreinte en SHA-256 (RFC 8760) ; "" si inconnue (§6.2)
   flashAlert: boolean;  // réglage d'accessibilité (§4.3) — suit le compte, pas le navigateur
   ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
   rtt: RttTransport;    // texte en temps réel (§4.9) — aucun (défaut), WebSocket, ou canal de données
@@ -2070,7 +2082,8 @@ ne configure rien.
 **Ce qui vient d'une URL n'est jamais cru.** Chaque champ est vérifié au décodage :
 proxy `ws(s)://`, HA1 sur 32 chiffres hexadécimaux, adresse SIP sans espace ni second
 `@`, serveur TURN écarté s'il lui manque ses identifiants, transport inconnu ramené à
-`none`. Les champs facultatifs absents prennent les mêmes défauts qu'un compte relu d'un
+`none`, empreinte SHA-256 sur 64 chiffres hexadécimaux — celle-là ramenée à « absente »
+plutôt que refusant le lien, un lien d'avant elle n'en portant pas (§6.2). Les champs facultatifs absents prennent les mêmes défauts qu'un compte relu d'un
 coffre ancien. Un numéro de version (`v`) permet à un lien plus récent d'être **reconnu
 comme tel** plutôt que rejeté comme illisible.
 
@@ -2086,6 +2099,39 @@ entière (`vite.config.ts`), servie en fichier statique sans réécriture d'URL 
 serveur. C'est ce découpage qui garantit que la page n'embarque ni automate, ni pile
 SIP, ni JsSIP : Rollup n'y met que ce qu'elle importe — quelques kilo-octets contre
 près de quatre cents.
+
+### 6.2 Deux empreintes, parce que le serveur choisit (RFC 8760)
+
+RFC 8760 ajoute SHA-256 au Digest de RFC 2617, sans rien changer d'autre : `HA1`, `HA2`
+et la réponse se construisent mot pour mot de la même façon, seule la fonction de
+hachage diffère. Un serveur annonce son choix dans le défi (`algorithm=SHA-256`), et les
+deux algorithmes se rencontrent encore — d'où **deux empreintes gardées côte à côte**
+dans le compte, calculées ensemble à la saisie du mot de passe. C'est le seul moment où
+elles peuvent l'être : le mot de passe n'est nulle part ensuite.
+
+**JsSIP ne sait faire que MD5.** Sa classe `DigestAuthentication` refuse tout autre
+algorithme — « authentication aborted » — et rend `false` : le 401 remonte tel quel,
+l'enregistrement échoue, et rien ne dit pourquoi. Elle n'est pas exportée et n'offre
+aucun crochet ; `src/sip/digest.ts` remplace donc sa méthode `authenticate()` par une
+version qui traite SHA-256 et **délègue tout le reste**, MD5 compris, à celle de JsSIP.
+Le module interne est importé par son chemin (`jssip/lib/…`) : c'est le même module que
+celui dont `RequestSender` se sert, vérifié sur les trois chemins de construction
+(vitest, `vite build`, pré-optimisation du serveur de développement). Le jour où ce ne
+serait plus vrai, `test/digest.test.ts` le dirait — il fait répondre la classe de JsSIP
+au vecteur de RFC 7616 §3.9.1.
+
+**Le champ vide est un cas, pas une panne.** Un compte enregistré avant l'arrivée de
+SHA-256, ou reçu par un lien de partage émis par une version précédente, n'a que son
+HA1 MD5 ; rien ne peut fabriquer l'autre après coup. Un défi SHA-256 reste alors sans
+réponse — Trix ne présente pas une empreinte fausse — et l'échec d'enregistrement qui
+suit **dit lequel des deux cas c'est** : `error.missingSha256` au lieu de
+« identifiants refusés », avec le champ mot de passe désigné, puisque le ressaisir est
+le remède. Le reste du compte est intact, et continue de s'enregistrer partout où le
+serveur défie en MD5.
+
+**Ce qui n'est pas là** : `SHA-512-256`, l'autre algorithme de RFC 8760, et les
+variantes `-sess`. Aucune empreinte de cette forme n'est stockée, donc aucune ne
+pourrait être présentée ; elles restent refusées.
 
 ## 7. Normalisation d'adresse
 
@@ -2138,9 +2184,14 @@ Options pour la future phase 5 (à trancher le moment venu) :
 - **Machines** : Vitest, pile SIP factice injectée dans le contexte (mêmes patterns que
   `webphone.test.ts` de FSL : fake timers, test de l'INVITE en course avec un changement
   d'état via la pending queue).
-- **HA1 & store** : vecteurs de test RFC 2617 pour MD5/HA1 ; round-trip chiffrement WebCrypto.
+- **HA1 & store** : vecteurs de test RFC 1321/FIPS 180-4 pour MD5 et SHA-256, RFC 2617
+  §3.5 pour le HA1 ; round-trip chiffrement WebCrypto.
+- **Digest SHA-256** : le vecteur de RFC 7616 §3.9.1, passé par la classe de JsSIP
+  elle-même — ce qui vérifie du même coup que la greffe porte bien sur le module qu'elle
+  utilise (§6.2) ; et le défi laissé sans réponse quand l'empreinte manque.
 - **E2E manuel** : contre Kamailio/Elixip local (comptes de test), matrice : register,
-  register échoué (mauvais HA1), appel audio, appel vidéo, occupé, no answer, BYE distant.
+  register échoué (mauvais HA1), register défié en SHA-256 (avec et sans empreinte),
+  appel audio, appel vidéo, occupé, no answer, BYE distant.
 
 ## 10. Références
 

@@ -89,7 +89,7 @@ const messages: Translation = {
   "config.passwordSet": "•••••• (déjà défini)",
   "config.passwordKeep": "Laissez vide pour garder le mot de passe actuel.",
   "config.ha1Note":
-    "Le mot de passe n'est pas gardé : seule une empreinte (HA1) est stockée, chiffrée, dans ce navigateur.",
+    "Le mot de passe n'est pas gardé : seules ses empreintes (HA1 MD5 et SHA-256) sont stockées, chiffrées, dans ce navigateur.",
   "config.share": "Partage du compte",
   "config.shareCopy": "Copier le lien de partage",
   "config.shareWarn":
@@ -505,6 +505,8 @@ const messages: Translation = {
   "error.wssRefused": "Impossible de se brancher au proxy (connexion WSS refusée)",
   "error.wssTimeout": "Le proxy ne répond pas (délai WebSocket dépassé)",
   "error.badCredentials": "Adresse SIP, mot de passe ou identifiant d'authentification incorrect",
+  "error.missingSha256":
+    "Ce serveur demande une authentification SHA-256, dont ce compte n'a pas l'empreinte. Ressaisissez le mot de passe pour la calculer.",
   "error.regRefused": "Enregistrement refusé : {cause}",
   "error.wssLostDuringReg": "Connexion perdue pendant l'enregistrement",
   "error.registrarTimeout": "Le registraire ne répond pas",

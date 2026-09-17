@@ -19,6 +19,7 @@ const CFG: AccountConfig = {
   username: "alice",
   authUsername: null,
   ha1: "939e7578ed9e3c518a452acee763bce9",
+  ha1Sha256: "3ba6cd94661c5ef34598040c868f13b8775df29109986be50ad35ae537dd3aa4",
   flashAlert: true,
   ice: NO_ICE,
   rtt: "websocket",
@@ -31,6 +32,7 @@ const BOB: StoredAccount = {
   displayName: "Bob Durand",
   username: "bob",
   ha1: "0f0e0d0c0b0a09080706050403020100",
+  ha1Sha256: "0f0e0d0c0b0a09080706050403020100" + "0f0e0d0c0b0a09080706050403020100",
 };
 
 /** Un coffre d'un seul compte, actif — la forme la plus courante. */
@@ -202,6 +204,7 @@ describe("browserStore — coffre à liste", () => {
     delete legacy.ice;
     delete legacy.flashAlert;
     delete legacy.rtt;
+    delete legacy.ha1Sha256;
     await store.save({ accounts: [legacy as StoredAccount], activeId: ALICE.id });
     const account = (await store.load()).accounts[0]!;
     expect(account.ice).toEqual({ stun: null, turn: null });
@@ -210,6 +213,11 @@ describe("browserStore — coffre à liste", () => {
     // proposer du texte modifie l'offre SDP de tous ses appels : ce
     // compte-là ne l'a jamais demandé
     expect(account.rtt).toBe("none");
+    // le mot de passe n'est nulle part : cette empreinte-là ne se rattrape
+    // pas, et son absence se dit plutôt qu'elle ne s'invente
+    expect(account.ha1Sha256).toBe("");
+    // celle qui est là n'a pas bougé : le compte s'enregistre encore
+    expect(account.ha1).toBe(ALICE.ha1);
   });
 
   it("un compte sans identifiant est écarté, les autres restent", async () => {
@@ -233,6 +241,7 @@ describe("browserStore — coffre à liste", () => {
     await store.save(soloVault());
     const dump = await rawRecord("accounts");
     expect(dump).not.toContain(ALICE.ha1);
+    expect(dump).not.toContain(ALICE.ha1Sha256);
     expect(dump).not.toContain(ALICE.username);
   });
 });
@@ -333,11 +342,13 @@ describe("browserStore — migration du compte unique (ADR 0002)", () => {
     delete legacy.ice;
     delete legacy.rtt;
     delete legacy.flashAlert;
+    delete legacy.ha1Sha256;
     await seedLegacy("account", legacy);
     const account = (await createBrowserStore().load()).accounts[0]!;
     expect(account.ice).toEqual({ stun: null, turn: null });
     expect(account.rtt).toBe("none");
     expect(account.flashAlert).toBe(true);
+    expect(account.ha1Sha256).toBe("");
   });
 
   it("le coffre à liste l'emporte : l'ancienne clé n'est plus regardée", async () => {
