@@ -42,7 +42,10 @@ function view(over: Partial<CallView> = {}): CallView {
     selfViewHidden: false,
     mediaPending: false,
     mediaAsked: null,
+    shareAsked: false,
     paused: false,
+    sharing: "off" as const,
+    peerSharing: false,
     peerPaused: false,
     dtmfSent: "",
     notice: null,
@@ -411,5 +414,195 @@ describe("le bureau ne change pas", () => {
     const html = desktop();
     expect(html).toContain('data-act="pause"');
     expect(pill(html)).not.toContain("pause");
+  });
+});
+
+/**
+ * **Le partage d'écran dans la barre** (ADR 0005, D8).
+ *
+ * Ce qui se vérifie ici est la règle qui remplace « seulement sur bureau » :
+ * c'est la **capacité** qui décide, jamais le gabarit. Lire une largeur de
+ * fenêtre ferait disparaître le partage d'un bureau réduit à 400 px, alors
+ * que la machine sait parfaitement le faire.
+ */
+describe("le bouton de partage", () => {
+  /** Un poste qui sait capturer un écran — ou un qui ne sait pas. */
+  function withCapture<T>(can: boolean, fn: () => T): T {
+    const before = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      value: { mediaDevices: can ? { getDisplayMedia: () => {} } : {} },
+      configurable: true,
+    });
+    try {
+      return fn();
+    } finally {
+      if (before) Object.defineProperty(globalThis, "navigator", before);
+      else delete (globalThis as { navigator?: unknown }).navigator;
+    }
+  }
+
+  it("n'existe pas là où l'on ne sait pas capturer d'écran", () => {
+    const html = withCapture(false, () => overlayBar({ view: view(), speakerMuted: false }));
+    expect(html).not.toContain('data-act="share"');
+  });
+
+  it("existe dès que `getDisplayMedia` existe, quel que soit le gabarit", () => {
+    for (const compact of [false, true]) {
+      const html = withCapture(true, () =>
+        overlayBar({ view: view(), speakerMuted: false, compact }),
+      );
+      expect(html).toContain('data-act="share"');
+    }
+  });
+
+  /**
+   * Il change ce que le correspondant voit et passe par un re-INVITE qu'il
+   * peut refuser : sa place est avant le trait, avec le micro et la caméra.
+   */
+  it("est du côté axe 1 de la barre du bureau", () => {
+    const html = withCapture(true, () => overlayBar({ view: view(), speakerMuted: false }));
+    const trait = html.indexOf("pill-sep");
+    expect(html.indexOf('data-act="share"')).toBeLessThan(trait);
+  });
+
+  /**
+   * **Vert**, ni rouge ni violet : allumé, il dit qu'un flux de plus est
+   * dans l'appel — l'exact contraire de ce que le rouge signifie partout
+   * ailleurs dans cette barre.
+   */
+  it("s'allume en vert quand mon écran est dans l'appel", () => {
+    const off = withCapture(true, () => overlayBar({ view: view(), speakerMuted: false }));
+    expect(off).toMatch(/class="iconbtn "[^>]*data-act="share"/);
+    expect(off).toContain('aria-pressed="false"');
+
+    const on = withCapture(true, () =>
+      overlayBar({ view: view({ sharing: "on" }), speakerMuted: false }),
+    );
+    expect(on).toMatch(/class="iconbtn live"[^>]*data-act="share"/);
+  });
+
+  it("l'icône ne se barre jamais : un écran barré dirait « indisponible »", () => {
+    const html = withCapture(true, () =>
+      overlayBar({ view: view({ sharing: "on" }), speakerMuted: false }),
+    );
+    const bouton = html.slice(html.indexOf('data-act="share"'));
+    expect(bouton.slice(0, bouton.indexOf("</button>"))).not.toContain("line");
+  });
+
+  it("est grisé pendant toute renégociation, quelle qu'elle porte", () => {
+    for (const over of [{ mediaPending: true }, { mediaAsked: ["video" as const] }]) {
+      const html = withCapture(true, () => overlayBar({ view: view(over), speakerMuted: false }));
+      const bouton = html.slice(html.indexOf('data-act="share"'));
+      expect(bouton.slice(0, bouton.indexOf(">"))).toContain("disabled");
+    }
+  });
+
+  /**
+   * Le budget de quatre icônes de D8 tient : le partage prend la troisième
+   * place de la pastille, et ce qui l'occupait descend dans la feuille.
+   */
+  it("ne fait pas grossir la pastille compacte", () => {
+    const html = withCapture(true, () =>
+      overlayBar({ view: view(), speakerMuted: false, compact: true }),
+    );
+    const pill = html.slice(html.indexOf("overlay-pill"), html.indexOf("bar-break"));
+    expect(pill.match(/<button/g)).toHaveLength(4);
+  });
+});
+
+/**
+ * **La permutation de la scène** (ADR 0005, D11).
+ *
+ * L'écran reçu prend la grande surface et le visage passe en vignette ;
+ * remettre le visage en grand ne refuse pas le partage, cela le range. Pour
+ * le public de Trix ce n'est pas un réglage d'affichage — la vidéo de
+ * l'appel est le canal de la langue des signes (F.703 §4.5) —, mais rien
+ * n'en part sur le fil : c'est une bascule locale, et sa place est **après
+ * le trait**, avec le self-view et l'écoute.
+ */
+describe("le bouton de permutation", () => {
+  it("n'existe pas tant que personne ne partage : il n'y a rien à échanger", () => {
+    expect(acts(overlayBar({ view: view(), speakerMuted: false }))).not.toContain("swap-stage");
+  });
+
+  it("apparaît dès qu'un écran est reçu, des deux côtés du gabarit", () => {
+    for (const compact of [false, true]) {
+      const html = overlayBar({ view: view({ peerSharing: true }), speakerMuted: false, compact });
+      expect(acts(html)).toContain("swap-stage");
+    }
+  });
+
+  it("est après le trait : rien n'en part sur le fil", () => {
+    const html = overlayBar({ view: view({ peerSharing: true }), speakerMuted: false });
+    expect(html.indexOf("pill-sep")).toBeLessThan(html.indexOf('data-act="swap-stage"'));
+  });
+
+  /**
+   * Le budget de quatre icônes de D8 ne bouge pas : la permutation descend
+   * dans la feuille, où son libellé la rend lisible — « permuter » ne se
+   * devine dans aucune icône.
+   */
+  it("descend dans la feuille du bas plutôt que d'élargir la pastille", () => {
+    const html = bar({ peerSharing: true });
+    expect(pill(html)).toHaveLength(4);
+    expect(sheet(html)).toContain("swap-stage");
+  });
+
+  /**
+   * Un écran partagé est une image à agrandir comme une autre — et c'est
+   * même celle qui en a le plus besoin : un écran de bureau sur 390 px.
+   */
+  it("le plein écran cesse d'être grisé pendant un partage reçu", () => {
+    const sans = bar();
+    const avec = bar({ peerSharing: true });
+    const bouton = (html: string): string => {
+      const at = html.indexOf('data-act="fullscreen"');
+      return html.slice(html.lastIndexOf("<button", at), html.indexOf(">", at));
+    };
+    expect(bouton(sans)).toContain("disabled");
+    expect(bouton(avec)).not.toContain("disabled");
+  });
+});
+
+/**
+ * **Un seul partage à la fois** (ADR 0005, D9). Deux écrans partagés, ce
+ * sont deux surfaces à caser sur un téléphone et une préséance que rien ne
+ * tranche : pendant que le correspondant partage, le bouton est grisé — et
+ * le libellé dit pourquoi, car un bouton grisé sans un mot est une porte
+ * fermée sans écriteau.
+ */
+describe("le partage pendant que le distant partage", () => {
+  /** Un poste qui sait capturer un écran : sans quoi le bouton n'existe pas. */
+  function withCapture<T>(fn: () => T): T {
+    const before = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", {
+      value: { mediaDevices: { getDisplayMedia: () => {} } },
+      configurable: true,
+    });
+    try {
+      return fn();
+    } finally {
+      if (before) Object.defineProperty(globalThis, "navigator", before);
+      else delete (globalThis as { navigator?: unknown }).navigator;
+    }
+  }
+
+  const share = (html: string): string => {
+    const at = html.indexOf('data-act="share"');
+    return html.slice(html.lastIndexOf("<button", at), html.indexOf("</button>", at));
+  };
+
+  it("est grisé, et le libellé dit pourquoi", () => {
+    const html = withCapture(() =>
+      overlayBar({ view: view({ peerSharing: true }), speakerMuted: false }),
+    );
+    expect(share(html).slice(0, share(html).indexOf(">"))).toContain("disabled");
+    expect(share(html)).toContain("Le correspondant partage déjà son écran");
+  });
+
+  it("redevient offert dès que son écran s'en va", () => {
+    const html = withCapture(() => overlayBar({ view: view(), speakerMuted: false }));
+    expect(share(html).slice(0, share(html).indexOf(">"))).not.toContain("disabled");
+    expect(share(html)).toContain("Partager l'écran");
   });
 });

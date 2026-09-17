@@ -26,7 +26,7 @@ import { NO_MEDIA } from "../src/sip/port.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 import type { ChatItem } from "../src/sip/transcript.js";
-import { computeHa1 } from "../src/storage/ha1.js";
+import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
 
@@ -37,6 +37,7 @@ const CFG: AccountConfig = {
   username: "alice",
   authUsername: null,
   ha1: computeHa1("alice", "example.fr", "secret123"),
+  ha1Sha256: computeHa1Sha256("alice", "example.fr", "secret123"),
   flashAlert: true,
   ice: NO_ICE,
   rtt: "websocket",
@@ -123,6 +124,14 @@ class FakeCallSession {
   pauses: boolean[] = [];
   setPaused(on: boolean): void {
     this.pauses.push(on);
+  }
+  /** Les partages d'écran demandés, dans l'ordre : vrai = démarrer. */
+  shares: boolean[] = [];
+  startShare(): void {
+    this.shares.push(true);
+  }
+  stopShare(): void {
+    this.shares.push(false);
   }
   attachMedia(): void {}
   /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
@@ -432,6 +441,8 @@ describe("PhoneMachine — configuration", () => {
     expect(box.saved!.authUsername).toBe("alice-auth");
     expect(box.saved!.username).toBe("alice");
     expect(box.saved!.ha1).toBe(computeHa1("alice-auth", "example.fr", "secret123"));
+    // les deux empreintes suivent la même identité d'authentification
+    expect(box.saved!.ha1Sha256).toBe(computeHa1Sha256("alice-auth", "example.fr", "secret123"));
   });
 
   it("mot de passe vide sans compte existant : erreur, on reste sur le formulaire", async () => {
@@ -706,6 +717,34 @@ describe("PhoneMachine — enregistrement", () => {
     expect(phone.state).toBe("reg_failed");
     expect(phone.context.lastError).toEqual({ key: "error.badCredentials" });
     expect(phone.context.lastErrorCode).toBe("SIP 404");
+  });
+
+  it("défi SHA-256 sans empreinte : le motif le dit, plutôt qu'« identifiants refusés »", async () => {
+    const { phone, sip } = await bootTo("registering", CFG);
+    sip.send({
+      type: "sip:registrationFailed",
+      cause: "Unauthorized",
+      statusCode: 401,
+      missingSha256: true,
+    });
+    expect(phone.state).toBe("reg_failed");
+    expect(phone.context.lastError).toEqual({ key: "error.missingSha256" });
+    expect(phone.context.lastErrorCode).toBe("SHA256_MISSING");
+    // ressaisir le mot de passe est le remède : c'est le formulaire qu'on désigne
+    expect(phone.context.suspectFields).toBe("credentials");
+  });
+
+  it("le même défi sur un re-REGISTER sort de ready sans passer par la reconnexion", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    sip.send({
+      type: "sip:registrationFailed",
+      cause: "Unauthorized",
+      statusCode: 401,
+      missingSha256: true,
+    });
+    expect(phone.state).toBe("reg_failed");
+    expect(phone.context.lastError).toEqual({ key: "error.missingSha256" });
+    expect(phone.context.lastErrorCode).toBe("SHA256_MISSING");
   });
 
   it("reg_failed : ui:backToSettings garde l'erreur et les champs suspects sur le formulaire", async () => {
@@ -1078,6 +1117,7 @@ describe("PhoneMachine — historique d'appels", () => {
         sent: { codec: "opus", clockRate: 48000, kbps: 31, loss: 0.02 },
       },
       video: null,
+      share: null,
       text: null,
       rttMs: 42,
       syncMs: null,

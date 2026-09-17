@@ -67,6 +67,16 @@ export type CallControlEvent =
    * parle de moi, pas de l'appel.
    */
   | { type: "ui:togglePause" }
+  /**
+   * **Partager son écran**, ou cesser de le faire (ADR 0005). Ce n'est pas
+   * un bouton média : le partage n'est pas un média de l'appel, il ne compte
+   * pas dans « ne pas retirer le dernier », et l'historique ne le consigne
+   * pas. C'est un épisode dans une conversation, pas une nature d'appel.
+   *
+   * Il partage en revanche le **verrou** des commandes média (ADR 0003, D5) :
+   * une renégociation à la fois, quoi qu'elle porte.
+   */
+  | { type: "ui:toggleShare" }
   | { type: "ui:toggleSelfView" }
   /**
    * Une tonalité DTMF composée au clavier de l'appel (`0-9`, `*`, `#`) —
@@ -130,6 +140,17 @@ export interface CallView {
    */
   mediaAsked: MediaKind[] | null;
   /**
+   * La question posée porte sur un **écran partagé** (ADR 0005, D5). Elle
+   * ne se pose pas pour la même raison que les autres : accepter n'allume
+   * aucun capteur ici, mais un écran partagé prend la place de la langue
+   * des signes, et sur un téléphone il n'y a pas deux grandes surfaces.
+   *
+   * Avec `mediaAsked` vide, c'est une offre qui n'apporte qu'un écran ;
+   * avec des médias dedans, c'est une offre qui apporte les deux — et la
+   * question reste unique.
+   */
+  shareAsked: boolean;
+  /**
    * **Je suis en pause** : rien de ce que j'émets ne part. L'appel n'a pas
    * changé de nature — `media` dit toujours la même chose — et le texte
    * continue de passer dans les deux sens (D7).
@@ -142,6 +163,29 @@ export interface CallView {
    * sinon.
    */
   peerPaused: boolean;
+  /**
+   * **Ce que j'émets d'écran** (ADR 0005, D3). Trois états et non deux :
+   * `starting` est le temps de la renégociation, distinct de `mediaPending`
+   * par ce qu'il affiche, confondu avec lui par ce qu'il verrouille — le
+   * bouton de partage est grisé pendant toute renégociation, quelle qu'elle
+   * soit.
+   *
+   * L'arrêt, lui, n'a pas d'état d'attente : la piste est morte dès qu'on
+   * le demande, plus rien ne part, et le re-INVITE qui suit ne fait que le
+   * dire. Annoncer « arrêt en cours » promettrait un écran encore visible.
+   */
+  sharing: "off" | "starting" | "on";
+  /**
+   * **Le correspondant partage son écran.** L'appel n'a pas changé de
+   * nature — `media` dit toujours la même chose —, c'est la **scène** qui
+   * change : l'écran prend la grande surface, sa caméra passe en vignette,
+   * et l'auto-vue se replie (D11).
+   *
+   * Un booléen et non trois états : recevoir ne se demande pas, cela
+   * arrive. Ce qui s'attend, c'est la réponse à la question posée avant —
+   * et elle vit dans `shareAsked`.
+   */
+  peerSharing: boolean;
   /**
    * Les tonalités DTMF composées depuis le début de l'appel, dans l'ordre,
    * et seulement celles qui sont **parties**. Rien d'autre ne les rejoue :

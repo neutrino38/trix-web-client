@@ -22,9 +22,16 @@
  * Ce module fait deux choses : les **retouches SDP** (fonctions pures,
  * testées comme `sdp.ts`) et le **fil** lui-même. Le branchement sur JsSIP
  * — qui appellera l'une puis l'autre — viendra avec le panneau de tchat.
+ *
+ * Comme le canal de données, le fil **dit ses pannes à voix haute** — une
+ * ligne de console et une ligne au carnet de l'appel (`sip/mediaerror.ts`),
+ * que la trace SIP soit cochée ou non. La rupture d'un socket ne laisse
+ * aucune trace SIP : elle a lieu sur un fil parallèle, dont la
+ * signalisation ne sait rien une fois l'URL lue dans la réponse.
  */
 
 import type { RttWire, RttWireHooks } from "./rtt.js";
+import { consoleErrorSink, reportTextChannelError, type ErrorSink } from "./mediaerror.js";
 
 /**
  * Port annoncé dans l'offre. Il ne désigne rien : la passerelle répond
@@ -150,6 +157,19 @@ export function wsUrlFromSdp(sdp: string): string | null {
 const MAX_RETRIES = 10;
 const RETRY_DELAY_MS = 1000;
 
+/**
+ * Délai au-delà duquel un socket qui n'est toujours pas ouvert est signalé.
+ *
+ * Une connexion refusée se ferme d'elle-même — `onclose`, code 1006 — et
+ * n'a pas besoin de ce délai. Celui-ci est pour l'autre panne, celle qui
+ * n'émet rien : la passerelle qui accepte le TCP et ne répond jamais à la
+ * poignée de main WebSocket, où le navigateur peut attendre des minutes
+ * avant de conclure. Dix secondes suffisent à un socket qui va s'ouvrir —
+ * l'URL est lue dans la réponse SDP, la connexion part aussitôt, elle
+ * n'attend aucun décrochage.
+ */
+const OPEN_DEADLINE_MS = 10000;
+
 /** Marqueur de texte perdu, inséré à la reprise (T.140 §8.6). */
 const LOSS_MARKER = "\uFFFD";
 
@@ -174,28 +194,73 @@ const SESSION_BOM = "\uFEFF";
  * perdu pendant la coupure et que la norme veut que cela se voie
  * (RFC 8865 §6, T.140 §8.6).
  */
-export function openWsWire(url: string, hooks: RttWireHooks): RttWire {
+export function openWsWire(
+  url: string,
+  hooks: RttWireHooks,
+  sink: ErrorSink = consoleErrorSink,
+): RttWire {
   let socket: WebSocket | null = null;
   let retries = 0;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let closing = false;
   /** Une coupure a eu lieu : la prochaine ouverture n'est pas la première. */
   let interrupted = false;
+  /** Le socket en cours s'est-il ouvert ? Distingue la rupture de l'échec. */
+  let opened = false;
+  /** Le délai d'ouverture, et le fait qu'il n'ait à parler qu'une fois. */
+  let deadline: ReturnType<typeof setTimeout> | null = null;
+  let hangSaid = false;
+
+  /**
+   * Dit la panne — console et carnet, sans condition. `notes` porte ce que
+   * l'événement de fermeture ne dit pas et qu'on veut relire au support :
+   * quel socket, et combien de reprises avaient déjà été tentées.
+   */
+  const fail = (problem: string, notes: Record<string, string | number> = {}): void => {
+    reportTextChannelError(
+      { problem, notes: { transport: "websocket", socket: url, reprises: retries, ...notes } },
+      sink,
+    );
+  };
+
+  const disarm = (): void => {
+    if (deadline === null) return;
+    clearTimeout(deadline);
+    deadline = null;
+  };
+
+  const arm = (): void => {
+    disarm();
+    deadline = setTimeout(() => {
+      deadline = null;
+      if (closing || hangSaid || socket?.readyState === WebSocket.OPEN) return;
+      hangSaid = true; // une fois suffit : les reprises diraient la même chose
+      fail(`socket toujours pas ouvert ${OPEN_DEADLINE_MS / 1000} s après la demande`);
+    }, OPEN_DEADLINE_MS);
+  };
 
   const connect = (): void => {
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
-    } catch {
+    } catch (error) {
       // URL rejetée par le navigateur : rien à reprendre, elle sera la
       // même au prochain essai
+      reportTextChannelError(
+        { problem: "ouverture du socket impossible", error, notes: { socket: url } },
+        sink,
+      );
       hooks.state("closed");
       return;
     }
     socket = ws;
+    opened = false;
+    arm();
 
     ws.onopen = () => {
       retries = 0;
+      opened = true;
+      disarm();
       // la signature ouvre le flux, et le chemin retour avec lui — y
       // compris sur un socket rouvert après coupure, dont la passerelle a
       // pu perdre l'association
@@ -218,11 +283,19 @@ export function openWsWire(url: string, hooks: RttWireHooks): RttWire {
 
     // `onerror` ne dit rien qu'`onclose` ne redira : la reprise se décide
     // à la fermeture, qui suit toujours
-    ws.onclose = () => {
+    ws.onclose = (ev: CloseEvent) => {
       socket = null;
+      disarm();
       if (closing) return;
       interrupted = true;
+      const why = closeFacts(ev, opened);
+      // **la première panne de la série, et l'abandon.** Les huit reprises
+      // du milieu rediraient mot pour mot la même chose : ce qui compte est
+      // que le fil ait rompu, et comment cela a fini
+      if (retries === 0) fail(why.problem, why.notes);
       if (retries >= MAX_RETRIES) {
+        const gaveUp = `socket irrécupérable, abandon après ${MAX_RETRIES} reprises`;
+        fail(`${gaveUp}${why.suffix}`, why.notes);
         hooks.state("closed");
         return;
       }
@@ -244,6 +317,7 @@ export function openWsWire(url: string, hooks: RttWireHooks): RttWire {
     },
     close() {
       closing = true;
+      disarm();
       if (retryTimer !== null) {
         clearTimeout(retryTimer);
         retryTimer = null;
@@ -252,4 +326,47 @@ export function openWsWire(url: string, hooks: RttWireHooks): RttWire {
       socket = null;
     },
   };
+}
+
+/**
+ * Ce que dit un événement de fermeture. Le code est la seule chose qui
+ * distingue une passerelle qui raccroche proprement (1000) d'un fil coupé
+ * en route (1006) : il va donc dans l'entête, où il se lit sans rien
+ * déplier. Le motif et la propreté suivent en notes, souvent vides, jamais
+ * inutiles quand ils ne le sont pas.
+ *
+ * **Le certificat du serveur.** La RFC 6455 §7.4.1 réserve le code 1015
+ * pour une poignée de main TLS échouée — certificat invalide, expiré, ou
+ * autorité inconnue — mais interdit du même souffle de le remonter à
+ * l'application : les navigateurs ferment sur **1006**, sans motif. Un
+ * certificat expiré, un DNS mort et un port fermé y sont donc
+ * indistinguables, et il n'existe aucun détour (une sonde HTTPS vers la
+ * même origine serait de toute façon refusée par la CSP de production,
+ * `connect-src 'self' wss:`). Ce qui est écrit est donc ce qui est su : un
+ * socket qui n'a **jamais** été ouvert nomme les trois causes possibles, le
+ * certificat en tête, et laisse le lecteur trancher avec ce que, lui, peut
+ * aller voir. Le 1015 reste traité pour la pile qui le remonterait quand
+ * même — un mandataire, un portage non navigateur.
+ */
+function closeFacts(
+  ev: CloseEvent,
+  opened: boolean,
+): { problem: string; suffix: string; notes: Record<string, string | number> } {
+  const code = typeof ev?.code === "number" ? ev.code : null;
+  const suffix = code === null ? "" : ` (code ${code})`;
+  const notes: Record<string, string | number> = {};
+  if (typeof ev?.reason === "string" && ev.reason !== "") notes["motif"] = ev.reason;
+  if (typeof ev?.wasClean === "boolean") notes["wasClean"] = String(ev.wasClean);
+
+  if (code === 1015) {
+    const tls = "poignée de main TLS échouée : certificat du serveur invalide ou expiré";
+    return { problem: `${tls}${suffix}`, suffix, notes };
+  }
+  if (!opened) {
+    notes["causes possibles"] =
+      "certificat du serveur invalide ou expiré, hôte injoignable, " +
+      "ou socket refusé — le navigateur ne les distingue pas";
+    return { problem: `connexion au socket refusée${suffix}`, suffix, notes };
+  }
+  return { problem: `socket rompu${suffix}`, suffix, notes };
 }

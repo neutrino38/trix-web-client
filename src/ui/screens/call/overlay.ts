@@ -65,12 +65,13 @@
  */
 
 import type { CallView } from "../../../machines/events.js";
-import { isLastMedia, type MediaKind } from "../../../sip/port.js";
+import { canShareScreen, isLastMedia, type MediaKind } from "../../../sip/port.js";
 import type { MsgKey } from "../../../i18n/types.js";
 import { ICONS, ICONS_OFF } from "./parts.js";
 import { panelIcon, panelToggleLabel } from "./panel.js";
 import { DTMF_PAD_ID, dtmfOpen } from "./dtmf.js";
 import { MORE_ICON, SHEET_ID, bottomSheet, sheetOpen } from "./sheet.js";
+import { shareSwapped } from "./share.js";
 import { LENS_ICON } from "./stats.js";
 import { t } from "../../../i18n/index.js";
 import { esc } from "../../el.js";
@@ -98,6 +99,13 @@ interface Cmd {
   highlight?: boolean;
   cut?: boolean; // média sorti de l'appel → rouge, sinon bascule locale → violet
   /**
+   * **J'émets quelque chose en plus** — le partage d'écran, et lui seul
+   * pour l'instant : vert. Ni le rouge (un média a *quitté* l'appel) ni le
+   * violet (une bascule qui ne concerne que ce poste) ne conviennent, et
+   * les confondre reviendrait à dire le contraire de ce qui se passe.
+   */
+  live?: boolean;
+  /**
    * Commande de l'**axe 1** : elle change ce que l'appel transporte. C'est
    * ce qui la place avant le trait, et ce qui lui interdit la feuille du bas
    * (`sheetable`). Les deux drapeaux se répondent, mais ne disent pas la
@@ -124,7 +132,7 @@ interface Cmd {
  */
 function button(c: Cmd): string {
   const active = c.highlight ?? (c.expanded !== undefined ? !c.expanded : c.pressed);
-  const cls = active ? (c.cut ? "off" : "toggled") : "";
+  const cls = active ? (c.cut ? "off" : c.live ? "live" : "toggled") : "";
   const state =
     c.expanded !== undefined
       ? `aria-expanded="${c.expanded}" ${c.controls ? `aria-controls="${c.controls}"` : ""}`
@@ -229,6 +237,58 @@ function mediaButton(ctx: OverlayCtx, kind: MediaKind, on: boolean): Cmd {
   };
 }
 
+/**
+ * **Le partage d'écran** (ADR 0005, D8). Il est de l'axe 1 — il change ce
+ * que le correspondant voit, et il passe par un re-INVITE qu'il peut
+ * refuser —, donc sa place est avant le trait, avec le micro et la caméra.
+ *
+ * Il n'existe que si `getDisplayMedia` existe. C'est ce qui rend vraie la
+ * règle « le partage n'existe que sur bureau » sans jamais la câbler :
+ * aucun navigateur mobile n'expose cette API. Lire le gabarit serait lire
+ * une **largeur de fenêtre**, et un bureau réduit à 400 px perdrait le
+ * partage sans raison.
+ *
+ * **Vert**, ni rouge ni violet : il ne coupe rien et n'est pas une bascule
+ * locale. Allumé, il dit « mon écran est dans l'appel » — un flux de plus,
+ * pas un flux de moins, et c'est l'exact contraire de ce que le rouge
+ * signifie partout ailleurs dans cette barre.
+ *
+ * L'icône ne se barre pas au repos : un écran barré voudrait dire « le
+ * partage n'est pas disponible », ce qui est faux. L'état se lit sur le
+ * libellé (« Partager l'écran » / « Arrêter le partage ») et sur
+ * `aria-pressed` — deux porteurs qui ne doivent rien à la couleur
+ * (RGAA 3.1).
+ *
+ * **Un seul partage à la fois** (D9) : le bouton est grisé pendant que le
+ * correspondant partage, et le libellé dit pourquoi — un bouton grisé sans
+ * un mot est une porte fermée sans écriteau. La règle elle-même vit dans le
+ * bloc, comme celle du dernier média : ici on ne fait qu'en griser le
+ * bouton.
+ */
+function shareButton(view: CallView): Cmd {
+  const on = view.sharing === "on";
+  const busy = view.peerSharing;
+  return {
+    act: "share",
+    icon: ICONS.share,
+    label: t(
+      view.mediaPending
+        ? "ctrl.media.pending"
+        : busy
+          ? "ctrl.share.busy"
+          : on
+            ? "ctrl.share.stop"
+            : "ctrl.share.start",
+    ),
+    aria: t("ctrl.share.aria"),
+    pressed: on,
+    live: true,
+    axis1: true,
+    disabled:
+      view.state !== "connected" || view.mediaPending || view.mediaAsked !== null || busy,
+  };
+}
+
 export function overlayBar(ctx: OverlayCtx): string {
   const { view, speakerMuted } = ctx;
   const connected = view.state === "connected";
@@ -237,6 +297,7 @@ export function overlayBar(ctx: OverlayCtx): string {
   const cmds: Cmd[] = [
     mediaButton(ctx, "audio", connected && view.media.audio),
     mediaButton(ctx, "video", video),
+    ...(canShareScreen() ? [shareButton(view)] : []),
     {
       // Hors des deux axes : c'est de la **réception locale**, et le §6.2.4
       // n'en parle pas. Rien ne part sur le fil, le correspondant continue
@@ -280,6 +341,32 @@ export function overlayBar(ctx: OverlayCtx): string {
     },
   ];
 
+  if (ctx.view.peerSharing) {
+    /**
+     * **La permutation de la scène** (ADR 0005, D11). Elle n'existe que
+     * pendant un partage reçu : sans deux images, il n'y a rien à échanger.
+     *
+     * Elle est **après le trait** — c'est une bascule locale, comme le
+     * self-view : le correspondant continue de recevoir exactement la même
+     * chose, et rien de ce que l'appel transporte ne bouge. Violet, donc, et
+     * jamais rouge.
+     *
+     * L'appui sur la vignette fait le même geste ; ce bouton est ce qui le
+     * rend praticable au clavier (RGAA 7.3), et il descend dans la feuille
+     * du bas si la place manque — l'ADR le demande à un endroit ou à
+     * l'autre, pas aux deux à la fois.
+     */
+    cmds.push({
+      act: "swap-stage",
+      icon: ICONS.stageSwap,
+      label: t(shareSwapped() ? "ctrl.swap.screen" : "ctrl.swap.face"),
+      aria: t("ctrl.swap.aria"),
+      pressed: shareSwapped(),
+      disabled: !connected,
+      sheetable: true,
+    });
+  }
+
   if (ctx.withFullscreen) {
     // le double-clic sur la vidéo reste, mais il ne peut pas être le seul
     // chemin : au clavier il n'existe pas (RGAA 7.3)
@@ -288,7 +375,9 @@ export function overlayBar(ctx: OverlayCtx): string {
       icon: ICONS.fullscreen,
       label: t("ctrl.fullscreen"),
       aria: t("ctrl.fullscreen"),
-      disabled: !view.media.video,
+      // un écran partagé est une image à agrandir comme une autre — et
+      // c'est même celle qui en a le plus besoin (ADR 0005, D11)
+      disabled: !view.media.video && !view.peerSharing,
       sheetable: true,
     });
   }

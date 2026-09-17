@@ -406,6 +406,14 @@ fieldset.field { border: none; }
   font-size: 0.68rem; color: var(--ink-soft);
 }
 .iconbtn.toggled { background: var(--accent); border-color: var(--accent); color: #fff; }
+/*
+ * Le vert de la barre de commandes : **j'émets quelque chose en plus** — le
+ * partage d'écran. Le rouge dit qu'un média a quitté l'appel, le violet
+ * qu'une bascule ne concerne que ce poste ; ni l'un ni l'autre ne dit
+ * l'inverse des deux, et c'est ce qu'il fallait une troisième couleur pour
+ * dire (ADR 0005).
+ */
+.iconbtn.live { background: var(--green); border-color: var(--green); color: #fff; }
 .inactive { opacity: 0.5; cursor: default; }
 
 .callbody { flex: 1; display: flex; min-height: 0; }
@@ -423,6 +431,74 @@ fieldset.field { border: none; }
   height: 25%; aspect-ratio: 4/3; object-fit: cover;
   background: #000; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
 }
+/* ---------- l'écran partagé par le correspondant (ADR 0005, D11) ----------
+
+   Deux surfaces dans la même zone : l'écran prend la scène, le visage passe
+   en vignette, et la permutation les échange — sans re-rendu, une classe
+   suffit, et l'image ne cligne pas.
+
+   `contain` et jamais `cover` : recadrer un écran partagé coupe du texte,
+   c'est-à-dire tout ce qu'il transportait. La vignette, elle, garde `cover` :
+   c'est un visage, et il vaut mieux cadré que complet.
+
+   Les sélecteurs nomment les deux gabarits (`.video` et `.mvideo`) pour
+   passer devant les règles de base sans dépendre de l'ordre du fichier. */
+.video.sharing video.share,
+.mvideo.sharing video.share,
+.video.sharing.swapped video.remote,
+.mvideo.sharing.swapped video.remote {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: #000; cursor: default;
+}
+/* L'écran **sur la scène** se pince pour être lu : `touch-action: none` est
+   ce qui donne les deux doigts à la page plutôt qu'au navigateur, et
+   `transform-origin` au centre est ce qui fait que zoomer sans viser ne
+   déplace rien (ADR 0005, question ouverte 3). En vignette, rien de tout
+   cela : l'appui y permute, et c'est tout. */
+.video.sharing:not(.swapped) video.share,
+.mvideo.sharing:not(.swapped) video.share {
+  touch-action: none; transform-origin: center center;
+}
+.video.sharing video.share.zoomed,
+.mvideo.sharing video.share.zoomed { cursor: grab; }
+.video.sharing video.share:focus-visible,
+.mvideo.sharing video.share:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+/* Le pavé de zoom : l'équivalent à un seul point du pincement (WCAG 2.5.1),
+   posé du côté des vu-mètres mais devant eux, et jamais sur la vignette —
+   qui, elle, est en bas. */
+.sharezoom {
+  position: absolute; z-index: 3; top: 10px; inset-inline-end: 30px;
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.sharezoom button {
+  min-width: 40px; height: 36px; padding: 0 0.4rem;
+  border: none; border-radius: 999px; background: transparent; color: #fff;
+  font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.sharezoom button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.22); }
+.sharezoom button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.sharezoom button:disabled { opacity: 0.4; cursor: default; }
+.sharezoom .zoomlevel { font-size: 0.8rem; }
+/* le visage a repris la scène : il n'y a plus d'écran à agrandir */
+.sharing.swapped .sharezoom { display: none; }
+/* la vignette, au-dessus de la barre de commandes et du côté du texte : elle
+   ne rencontre ni le self-view (en haut) ni les vu-mètres (à l'autre bord) */
+.video.sharing video.remote,
+.mvideo.sharing video.remote,
+.video.sharing.swapped video.share,
+.mvideo.sharing.swapped video.share {
+  position: absolute; z-index: 1;
+  top: auto; bottom: 88px; inset-inline-start: 10px; inset-inline-end: auto;
+  width: 26%; max-width: 240px; min-width: 96px; height: auto; aspect-ratio: 4/3;
+  object-fit: cover; background: #000;
+  border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
+  /* un appui la met en grand : le bouton de la barre fait le même geste au
+     clavier, la vignette ne peut donc pas être le seul chemin (RGAA 7.3) */
+  cursor: pointer;
+}
+
 .call-overlay {
   position: relative; z-index: 1; text-align: center;
   color: #cfc4de; font-size: 1rem; font-weight: 600;
@@ -605,6 +681,7 @@ fieldset.field { border: none; }
 /* bascule locale (self-view masqué, écoute coupée, pavé ouvert) : violet.
    L'appel n'a pas changé, personne d'autre n'est concerné (voir overlay.ts) */
 .overlay-pill .iconbtn.toggled { background: var(--accent); }
+.overlay-pill .iconbtn.live { background: var(--green); }
 /* audio entrant détecté : le haut-parleur s'allume (voir startVuMeters) */
 .overlay-pill .iconbtn.speaking {
   color: #7dffa0;
@@ -756,6 +833,7 @@ fieldset.field { border: none; }
    jamais, puisque l'audio et la vidéo ne quittent pas la pastille */
 .sheet button.off .cmd-icon { color: var(--red); }
 .sheet button.toggled .cmd-icon { color: var(--accent); }
+.sheet button.live .cmd-icon { color: var(--green); }
 
 /* Sous 360 px, le budget de D8 ne tient plus sur une ligne : `4 × 44 + 52 +
    56 = 284 px` de cibles incompressibles, et il ne resterait pas 36 px pour
@@ -1299,6 +1377,9 @@ fieldset.field { border: none; }
 .mvideo {
   flex: 1; min-height: 0; position: relative; background: var(--video-bg);
   display: flex; align-items: center; justify-content: center;
+  /* un écran partagé agrandi déborde de son cadre : sans cela il passerait
+     par-dessus le tchat et la barre du bas (ADR 0005, zoom) */
+  overflow: hidden;
 }
 .mvideo video.remote { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .mvideo video.selfview {

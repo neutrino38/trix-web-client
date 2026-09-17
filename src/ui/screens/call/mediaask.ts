@@ -8,6 +8,14 @@
  * la réponse en suspens le temps de la question (le re-INVITE a déjà reçu
  * son 100 Trying, l'appelant patiente).
  *
+ * **Un écran partagé la pose aussi** (ADR 0005, D5), et pour une autre
+ * raison : accepter n'allume rien du tout ici. Elle se pose parce qu'un
+ * écran partagé **prend la place de la langue des signes** — sur un
+ * téléphone il n'y a pas deux grandes surfaces, et reléguer le visage de
+ * son correspondant dans une vignette ne se décide pas pour lui (F.703
+ * §4.5 et §6.2.4). Refuser ne coûte rien à l'appel : c'est un 488, et la
+ * session revient exactement à ce qu'elle était (RFC 3261 §14.1).
+ *
  * Même gabarit modal que l'appel entrant (`incoming.ts`), à ceci près que
  * le reste de l'écran **n'est pas** rendu `inert` : la conversation
  * continue pendant qu'on réfléchit, et raccrocher doit rester possible.
@@ -21,12 +29,17 @@ import { t } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
 
 /**
- * Comment la question se pose, selon ce que le distant ajoute. Trois
+ * Comment la question se pose, selon ce que le distant apporte. Quatre
  * formes, et non une phrase à trous : ajouter les deux d'un coup n'est pas
  * « ajouter l'audio » deux fois, et le titre doit le dire d'un trait dans
- * les six langues.
+ * les six langues. L'écran partagé a la sienne — il ne s'ajoute pas à
+ * l'appel, il en occupe la scène, et la phrase ne parle donc pas de la
+ * même chose.
  */
-const ASK: Record<"audio" | "video" | "both", { icon: string; title: MsgKey; body: MsgKey; accept: MsgKey }> = {
+const ASK: Record<
+  "audio" | "video" | "both" | "share",
+  { icon: string; title: MsgKey; body: MsgKey; accept: MsgKey }
+> = {
   audio: {
     icon: ICONS.mic,
     title: "mediaask.audio.title",
@@ -45,16 +58,32 @@ const ASK: Record<"audio" | "video" | "both", { icon: string; title: MsgKey; bod
     body: "mediaask.both.body",
     accept: "mediaask.both.accept",
   },
+  share: {
+    icon: ICONS.share,
+    title: "mediaask.share.title",
+    body: "mediaask.share.body",
+    accept: "mediaask.share.accept",
+  },
 };
 
-/** Laquelle des trois questions poser, d'après ce que l'offre ajoute. */
-function askFor(adds: readonly MediaKind[]): (typeof ASK)[keyof typeof ASK] {
+/**
+ * Laquelle des quatre questions poser, d'après ce que l'offre apporte.
+ *
+ * **Le média l'emporte sur l'écran** quand l'offre porte les deux : c'est
+ * lui qui allume un capteur et change ce que l'appel transporte, l'écran
+ * n'en change que la scène. La question reste unique, et l'acceptation vaut
+ * pour tout ce qu'elle porte (ADR 0005, D5).
+ */
+function askFor(view: CallView): (typeof ASK)[keyof typeof ASK] {
+  const adds: readonly MediaKind[] = view.mediaAsked ?? [];
   if (adds.length > 1) return ASK.both;
-  return ASK[adds[0] ?? "video"];
+  const kind = adds[0];
+  if (kind !== undefined) return ASK[kind];
+  return view.shareAsked ? ASK.share : ASK.video;
 }
 
 export function mediaAskDialog(view: CallView): string {
-  const ask = askFor(view.mediaAsked ?? []);
+  const ask = askFor(view);
   return `<div class="incoming-veil mediaask-veil">
     <div class="incoming-dialog mediaask" data-ref="mediaask" role="dialog" aria-modal="false"
          aria-labelledby="mediaask-title">

@@ -11,12 +11,13 @@
  *
  * ## Le lien porte de quoi s'authentifier
  *
- * La charge contient le **HA1** (RFC 2617), et le mot de passe TURN s'il y
- * en a un. Le HA1 n'est pas le mot de passe, mais il en fait office : c'est
- * exactement ce qu'un client SIP présente au registrar. Un lien de partage
- * vaut donc le mot de passe du compte, et se transmet avec les mêmes
- * précautions — c'est ce que dit l'écran qui le fabrique, et il n'y a pas
- * de façon de rendre cela faux tout en transportant un compte utilisable.
+ * La charge contient les **HA1** (RFC 2617 et RFC 8760), et le mot de passe
+ * TURN s'il y en a un. Un HA1 n'est pas le mot de passe, mais il en fait
+ * office : c'est exactement ce qu'un client SIP présente au registrar. Un
+ * lien de partage vaut donc le mot de passe du compte, et se transmet avec
+ * les mêmes précautions — c'est ce que dit l'écran qui le fabrique, et il
+ * n'y a pas de façon de rendre cela faux tout en transportant un compte
+ * utilisable.
  *
  * ## Pourquoi le fragment, et pas la requête
  *
@@ -101,6 +102,7 @@ export function encodeAccount(cfg: AccountConfig): string {
       username: cfg.username,
       authUsername: cfg.authUsername,
       ha1: cfg.ha1,
+      ha1Sha256: cfg.ha1Sha256,
       flashAlert: cfg.flashAlert,
       ice: cfg.ice,
       rtt: cfg.rtt,
@@ -145,6 +147,8 @@ export type DecodeResult =
   | { ok: false; error: DecodeError };
 
 const HA1 = /^[0-9a-f]{32}$/i;
+/** L'empreinte SHA-256 fait le double, et peut légitimement manquer. */
+const HA1_SHA256 = /^[0-9a-f]{64}$/i;
 
 function str(value: unknown): string | null {
   return typeof value === "string" ? value : null;
@@ -207,6 +211,11 @@ export function decodeAccount(data: string): DecodeResult {
   const domain = str(raw.domain);
   const username = str(raw.username);
   const ha1 = str(raw.ha1);
+  // l'empreinte SHA-256 n'est pas du minimum : un lien émis avant elle n'en
+  // porte pas, et le compte reste utilisable partout où le serveur défie en
+  // MD5. Illisible, elle vaut absente — mieux vaut un compte qui le dit
+  // qu'un lien rejeté en bloc pour un champ accessoire.
+  const ha1Sha256 = str(raw.ha1Sha256) ?? "";
   // le minimum sans lequel il n'y a pas de compte : où s'enregistrer, sous
   // quelle adresse, et avec quoi s'authentifier
   if (!proxy || !/^wss?:\/\/\S+$/i.test(proxy)) return { ok: false, error: "malformed" };
@@ -223,6 +232,7 @@ export function decodeAccount(data: string): DecodeResult {
       username,
       authUsername: str(raw.authUsername),
       ha1: ha1.toLowerCase(),
+      ha1Sha256: HA1_SHA256.test(ha1Sha256) ? ha1Sha256.toLowerCase() : "",
       flashAlert: raw.flashAlert !== false,
       ice: iceOf(raw.ice),
       rtt: parseRttTransport(raw.rtt),

@@ -14,7 +14,7 @@ import type {
   Vault,
 } from "../src/storage/store.js";
 import type { CallMedia, SipEvent, SipPort } from "../src/sip/port.js";
-import { computeHa1 } from "../src/storage/ha1.js";
+import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 import { MAX_ACCOUNTS } from "../src/accounts.js";
 import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
@@ -27,6 +27,7 @@ const ALICE: StoredAccount = {
   username: "alice",
   authUsername: null,
   ha1: computeHa1("alice", "example.fr", "secret-alice"),
+  ha1Sha256: computeHa1Sha256("alice", "example.fr", "secret-alice"),
   flashAlert: true,
   ice: NO_ICE,
   rtt: "websocket",
@@ -38,6 +39,7 @@ const BOB: StoredAccount = {
   displayName: "Bob Durand",
   username: "bob",
   ha1: computeHa1("bob", "example.fr", "secret-bob"),
+  ha1Sha256: computeHa1Sha256("bob", "example.fr", "secret-bob"),
 };
 
 /** Le formulaire tel que l'écran l'envoie, mot de passe laissé vide. */
@@ -105,6 +107,8 @@ class FakeSip implements SipPort {
           setMedia: () => {},
           abandonMedia: () => {},
             setPaused: () => {},
+            startShare: () => {},
+            stopShare: () => {},
           sendDtmf: () => true,
           
           attachMedia: () => {},

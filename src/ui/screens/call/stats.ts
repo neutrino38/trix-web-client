@@ -37,8 +37,8 @@ import {
   STATS_WINDOW_MS,
   SYNC_LIMIT_MS,
   type Flow,
-  type MediaKind,
   type MediaStats,
+  type StatStream,
   type TextFlow,
 } from "../../../sip/stats.js";
 import type { CallLogEntry } from "../../../storage/store.js";
@@ -104,7 +104,18 @@ export function statsPill(inner: string, opts: { cls: string; connected: boolean
  * presse-papiers : un chiffre arrondi ici et là autrement se lirait comme
  * deux mesures différentes dans le même rapport de support.
  */
-function clockLabel(flow: Flow, kind: MediaKind): string | null {
+/**
+ * L'intitulé d'une ligne de flux. L'écran partagé y a le sien (ADR 0005,
+ * SC-5) : fondu dans « Vidéo », son débit ferait passer pour excellente une
+ * caméra qui n'envoie plus rien.
+ */
+const STREAM_LABEL: Record<StatStream, "stats.audio" | "stats.video" | "stats.share"> = {
+  audio: "stats.audio",
+  video: "stats.video",
+  share: "stats.share",
+};
+
+function clockLabel(flow: Flow, kind: StatStream): string | null {
   // la fréquence d'échantillonnage ne dit quelque chose que de l'audio :
   // c'est elle qui sépare un appel « téléphone » (8 kHz) d'une vraie bande
   // large (48 kHz), là où elle vaut 90 kHz pour toute vidéo
@@ -113,7 +124,7 @@ function clockLabel(flow: Flow, kind: MediaKind): string | null {
     : null;
 }
 
-function codecText(flow: Flow, kind: MediaKind): string {
+function codecText(flow: Flow, kind: StatStream): string {
   if (flow.codec === null) return DASH;
   const clock = clockLabel(flow, kind);
   return clock ? `${flow.codec} ${clock}` : flow.codec;
@@ -132,7 +143,7 @@ function lossText(flow: Flow): string {
     : t("stats.percent", { n: formatNumber(flow.loss * 100, 1) });
 }
 
-function codecCell(flow: Flow, kind: MediaKind): string {
+function codecCell(flow: Flow, kind: StatStream): string {
   if (flow.codec === null) return DASH;
   const clock = clockLabel(flow, kind);
   return `${esc(flow.codec)}${clock ? ` <span class="unit">${esc(clock)}</span>` : ""}`;
@@ -147,13 +158,13 @@ function lossCell(flow: Flow): string {
     : value;
 }
 
-function kindRows(kind: MediaKind, flows: Record<"recv" | "sent", Flow> | null): string {
+function kindRows(kind: StatStream, flows: Record<"recv" | "sent", Flow> | null): string {
   if (!flows) return "";
   const line = (label: string, cells: (flow: Flow) => string): string =>
     `<tr><th scope="row">${esc(label)}</th>
        <td>${cells(flows.recv)}</td><td>${cells(flows.sent)}</td></tr>`;
   return `<tr class="kind"><th scope="colgroup" colspan="3">${esc(
-    t(kind === "audio" ? "stats.audio" : "stats.video"),
+    t(STREAM_LABEL[kind]),
   )}</th></tr>
     ${line(t("stats.codec"), (f) => codecCell(f, kind))}
     ${line(t("stats.bitrate"), (f) => esc(rateText(f)))}
@@ -219,7 +230,7 @@ function scopeLabel(scope: StatsScope, spanMs: number): string {
  */
 export function statsCardHtml(stats: MediaStats | null, scope: StatsScope = "live"): string {
   if (stats === null) return `<p class="mediastats-msg">${esc(t("stats.pending"))}</p>`;
-  if (!stats.audio && !stats.video && !stats.text) {
+  if (!stats.audio && !stats.video && !stats.share && !stats.text) {
     return `<p class="mediastats-msg">${esc(t("stats.none"))}</p>`;
   }
   const rtt =
@@ -243,9 +254,12 @@ export function statsCardHtml(stats: MediaStats | null, scope: StatsScope = "liv
       <thead><tr><td></td>
         <th scope="col">${esc(t("stats.recv"))}</th>
         <th scope="col">${esc(t("stats.sent"))}</th></tr></thead>
-      <tbody>${kindRows("audio", stats.audio)}${kindRows("video", stats.video)}${textRows(
-        stats.text,
-      )}</tbody>
+      <tbody>${kindRows("audio", stats.audio)}${kindRows("video", stats.video)}${kindRows(
+        "share",
+        // un bilan d'avant SC-5 n'a pas de colonne d'écran : il n'en avait
+        // pas la notion, et son absence n'est pas un partage à zéro
+        stats.share ?? null,
+      )}${textRows(stats.text)}</tbody>
     </table>
     <p class="mediastats-foot">${rtt}${sync}<span>${esc(t("stats.lossNote"))}</span></p>`;
 }
@@ -267,9 +281,10 @@ export function statsAsText(entry: CallLogEntry): string {
   for (const [kind, flows] of [
     ["audio", stats.audio],
     ["video", stats.video],
+    ["share", stats.share ?? null],
   ] as const) {
     if (!flows) continue;
-    lines.push(t(kind === "audio" ? "stats.audio" : "stats.video"));
+    lines.push(t(STREAM_LABEL[kind]));
     const row = (label: string, value: (flow: Flow) => string): void => {
       lines.push([label, value(flows.recv), value(flows.sent)].join("\t"));
     };

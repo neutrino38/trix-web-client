@@ -19,6 +19,7 @@ const CFG: AccountConfig = {
   username: "alice",
   authUsername: null,
   ha1: "939e7578ed9e3c518a452acee763bce9",
+  ha1Sha256: "3ba6cd94661c5ef34598040c868f13b8775df29109986be50ad35ae537dd3aa4",
   flashAlert: true,
   ice: { stun: null, turn: null },
   rtt: "websocket",
@@ -167,6 +168,23 @@ describe("lien de partage — ce qui vient d'une URL n'est jamais cru", () => {
 
   it("le HA1 est normalisé en minuscules", () => {
     expect(decoded(forge({ ...CFG, ha1: CFG.ha1.toUpperCase() })).ha1).toBe(CFG.ha1);
+    expect(decoded(forge({ ...CFG, ha1Sha256: CFG.ha1Sha256.toUpperCase() })).ha1Sha256).toBe(
+      CFG.ha1Sha256,
+    );
+  });
+
+  it("un lien d'avant SHA-256 reste un lien : le compte arrive sans cette empreinte", () => {
+    // le compte s'enregistrera partout où le serveur défie en MD5 ; c'est
+    // le défi SHA-256, s'il vient, qui dira ce qui manque
+    const account = decoded(forge({ ...CFG, ha1Sha256: undefined }));
+    expect(account.ha1Sha256).toBe("");
+    expect(account.ha1).toBe(CFG.ha1);
+  });
+
+  it("une empreinte SHA-256 illisible vaut absente, et n'emporte pas le compte", () => {
+    for (const ha1Sha256 of ["abc", "z".repeat(64), CFG.ha1, 42]) {
+      expect(decoded(forge({ ...CFG, ha1Sha256 })).ha1Sha256).toBe("");
+    }
   });
 
   it("aucun champ étranger ne se glisse dans le compte créé", () => {

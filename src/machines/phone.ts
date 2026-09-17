@@ -28,7 +28,7 @@ import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
 import type { ChatItem } from "../sip/transcript.js";
-import { computeHa1 } from "../storage/ha1.js";
+import { computeHa1, computeHa1Sha256 } from "../storage/ha1.js";
 import { parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
 import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
@@ -269,6 +269,20 @@ function isCredentialsError(statusCode: number | undefined): boolean {
 }
 
 /**
+ * Le défi que Trix n'a pas su relever passe devant tous les autres motifs
+ * d'enregistrement refusé. C'est le seul où le 401 ne dit rien des
+ * identifiants — le mot de passe est peut-être le bon, mais le compte n'a
+ * pas d'empreinte SHA-256 à opposer au serveur (RFC 8760), parce qu'il a
+ * été enregistré avant qu'on en calcule une. Le dire ainsi, c'est indiquer
+ * du même coup le remède : ressaisir le mot de passe, qui la calculera.
+ */
+function unansweredChallenge(
+  ev: Extract<PhoneEvent, { type: "sip:registrationFailed" }>,
+): { error: Msg; code: string } | null {
+  return ev.missingSha256 ? { error: msg("error.missingSha256"), code: "SHA256_MISSING" } : null;
+}
+
+/**
  * Validation + HA1 du formulaire, partagé par configuring et reconfiguring.
  *
  * Tout ce qui se compare à « le compte enregistré » se compare ici au
@@ -312,13 +326,22 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   // le HA1 dépend de l'identité d'authentification effective et du realm (= domaine)
   const authId = authUsername ?? username;
   const prevAuthId = edited ? (edited.authUsername ?? edited.username) : null;
-  const ha1 =
+  // les deux empreintes se calculent ensemble, du même mot de passe : c'est
+  // le serveur qui choisira laquelle il défie (RFC 8760). Sans mot de passe
+  // saisi, on garde celles du compte édité — dont l'empreinte SHA-256
+  // peut être vide, s'il date d'avant elle
+  const kept =
+    edited && prevAuthId === authId && edited.domain === domain
+      ? { ha1: edited.ha1, ha1Sha256: edited.ha1Sha256 }
+      : null;
+  const fingerprints =
     f.password !== null && f.password !== ""
-      ? computeHa1(authId, domain, f.password)
-      : edited && prevAuthId === authId && edited.domain === domain
-        ? edited.ha1
-        : null;
-  if (!ha1) {
+      ? {
+          ha1: computeHa1(authId, domain, f.password),
+          ha1Sha256: computeHa1Sha256(authId, domain, f.password),
+        }
+      : kept;
+  if (!fingerprints) {
     ctx.lastError = msg("error.passwordRequired");
     ctx.suspectFields = "credentials";
     return stay("mot de passe manquant");
@@ -346,7 +369,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     displayName: f.displayName,
     username,
     authUsername,
-    ha1,
+    ...fingerprints,
     flashAlert: f.flashAlert,
     ice,
     // rien à valider : le choix vient d'un bouton radio, et une valeur
@@ -674,15 +697,18 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "sip:registered": () => goto("ready", "REGISTER OK"),
         "sip:incoming": refuseIncoming("timeout"),
-        "sip:registrationFailed": (ev, ctx) =>
-          isCredentialsError(ev.statusCode)
+        "sip:registrationFailed": (ev, ctx) => {
+          const unanswered = unansweredChallenge(ev);
+          if (unanswered) return fail(ctx, unanswered.error, unanswered.code, "credentials");
+          return isCredentialsError(ev.statusCode)
             ? fail(ctx, msg("error.badCredentials"), `SIP ${ev.statusCode}`, "credentials")
             : fail(
                 ctx,
                 msg("error.regRefused", { cause: ev.cause }),
                 ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause,
                 "credentials",
-              ),
+              );
+        },
         "sip:disconnected": (_ev, ctx) =>
           fail(ctx, msg("error.wssLostDuringReg"), "WSS_LOST", "proxy"),
         "sys:sleep": () => goto("sleeping", "mise en veille"),
@@ -736,10 +762,17 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // sans code de réponse, l'échec vient du transport (REGISTER resté
         // sans réponse, socket morte) : on reconnecte au lieu d'accuser le compte
         "sip:registrationFailed": (ev, ctx) => {
-          ctx.lastError = msg("error.regLost", { cause: ev.cause });
-          ctx.lastErrorCode = ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause;
-          ctx.suspectFields = ev.statusCode ? "credentials" : "proxy";
-          return ev.statusCode ? goto("reg_failed") : goto("reconnecting", "REGISTER sans réponse");
+          // le rafraîchissement d'un REGISTER peut se heurter à un serveur
+          // qui a changé d'algorithme depuis l'enregistrement initial :
+          // le défi resté sans réponse prime alors sur « enregistrement perdu »
+          const unanswered = unansweredChallenge(ev);
+          ctx.lastError = unanswered?.error ?? msg("error.regLost", { cause: ev.cause });
+          ctx.lastErrorCode =
+            unanswered?.code ?? (ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause);
+          ctx.suspectFields = unanswered || ev.statusCode ? "credentials" : "proxy";
+          return unanswered || ev.statusCode
+            ? goto("reg_failed")
+            : goto("reconnecting", "REGISTER sans réponse");
         },
         "sip:disconnected": (_ev, ctx) => {
           ctx.lastError = msg("error.proxyLost");

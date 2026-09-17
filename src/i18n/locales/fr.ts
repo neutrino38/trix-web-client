@@ -73,7 +73,7 @@ const messages = {
   "config.passwordSet": "•••••• (déjà défini)",
   "config.passwordKeep": "Laisser vide pour conserver le mot de passe actuel.",
   "config.ha1Note":
-    "Le mot de passe n'est pas conservé : seule une empreinte (HA1) est stockée, chiffrée, dans ce navigateur.",
+    "Le mot de passe n'est pas conservé : seules ses empreintes (HA1 MD5 et SHA-256) sont stockées, chiffrées, dans ce navigateur.",
   "config.share": "Partage du compte",
   "config.shareCopy": "Copier le lien de partage",
   "config.shareWarn":
@@ -257,11 +257,50 @@ const messages = {
   "ctrl.cam.aria": "Vidéo",
   "ctrl.cam.add": "Ajouter la vidéo",
   "ctrl.cam.remove": "Retirer la vidéo",
+  /**
+   * **Le partage d'écran** (ADR 0005). Le bouton n'existe que là où la
+   * machine sait capturer un écran — c'est la capacité qui décide, jamais
+   * le gabarit (D8).
+   */
+  "ctrl.share.aria": "Partage d'écran",
+  "ctrl.share.start": "Partager l'écran",
+  "ctrl.share.stop": "Arrêter le partage",
+  /**
+   * **Un seul partage à la fois dans l'appel** (D9) : le bouton est grisé
+   * pendant que le correspondant partage, et le libellé dit pourquoi — un
+   * bouton grisé sans un mot est une porte fermée sans écriteau.
+   */
+  "ctrl.share.busy": "Le correspondant partage déjà son écran",
   "ctrl.media.pending": "Changement de média en cours…",
   "ctrl.media.last": "Impossible : l'appel ne transporterait plus rien",
   "ctrl.selfview.aria": "Self-view",
   "ctrl.selfview.hide": "Masquer le self-view",
   "ctrl.selfview.show": "Afficher le self-view",
+  /**
+   * **La permutation de la scène** (ADR 0005, D11). L'écran partagé prend
+   * la grande surface, et le visage passe en vignette : remettre l'un ou
+   * l'autre en grand est une bascule **locale** — rien ne part sur le fil,
+   * et le correspondant continue de recevoir exactement la même chose.
+   *
+   * Le geste tactile — un appui sur la vignette — ne suffit pas : au
+   * clavier il n'existe pas (RGAA 7.3), d'où ce bouton.
+   */
+  "share.stageAria": "Écran partagé par {peer}",
+  /**
+   * **Le zoom sur un écran reçu** (ADR 0005, question ouverte 3). Un écran
+   * de bureau ramené à 360 px reste illisible : rien n'y est coupé, tout y
+   * est trop petit. L'agrandissement est **local** — rien ne part sur le
+   * fil, et le correspondant continue d'envoyer la même image.
+   */
+  "share.zoomGroup": "Zoom sur l'écran partagé",
+  "share.zoomIn": "Agrandir l'écran partagé",
+  "share.zoomOut": "Réduire l'écran partagé",
+  "share.zoomReset": "Revenir à la taille d'origine",
+  "share.zoomLevel": "{n} %",
+  "share.zoomHint": "Pincez pour agrandir ; flèches du clavier pour déplacer",
+  "ctrl.swap.aria": "Permuter l'écran et le visage",
+  "ctrl.swap.screen": "Mettre l'écran en grand",
+  "ctrl.swap.face": "Mettre le visage en grand",
   /**
    * L'écoute **sur ce poste**, et rien d'autre : le correspondant continue
    * de parler dans un appel intact. « Couper le son » ne disait pas de quel
@@ -319,6 +358,16 @@ const messages = {
   "mediaask.both.title": "{peer} souhaite ajouter l'audio et la vidéo",
   "mediaask.both.body": "Accepter allumera votre micro et votre caméra.",
   "mediaask.both.accept": "Accepter les deux",
+  /**
+   * **L'écran partagé qui arrive** (ADR 0005, D5). La question ne se pose
+   * pas pour la même raison que les autres : accepter n'allume aucun
+   * capteur ici. Elle se pose pour une raison plus forte — un écran
+   * partagé **prend la place de la langue des signes**, et sur un
+   * téléphone il n'y a pas deux grandes surfaces.
+   */
+  "mediaask.share.title": "{peer} souhaite partager son écran",
+  "mediaask.share.body": "Son écran prendra la grande surface, et son image passera en vignette. Refuser ne change rien à l'appel.",
+  "mediaask.share.accept": "Voir l'écran",
   "mediaask.reject": "Refuser",
 
   // ---------------------------------------------------------------------
@@ -330,6 +379,16 @@ const messages = {
   "notice.videoRemoved": "{peer} a retiré la vidéo",
   "notice.videoDeclinedHere": "Vidéo refusée",
   "notice.videoUnavailable": "Impossible d'ajouter la vidéo pour le moment",
+  /**
+   * Le partage a sa propre phrase : rien de ce que l'appel transporte n'a
+   * bougé, et parler de « la vidéo » ici ferait croire à la caméra qui
+   * vient de s'éteindre (ADR 0005, D3).
+   */
+  "notice.shareRefused": "{peer} n'a pas accepté le partage d'écran",
+  "notice.shareUnavailable": "Impossible de partager l'écran pour le moment",
+  "notice.sharePeerStarted": "{peer} partage son écran",
+  "notice.sharePeerStopped": "{peer} a cessé de partager son écran",
+  "notice.shareDeclinedHere": "Partage refusé",
   "notice.audioDeclined": "{peer} n'a pas accepté l'audio",
   "notice.audioRefused": "{peer} refuse d'ajouter l'audio à cet appel",
   "notice.audioAdded": "{peer} a ajouté l'audio",
@@ -426,6 +485,13 @@ const messages = {
   "stats.sent": "Émis",
   "stats.audio": "Audio",
   "stats.video": "Vidéo",
+  /**
+   * **L'écran partagé a sa propre ligne** (ADR 0005, SC-5). Fondu dans
+   * « Vidéo », son débit ferait passer pour excellente une caméra qui
+   * n'envoie plus rien — et c'est exactement la question qu'on pose à cet
+   * encart quand l'image hache.
+   */
+  "stats.share": "Écran partagé",
   "stats.text": "Texte",
   "stats.missing": "Texte manquant",
   "stats.codec": "Codec",
@@ -479,6 +545,8 @@ const messages = {
   "error.wssRefused": "Impossible de se connecter au proxy (connexion WSS refusée)",
   "error.wssTimeout": "Le proxy ne répond pas (timeout WebSocket)",
   "error.badCredentials": "Adresse SIP, mot de passe ou identifiant d'authentification incorrect",
+  "error.missingSha256":
+    "Ce serveur demande une authentification SHA-256, dont ce compte n'a pas l'empreinte. Ressaisissez le mot de passe pour la calculer.",
   "error.regRefused": "Enregistrement refusé : {cause}",
   "error.wssLostDuringReg": "Connexion perdue pendant l'enregistrement",
   "error.registrarTimeout": "Le registrar ne répond pas",

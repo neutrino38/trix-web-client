@@ -36,8 +36,8 @@ une forme (icône barrée) ou par un mot (RGAA 3.1).
 - Webphone SIP complet : enregistrement, appels sortants et entrants, audio et vidéo.
 - **Alerte d'appel entrant perceptible sans le son**, y compris application en arrière-plan.
 - Trois écrans : accueil, configuration, appel — ce dernier en deux gabarits (bureau, mobile).
-- Stockage local du compte SIP **sans stocker le mot de passe** (HA1 uniquement), chiffré,
-  ainsi que de l'historique d'appels.
+- Stockage local du compte SIP **sans stocker le mot de passe** (HA1 MD5 et SHA-256
+  uniquement), chiffré, ainsi que de l'historique d'appels.
 - Traversée de NAT configurable : STUN et TURN (TURN sur TLS compris).
 - Interface multilingue (anglais, français, arabe moderne standard) avec écriture
   droite-à-gauche.
@@ -67,6 +67,11 @@ une forme (icône barrée) ou par un mot (RGAA 3.1).
       « si différent de … » suit le userpart en cours de frappe.
 - [x] À l'enregistrement, le HA1 (`MD5(identifiant:realm:mot de passe)`) est calculé et
       stocké ; le mot de passe n'est **jamais** persisté.
+- [x] La **même** empreinte est calculée en SHA-256 (RFC 8760) et stockée à côté : c'est
+      le serveur qui choisit l'algorithme de son défi, et les deux se rencontrent.
+- [x] Un compte enregistré avant cette empreinte n'en a pas, et rien ne peut la lui
+      fabriquer. Un défi SHA-256 reste alors **sans réponse**, et l'échec le dit en
+      clair — « ressaisissez le mot de passe » — au lieu d'accuser les identifiants.
 - [x] Le stockage local est chiffré (voir `CONCEPTION.md` §6).
 - [x] Les champs sont pré-remplis si un compte existe déjà (mot de passe affiché comme
       « déjà défini » ; le laisser vide conserve le HA1 en place).
@@ -257,7 +262,7 @@ navigateur (immédiat).
 | Adresse SIP | `user@domaine`, avec ou sans préfixe `sip:` ; le domaine sert de realm |
 | Votre nom | texte libre (nom affiché) |
 | Identifiant d'authentification | facultatif, activé par une case ; par défaut le userpart de l'adresse |
-| Mot de passe | masqué ; converti en HA1 à l'enregistrement, jamais stocké |
+| Mot de passe | masqué ; converti en HA1 (MD5 et SHA-256) à l'enregistrement, jamais stocké |
 
 **Colonne 2 — Traversée de NAT**
 
@@ -292,7 +297,7 @@ Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour ac
 sur un compte existant — **« Supprimer ce compte »**, qui efface son enregistrement chiffré
 **et son historique d'appels**, conversations comprises. La suppression demande confirmation
 et n'est proposée que là : l'UA y est déjà arrêté.
-Note visible : « Le mot de passe n'est pas conservé ; seule une empreinte (HA1) est stockée chiffrée. »
+Note visible : « Le mot de passe n'est pas conservé ; seules ses empreintes (HA1 MD5 et SHA-256) sont stockées chiffrées. »
 
 ### Écran 3 — Appel (vue bureau)
 
@@ -446,7 +451,8 @@ Vitest, exécution par `npm test`. Couverture actuelle (`test/`) :
 | Fichier | Objet |
 |---|---|
 | `phone.test.ts`, `call.test.ts`, `answer.test.ts` | machines FSL, avec pile SIP factice |
-| `store.test.ts`, `ha1.test.ts` | stockage chiffré (fake-indexeddb) et calcul du HA1 |
+| `store.test.ts`, `ha1.test.ts` | stockage chiffré (fake-indexeddb) et calcul des HA1 |
+| `digest.test.ts` | réponse à un défi Digest SHA-256, et refus dit quand l'empreinte manque |
 | `sdp.test.ts`, `ice.test.ts` | analyse de l'offre SDP, normalisation STUN/TURN |
 | `trace.test.ts`, `record.test.ts`, `tracedialog.test.ts` | trace SIP, carnet d'appel, dialogue de relecture |
 | `stats.test.ts` | fenêtre glissante et bilan média |
@@ -476,6 +482,7 @@ traversée de NAT via TURN.
 | Risque | Impact | Probabilité | Mitigation |
 |------|--------|------------|------------|
 | Realm du serveur ≠ domaine configuré → HA1 invalide | Élevé | Moyenne | Le domaine de l'adresse SIP sert de realm ; en cas de 401, le diagnostic nomme la cause et le champ fautif est surligné |
+| Serveur défiant en SHA-256 un compte d'avant cette empreinte | Moyen | Faible | Le défi reste sans réponse plutôt que faussement relevé ; l'échec nomme l'algorithme manquant et désigne le mot de passe à ressaisir (`CONCEPTION.md` §6.2) |
 | API FSL encore jeune | Moyen | Moyenne | Ce projet est le premier consommateur réel ; épingler la version, remonter les besoins au framework |
 | Stockage navigateur non inviolable (XSS) | Moyen | Faible | Clé WebCrypto non-extractible + CSP stricte ; voir `CONCEPTION.md` §6 |
 | Trace et historique portent des adresses SIP | Moyen | Moyenne | Chiffrés au repos, effaçables ; l'aide du champ prévient de les retirer d'un rapport public |

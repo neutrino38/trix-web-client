@@ -69,10 +69,11 @@ src/
     trace.ts              # trace des paquets SIP et des états d'appel (§5.2)
     record.ts             # carnet d'un appel, attaché à son historique (§5.3)
     stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
-    mediaerror.ts         # échecs WebRTC : console, carnet, motif d'appel (§5.5)
+    mediaerror.ts         # échecs WebRTC et fil texte : console, carnet, motif (§5.5)
   storage/
     store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
-    ha1.ts                # MD5(username:realm:password)
+    ha1.ts                # MD5 et SHA-256 de username:realm:password (§6)
+    md5.ts, sha256.ts     # condensés synchrones — le chemin Digest ne sait pas attendre
   ui/
     screens/{home,config,call}.ts
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
@@ -498,8 +499,24 @@ s'affiche — « Bob n'a pas accepté la vidéo ».
 
 **Ajouter ou retirer un média est un re-INVITE.** Le bouton envoie
 `ui:toggleMedia {kind}`, le port ouvre (ou ferme) le capteur puis renégocie, et le bloc
-attend l'issue en `renegotiating` — l'appel continue derrière, seules les icônes
-patientent.
+attend l'issue — l'appel continue derrière, seules les icônes patientent.
+
+**L'attente a deux temps, et un seul se chronomètre.** `preparing` est ce qui se passe
+de notre côté du fil : le capteur s'ouvre — le sélecteur d'écran attend un choix, la
+caméra une autorisation — puis le navigateur rassemble ses candidats ICE avant que JsSIP
+n'écrive le SDP. Le correspondant n'en sait rien : il n'a rien reçu à quoi répondre.
+`renegotiating` commence quand l'offre part vraiment (`sip:offering`, émis par le port au
+moment où il relit le SDP local d'une renégociation), et c'est de là seulement que court
+le délai de 28 s. Les deux temps confondus, ce délai comptait l'hésitation de
+l'utilisateur devant son sélecteur d'écran comme un silence du correspondant : un partage
+cliqué à 17:35:14, offert à 17:35:39 et abandonné à 17:35:42 — trois secondes après avoir
+été offert, sans que le distant ait rien pu en dire (constaté le 2026-09-08). Le verrou,
+lui, tient dès le clic dans les deux états. Rien ne borne `preparing` : ce qu'on y attend
+est une décision de l'utilisateur devant une boîte modale, et **toute commande du port
+rend un avis** — y compris celle qui ne peut rien faire, sans quoi le verrou resterait
+posé jusqu'au raccrochage. L'acceptation d'une offre venue du distant (`media_offer`),
+elle, entre directement en `renegotiating` : aucune offre ne part d'ici, et le
+correspondant attend déjà.
 
 **Un seul verrou de renégociation, quel que soit le média.** Deux re-INVITE en vol sur la
 même boîte de dialogue, c'est un 491 garanti : `mediaPending` est donc un état de
@@ -531,6 +548,14 @@ Quatre détails de JsSIP méritent d'être écrits :
   en `media_offer` — 200 OK si l'utilisateur accepte, 488 Not Acceptable Here s'il
   refuse ou ne répond pas en 25 s. Ce qui ne fait qu'ôter un média, ou n'y touche pas,
   suit le chemin normal de JsSIP.
+- le handler du re-INVITE **reçu** ne laisse jamais une offre sans réponse de son fait.
+  Il remplace celui de JsSIP : ce qu'il ne fait pas, personne ne le fait, et une exception
+  y laisserait l'appelant attendre l'expiration de sa transaction — un silence que sa
+  trace ne distingue pas d'un message jamais arrivé. L'issue de secours est le chemin
+  normal de JsSIP, sauf si la question est déjà posée à l'écran : c'est alors la popup qui
+  répond. Et le carnet du récepteur consigne ce qu'il a fait de chaque offre reçue —
+  question posée, répondue sans question, erreur —, pour qu'une renégociation qui
+  n'aboutit pas se lise **des deux côtés**.
 - le re-INVITE **resté sans réponse finale** ne coupe plus la communication. JsSIP câble
   le délai de la transaction (Timer B, RFC 3261 §17.1.1.2) sur `onRequestTimeout`, qui
   raccroche — 408. C'est juste pour l'INVITE initial, qui n'a jamais établi d'appel ;
@@ -542,6 +567,14 @@ Quatre détails de JsSIP méritent d'être écrits :
   Tout le reste garde le sien, à commencer par le rafraîchissement de session : si
   celui-là expire, c'est bien que le distant a disparu.
 
+- **le 2xx a le dernier mot sur la cible du dialogue** (RFC 3261 §12.2.1.2), et JsSIP
+  ne la reprend pas : quand un dialogue précoce existe déjà, son `Dialog.update()` ne
+  remet à jour que le jeu de routes, et la Request-URI de tout ce qui suit reste celle du
+  **180 Ringing**. Invisible tant que les deux Contact se valent ; fatal derrière un
+  intermédiaire qui annonce `sip:xxxx@0.0.0.0` dans son 180 et sa vraie adresse dans son
+  200 OK — l'ACK passe, le re-INVITE meurt en silence, sans 100 ni réponse finale, et le
+  correspondant ne voit jamais la demande. Le port reprend donc le Contact de la réponse
+  finale, avant même l'ACK.
 - le drapeau `uac_pending_reply` du dialogue est levé à la main quand une offre est
   abandonnée. Tant qu'un INVITE que nous avons émis attend sa réponse finale
   (RFC 3261 §14.2), `isReadyToReOffer()` est faux ; JsSIP le retombe à la fin de la
@@ -549,7 +582,8 @@ Quatre détails de JsSIP méritent d'être écrits :
   raccrochage — et l'appel ne négocierait plus rien du tout.
 
 **Un seul délai décide, et c'est celui de l'utilisateur** : 28 s dans l'état
-`renegotiating` du bloc. Le port n'a pas de minuterie à lui ; quand le délai tombe, le
+`renegotiating` du bloc, remis à zéro à chaque offre partie — la reprise après un 491 a
+droit au sien. Le port n'a pas de minuterie à lui ; quand le délai tombe, le
 bloc lui dit `abandonMedia()`, et c'est là que se font le retour arrière, l'extinction du
 capteur ouvert pour rien, et la libération du dialogue. Les minuteries de JsSIP ne
 pouvaient pas tenir ce rôle : le Timer B ne tranche que tant qu'aucune réponse
@@ -557,6 +591,12 @@ provisoire n'est arrivée (état `Calling`), or **la transaction serveur répond
 d'elle-même**, avant même que le re-INVITE n'atteigne notre interception. Un distant qui
 accuse réception puis se tait — utilisateur parti sans trancher, B2BUA qui ne relaie que
 les réponses finales — laisserait sinon l'offre en vol pour toujours.
+
+**Et le Timer B tombe après lui.** L'abandon rend la main à l'écran, mais la transaction
+vit encore quatre secondes : le 408 qui la conclut retrouvait alors le crochet natif de
+JsSIP, c'est-à-dire un BYE (`Reason: cause=408`) sur un appel que personne n'avait
+raccroché. La déviation du crochet suit donc la **transaction**, et non la demande — il
+n'y a plus rien à abandonner à ce moment-là, mais toujours rien à raccrocher non plus.
 
 **Aucun CANCEL n'est envoyé** pour autant : RFC 3261 §9.1 l'interdit tant qu'aucune
 réponse provisoire n'est arrivée — et c'est précisément le cas où le Timer B, lui,
@@ -909,6 +949,15 @@ effacer ce qui est déjà parti coûte un `U+0008`. Confondre les deux produit u
 effacement chez le correspondant — c'est le bug le plus probable d'une implémentation
 de texte temps réel, et `RttChannel.backspace()` est ce qui l'empêche.
 
+**Les deux fils disent leurs pannes**, console et carnet de l'appel, sans condition
+(§5.5) : la rupture, l'échec d'établissement, l'abandon après dix reprises. Aucune de
+ces pannes ne laisse de trace SIP — le canal de données vit sur l'association que
+l'appel porte déjà, le socket sur un fil parallèle dont la signalisation ne sait plus
+rien une fois l'URL lue —, et sans ces lignes il n'en resterait qu'un panneau de tchat
+devenu muet. Sur WebSocket, seule la **première panne d'une série** et l'**abandon**
+sont dits : les neuf reprises du milieu rediraient mot pour mot la même chose, et un
+carnet où la même ligne paraît dix fois est un carnet qu'on ne lit plus.
+
 **Il n'y a pas de plafond de débit.** RFC 8865 §5.3 recommande d'annoncer un `cps` et
 de s'y tenir en moyenne sur dix secondes ; nous ne l'appliquons pas, et c'est assumé :
 à trente caractères par seconde, un collage de deux cents caractères s'étalerait sur
@@ -944,6 +993,21 @@ connexion à `failed` ou l'expiration d'une allocation TURN détruit l'associati
 et emporte tout. La détection est branchée sur `connectionstatechange` et sur la
 fermeture du canal, jamais sur un délai d'inactivité. L'offrant recrée alors le canal
 — dix fois au plus — dès que la connexion est revenue.
+
+**Et chaque panne se dit** — console et carnet de l'appel, sans condition (§5.5) : la
+rupture, l'erreur remontée par la pile (`RTCError`, avec son `errorDetail` et son
+`sctpCauseCode`), la création impossible, l'abandon après dix reprises. Un canal de
+données qui tombe ne laisse **aucune** trace SIP : il vit sur l'association que l'appel
+porte déjà, se rouvre sans renégociation, et le seul signe qu'il en resterait est un
+panneau de tchat devenu muet. S'y ajoute le cas qui n'émet aucun événement du tout — le
+canal qui ne s'ouvre **jamais**, en face d'une passerelle qui annonce le SCTP sans
+créer son canal `t140` : un délai de dix secondes le dit, armé sur l'établissement de
+la connexion et non sur l'ouverture du fil, faute de quoi un appel qui sonne longtemps
+serait déclaré en panne. Deux silences sont voulus : un raccrochage ferme les canaux
+comme une rupture le ferait (la connexion est alors `closed`, on ne dit rien), et un
+distant qui a refusé la section `m=application` a **répondu**, il n'est pas tombé en
+panne — c'est l'absence d'association SCTP qui le distingue, et `sip/rttsip.ts` en
+tire déjà la fermeture du lien.
 
 **Un appel texte seul est un appel comme un autre.** Une `RTCPeerConnection` qui ne
 porte qu'un canal de données est le cas de base de WebRTC : le SDP n'a qu'une section
@@ -1346,6 +1410,132 @@ et le nom des périphériques que le navigateur a retenus.
 - La mesure de niveau est celle des vu-mètres de l'écran d'appel (`ui/vumeter.ts`) :
   un seul `AudioContext` pour l'application, un analyseur par flux.
 
+### 4.12 Le partage d'écran (ADR 0005)
+
+Le partage d'écran ressemble à « ajouter la vidéo », et c'est précisément le piège :
+ce n'en est pas un. Un partage est **un second flux vidéo qui coexiste avec la
+caméra**, pas un remplacement — sans quoi partager reviendrait à disparaître de
+l'écran de son correspondant, ce qui, pour deux personnes qui signent, revient à
+raccrocher.
+
+**Une seconde `m=video`, jamais un `replaceTrack`.** La solution facile — substituer
+la piste d'écran à la piste caméra sur le même émetteur — ne coûte aucune
+renégociation, et c'est son seul mérite : elle rend le partage *invisible à la
+signalisation*, rien à refuser, rien à tracer, rien qui distingue l'écran du visage
+chez le récepteur. Le partage est donc un transceiver de plus, `sendonly`
+(`addTransceiver`), négocié par re-INVITE — le chemin de §4.4, à ceci près que ce
+qu'il ajoute n'est pas un média de l'appel.
+
+**Le port raisonne en rôles, plus en `kind`.** `transceiverFor(pc, role)` remplace
+« le premier transceiver du média » : `audio`, `camera`, `share`. Avec deux
+`m=video`, l'ancienne forme était un générateur de bugs silencieux — éteindre la
+mauvaise caméra, ne suspendre que la moitié de ce que l'on émet, refuser la mauvaise
+m-section. Aucun de ces cas ne lève d'exception : ils rendent l'appel faux. Le
+partage se reconnaît **par identité d'objet** pour le nôtre, **par son `a=mid`**
+(RFC 5888) pour celui du distant — ni l'ordre, ni le `msid`, ni « être la deuxième
+vidéo » ne survivent à une renégociation (RFC 8829 §5.2.2).
+
+**Le flux se nomme sur le fil.** Le navigateur n'écrit pas `a=content` : le port pose
+`a=content:slides` (RFC 4796) sur la m-section du partage dans notre offre locale —
+la seule chose que Trix écrive dans une offre. En lecture, `sharedVideoMid()` prend
+la première `m=video` active qui le porte, et retombe sur la **seconde** `m=video`
+active pour les terminaux qui ne le posent pas. L'ordre ne peut pas remplacer
+l'attribut : un appel audio auquel on ajoute un partage sans jamais avoir eu de
+caméra a son partage en *première* `m=video`. La caméra, elle, ne reçoit pas de
+`a=content:main` — retoucher une m-section qui fonctionne contre des passerelles
+qu'on ne maîtrise pas, pour un gain nul.
+
+**Le partage n'est pas un média de l'appel.** `CallMedia` reste `{ audio, video,
+text }`. Trois conséquences, toutes voulues : `isLastMedia` ne le compte pas (un
+appel dont il ne reste que l'écran n'est pas une conversation) ; l'historique ne le
+consigne pas (c'est un épisode dans un appel, pas une nature d'appel) ; on ne
+décroche pas « en partage ». L'état vit à côté, dans `CallView` — `sharing` pour ce
+que j'émets (`off` / `starting` / `on`), `peerSharing` pour ce que je reçois.
+
+**Le sélecteur d'écran est du temps à nous.** `starting` couvre un moment que les
+autres médias n'ont pas : choisir la fenêtre à partager prend des secondes, parfois des
+dizaines, et rien ne part sur le fil pendant ce temps-là. C'est ce qui a fait scinder
+l'attente d'une renégociation en deux états (§4.4) : `preparing` sans délai, puis
+`renegotiating` et ses 28 s, à partir de l'offre réellement partie.
+
+**Recevoir se demande.** Accepter n'allume aucun capteur : la raison qui fait poser
+la question pour le micro et la caméra (§4.4) ne s'applique pas. Elle se pose quand
+même, et pour plus fort — **un écran partagé prend la place de la langue des
+signes**. Sur un téléphone il n'y a pas deux grandes surfaces : accepter, c'est
+reléguer le visage de son correspondant dans une vignette, et personne d'autre que
+le récepteur ne peut décider cela pour lui (F.703 §4.5 et §6.2.4). La question
+réutilise l'état `media_offer` — pas d'état de plus, pas de minuterie de plus —, le
+refus est un **488** qui laisse la session exactement où elle était (RFC 3261
+§14.1), et le silence vaut refus au bout de 25 s. Une offre qui apporte un média
+**et** un écran ne pose qu'une question, et l'acceptation vaut pour tout ce qu'elle
+porte.
+
+**La scène.** L'écran reçu prend la grande surface en `object-fit: contain` —
+recadrer un écran partagé coupe du texte, c'est-à-dire tout ce qu'il transportait —,
+la caméra distante passe en vignette, et l'auto-vue se replie : trois images sur un
+téléphone n'en font aucune lisible (le bouton reste, un appui la rouvre). La
+**permutation** rend la scène au visage sans refuser le partage : un appui sur la
+vignette *et* une entrée dans la barre, parce que le geste tactile seul n'existe pas
+au clavier (RGAA 7.3). Elle est purement locale — rien ne part sur le fil, et son
+état vit hors du DOM comme le pavé DTMF. Les pistes sont routées **par MID** dans
+`attachMedia` : avec deux `m=video`, l'ordre d'arrivée ne dit plus laquelle est le
+visage.
+
+**Un écran reçu se lit, donc il s'agrandit.** `contain` garantit que rien n'est coupé,
+pas que c'est lisible : un écran de bureau ramené à 360 px est entier et illisible. La
+scène offre donc un agrandissement **local** — rien ne part sur le fil, le
+correspondant envoie la même image —, borné à 5 ×, et l'image ne peut pas dériver hors
+de son cadre (`clampPan`). Trois chemins pour un seul geste, et ce n'est pas du luxe :
+un **pincement** — et la molette + Ctrl, qui est ce qu'un pavé tactile de portable
+envoie —, un **pavé `− / % / +`** posé sur la scène, et le **clavier** (`+`, `−`, `0`,
+flèches pour déplacer). Un geste à plusieurs points sans équivalent à un seul point
+serait hors de portée deux fois (WCAG 2.5.1, RGAA 7.3), et c'est la même leçon que le
+double-clic du plein écran. Le pincement agrandit **sous les doigts** (`anchoredPan`),
+sans quoi il faudrait repositionner l'image après chaque geste ; l'agrandissement
+retombe à 100 % dès que l'écran quitte la scène, une vignette agrandie ne montrant
+qu'un coin.
+
+**Une m-section retirée est recyclée, jamais supprimée.** Arrêter de partager, c'est
+`direction = "inactive"`, piste arrêtée, re-INVITE — et le transceiver **reste**,
+avec son MID. Un transceiver arrêté laisserait un port 0 dans toutes les offres
+suivantes, et le partage d'après en ajouterait une de plus : un SDP qui grandit à
+chaque partage sur un appel qui dure. **L'exception** est le transceiver qu'aucune
+négociation n'a jamais vu : le rollback d'une offre refusée ne défait pas un
+`addTransceiver`, et sans un `stop()` explicite la *prochaine* offre — fût-elle un
+simple ajout d'audio — réoffrirait l'écran que le distant vient de refuser.
+
+**Un seul partage à la fois** (ADR 0005, D9). Si le distant partage, le bouton est
+grisé et le libellé dit pourquoi ; si j'émets déjà, son écran ne pose aucune
+question — sa m-section est répondue `inactive`, et son poste y lit le refus poli.
+Deux écrans, ce sont deux surfaces à caser sur un téléphone et une préséance que
+rien ne tranche. Le glare n'a besoin de rien de plus : le capteur gardé ouvert pour
+la reprise fait refuser le sien, ou c'est le nôtre qui revient refusé.
+
+**La Pause coupe le partage** (ADR 0003, D7) : `replaceTrack(null)` sur les trois
+émetteurs. Un écran qui continuerait de s'afficher pendant que je suis parti ouvrir
+la porte casse la promesse de la Pause de la façon la plus coûteuse — un écran de
+travail montre des notifications, des courriels, des noms.
+
+**La capacité décide, pas le gabarit.** Le bouton n'existe que si
+`navigator.mediaDevices.getDisplayMedia` existe. C'est ce qui rend vraie la règle
+« le partage n'existe que sur bureau » sans qu'aucune ligne ne parle de mobile —
+aucun navigateur mobile n'expose cette API —, et c'est plus juste que de lire une
+largeur de fenêtre : un bureau réduit à 400 px perdrait le partage sans raison. La
+**réception**, elle, ne demande aucune capacité : elle marche partout, et c'est tout
+l'intérêt. Le bouton est du côté axe 1 de la barre (il change ce que le
+correspondant voit) et **vert** : ni le rouge — un média a *quitté* l'appel — ni le
+violet — une bascule locale — ne disent qu'un flux de plus est entré.
+
+**« Cesser de partager »**, appuyé dans la barre du navigateur, arrête la piste sans
+rien dire à l'application : `track.onended` remonte en `sip:shareEnded`, et c'est la
+machine qui lance le re-INVITE — le port n'en émet jamais de sa propre initiative.
+Sans cela, le distant garderait une m-section vivante sur une image gelée.
+
+Hors périmètre, et assumé : l'audio d'onglet (`getDisplayMedia({ audio: true })`) —
+une quatrième m-section et un mixage avec le micro que rien ne décrit ; et le
+pincement pour zoomer sur un écran reçu, qui est la première demande à attendre sur
+mobile.
+
 ## 5. Intégration JsSIP
 
 ```ts
@@ -1359,6 +1549,11 @@ const ua = new JsSIP.UA({
   register: true,
 });
 ```
+
+L'empreinte SHA-256 ne passe pas par là : la configuration d'un UA JsSIP n'a de place
+que pour un HA1. Elle est déposée le temps de la session par `useSha256Ha1()`, sous
+l'identité qui a servi à la calculer, et c'est la greffe de `sip/digest.ts` qui l'y
+reprend au moment d'un défi (§6.2).
 
 - Binding : `ua.on("connected"|"disconnected"|"registered"|"unregistered"|
   "registrationFailed"|"newRTCSession", …)` → `phone.send({type:"sip:…", …})` ;
@@ -1537,6 +1732,19 @@ Perte à l'émission d'après les rapports de réception du correspondant.
   L'encart le dit en toutes lettres : ce n'est pas une mesure locale.
 - Les flux multiples d'un même média (simulcast, plusieurs SSRC) s'additionnent :
   ce qu'on lit est le débit de la vidéo, pas celui de chacune de ses couches.
+- **Sauf l'écran partagé, qui a sa propre ligne** (ADR 0005, §4.12). Deux `m=video`
+  s'additionneraient comme deux couches, et personne ne s'en apercevrait : le débit
+  « vidéo » deviendrait celui de la caméra *plus* celui de l'écran, et un écran de
+  bureau à 2 Mbit/s ferait passer pour excellente une caméra qui n'envoie plus rien
+  — c'est-à-dire exactement la question qu'on pose à cet encart quand l'image hache.
+  Pire pour le public de Trix : l'écart audio / vidéo se mesurerait sur le premier
+  flux vidéo venu, et un document qui défile avec une seconde de retard condamnerait
+  un appel parfaitement synchrone. La séparation se fait par le `a=mid` (RFC 5888),
+  que le port fournit à chaque relevé — c'est lui, et lui seul, qui sait ce qu'un
+  flux est. Les rapports de réception du distant (`remote-inbound-rtp`) ne portent
+  pas de MID : c'est leur `localId` qui renvoie au flux émis, et lui le porte. Un
+  navigateur qui ne rapporte pas `mid` range tout dans la vidéo, comme avant :
+  dégrader, jamais refuser.
 - **Sous la même case que la trace SIP** (§5.2) : c'est le même outillage de
   diagnostic. Décochée, la pastille reste une pastille, et aucun `getStats()` n'est
   demandé sur la connexion pair-à-pair d'un appel ordinaire. Le réglage est consulté
@@ -1658,6 +1866,60 @@ microtask suivant pour les causes qui peuvent porter un détail, et le motif arr
 complet. Rien d'autre n'étant émis entre-temps, l'ordre des événements vus par la
 machine ne change pas.
 
+Enfin, le même engagement vaut pour le **canal texte T.140** (§4.9) :
+`reportTextChannelError()` pose une ligne de console et une ligne de carnet à chaque
+rupture ou échec d'établissement, sur **les deux fils** — canal de données comme
+socket —, avec l'erreur technique de la pile et les faits qu'elle ne porte pas : quel
+transport, quel socket ou quel rôle, l'état de la connexion pair-à-pair, les canaux
+tenus, les reprises déjà tentées. C'est exactement la même raison qu'au-dessus, poussée
+un cran plus loin : là où un échec média laisse au moins un 488 sur le fil, un fil
+texte qui tombe ne laisse rien du tout.
+
+```
+[trix] Texte temps réel : erreur sur le canal : OperationError: Data channel failure
+rôle : offer
+connexion : connected
+canaux : 0
+reprises : 0
+errorDetail : sctp-failure
+sctpCauseCode : 12
+```
+
+#### Le certificat du serveur, quand le navigateur veut bien le dire
+
+Un certificat expiré ou invalide est une panne d'exploitation ordinaire, et elle mérite
+d'être **nommée** plutôt que traduite en « échec DTLS ». Ce qu'on peut en dire dépend
+entièrement du tuyau, et l'écart entre les deux est instructif.
+
+**Sur le canal de données, oui.** Une poignée de main DTLS ratée se solde par une
+alerte TLS numérotée (RFC 5246 §7.2, RFC 8446 §6.2), et WebRTC est le seul endroit où
+le navigateur nous la rend : `RTCError` porte `sentAlert` et `receivedAlert` quand
+`errorDetail` vaut `dtls-failure`. `sip/rttdc.ts` écoute donc l'événement `error` du
+transport DTLS sous l'association (`pc.sctp.transport`), et `certificateFault()`
+traduit : les alertes **42 à 46 et 48** désignent le certificat, la **45** dit qu'il a
+expiré. Le sens de l'alerte compte autant que son numéro — celle que **nous envoyons**
+rejette le certificat d'en face, celle que nous **recevons** rejette le nôtre —, et les
+confondre enverrait le support réparer le mauvais serveur. La 51 (`decrypt_error`) est
+délibérément hors de la liste : elle accompagne le plus souvent une empreinte SDP qui
+ne correspond pas, ce qui est un problème de signalisation, pas un certificat périmé.
+
+```
+[trix] Texte temps réel : échec de la poignée de main DTLS : OperationError: DTLS
+handshake failed — certificat du serveur expiré, refusé par ce poste (alerte 45
+certificate_expired)
+```
+
+**Sur WebSocket, non — et c'est dit plutôt que deviné.** La RFC 6455 §7.4.1 réserve le
+code 1015 à une poignée de main TLS échouée mais **interdit** de le remonter à
+l'application : le navigateur ferme sur **1006**, sans motif, qu'il s'agisse d'un
+certificat expiré, d'un DNS mort ou d'un port fermé. Il n'existe aucun détour — une
+sonde HTTPS vers la même origine serait de toute façon refusée par la CSP de production
+(`connect-src 'self' wss:`). Un socket qui n'a **jamais** été ouvert nomme donc les
+trois causes possibles, le certificat en tête, et laisse le lecteur trancher avec ce
+que, lui, peut aller voir ; un socket rompu **après** ouverture ne les nomme pas, sa
+poignée de main ayant eu lieu. Le 1015 reste traité pour la pile qui le remonterait
+quand même — un mandataire, un portage non navigateur.
+
 ### 5.6 DTMF : RFC 4733, et le dire explicitement
 
 JsSIP envoie les DTMF en **SIP INFO** par défaut. Ce n'est pas ce que nous voulons :
@@ -1686,8 +1948,13 @@ pour des identifiants SIP). La meilleure approximation :
 
 1. **Ne jamais stocker le mot de passe** : à la sauvegarde du formulaire, calcul de
    `ha1 = MD5(username:realm:password)` (MD5 absent de WebCrypto → mini-implémentation locale
-   ~150 lignes ou `js-md5`). Le HA1 suffit à JsSIP pour s'authentifier ; sa compromission
+   ~80 lignes). Le HA1 suffit à JsSIP pour s'authentifier ; sa compromission
    ne révèle pas le mot de passe (mais permet l'usage du compte SIP — d'où le point 2).
+   La **même** empreinte est calculée en SHA-256 (RFC 8760) et gardée à côté, parce que
+   c'est le serveur qui choisit l'algorithme de son défi : `md5.ts` et `sha256.ts` sont
+   tous deux des implémentations locales et **synchrones**, la seconde parce que le
+   `crypto.subtle.digest` de WebCrypto ne rend qu'une promesse, et que la réponse à un
+   défi se calcule au milieu d'un chemin synchrone de JsSIP (§6.2).
 2. **Chiffrement au repos** : clé AES-GCM 256 générée par WebCrypto avec
    `extractable: false`, stockée dans IndexedDB (le navigateur la garde dans son profil,
    elle n'est pas exportable par du JS) ; la configuration chiffrée (IV aléatoire par
@@ -1706,6 +1973,7 @@ interface AccountConfig {
   username: string;
   authUsername: string | null; // identifiant d'authentification, si distinct
   ha1: string;          // jamais le mot de passe
+  ha1Sha256: string;    // la même empreinte en SHA-256 (RFC 8760) ; "" si inconnue (§6.2)
   flashAlert: boolean;  // réglage d'accessibilité (§4.3) — suit le compte, pas le navigateur
   ice: IceConfig;       // serveurs STUN/TURN (§5.1), mot de passe TURN compris
   rtt: RttTransport;    // texte en temps réel (§4.9) — aucun (défaut), WebSocket, ou canal de données
@@ -1814,7 +2082,8 @@ ne configure rien.
 **Ce qui vient d'une URL n'est jamais cru.** Chaque champ est vérifié au décodage :
 proxy `ws(s)://`, HA1 sur 32 chiffres hexadécimaux, adresse SIP sans espace ni second
 `@`, serveur TURN écarté s'il lui manque ses identifiants, transport inconnu ramené à
-`none`. Les champs facultatifs absents prennent les mêmes défauts qu'un compte relu d'un
+`none`, empreinte SHA-256 sur 64 chiffres hexadécimaux — celle-là ramenée à « absente »
+plutôt que refusant le lien, un lien d'avant elle n'en portant pas (§6.2). Les champs facultatifs absents prennent les mêmes défauts qu'un compte relu d'un
 coffre ancien. Un numéro de version (`v`) permet à un lien plus récent d'être **reconnu
 comme tel** plutôt que rejeté comme illisible.
 
@@ -1830,6 +2099,39 @@ entière (`vite.config.ts`), servie en fichier statique sans réécriture d'URL 
 serveur. C'est ce découpage qui garantit que la page n'embarque ni automate, ni pile
 SIP, ni JsSIP : Rollup n'y met que ce qu'elle importe — quelques kilo-octets contre
 près de quatre cents.
+
+### 6.2 Deux empreintes, parce que le serveur choisit (RFC 8760)
+
+RFC 8760 ajoute SHA-256 au Digest de RFC 2617, sans rien changer d'autre : `HA1`, `HA2`
+et la réponse se construisent mot pour mot de la même façon, seule la fonction de
+hachage diffère. Un serveur annonce son choix dans le défi (`algorithm=SHA-256`), et les
+deux algorithmes se rencontrent encore — d'où **deux empreintes gardées côte à côte**
+dans le compte, calculées ensemble à la saisie du mot de passe. C'est le seul moment où
+elles peuvent l'être : le mot de passe n'est nulle part ensuite.
+
+**JsSIP ne sait faire que MD5.** Sa classe `DigestAuthentication` refuse tout autre
+algorithme — « authentication aborted » — et rend `false` : le 401 remonte tel quel,
+l'enregistrement échoue, et rien ne dit pourquoi. Elle n'est pas exportée et n'offre
+aucun crochet ; `src/sip/digest.ts` remplace donc sa méthode `authenticate()` par une
+version qui traite SHA-256 et **délègue tout le reste**, MD5 compris, à celle de JsSIP.
+Le module interne est importé par son chemin (`jssip/lib/…`) : c'est le même module que
+celui dont `RequestSender` se sert, vérifié sur les trois chemins de construction
+(vitest, `vite build`, pré-optimisation du serveur de développement). Le jour où ce ne
+serait plus vrai, `test/digest.test.ts` le dirait — il fait répondre la classe de JsSIP
+au vecteur de RFC 7616 §3.9.1.
+
+**Le champ vide est un cas, pas une panne.** Un compte enregistré avant l'arrivée de
+SHA-256, ou reçu par un lien de partage émis par une version précédente, n'a que son
+HA1 MD5 ; rien ne peut fabriquer l'autre après coup. Un défi SHA-256 reste alors sans
+réponse — Trix ne présente pas une empreinte fausse — et l'échec d'enregistrement qui
+suit **dit lequel des deux cas c'est** : `error.missingSha256` au lieu de
+« identifiants refusés », avec le champ mot de passe désigné, puisque le ressaisir est
+le remède. Le reste du compte est intact, et continue de s'enregistrer partout où le
+serveur défie en MD5.
+
+**Ce qui n'est pas là** : `SHA-512-256`, l'autre algorithme de RFC 8760, et les
+variantes `-sess`. Aucune empreinte de cette forme n'est stockée, donc aucune ne
+pourrait être présentée ; elles restent refusées.
 
 ## 7. Normalisation d'adresse
 
@@ -1882,9 +2184,14 @@ Options pour la future phase 5 (à trancher le moment venu) :
 - **Machines** : Vitest, pile SIP factice injectée dans le contexte (mêmes patterns que
   `webphone.test.ts` de FSL : fake timers, test de l'INVITE en course avec un changement
   d'état via la pending queue).
-- **HA1 & store** : vecteurs de test RFC 2617 pour MD5/HA1 ; round-trip chiffrement WebCrypto.
+- **HA1 & store** : vecteurs de test RFC 1321/FIPS 180-4 pour MD5 et SHA-256, RFC 2617
+  §3.5 pour le HA1 ; round-trip chiffrement WebCrypto.
+- **Digest SHA-256** : le vecteur de RFC 7616 §3.9.1, passé par la classe de JsSIP
+  elle-même — ce qui vérifie du même coup que la greffe porte bien sur le module qu'elle
+  utilise (§6.2) ; et le défi laissé sans réponse quand l'empreinte manque.
 - **E2E manuel** : contre Kamailio/Elixip local (comptes de test), matrice : register,
-  register échoué (mauvais HA1), appel audio, appel vidéo, occupé, no answer, BYE distant.
+  register échoué (mauvais HA1), register défié en SHA-256 (avec et sans empreinte),
+  appel audio, appel vidéo, occupé, no answer, BYE distant.
 
 ## 10. Références
 

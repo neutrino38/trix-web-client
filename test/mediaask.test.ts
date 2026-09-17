@@ -29,7 +29,10 @@ function view(over: Partial<CallView> = {}): CallView {
     selfViewHidden: false,
     mediaPending: false,
     mediaAsked: null,
+    shareAsked: false,
     paused: false,
+    sharing: "off" as const,
+    peerSharing: false,
     peerPaused: false,
     dtmfSent: "",
     notice: null,
@@ -146,5 +149,46 @@ describe("la question porte le média qu'on lui demande", () => {
   it("dit quel capteur s'allumerait — c'est ce qui justifie la question", () => {
     expect(mediaAskDialog(view({ mediaAsked: ["audio"] }))).toContain("votre micro");
     expect(mediaAskDialog(view({ mediaAsked: ["video"] }))).toContain("votre caméra");
+  });
+});
+
+/**
+ * **La question de l'écran partagé** (ADR 0005, D5).
+ *
+ * Elle ne se pose pas pour la même raison que les autres : accepter
+ * n'allume aucun capteur ici. Elle se pose parce qu'un écran partagé prend
+ * la place de la langue des signes — et la phrase doit donc parler de la
+ * **scène**, jamais d'un micro ou d'une caméra qui s'allumerait.
+ */
+describe("la question de l'écran partagé", () => {
+  /** Ce que le bloc publie d'une offre qui n'apporte qu'un écran. */
+  const shared = (over: Partial<CallView> = {}): CallView =>
+    view({ mediaAsked: [], shareAsked: true, ...over });
+
+  it("nomme l'écran, et non un média", () => {
+    const html = mediaAskDialog(shared({ displayName: "Alice" }));
+    expect(html).toContain("Alice souhaite partager son écran");
+    expect(html).toContain("Voir l'écran");
+    expect(html).not.toContain("caméra");
+  });
+
+  it("dit ce qu'accepter coûte : la place du visage", () => {
+    expect(mediaAskDialog(shared())).toContain("vignette");
+  });
+
+  it("refuser reste le même geste : un mot, et l'appel continue", () => {
+    expect(mediaAskDialog(shared())).toContain('data-act="reject-media"');
+  });
+
+  /**
+   * Une offre qui apporte les deux ne pose qu'une question, et c'est le
+   * média qui la nomme : c'est lui qui allume un capteur, et lui qui change
+   * ce que l'appel transporte.
+   */
+  it("un média et un écran d'un coup : c'est le média qui parle", () => {
+    const html = mediaAskDialog(
+      view({ mediaAsked: ["video"], shareAsked: true, displayName: "Alice" }),
+    );
+    expect(html).toContain("Alice souhaite ajouter la vidéo");
   });
 });
