@@ -39,6 +39,7 @@ import {
   fmtChrono,
   historyRow,
   isSpeakerMuted,
+  reachBanner,
   statusOf,
   switchButton,
 } from "./parts.js";
@@ -121,6 +122,10 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           ${ICONS.logout}
         </button>
       </div>
+      <!-- La joignabilité (ADR 0006, D2) : sous la barre et au-dessus de la
+           scène, parce qu'elle ne parle ni de l'appel en cours ni du compte,
+           mais de la seule chose qu'un téléphone doit garantir. -->
+      ${reachBanner(phone)}
       <!-- pendant la sonnerie, la popup est la seule chose à laquelle répondre :
            \`inert\` retire tout le reste de l'écran au clavier comme à la souris,
            ce que \`aria-modal\` ne dit qu'aux lecteurs d'écran -->

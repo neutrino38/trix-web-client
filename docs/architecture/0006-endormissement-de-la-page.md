@@ -1,6 +1,9 @@
 # ADR 0006 — L'endormissement de la page
 
-**Statut :** proposé — 2026-09-21
+**Statut :** accepté — 2026-09-21 · **implémenté** — 2026-09-21 (SC-1 à SC-9)
+Restent à vérifier en réel, et seulement en réel (§5) : que l'unREGISTER parte avant la
+suspension des tâches, qu'une notification posée dans `freeze` survive, ce que `localStorage`
+contient après un déchargement, et dans quel ordre la WSS livre ce qu'elle a mis en attente.
 **Portée :** `ui/lifecycle.ts`, `ui/reachability.ts` (nouveau), `storage/session.ts` (nouveau),
 `machines/phone.ts`, `machines/events.ts`, `ui/alert.ts`, `ui/screens/call/*`, `ui/screens/config.ts`,
 `i18n/locales/*`, `docs/CONCEPTION.md` §4.1 et §4.13, `USERGUIDE.md`
@@ -224,12 +227,28 @@ aucun événement d'interface.
 est visible (D6). L'horodatage « dernier instant joignable » est écrit à chaque battement et sur
 passage en caché.
 
+*À l'implémentation*, trois écarts assumés. Le premier : `lifecycle.ts` ne rapporte que les deux
+raisons qu'il **observe** (`freeze`, `system`) ; `offline` se lit sur `navigator.onLine` et
+`discard` sur `document.wasDiscarded`, tous deux dans `reachability.ts`, qui est aussi le seul à
+savoir si l'épisode mérite une phrase. Le deuxième : il a fallu un cinquième motif, `lost`, pour le
+cas le plus courant de tous — l'enregistrement est tombé et rien ne dit pourquoi. Le faire passer
+pour une veille machine aurait été plus court que juste. Le troisième, pour la même raison que le premier : c'est `reachability.ts` qui
+écrit l'horodatage, parce que lui seul sait si l'on **était** joignable — un onglet caché sans
+enregistrement n'a pas de dernier instant joignable à consigner. Les deux modules écoutent donc
+`visibilitychange`, `freeze` et `pagehide`, chacun pour sa propre raison, et `main.ts` pose les
+écouteurs de la joignabilité en premier pour que l'horodatage précède le désenregistrement.
+
 **SC-4 — Désenregistrement propre (D3).** `freeze` et `pagehide` envoient `sys:sleep` ; vérifier sur
 une trace réelle que l'unREGISTER part.
 
 **SC-5 — REGISTER de contrôle (D5).** `resume`, `pageshow`, retour au premier plan et `online`
 envoient `sys:wake`. Le comportement existant de `ready` (`refresh()` puis repli sur `connecting`)
 est conservé tel quel.
+
+*À surveiller* : « retour au premier plan » est pris au pied de la lettre, sans seuil. Quelqu'un
+qui bascule d'onglet vingt fois par minute enverra vingt REGISTER. C'est un paquet chacun et le
+registrar les attend, mais si cela se voyait dans une trace, le remède tiendrait en une ligne :
+n'émettre que si l'onglet est resté caché assez longtemps pour avoir pu geler.
 
 **SC-6 — `ui/reachability.ts` (D1, D2, D8).** Le niveau de joignabilité dérivé de l'état de la
 machine, le seuil de 10 s, le titre, le favicon, la notification et sa jumelle de retour. Un seul

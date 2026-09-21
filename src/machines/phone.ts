@@ -24,6 +24,7 @@ import {
   type Vault,
 } from "../storage/store.js";
 import { findByAddress } from "../accounts.js";
+import { resumeAccount, setResumeAccount } from "../storage/session.js";
 import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
@@ -154,6 +155,19 @@ function fail(ctx: PhoneCtx, message: Msg, code: string, fields: SuspectField) {
   if (ctx.autoReconnect && fields === "proxy") return goto("reconnecting", "reconnexion auto");
   ctx.autoReconnect = false;
   return goto("reg_failed");
+}
+
+/**
+ * Oublier que ce compte doit être enregistré (ADR 0006, D4). Le marqueur
+ * est posé par `ready` et retiré ici, et ici seulement : fermer l'onglet,
+ * le recharger ou le voir déchargé par le navigateur ne sont pas des
+ * décisions de l'utilisateur, « Déconnexion » en est une.
+ *
+ * La suppression du compte passe par le même chemin sans le nommer : un
+ * marqueur qui désigne un compte absent du coffre ne reprend rien.
+ */
+function forgetResume(ctx: PhoneCtx): void {
+  if (resumeAccount() === ctx.activeId) setResumeAccount(null);
 }
 
 function clearError(ctx: PhoneCtx): void {
@@ -496,10 +510,24 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     initial_state: {
       enter(ctx, fx) {
         fx.task(
-          ctx.store.load().then(async (vault) => ({
-            vault,
-            history: vault.activeId ? await ctx.store.loadHistory(vault.activeId) : [],
-          })),
+          ctx.store.load().then(async (vault) => {
+            // Le marqueur de reprise (ADR 0006, D4) vit hors du coffre et
+            // dit une autre chose que `activeId` : non pas quel compte est
+            // choisi, mais que ce compte *doit* être enregistré. Il est lu
+            // ici, avant l'historique, parce que c'est lui qui décide duquel
+            // on a besoin — les deux coïncident sauf si l'écriture du coffre
+            // avait échoué.
+            const resume = resumeAccount();
+            const activeId = vault.accounts.some((a) => a.id === resume)
+              ? resume
+              : vault.activeId;
+            return {
+              vault,
+              activeId,
+              resume: activeId !== null && activeId === resume,
+              history: activeId ? await ctx.store.loadHistory(activeId) : [],
+            };
+          }),
           "loadVault",
           { timeout: 3000 },
         );
@@ -517,12 +545,26 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
             const pinned = pinAccount(a);
             return pinned ? [{ ...pinned, id: a.id }] : [];
           });
-          ctx.activeId = ctx.accounts.some((a) => a.id === vault?.activeId)
-            ? vault!.activeId
-            : null;
+          const wanted = ev.ok ? ev.value.activeId : null;
+          ctx.activeId = ctx.accounts.some((a) => a.id === wanted) ? wanted : null;
           ctx.history = ctx.activeId && ev.ok ? recent(ev.value.history) : [];
+          // D4 : quel que soit le motif du chargement — onglet déchargé par
+          // l'Économiseur de mémoire, F5, redémarrage du navigateur —, un
+          // compte marqué « à reprendre » se réenregistre sans rien
+          // demander. Le distinguer par `document.wasDiscarded` aurait donné
+          // deux comportements à deux rechargements que l'utilisateur ne
+          // distingue pas ; ce drapeau ne sert donc qu'à **expliquer**
+          // l'absence (`ui/reachability.ts`).
+          if (ctx.activeId && ev.ok && ev.value.resume) {
+            return goto("connecting", "reprise de l'enregistrement");
+          }
           return goto("home", ctx.accounts.length > 0 ? "compte trouvé" : "aucun compte");
         },
+        // le temps de lire le coffre, il n'y a pas d'UA : rien à
+        // désenregistrer, rien à rafraîchir. Un gel qui tomberait ici ne
+        // doit pas pour autant empêcher la reprise qui suit
+        "sys:sleep": () => undefined,
+        "sys:wake": () => undefined,
       },
       meta: { screen: "boot" },
     },
@@ -724,6 +766,12 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     ready: {
       enter(ctx) {
         ctx.autoReconnect = false;
+        // D4 : l'enregistrement a réussi — ce compte *doit* être enregistré,
+        // et le chargement suivant le reprendra sans rien demander, que la
+        // page ait été rechargée, déchargée par l'Économiseur de mémoire ou
+        // rouverte après un redémarrage du navigateur. Hors du coffre, parce
+        // qu'il faut pouvoir le lire même quand celui-ci refuse de s'ouvrir.
+        setResumeAccount(ctx.activeId);
       },
       on: {
         "ui:call": (ev, ctx) => {
@@ -789,7 +837,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           return goto("reconfiguring", "retour paramètres");
         },
         "ui:switchAccount": switchAccount,
-        "ui:logout": () => goto("unregistering"),
+        "ui:logout": (_ev, ctx) => {
+          // « Déconnexion » est le seul geste qui efface le marqueur de
+          // reprise : c'est la différence entre une page qu'on ferme et un
+          // téléphone qu'on éteint (D4)
+          forgetResume(ctx);
+          return goto("unregistering");
+        },
         "ui:clearHistory": clearHistory,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         // réveil détecté : la WSS peut être morte sans que le navigateur le
@@ -859,6 +913,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:switchAccount": switchAccount,
         "ui:logout": (_ev, ctx) => {
           ctx.autoReconnect = false;
+          forgetResume(ctx);
           return goto("home", "déconnexion");
         },
         "sip:disconnected": () => undefined,
@@ -892,7 +947,10 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:unregistered": () => undefined,
         "sip:incoming": refuseIncoming("timeout"),
         "sip:registrationFailed": () => undefined,
-        "ui:logout": () => goto("home"),
+        "ui:logout": (_ev, ctx) => {
+          forgetResume(ctx);
+          return goto("home");
+        },
         "ui:switchAccount": switchAccount,
         "ui:backToSettings": (_ev, ctx) => {
           ctx.editing = ctx.activeId;
@@ -916,7 +974,10 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           ctx.editing = ctx.activeId;
           return goto("configuring");
         },
-        "ui:logout": () => goto("home"),
+        "ui:logout": (_ev, ctx) => {
+          forgetResume(ctx);
+          return goto("home");
+        },
         // suites de l'arrêt de l'UA : consommées sans effet
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,

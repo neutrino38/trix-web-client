@@ -7,6 +7,7 @@ import { chatTranscript } from "./ui/screens/call/chat.js";
 import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
+import { noteSleepReason, watchReachability } from "./ui/reachability.js";
 import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
 import { traceCallStates } from "./sip/trace.js";
@@ -96,9 +97,26 @@ onLocaleChange(() => {
   renderApp(root, phone);
 });
 
-// veille / réveil de la machine : raccrocher + désenregistrer, puis réenregistrer
+// La joignabilité (ADR 0006) : le niveau dérivé de la machine, la phrase
+// dans la page, le titre d'onglet, le favicon et la notification système.
+//
+// **Avant** `watchSystemLifecycle`, et ce n'est pas indifférent : les deux
+// écoutent `freeze` et `pagehide`, les écouteurs partent dans l'ordre où
+// ils ont été posés, et celui-ci doit horodater le dernier instant
+// joignable pendant que la machine est encore enregistrée — l'autre l'en
+// sort aussitôt après (D3).
+watchReachability(phone);
+
+// Endormissements de la page et de la machine : gel de l'onglet, départ en
+// bfcache, fermeture, veille de l'ordinateur. Tous raccrochent et
+// désenregistrent ; tout retour réenregistre (ADR 0006, D3 et D5).
 watchSystemLifecycle({
-  onSleep: () => phone.send({ type: "sys:sleep" }),
+  onSleep: (reason) => {
+    // le motif sert la phrase de la notification, pas la décision : elle
+    // est la même pour les trois
+    noteSleepReason(reason);
+    phone.send({ type: "sys:sleep" });
+  },
   onWake: () => phone.send({ type: "sys:wake" }),
 });
 

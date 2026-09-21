@@ -2,7 +2,13 @@ import { editedAccount, type PhoneInstance } from "../../machines/phone.js";
 import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
 import { alertPermission, requestAlertPermission } from "../alert.js";
-import { setTheme, themeChoice, type ThemeChoice } from "../prefs.js";
+import {
+  reachAlertEnabled,
+  setReachAlertEnabled,
+  setTheme,
+  themeChoice,
+  type ThemeChoice,
+} from "../prefs.js";
 import { setSipTrace, sipTraceEnabled } from "../../sip/trace.js";
 import type { SuspectField } from "../../machines/events.js";
 import { langPicker, wireLangPicker } from "../langpicker.js";
@@ -286,6 +292,17 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
         <div class="field">
           ${notificationField()}
         </div>
+        <!-- Même autorisation que les appels entrants, réglage distinct
+             (ADR 0006, D2) : être prévenu qu'on vous appelle n'est pas être
+             prévenu que vous ne pouvez plus l'être. Réglage du navigateur,
+             donc hors formulaire — pas d'attribut « name », effet immédiat. -->
+        <div class="field">
+          <label class="checkline" for="f-reach">
+            <input type="checkbox" id="f-reach" ${reachAlertEnabled() ? "checked" : ""}>
+            <span><b>${esc(t("config.reachLabel"))}</b>${esc(t("config.reachDesc"))}</span>
+          </label>
+          <span class="hint">${esc(t("config.reachHint"))}</span>
+        </div>
         <fieldset class="field">
           <legend class="field-title">${esc(t("config.theme"))}</legend>
           <div class="radio-row">
@@ -433,6 +450,11 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
       row.innerHTML = notificationField();
     });
   });
+
+  // l'avertissement d'injoignabilité : lu par `ui/reachability.ts` au moment
+  // où il poserait la notification, donc rien à propager ici
+  const reachToggle = node.querySelector<HTMLInputElement>("#f-reach");
+  reachToggle?.addEventListener("change", () => setReachAlertEnabled(reachToggle.checked));
 
   for (const radio of node.querySelectorAll<HTMLInputElement>('input[name="theme"]')) {
     radio.addEventListener("change", () => setTheme(radio.value as ThemeChoice));

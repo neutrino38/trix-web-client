@@ -110,6 +110,7 @@ account; browser settings take effect immediately and stay on this device.
 |---|---|---|
 | **Visual flash on incoming call** | Account | The screen flashes while ringing, so you are alerted with the sound off. On by default |
 | **System notifications** | Browser | Press **Enable notifications** to grant permission. Without it, Trix cannot alert you while the window is hidden or minimised. If the browser has blocked them, Trix says so — it cannot ask again itself, you have to re-enable them in the browser's site settings |
+| **Warn me when I become unreachable** | Browser | A notification when the browser puts the tab to sleep or the registration drops, and another once everything is back. Same permission as incoming calls, separate setting — being told someone is calling you is not the same as being told that nobody can any more. On by default; see [staying reachable](#staying-reachable-in-a-background-tab) |
 | **Theme** | Browser | *System* (the default, following your device's light/dark setting), *Light* or *Dark* |
 | **Interface language** | Browser | Same picker as the home screen |
 | **Test my microphone and camera** | Browser | Opens a self-test that stays on this device — see below |
@@ -141,6 +142,50 @@ The pill at the top left of the call screen always says where the phone stands:
 Two buttons sit at the top right: **Settings** (unregisters, then reopens the form) and
 **Sign out** (unregisters, closes the socket, returns home). Both are disabled during a
 call.
+
+### Staying reachable in a background tab
+
+A browser tab is not a phone that sits on a desk. Chrome's Energy Saver **freezes** a tab
+that has been hidden for about five minutes, and its Memory Saver **discards** one
+outright to reclaim memory. Both are on by default, for everybody, and neither asks. The
+tab stays in the strip with its title and its icon — but nothing in it runs any more, and
+nobody can call you.
+
+Trix will not fight this, and will not play the usual tricks to escape it — a silent
+looping audio track or a phantom media stream would drain your battery to work around a
+decision your browser made on your behalf. It does three things instead.
+
+**It hangs up cleanly.** Freezing is announced a fraction of a second in advance, and
+that is the last moment any code of ours runs: Trix uses it to unregister. A contact that
+has been withdrawn is something your provider can act on — it can send the caller to
+voicemail. A contact still listed with nobody behind it just rings into the void.
+
+**It tells you.** While you cannot receive calls, the call screen says so in a full
+sentence, the tab title and icon change (steadily, never blinking — there is nothing to
+pick up), and after ten continuous seconds a system notification goes out, but only if
+the window is hidden. The ten seconds are there so that a three-second reconnection does
+not wake anyone. When you are reachable again, a second notification says so and replaces
+the first.
+
+**It comes back on its own.** Return to the tab — or reload it, or reopen the browser —
+and Trix registers again with nothing to click. If the browser had discarded the tab, the
+screen tells you the period you were unreachable, for instance *“from 14:05 to 14:52”*, so
+you know what to make of any missed call in that window. Nothing is filtered on arrival: a
+call that was placed while you were asleep still rings, and if the caller has already hung
+up it still lands in your history as a missed call. That is the truth, and it is the most
+useful thing the episode has to tell you.
+
+**What you can do about it.** Two gestures, both in your browser, both outside Trix:
+
+- **Pin the tab.** Right-click the tab, *Pin*. A pinned tab is far less likely to be
+  discarded.
+- **Add Trix to the sites that stay active.** In Chrome: *Settings → Performance*, then
+  add the Trix address to *Always keep these sites active*. In Edge, the same list sits
+  under *Settings → System and performance*.
+
+Neither is needed while you are on a call: an open WebRTC connection already exempts the
+tab from freezing. The vulnerable moment is exactly the one where a phone should be most
+dependable — registered, waiting for a call.
 
 ## 7. Making a call
 
@@ -421,6 +466,8 @@ Clearing the site's data in your browser removes all of it, account included.
 | **The browser never asks for camera or microphone** | The page is not in a secure context. Serve it over HTTPS |
 | **No system notification while the window is hidden** | Permission was never granted, or was blocked. See [section 5](#5-alerts-display-and-diagnostics) |
 | **The screen does not flash on an incoming call** | The flash is off in your account settings, or your system asks for reduced motion — in which case it is a steady frame instead |
+| **The tab says “You cannot receive calls”** | The browser has put the tab to sleep, the machine has, or the registration has dropped. Come back to the tab and Trix registers again by itself — see [staying reachable](#staying-reachable-in-a-background-tab) |
+| **Callers said it rang into the void while the tab was open in the background** | Chrome froze or discarded the tab. Pin it and add Trix to the sites that stay active, as described in [staying reachable](#staying-reachable-in-a-background-tab) |
 
 If none of this helps, tick **Trace SIP messages**, reproduce the problem, then copy the
 call's trace from the history ([section 11](#11-diagnosing-a-call)) and attach it to your

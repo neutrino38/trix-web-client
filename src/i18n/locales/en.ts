@@ -132,6 +132,11 @@ const messages: Translation = {
   "config.notifBlocked": "Notifications blocked by the browser",
   "config.notifBlockedHint":
     "Re-enable them in the browser's site settings — Trix cannot ask for permission again itself.",
+  "config.reachLabel": "Warn me when I become unreachable",
+  "config.reachDesc":
+    " — a system notification when the browser puts the tab to sleep or the registration drops, and another once everything is back",
+  "config.reachHint":
+    "Same permission as incoming calls, separate setting: being told someone is calling you is not being told that nobody can any more.",
   "config.theme": "Theme",
   "config.themeHint": "“System” follows your device's light/dark setting.",
   "theme.system": "System",
@@ -162,6 +167,30 @@ const messages: Translation = {
   "status.regFailed": "Registration failed",
   "status.unregistering": "Signing out…",
   "status.switching": "Switching account…",
+
+  // ---------------------------------------------------------------------
+  // Reachability (ADR 0006)
+  // ---------------------------------------------------------------------
+  "reach.none": "You cannot receive calls.",
+  "reach.title": "Unreachable — Trix",
+  "reach.notifTitle": "Trix can no longer receive calls",
+  "reach.notifFreeze":
+    "The browser has put this tab to sleep. You will stay unreachable until you come back to it.",
+  "reach.notifSystem":
+    "The computer went to sleep. You will stay unreachable until it wakes up.",
+  "reach.notifOffline":
+    "The network connection is lost. You will stay unreachable until it comes back.",
+  "reach.notifDiscard":
+    "The browser discarded this tab to free memory. Come back to Trix to register again.",
+  "reach.notifLost":
+    "Registration is lost. You will stay unreachable until it is restored.",
+  "reach.backTitle": "Trix can receive your calls again",
+  "reach.back": "Registration has resumed: you are reachable again.",
+  "reach.discarded":
+    "The browser put Trix to sleep to save memory: you could not receive calls from {from} to {to}.",
+  "reach.pinHint":
+    "To prevent it: pin this tab, and add Trix to your browser\u2019s \u201Calways active sites\u201D.",
+  "reach.dismiss": "Hide this message",
 
   // ---------------------------------------------------------------------
   // Call state

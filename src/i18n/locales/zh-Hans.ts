@@ -131,6 +131,10 @@ const messages: Translation = {
   "config.notifOn": "通知已启用",
   "config.notifBlocked": "浏览器已阻止通知",
   "config.notifBlockedHint": "请在浏览器的网站设置中重新允许，Trix 无法自行再次请求授权。",
+  "config.reachLabel": "无法接听来电时提醒我",
+  "config.reachDesc": " — 浏览器让标签页休眠或注册中断时发出系统通知，恢复后再发一条",
+  "config.reachHint":
+    "与来电通知使用同一项授权，但设置相互独立：被告知有人来电，不等于被告知已经没人能打给您。",
   "config.theme": "主题",
   "config.themeHint": "“系统”跟随设备的浅色/深色设置。",
   "theme.system": "系统",
@@ -160,6 +164,23 @@ const messages: Translation = {
   "status.regFailed": "注册失败",
   "status.unregistering": "正在断开…",
   "status.switching": "正在切换账号…",
+
+  // ---------------------------------------------------------------------
+  // 可接听状态（ADR 0006）
+  // ---------------------------------------------------------------------
+  "reach.none": "您无法接听来电。",
+  "reach.title": "无法接听 — Trix",
+  "reach.notifTitle": "Trix 已无法接听来电",
+  "reach.notifFreeze": "浏览器已让此标签页休眠。在您回到它之前都无法接听来电。",
+  "reach.notifSystem": "计算机已进入睡眠。在它唤醒之前都无法接听来电。",
+  "reach.notifOffline": "网络连接已中断。在恢复之前都无法接听来电。",
+  "reach.notifDiscard": "浏览器为释放内存丢弃了此标签页。回到 Trix 即可重新注册。",
+  "reach.notifLost": "注册已丢失。在恢复之前都无法接听来电。",
+  "reach.backTitle": "Trix 又可以接听来电了",
+  "reach.back": "注册已恢复：您又可以接听来电了。",
+  "reach.discarded": "浏览器为节省内存让 Trix 休眠：{from} 至 {to} 期间您无法接听来电。",
+  "reach.pinHint": "要避免这种情况：固定此标签页，并把 Trix 加入浏览器的“始终保持活动的网站”。",
+  "reach.dismiss": "隐藏此消息",
 
   // ---------------------------------------------------------------------
   // État de l'appel

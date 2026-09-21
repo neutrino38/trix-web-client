@@ -26,6 +26,13 @@ import { announce } from "../../announce.js";
 import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
 import { CHAT_LOG_ICON, showChatDialog } from "../../chatdialog.js";
 import { setStateTitle } from "../../title.js";
+import {
+  discardedEpisode,
+  dismissDiscardNotice,
+  dismissPinHint,
+  pinHintDue,
+  reachSentence,
+} from "../../reachability.js";
 import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
 import { wireChat } from "./chat.js";
@@ -57,6 +64,44 @@ export const STATUS: Record<string, { key: MsgKey; cls: "ok" | "warn" | "err" }>
 export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "err" } {
   const entry = STATUS[state];
   return entry ? { label: t(entry.key), cls: entry.cls } : { label: state, cls: "warn" };
+}
+
+/**
+ * Ce que la page dit de la **joignabilité** (ADR 0006, D2, D4 et D6) —
+ * une phrase entière, et non une pastille de plus : « Vous ne pouvez pas
+ * recevoir d'appel » se lit sans avoir appris un code de couleurs, et
+ * rien n'y repose sur la couleur seule (RGAA 3.1).
+ *
+ * Trois choses s'y succèdent, de la plus urgente à la plus accessoire :
+ * l'état présent, l'explication d'une absence qu'on vient de constater au
+ * chargement, et le rappel des deux gestes qui empêchent le navigateur de
+ * recommencer. Les deux dernières se masquent — elles parlent du passé —,
+ * la première non : elle décrit ce qui est.
+ */
+export function reachBanner(phone: PhoneInstance): string {
+  const notes: string[] = [];
+  const sentence = reachSentence(phone.state);
+  if (sentence) {
+    notes.push(`<p class="reach-note err" role="status">${esc(t(sentence))}</p>`);
+  }
+  const gone = discardedEpisode();
+  if (gone) {
+    notes.push(
+      note(
+        t("reach.discarded", { from: formatTime(gone.from), to: formatTime(gone.to) }),
+        "reach-dismiss",
+      ),
+    );
+  }
+  if (pinHintDue()) notes.push(note(t("reach.pinHint"), "pin-dismiss"));
+  return `<div class="reachbar">${notes.join("")}</div>`;
+}
+
+/** Un message masquable du bandeau de joignabilité. */
+function note(text: string, act: string): string {
+  return `<p class="reach-note" role="status">${esc(text)}
+    <button class="linkbtn" type="button" data-act="${act}">${esc(t("reach.dismiss"))}</button>
+  </p>`;
 }
 
 const CALL_LABEL_KEY: Record<CallView["state"], MsgKey> = {
@@ -686,6 +731,19 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     // tout clic pris hors de la pastille. L'épingler avant serait l'épingler
     // pour rien.
     if (pill) queueMicrotask(() => pill.click());
+  });
+
+  // --- bandeau de joignabilité (ADR 0006) ----------------------------------
+  // Masquer ne change aucun état : ces deux messages parlent du passé, et
+  // le nœud disparaît sur place — rien à re-rendre, et surtout pas la
+  // saisie en cours dans le champ d'adresse.
+  on('[data-act="reach-dismiss"]', (btn) => {
+    dismissDiscardNotice();
+    btn.closest(".reach-note")?.remove();
+  });
+  on('[data-act="pin-dismiss"]', (btn) => {
+    dismissPinHint();
+    btn.closest(".reach-note")?.remove();
   });
 
   // --- historique ----------------------------------------------------------

@@ -259,15 +259,31 @@ export type PhoneEvent =
   | { type: "ui:logout" }
   | { type: "ui:call"; target: string; media: CallMedia }
   | { type: "ui:clearHistory" }
-  /** Veille / réveil de la machine (détectés par src/ui/lifecycle.ts). */
+  /**
+   * Endormissement / réveil, machine **ou** page (ADR 0006, `ui/lifecycle.ts`) :
+   * veille de l'ordinateur constatée au saut d'horloge, gel de l'onglet par
+   * l'Économiseur d'énergie, départ en bfcache ou fermeture de la page.
+   * Tous mènent au même endroit — `sleeping` désenregistre, le réveil
+   * réenregistre — parce qu'un contact laissé vivant chez un registrar qui
+   * n'a plus personne au bout du fil est le pire des deux mondes (D3).
+   */
   | { type: "sys:sleep" }
   | { type: "sys:wake" }
   | CallControlEvent
   | CallSipEvent
   | CallReturn
   | SipEvent
-  // boot : coffre + historique du compte actif, chargés d'un seul tenant
-  | TaskResult<"loadVault", { vault: Vault; history: CallLogEntry[] }>
+  /**
+   * boot : coffre + historique du compte actif, chargés d'un seul tenant.
+   * `activeId` n'est pas forcément celui du coffre — le marqueur de reprise
+   * (ADR 0006, D4) peut en désigner un autre, et c'est alors *son*
+   * historique qui a été lu. `resume` dit que ce marqueur a parlé : sans
+   * lui, l'amorçage s'arrête sur l'accueil.
+   */
+  | TaskResult<
+      "loadVault",
+      { vault: Vault; activeId: string | null; resume: boolean; history: CallLogEntry[] }
+    >
   // écriture du coffre : rend l'historique du compte qui prend la main
   | TaskResult<"saveVault", CallLogEntry[]>
   // suppression : coffre amputé écrit, puis historique effacé

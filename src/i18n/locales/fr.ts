@@ -132,6 +132,11 @@ const messages = {
   "config.notifBlocked": "Notifications bloquées par le navigateur",
   "config.notifBlockedHint":
     "À rétablir dans les réglages de site du navigateur : Trix ne peut pas redemander l'autorisation lui-même.",
+  "config.reachLabel": "Prévenir quand vous devenez injoignable",
+  "config.reachDesc":
+    " — une notification système quand le navigateur endort l'onglet ou que l'enregistrement tombe, et une autre quand tout est rétabli",
+  "config.reachHint":
+    "Même autorisation que les appels entrants, réglage distinct : être prévenu qu'on vous appelle n'est pas être prévenu que vous ne pouvez plus l'être.",
   "config.theme": "Thème",
   "config.themeHint": "« Système » suit le réglage clair/sombre de votre appareil.",
   "theme.system": "Système",
@@ -162,6 +167,31 @@ const messages = {
   "status.regFailed": "Échec d'enregistrement",
   "status.unregistering": "Déconnexion…",
   "status.switching": "Changement de compte…",
+
+  // ---------------------------------------------------------------------
+  // Joignabilité (ADR 0006) : ce que Trix dit quand il ne peut plus
+  // recevoir d'appel — dans la page, dans l'onglet, et hors de la page
+  // ---------------------------------------------------------------------
+  "reach.none": "Vous ne pouvez pas recevoir d'appel.",
+  "reach.title": "Injoignable — Trix",
+  "reach.notifTitle": "Trix ne peut plus recevoir d'appel",
+  "reach.notifFreeze":
+    "Le navigateur a mis cet onglet en veille. Vous resterez injoignable tant que vous n'y reviendrez pas.",
+  "reach.notifSystem":
+    "L'ordinateur s'est mis en veille. Vous resterez injoignable jusqu'à son réveil.",
+  "reach.notifOffline":
+    "La connexion réseau est perdue. Vous resterez injoignable tant qu'elle ne sera pas rétablie.",
+  "reach.notifDiscard":
+    "Le navigateur a déchargé cet onglet pour libérer de la mémoire. Revenez sur Trix pour vous réenregistrer.",
+  "reach.notifLost":
+    "L'enregistrement est perdu. Vous resterez injoignable tant qu'il ne sera pas rétabli.",
+  "reach.backTitle": "Trix peut de nouveau recevoir vos appels",
+  "reach.back": "L'enregistrement a repris : vous êtes de nouveau joignable.",
+  "reach.discarded":
+    "Le navigateur a mis Trix en veille pour économiser de la mémoire : vous n'avez pas pu recevoir d'appel de {from} à {to}.",
+  "reach.pinHint":
+    "Pour l'éviter : épinglez cet onglet, et ajoutez Trix aux « sites toujours actifs » de votre navigateur.",
+  "reach.dismiss": "Masquer ce message",
 
   // ---------------------------------------------------------------------
   // État de l'appel

@@ -4,7 +4,10 @@
  * fsl-typescript). L'amorçage (task loadConfig) est asynchrone : les
  * tests attendent l'état `home` avec vi.waitFor.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { machineGraphs } from "finite-state-language/diagram";
 import { activeAccount, PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
 import type {
   AccountConfig,
@@ -1439,5 +1442,127 @@ describe("PhoneMachine — sorties", () => {
     phone.send({ type: "ui:cancelConfig" });
     expect(phone.state).toBe("home");
     expect(sip.started).toHaveLength(0);
+  });
+});
+
+/**
+ * La reprise de l'enregistrement au chargement (ADR 0006, D4).
+ *
+ * Le coffre dit *quel* compte est choisi ; le marqueur, hors coffre, dit
+ * que ce compte **doit** être enregistré. C'est lui qui fait repartir Trix
+ * en `connecting` au lieu de s'arrêter sur l'accueil — quel que soit le
+ * motif du chargement, y compris un onglet déchargé par l'Économiseur de
+ * mémoire, qui ne prévient de rien.
+ */
+describe("PhoneMachine — reprise de l'enregistrement (ADR 0006, D4)", () => {
+  let data: Map<string, string>;
+
+  beforeEach(() => {
+    data = new Map();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (k: string) => data.get(k) ?? null,
+        setItem: (k: string, v: string) => data.set(k, v),
+        removeItem: (k: string) => data.delete(k),
+      },
+    });
+  });
+
+  // le marqueur est un état de module du navigateur : sans cette remise à
+  // zéro, les tests qui suivent hériteraient d'une session à reprendre
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, "localStorage");
+  });
+
+  /** Amorçage nu : ni `ui:useAccount`, ni aucun autre événement d'interface. */
+  function boot(initial: AccountConfig | null = CFG) {
+    const { store, box } = fakeStore(initial);
+    const sip = new FakeSip();
+    const phone = PhoneMachine.start({ args: { store, sip, transcript: () => [] } });
+    return { phone, sip, box };
+  }
+
+  it("coffre + marqueur : connecting, sans aucun événement d'interface", async () => {
+    data.set("trix-resume", SEED_ID);
+    const { phone, sip } = boot();
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(sip.started).toHaveLength(1);
+    expect(activeCfg(phone)).toEqual(CFG);
+  });
+
+  it("sans marqueur, l'amorçage s'arrête sur l'accueil", async () => {
+    const { phone, sip } = boot();
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(sip.started).toHaveLength(0);
+  });
+
+  it("un marqueur qui désigne un compte absent du coffre ne reprend rien", async () => {
+    data.set("trix-resume", "acc-disparu");
+    const { phone, sip } = boot();
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(sip.started).toHaveLength(0);
+  });
+
+  it("l'enregistrement réussi pose le marqueur", async () => {
+    const { phone, sip } = boot();
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    phone.send({ type: "ui:useAccount", id: SEED_ID });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(data.get("trix-resume")).toBeUndefined(); // rien tant que rien n'a abouti
+    sip.send({ type: "sip:connected" });
+    sip.send({ type: "sip:registered" });
+    expect(phone.state).toBe("ready");
+    expect(data.get("trix-resume")).toBe(SEED_ID);
+  });
+
+  it("« Déconnexion » efface le marqueur, la veille ne l'efface pas", async () => {
+    data.set("trix-resume", SEED_ID);
+    const { phone, sip } = boot();
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    sip.send({ type: "sip:connected" });
+    sip.send({ type: "sip:registered" });
+    // s'endormir n'est pas une décision de l'utilisateur : le compte reste
+    // à reprendre, et le prochain chargement s'enregistrera tout seul
+    phone.send({ type: "sys:sleep" });
+    expect(phone.state).toBe("sleeping");
+    expect(data.get("trix-resume")).toBe(SEED_ID);
+    phone.send({ type: "ui:logout" });
+    expect(phone.state).toBe("home");
+    expect(data.get("trix-resume")).toBeUndefined();
+  });
+});
+
+/**
+ * Aucun état ne reste sourd à l'endormissement (ADR 0006, D3 et D5).
+ *
+ * Un `sys:sleep` non consommé est un trou : il s'annonce en console, et
+ * surtout il laisse un contact vivant chez un registrar qui n'a plus
+ * personne au bout du fil. La garantie est **structurelle** et se lit sur
+ * la source plutôt qu'en pilotant quatorze fois la machine jusqu'à chaque
+ * état — un état ajouté demain sans ces deux lignes échouera ici.
+ *
+ * `in_call` est la seule exception, et c'est une délégation, pas un
+ * oubli : il a passé la main à `CallBlock`, qui les traite tous les deux
+ * (raccrocher, puis laisser `sleepRequested` derrière lui).
+ */
+describe("PhoneMachine — l'endormissement atteint chaque état", () => {
+  it("tous les états traitent sys:sleep et sys:wake", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/machines/phone.ts", import.meta.url)),
+      "utf8",
+    );
+    const graph = machineGraphs(source, "phone.ts")[0]!;
+    const handled = (state: string): string[] => [
+      ...graph.edges.filter((e) => e.from === state).flatMap((e) => e.labels),
+      ...(graph.consumed.find((c) => c.state === state)?.events ?? []),
+    ];
+    for (const state of graph.states) {
+      if (state === "in_call") continue; // le bloc tient la boîte aux lettres
+      // les libellés portent le motif de la transition entre parenthèses
+      const events = handled(state).map((label) => label.replace(/ \(.*\)$/, ""));
+      expect(events, `état ${state}`).toContain("sys:sleep");
+      expect(events, `état ${state}`).toContain("sys:wake");
+    }
   });
 });

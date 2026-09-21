@@ -28,6 +28,7 @@
 
 import { ringOnce, startRing, stopRing } from "./ring.js";
 import { setTitleOverride } from "./title.js";
+import { setFaviconOverride } from "./favicon.js";
 import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
 
@@ -60,7 +61,6 @@ let active = false;
 let overlay: HTMLElement | null = null;
 let blinkTimer: ReturnType<typeof setInterval> | null = null;
 let vibrateTimer: ReturnType<typeof setInterval> | null = null;
-let baseFavicon: string | null = null;
 let notification: Notification | null = null;
 let wakeLock: { release(): Promise<void> } | null = null;
 
@@ -89,31 +89,14 @@ export async function requestAlertPermission(): Promise<AlertPermission> {
 // Canaux
 // ---------------------------------------------------------------------------
 
-/** Pastille de favicon : deux SVG inline, aucun fichier à embarquer. */
-function faviconUri(color: string): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="${color}"/></svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
-function faviconLink(): HTMLLinkElement {
-  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-  if (!link) {
-    link = document.createElement("link");
-    link.rel = "icon";
-    document.head.append(link);
-  }
-  return link;
-}
-
 function startBlink(caller: string): void {
-  const link = faviconLink();
-  baseFavicon = link.getAttribute("href");
   let on = true;
   const tick = (): void => {
-    // un battement sur deux rend la main : c'est le titre d'état qui
-    // réapparaît, pas une copie figée prise au début de la sonnerie
+    // un battement sur deux rend la main : c'est le titre d'état et la
+    // pastille de joignabilité qui réapparaissent, pas une copie figée
+    // prise au début de la sonnerie (`ui/title.ts`, `ui/favicon.ts`)
     setTitleOverride(on ? t("alert.title", { caller }) : null);
-    link.href = faviconUri(on ? "#36AD45" : "#E94E3C");
+    setFaviconOverride(on ? "#36AD45" : "#E94E3C");
     on = !on;
   };
   tick();
@@ -124,12 +107,7 @@ function stopBlink(): void {
   if (blinkTimer !== null) clearInterval(blinkTimer);
   blinkTimer = null;
   setTitleOverride(null);
-  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-  if (link) {
-    if (baseFavicon) link.href = baseFavicon;
-    else link.remove();
-  }
-  baseFavicon = null;
+  setFaviconOverride(null);
 }
 
 function notify(a: IncomingAlert): void {

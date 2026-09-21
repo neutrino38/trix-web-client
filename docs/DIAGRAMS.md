@@ -33,6 +33,7 @@ stateDiagram-v2
   state reg_failed
   state unregistering
   [*] --> initial_state
+  initial_state --> connecting: task:loadVault (reprise de l'enregistrement)
   initial_state --> home: task:loadVault
   home --> configuring: ui:configure
   home --> home: ui:useAccount (compte inconnu)
@@ -99,6 +100,7 @@ Blocs entrés depuis cet état (`fx.sbb`) :
 
 | État | Événements |
 | --- | --- |
+| `initial_state` | `sys:sleep`, `sys:wake` |
 | `home` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake` |
 | `configuring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake` |
 | `reconfiguring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sys:sleep`, `sys:wake` |

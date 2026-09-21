@@ -72,10 +72,14 @@ src/
     mediaerror.ts         # échecs WebRTC et fil texte : console, carnet, motif (§5.5)
   storage/
     store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
+    session.ts            # état de session hors coffre : compte à reprendre, joignabilité (§4.13)
     ha1.ts                # MD5 et SHA-256 de username:realm:password (§6)
     md5.ts, sha256.ts     # condensés synchrones — le chemin Digest ne sait pas attendre
   ui/
     screens/{home,config,call}.ts
+    lifecycle.ts          # gel, dégel, bfcache, veille machine → sys:sleep / sys:wake (§4.1)
+    reachability.ts       # le niveau de joignabilité et ce qu'on en dit (§4.13)
+    title.ts, favicon.ts  # propriétaires uniques de l'onglet : état + override d'alerte
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
     flags.ts              # drapeaux dessinés, pour ce qu'un emoji ne dit pas
     tracedialog.ts        # relecture du carnet d'un appel, en popup (§5.3)
@@ -150,6 +154,7 @@ trace allumée avant que le fichier n'arrive.
 stateDiagram-v2
   [*] --> boot
   boot --> home : config chargée (ou absente)
+  boot --> connecting : marqueur de reprise (ADR 0006)
   home --> configuring : ui.configure
   home --> connecting : ui.useAccount
   configuring --> connecting : ui.saveConfig (HA1 + stockage)
@@ -165,6 +170,8 @@ stateDiagram-v2
   in_call --> ready : call:answered / call:missed / call:canceled
   reg_failed --> connecting : ui.retry
   reg_failed --> configuring : ui.backToSettings
+  ready --> sleeping : sys.sleep (gel, pagehide, veille machine)
+  sleeping --> connecting : sys.wake
   unregistering --> home : sip.unregistered / after 5s
 ```
 
@@ -176,10 +183,48 @@ Décisions :
 - En `ready`, l'indicateur UI suit l'état de la machine, pas un flag séparé. Une perte de
   transport (`sip:disconnected`, REGISTER resté sans réponse) part en `reconnecting` ; un refus
   du registrar (réponse SIP) part en `reg_failed`.
-- Un réveil détecté renvoie un REGISTER sur le transport existant (`handle.refresh()`). Recréer
-  l'UA donnerait un nouveau Call-ID et un nouveau contact : le client se désenregistrerait puis
-  se réenregistrerait à chaque réveil. On ne repart d'un nouvel UA que si le transport est fermé.
 - Timers : `after` de FSL (armé à l'entrée, annulé à la sortie).
+
+#### Le cycle de vie complet (ADR 0006)
+
+Trois choses différentes endorment Trix, et une seule est annoncée par le navigateur. Elles
+arrivent toutes à `sys:sleep` / `sys:wake` (`ui/lifecycle.ts`), parce qu'elles ont toutes la
+même conséquence SIP : un contact qui reste vivant chez un registrar sans personne au bout du
+fil, c'est-à-dire un appelant qui entend sonner dans le vide.
+
+| Ce qui se passe | Signal reçu | Ce que fait Trix |
+| --- | --- | --- |
+| Onglet caché | `visibilitychange` | rien : la WSS vit, on reste joignable — le heartbeat, lui, se désarme (D6) |
+| Onglet **gelé** (5 min cachés, Économiseur d'énergie) | `freeze` | `sys:sleep` → `sleeping` : unREGISTER puis transport fermé |
+| Onglet quitté, fermé, ou parti en bfcache | `pagehide` | idem — un seul chemin, persisté ou non |
+| Onglet **déchargé** (Économiseur de mémoire) | **aucun** | rien sur le moment ; au rechargement, `document.wasDiscarded` sert à **expliquer** |
+| Veille machine | saut d'horloge du heartbeat | `sys:sleep` puis `sys:wake` |
+| Retour (dégel, `pageshow` persisté, premier plan, `online`) | — | `sys:wake` |
+
+`beforeunload` n'est pas employé : il n'apporte rien ici et disqualifierait la page du bfcache.
+
+- **Au réveil, un REGISTER de contrôle.** `handle.refresh()` renvoie un REGISTER sur le
+  transport existant — même Call-ID, CSeq suivant, aucun nouveau contact. Recréer l'UA donnerait
+  un nouveau Call-ID : le client se désenregistrerait puis se réenregistrerait à chaque réveil.
+  On ne repart d'un nouvel UA que si le transport est fermé. C'est la seule façon de trancher
+  entre « mon enregistrement a tenu » et « il a expiré pendant que je dormais », et ça ne coûte
+  qu'un paquet.
+- **Au chargement, la reprise est automatique.** Le coffre dit quel compte est actif ;
+  `storage/session.ts` dit, hors du coffre, que ce compte **doit** être enregistré — un marqueur
+  posé à l'entrée de `ready`, effacé par « Déconnexion » et par elle seule. `initial_state` part
+  donc en `connecting` au lieu de s'arrêter sur l'accueil, quel que soit le motif du chargement :
+  déchargement, F5, redémarrage du navigateur. Deux effets de bord assumés — **F5 réenregistre**,
+  et **deux onglets Trix s'enregistrent tous les deux**, chacun avec son contact (le proxy sonne
+  les deux, et ce sera le comportement normal le jour du push).
+- Hors du coffre, et non dedans : rien de ce marqueur n'est secret, il n'impose aucune migration
+  du format chiffré, et il reste lisible quand le coffre refuse de s'ouvrir — cas où l'on a
+  justement besoin de dire pourquoi on n'est pas joignable.
+- **L'ancienneté d'un appel n'est jamais un critère.** Au dégel, la WSS peut livrer d'un coup un
+  INVITE vieux de plusieurs minutes et son CANCEL juste derrière : Trix sonne, la sonnerie
+  s'éteint, l'historique garde « appel manqué ». C'est la vérité, et c'est l'information la plus
+  utile de l'épisode. Filtrer sur la fraîcheur raccrocherait au nez d'un appelant encore en ligne,
+  et saboterait le push le jour où il arrivera (RFC 8599 : l'appel qui suit un réveil y est le cas
+  nominal).
 
 ### 4.2 CallBlock — appel sortant (phase 2)
 
@@ -1535,6 +1580,70 @@ Hors périmètre, et assumé : l'audio d'onglet (`getDisplayMedia({ audio: true 
 une quatrième m-section et un mixage avec le micro que rien ne décrit ; et le
 pincement pour zoomer sur un écran reçu, qui est la première demande à attendre sur
 mobile.
+
+### 4.13 La joignabilité (ADR 0006)
+
+Un téléphone qui ment sur sa joignabilité est pire qu'un téléphone éteint : l'onglet est
+toujours dans la barre, avec son titre et son icône, et plus personne ne peut vous appeler.
+`ui/reachability.ts` est le seul module qui sache si l'on est joignable, et le seul qui le dise.
+
+**Trois niveaux, pas un booléen.** Le niveau se dérive de l'état de la machine, et de lui seul :
+
+| Niveau | Condition | Ce que l'utilisateur lit |
+| --- | --- | --- |
+| `direct` | `ready` ou `in_call` | « Enregistré » (la pastille de l'en-tête) |
+| `deferred` | page endormie, **abonnement push actif** | « En veille — vous serez prévenu si on vous appelle » |
+| `none` | ni l'un ni l'autre | « Vous ne pouvez pas recevoir d'appel. » |
+
+`deferred` est une **branche morte** tant que le push n'existe pas : aucun code ne l'écrit, aucun
+écran ne l'affiche, et le niveau se lit comme un booléen. Il figure dans le type parce que le jour
+où l'étape 2 arrivera, « la page dort » cessera de vouloir dire « vous êtes injoignable » — le
+prévoir coûte une branche morte, ne pas le prévoir coûterait la reprise de toute la logique
+d'alerte et de ses six traductions.
+
+**Les mêmes canaux que l'appel entrant** (`ui/alert.ts`, §4.10), pour les mêmes raisons
+d'accessibilité — rien ne repose sur le son, rien ne repose sur la couleur seule (RGAA 3.1) :
+
+| Canal | Ce qu'il couvre | Règle |
+| --- | --- | --- |
+| Phrase dans la page | l'application est à l'écran | une phrase entière, jamais une pastille seule |
+| Titre d'onglet et favicon | l'onglet est en arrière-plan | **sans clignotement** : une alerte permanente qui bat serait une alarme, or il n'y a rien à décrocher |
+| Notification système | la fenêtre est masquée ou minimisée | seulement onglet caché, après **10 s** d'injoignabilité continue, une seule par épisode |
+
+Le seuil de 10 s existe pour qu'une reconnexion de trois secondes ne réveille personne. Il est la
+seule défense contre le bruit, et c'est lui qui garantit que la notification de retour reste rare.
+Rien ne s'annonce non plus tant que personne n'a demandé à être joignable : c'est le marqueur de
+reprise (§4.1) qui le dit, et sans lui l'accueil ou un formulaire ouvert passeraient pour des
+pannes.
+
+**Le retour à la normale se notifie aussi**, sur le même `tag`, dès qu'une alerte d'absence a été
+posée pendant l'épisode. Deux raisons, dont une purement technique. L'alerte d'absence est
+`requireInteraction` — sans quoi elle s'efface en quelques secondes et le message est perdu pour
+qui n'était pas devant l'écran. Si la page est ensuite déchargée, l'objet `Notification` meurt avec
+le document : plus personne ne peut la fermer, et sans service worker `getNotifications()` n'existe
+pas. Poster sur le même tag est alors le **seul** moyen de faire disparaître une alerte devenue
+fausse. L'autre raison tient au public : une personne sourde qui vient de lire « vous ne pouvez
+plus recevoir d'appels » n'a, dans le silence qui suit, aucun moyen de distinguer une application
+rétablie d'une application morte. Le marqueur « une alerte est en cours » vit donc dans
+`localStorage`, et survit au déchargement.
+
+**Aucune astuce pour échapper au gel.** Pas de piste audio muette en boucle, pas de `MediaStream`
+fantôme, pas de Web Lock détourné : ce sont des moyens connus de tomber dans les exemptions, et ils
+consomment la batterie de quelqu'un pour contourner une décision qu'il a prise. Trix fait
+l'inverse — il **réduit** ce qu'il consomme en arrière-plan (le heartbeat n'est pas armé quand
+l'onglet est caché, puisqu'il n'y prouve plus rien) et il **dit** une fois, au premier gel
+constaté, les deux gestes qui dépendent de l'utilisateur : épingler l'onglet, ajouter le site aux
+« sites toujours actifs » du navigateur.
+
+**Deux propriétaires uniques** sortent de là, pour la même raison qu'il y en avait déjà un pour le
+titre (`ui/title.ts`) : la joignabilité et la sonnerie veulent toutes deux écrire dans l'onglet.
+`ui/favicon.ts` superpose donc un **état** (la pastille durable) et un **override** (le
+clignotement de l'alerte) ; l'alerte n'a plus rien à mémoriser, et ce qui réapparaît quand elle
+rend la main est l'état courant, pas l'état d'il y a dix secondes.
+
+Hors périmètre, et c'est l'étape 2 : le push SIP (RFC 8599) — service worker, abonnement Web Push,
+et un proxy capable de retenir l'INVITE le temps que le client réveillé se réenregistre. Rien de ce
+qui précède n'en dépend, et rien n'en devient inutile quand il arrivera.
 
 ## 5. Intégration JsSIP
 

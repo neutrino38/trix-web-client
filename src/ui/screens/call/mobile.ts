@@ -44,6 +44,7 @@ import {
   fmtChrono,
   historyRow,
   isSpeakerMuted,
+  reachBanner,
   statusOf,
   switchButton,
 } from "./parts.js";
@@ -109,6 +110,8 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="logout" ${view ? "disabled" : ""}
                 aria-label="${esc(t("action.logout"))}">${ICONS.logout}</button>
       </div>
+      <!-- la joignabilité, sous la barre comme sur bureau (ADR 0006, D2) -->
+      ${reachBanner(phone)}
 
       ${
         // sonnerie : la scène reste au repos derrière la popup, seul endroit où
