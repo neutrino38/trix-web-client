@@ -1,14 +1,21 @@
 # ADR 0006 — L'endormissement de la page
 
 **Statut :** accepté — 2026-09-21 · **implémenté** — 2026-09-21 (SC-1 à SC-9)
-Restent à vérifier en réel, et seulement en réel (§5) : que l'unREGISTER parte avant la
-suspension des tâches, qu'une notification posée dans `freeze` survive, ce que `localStorage`
-contient après un déchargement, et dans quel ordre la WSS livre ce qu'elle a mis en attente.
-**Portée :** `ui/lifecycle.ts`, `ui/reachability.ts` (nouveau), `storage/session.ts` (nouveau),
+**Essais Edge, 2026-09-21** (`edge://discards`) : au **Freeze**, Trix passe bien en indisponible ;
+à l'**Urgent Discard** puis retour sur l'onglet, la notification d'interruption est là et le
+réenregistrement se fait tout seul. Le **Proactive Discard** ne fait rien, et c'est le navigateur :
+il n'agit que sur un onglet que ses propres heuristiques jugent éligible. L'alerte du gel, elle, n'apparaissait pas : une notification
+ordinaire n'est pas affichée dans l'appel qui la construit, et la tâche qui l'afficherait est
+suspendue avec la page — d'où le service worker de D2 bis, **qui reste à valider en réel**. Reste
+aussi à vérifier (§5) : que l'unREGISTER parte avant la suspension des tâches, et dans quel ordre
+la WSS livre ce qu'elle a mis en attente.
+**Portée :** `ui/lifecycle.ts`, `ui/reachability.ts` (nouveau), `ui/notify.ts` et `public/sw.js`
+(nouveaux, D2 bis), `storage/session.ts` (nouveau),
 `machines/phone.ts`, `machines/events.ts`, `ui/alert.ts`, `ui/screens/call/*`, `ui/screens/config.ts`,
 `i18n/locales/*`, `docs/CONCEPTION.md` §4.1 et §4.13, `USERGUIDE.md`
-**Hors périmètre :** le push SIP (RFC 8599, service worker, Web Push) — **étape 2**, plus tard,
-dans son propre ADR. Rien ici n'en dépend.
+**Hors périmètre :** le push SIP (RFC 8599, abonnement Web Push, proxy qui retient l'INVITE) —
+**étape 2**, plus tard, dans son propre ADR. Rien ici n'en dépend. Le *service worker*, lui, a dû
+être avancé, pour l'affichage des notifications et rien d'autre : voir D2 bis.
 **Références normatives :** W3C Page Lifecycle (`freeze`, `resume`, `document.wasDiscarded`),
 Page Visibility, RFC 3261 §10 (REGISTER, expiration du contact), ITU-T F.703, RGAA 3.1
 
@@ -107,6 +114,60 @@ d'accessibilité — rien ne repose sur le son, et rien ne repose sur la couleur
 Le seuil existe pour qu'une reconnexion de trois secondes ne réveille personne. Il est la seule
 défense contre le bruit, et c'est aussi lui qui garantit que la notification de retour (D8) reste
 rare.
+
+**Deux exceptions au seuil, constatées à l'essai (2026-09-21).**
+
+Le **gel n'attend pas**. Un `setTimeout` de 10 s armé dans `freeze` est suspendu avec le reste de
+la page et ne s'exécutera qu'au dégel — c'est-à-dire au moment précis où l'alerte n'a plus lieu
+d'être. Attendre le seuil dans ce cas, ce n'est pas alerter plus tard, c'est ne jamais alerter.
+L'alerte part donc **avec le dernier battement de la page**, dans le handler `freeze` lui-même.
+Et elle ne perd rien de ce que le seuil protégeait : celui-ci écarte une reconnexion de trois
+secondes, or un gel n'a rien d'une reconnexion — il est annoncé, il est certain, et il dure
+jusqu'à ce que l'utilisateur revienne.
+
+**Et cela n'a pas suffi (essai du 2026-09-21).** Poser la notification dans `freeze` ne la fait
+toujours pas apparaître, parce que `new Notification(...)` **n'affiche rien dans l'appel qui la
+construit** : le moteur prépare ses ressources puis poste une tâche, et les files de tâches de la
+page sont exactement ce que le gel suspend. L'alerte attend un dégel qui la rend inutile. Voir
+D2 bis.
+
+`pagehide` **n'alerte jamais**, pour la raison symétrique. Le SIP en tire pourtant la même
+conclusion que du gel (D3), mais fermer un onglet ou naviguer ailleurs est une décision que
+l'utilisateur vient de prendre : il n'a pas à en être prévenu. Et une alerte `requireInteraction`
+posée par une page qui n'existera plus dans un instant ne pourrait plus être effacée par personne
+(D8). `ui/lifecycle.ts` distingue donc `freeze` de `leave`, là où D3 les confondait : les deux
+mènent au même `sys:sleep`, mais pas au même mot.
+
+### D2 bis — Un service worker, pour une seule chose : afficher
+
+Une notification ordinaire appartient au document, et le document est ce que le gel suspend :
+l'alerte du gel ne peut pas partir de là. Le **service worker** vit dans son propre contexte, que
+le gel ne touche pas. C'est le seul endroit d'où elle puisse encore être affichée, et c'est donc
+là qu'elle l'est — la page lui envoie un `postMessage` depuis `freeze`, il appelle
+`showNotification()`.
+
+L'ADR plaçait le service worker hors périmètre. Cette décision en **avance une pièce**, et il faut
+dire exactement laquelle : `public/sw.js` n'a ni abonnement Web Push, ni serveur à prévenir, ni
+message venu de l'extérieur, **ni handler `fetch`** — il n'intercepte rien et ne met rien en cache,
+si bien que Trix se recharge comme n'importe quelle page. Seule la page lui parle. Ce n'est pas un
+début d'étape 2 ; c'est le mécanisme d'affichage que D2 réclamait et que rien d'autre ne fournit.
+
+Deux bénéfices tombent avec : `getNotifications()` existe enfin, donc une alerte
+`requireInteraction` posée par une page **qui n'existe plus** peut être retirée pour de bon (D8) ;
+et l'étape 2, le jour venu, trouvera l'enregistrement en place.
+
+**Le clic ne crée jamais un second Trix** (constaté à l'essai le 2026-09-21). `clients.matchAll()`
+voit les onglets vivants, gelés compris, et `focus()` les dégèle — c'est exactement ce que le clic
+demande. Mais quand il n'en rend aucun — l'onglet a été déchargé entre-temps, il n'est plus un
+client —, `openWindow()` ouvre un **deuxième** Trix : un second enregistrement, un second contact
+chez le registrar, et deux onglets qu'on ne distingue pas, alors que le premier est toujours dans
+la barre et qu'un clic dessus le recharge. On n'ouvre donc rien dans ce cas. Ne rien faire est
+moins utile que de revenir sur Trix, mais ce n'est pas faux — et c'est le seul des deux qui ne
+laisse pas l'utilisateur avec deux téléphones.
+
+Le repli reste `new Notification(...)` quand aucun service worker ne contrôle la page — premier
+chargement, enregistrement refusé, navigateur qui n'en veut pas. Il suffit tant que la page vit,
+et c'est tout ce qu'on lui demande.
 
 ### D3 — Au gel, Trix se désenregistre
 
@@ -250,6 +311,16 @@ qui bascule d'onglet vingt fois par minute enverra vingt REGISTER. C'est un paqu
 registrar les attend, mais si cela se voyait dans une trace, le remède tiendrait en une ligne :
 n'émettre que si l'onglet est resté caché assez longtemps pour avoir pu geler.
 
+**SC-6 bis — `ui/notify.ts` et `public/sw.js` (D2 bis).** Une notification par la voie qui survit
+au gel : le service worker quand il contrôle la page, `new Notification` sinon. Aucun échec avalé
+en silence — une alerte qui ne part pas ne se constate depuis aucun écran, et la console, elle,
+survit au gel. Le service worker n'a pas de handler `fetch` et doit rester non caché par le serveur
+(`config/nginx`, `config/apache`).
+
+Il est **testé** (`test/sw.test.ts`), chargé tel quel avec un `self` de fabrication : il n'est
+compilé avec rien, ne s'exécute dans aucun écran, et rien de ce qu'il fait ne se voit depuis
+l'application — autant dire qu'une faute y vit longtemps. Deux y ont déjà vécu.
+
 **SC-6 — `ui/reachability.ts` (D1, D2, D8).** Le niveau de joignabilité dérivé de l'état de la
 machine, le seuil de 10 s, le titre, le favicon, la notification et sa jumelle de retour. Un seul
 point d'entrée, idempotent, appelé depuis `main.ts` comme l'est déjà `watchSystemLifecycle`.
@@ -291,6 +362,15 @@ Quatre points ne seront tranchés que par ces essais, et cet ADR ne prétend pas
 si l'unREGISTER part avant le gel (D3) ; si une notification posée dans `freeze` survit à la
 suspension ; ce que `localStorage` contient réellement après un déchargement ; et dans quel ordre la
 WSS livre ce qu'elle a mis en attente.
+
+**Relevé du 2026-09-21, sur Edge.** Le gel met bien Trix en indisponible, et le déchargement
+d'urgence suivi d'un retour sur l'onglet donne la notification d'interruption **et** le
+réenregistrement automatique : `localStorage` survit donc au déchargement, et la reprise de D4
+fonctionne telle qu'elle était prévue. Le *Proactive Discard* ne produit rien : il ne s'applique
+qu'aux onglets que le navigateur juge éligibles, et ce n'est pas un défaut de Trix. L'alerte du gel, en revanche, **n'apparaît pas** : une notification ordinaire
+n'est pas affichée dans l'appel qui la construit, et la tâche qui l'afficherait est suspendue avec
+la page. C'est ce qui a motivé D2 bis. Restent ouverts : l'unREGISTER avant le gel, l'affichage de
+l'alerte par le service worker, et l'ordre de livraison de la WSS au dégel.
 
 ## Références
 

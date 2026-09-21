@@ -222,3 +222,9 @@ pouvez alors la remplacer par `listen 443 ssl;` plus une ligne `http2 on;`.
 - `config.json` est servi tel quel, sans cache. Vérifiez-le après chaque modification :
   `curl -s https://trix.example.com/config.json | python3 -m json.tool`. Une virgule en
   trop et Trix repart en formulaire complet, sans rien signaler à l'utilisateur.
+- `sw.js` est le service worker des notifications (ADR 0006, D2 bis) : c'est lui qui affiche
+  l'alerte quand le navigateur endort l'onglet, parce que la page ne le peut plus. Il doit
+  être servi **depuis la racine du site** et **sans cache** — les deux configurations
+  fournies s'en chargent. Il n'intercepte aucune requête et ne met rien en cache : un
+  déploiement ne demande donc aucune purge côté navigateur. Sans lui, Trix retombe sur une
+  notification ordinaire, qui suffit tant que la page tourne mais pas au gel.

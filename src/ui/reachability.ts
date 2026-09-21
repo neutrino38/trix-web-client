@@ -39,6 +39,7 @@ import {
   setPinHintShown,
 } from "../storage/session.js";
 import { alertPermission } from "./alert.js";
+import { clearNotice, showNotice } from "./notify.js";
 import { setFaviconState } from "./favicon.js";
 import { setTitleOverride } from "./title.js";
 import { reachAlertEnabled } from "./prefs.js";
@@ -65,8 +66,12 @@ export type Reachability = "direct" | "deferred" | "none";
  * `document.wasDiscarded` au chargement suivant, et `lost` quand rien
  * n'explique l'absence — l'enregistrement est simplement tombé, ce qui est
  * le cas le plus courant et mérite mieux qu'un motif emprunté à un autre.
+ *
+ * Le `leave` de `PageSleepReason` n'y figure pas, et c'est pour cela que
+ * cette liste est écrite et non dérivée : une page qui s'en va n'a plus
+ * personne à qui expliquer quoi que ce soit.
  */
-export type UnreachableReason = PageSleepReason | "offline" | "discard" | "lost";
+export type UnreachableReason = "freeze" | "system" | "offline" | "discard" | "lost";
 
 /** Sous ce seuil, ce n'est pas une absence : c'est une reconnexion (D2). */
 const NOTIFY_AFTER_MS = 10_000;
@@ -100,6 +105,14 @@ let episodeSince = 0;
 let noted: UnreachableReason | null = null;
 /** Le motif de l'épisode en cours, arrêté à son début. */
 let episodeReason: UnreachableReason = "system";
+/**
+ * La page s'en va (`pagehide`) : on se désenregistre comme pour un gel,
+ * mais on n'alerte personne. Fermer un onglet ou naviguer ailleurs est une
+ * décision de l'utilisateur, il n'a pas à en être prévenu — et une alerte
+ * `requireInteraction` posée par une page qui n'existera plus dans un
+ * instant ne pourrait plus être effacée par personne (D8).
+ */
+let leaving = false;
 let notifyTimer: ReturnType<typeof setTimeout> | null = null;
 let stampTimer: ReturnType<typeof setInterval> | null = null;
 let notification: Notification | null = null;
@@ -205,6 +218,11 @@ export function dismissPinHint(): void {
  * d'hier n'explique pas une WSS coupée aujourd'hui.
  */
 export function noteSleepReason(reason: PageSleepReason): void {
+  if (reason === "leave") {
+    leaving = true;
+    return;
+  }
+  leaving = false;
   noted = reason;
 }
 
@@ -242,25 +260,20 @@ function disarmStamp(): void {
 // Notification système
 // ---------------------------------------------------------------------------
 
+/**
+ * Pose l'alerte par la voie qui survit au gel (`ui/notify.ts`) : le
+ * service worker quand il contrôle la page, `new Notification` sinon.
+ *
+ * L'objet rendu n'existe que sur la voie de repli. Sur l'autre, il n'y a
+ * rien à tenir : c'est `clearNotice` qui referme, et c'est justement ce
+ * qui permet de retirer une alerte posée par une page qui n'est plus là.
+ */
 function post(title: MsgKey, body: MsgKey, keep: boolean): Notification | null {
-  if (alertPermission() !== "granted") return null;
-  try {
-    const note = new Notification(t(title), {
-      body: t(body),
-      tag: TAG,
-      requireInteraction: keep,
-      silent: true,
-    });
-    note.onclick = () => {
-      window.focus();
-      note.close();
-    };
-    return note;
-  } catch {
-    // notifications indisponibles (contexte non sécurisé…) : la page le dit
-    // quand même, et le titre d'onglet aussi
+  if (alertPermission() !== "granted") {
+    console.warn("[trix] injoignable, mais les notifications ne sont pas autorisées");
     return null;
   }
+  return showNotice({ title: t(title), body: t(body), tag: TAG, keep });
 }
 
 /**
@@ -269,10 +282,14 @@ function post(title: MsgKey, body: MsgKey, keep: boolean): Notification | null {
  * n'était pas devant l'écran, c'est-à-dire précisément le destinataire.
  */
 function notifyAway(): void {
+  if (notifyTimer !== null) clearTimeout(notifyTimer);
   notifyTimer = null;
-  if (!reachAlertEnabled()) return;
-  if (document.visibilityState === "visible") return;
-  if (alertPosted()) return;
+  // Ces trois sorties sont des décisions, pas des pannes — mais une alerte
+  // qui ne part pas ne se constate depuis aucun écran, et la console est
+  // le seul endroit où la différence se lise. Elle survit au gel.
+  if (!reachAlertEnabled()) return console.debug("[trix] alerte d'absence coupée dans les réglages");
+  if (document.visibilityState === "visible") return console.debug("[trix] onglet visible : l'écran le dit déjà");
+  if (alertPosted()) return console.debug("[trix] alerte d'absence déjà posée");
   notification = post("reach.notifTitle", NOTIF_BODY[episodeReason], true);
   // le marqueur est posé même si la notification a échoué : ce qu'il
   // commande, c'est de dire le retour à la normale, et la phrase de retour
@@ -295,8 +312,12 @@ function notifyAway(): void {
  * Une alarme qui sait s'allumer doit savoir dire qu'elle s'est éteinte.
  */
 function notifyBack(): void {
+  // deux façons de refermer, pour deux voies : l'objet quand on l'a encore,
+  // et le service worker quand l'alerte a été posée par une page qui n'est
+  // plus là — c'est le cas d'un onglet gelé puis déchargé
   notification?.close();
   notification = null;
+  clearNotice(TAG);
   setAlertPosted(false);
   const back = post("reach.backTitle", "reach.back", false);
   // elle a dit ce qu'elle avait à dire : on ne la laisse pas s'installer
@@ -322,6 +343,19 @@ function beginEpisode(): void {
     pinHint = true;
     setPinHintShown();
   }
+  // La page s'en va : rien à annoncer, et personne pour le lire.
+  if (leaving) return;
+  // **Le gel n'attend pas le seuil.** `freeze` est le dernier instant où du
+  // JS tourne : le `setTimeout` des 10 s serait suspendu avec le reste et
+  // ne s'exécuterait qu'au dégel — c'est-à-dire au moment précis où
+  // l'alerte n'a plus lieu d'être. Le seuil protège d'une reconnexion de
+  // trois secondes ; un gel, lui, n'a rien d'une reconnexion : il est
+  // annoncé, il est certain, et il dure jusqu'à ce que l'utilisateur
+  // revienne. L'alerte part donc avec le dernier battement de la page.
+  if (episodeReason === "freeze") {
+    notifyAway();
+    return;
+  }
   if (notifyTimer === null) notifyTimer = setTimeout(notifyAway, NOTIFY_AFTER_MS);
 }
 
@@ -330,6 +364,7 @@ function endEpisode(): void {
   notifyTimer = null;
   episodeSince = 0;
   noted = null;
+  leaving = false;
   setTitleOverride(null);
   setFaviconState(null);
   if (alertPosted()) notifyBack();

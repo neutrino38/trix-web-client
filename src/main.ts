@@ -8,6 +8,7 @@ import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
 import { noteSleepReason, watchReachability } from "./ui/reachability.js";
+import { registerNotifier } from "./ui/notify.js";
 import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
 import { traceCallStates } from "./sip/trace.js";
@@ -106,6 +107,12 @@ onLocaleChange(() => {
 // joignable pendant que la machine est encore enregistrée — l'autre l'en
 // sort aussitôt après (D3).
 watchReachability(phone);
+
+// Le service worker des notifications (`public/sw.js`), sans attendre :
+// c'est le seul contexte que le gel de la page ne suspend pas, donc le
+// seul d'où l'alerte d'endormissement puisse encore partir. Il n'intercepte
+// rien et ne met rien en cache — voir l'en-tête du fichier.
+registerNotifier();
 
 // Endormissements de la page et de la machine : gel de l'onglet, départ en
 // bfcache, fermeture, veille de l'ordinateur. Tous raccrochent et

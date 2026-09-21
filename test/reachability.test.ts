@@ -28,6 +28,8 @@ interface PostedNotification {
 
 let posted: PostedNotification[] = [];
 let listeners: Map<string, ((e: unknown) => void)[]>;
+/** Ce que la page a envoyé au service worker, dans l'ordre. */
+let toWorker: Record<string, unknown>[] = [];
 
 /**
  * Le minimum de navigateur dont dépend `ui/reachability.ts` : de quoi
@@ -40,9 +42,12 @@ function stubBrowser(opts: {
   stored?: Record<string, string>;
   permission?: string;
   online?: boolean;
+  /** Un service worker contrôle la page : c'est lui qui affichera. */
+  worker?: boolean;
 }): Map<string, string> {
   posted = [];
   listeners = new Map();
+  toWorker = [];
   const data = new Map(Object.entries(opts.stored ?? {}));
   const icon = {
     rel: "",
@@ -73,7 +78,14 @@ function stubBrowser(opts: {
   define("addEventListener", doc.addEventListener);
   define("removeEventListener", doc.removeEventListener);
   define("window", { focus: () => {} });
-  define("navigator", { onLine: opts.online !== false, languages: ["fr"], language: "fr" });
+  define("navigator", {
+    onLine: opts.online !== false,
+    languages: ["fr"],
+    language: "fr",
+    serviceWorker: opts.worker
+      ? { controller: { postMessage: (m: Record<string, unknown>) => toWorker.push(m) } }
+      : undefined,
+  });
   define("localStorage", {
     getItem: (k: string) => data.get(k) ?? null,
     setItem: (k: string, v: string) => data.set(k, v),
@@ -222,6 +234,39 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     expect(store.get("trix-reach-alert")).toBe("1");
   });
 
+  it("le gel alerte sur-le-champ, sans attendre le seuil", async () => {
+    // `freeze` est le dernier instant où du JS tourne : un `setTimeout` de
+    // 10 s serait suspendu avec le reste et ne se réveillerait qu'au dégel,
+    // c'est-à-dire quand l'alerte n'a plus lieu d'être
+    const store = stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
+    const { watchReachability, noteSleepReason } = await loadModule();
+    const phone = fakePhone("ready");
+    watchReachability(phone as never);
+    noteSleepReason("freeze");
+    phone.goto("sleeping");
+    // aucun timer n'a été avancé : l'alerte est partie avec le gel
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({ tag: "trix-reachability", requireInteraction: true });
+    expect(store.get("trix-reach-alert")).toBe("1");
+    // et le seuil ne la redouble pas au dégel
+    vi.advanceTimersByTime(60_000);
+    expect(posted).toHaveLength(1);
+  });
+
+  it("quitter ou fermer la page n'alerte personne", async () => {
+    // l'utilisateur vient de le décider : il n'a pas à en être prévenu, et
+    // une alerte `requireInteraction` posée par une page qui n'existera
+    // plus ne pourrait être effacée par personne
+    stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
+    const { watchReachability, noteSleepReason } = await loadModule();
+    const phone = fakePhone("ready");
+    watchReachability(phone as never);
+    noteSleepReason("leave");
+    phone.goto("sleeping");
+    vi.advanceTimersByTime(60_000);
+    expect(posted).toHaveLength(0);
+  });
+
   it("n'alerte pas si personne n'a demandé à être joignable", async () => {
     stubBrowser({ visible: false, stored: {} });
     const { watchReachability } = await loadModule();
@@ -276,6 +321,49 @@ describe("le retour à la normale se notifie aussi (D8)", () => {
     const { watchReachability } = await loadModule();
     watchReachability(fakePhone("ready") as never);
     expect(posted).toHaveLength(0);
+  });
+});
+
+/**
+ * Une notification ordinaire n'est pas affichée dans l'appel qui la
+ * construit : le moteur prépare ses ressources puis **poste une tâche**,
+ * et ce sont exactement les files de tâches de la page que le gel
+ * suspend. Une alerte posée dans `freeze` par cette voie-là n'apparaît
+ * donc jamais. Le service worker, lui, n'est pas gelé avec la page — d'où
+ * cette règle, qui n'est pas une optimisation mais la condition pour que
+ * l'alerte du gel existe.
+ */
+describe("l'alerte passe par le service worker quand il y en a un", () => {
+  it("le gel confie l'affichage au worker plutôt qu'à la page", async () => {
+    stubBrowser({ visible: false, worker: true, stored: { "trix-resume": "acc-1" } });
+    const { watchReachability, noteSleepReason } = await loadModule();
+    const phone = fakePhone("ready");
+    watchReachability(phone as never);
+    noteSleepReason("freeze");
+    phone.goto("sleeping");
+    // rien n'a été construit dans la page : elle est sur le point de geler
+    expect(posted).toHaveLength(0);
+    expect(toWorker).toHaveLength(1);
+    expect(toWorker[0]).toMatchObject({
+      kind: "trix:notify",
+      tag: "trix-reachability",
+      keep: true,
+    });
+  });
+
+  it("le retour lui demande d'effacer l'alerte, puis d'en poser une autre", async () => {
+    // l'alerte a été posée par une page qui n'existe peut-être plus : sans
+    // le worker, plus personne ne pourrait la fermer (D8)
+    stubBrowser({
+      visible: false,
+      worker: true,
+      stored: { "trix-resume": "acc-1", "trix-reach-alert": "1" },
+    });
+    const { watchReachability } = await loadModule();
+    watchReachability(fakePhone("ready") as never);
+    expect(toWorker).toHaveLength(2);
+    expect(toWorker[0]).toMatchObject({ tag: "trix-reachability", close: true, title: "" });
+    expect(toWorker[1]).toMatchObject({ tag: "trix-reachability", keep: false });
   });
 });
 

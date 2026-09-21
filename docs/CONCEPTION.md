@@ -79,6 +79,7 @@ src/
     screens/{home,config,call}.ts
     lifecycle.ts          # gel, dégel, bfcache, veille machine → sys:sleep / sys:wake (§4.1)
     reachability.ts       # le niveau de joignabilité et ce qu'on en dit (§4.13)
+    notify.ts             # poser une notification par la voie qui survit au gel (§4.13)
     title.ts, favicon.ts  # propriétaires uniques de l'onglet : état + override d'alerte
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
     flags.ts              # drapeaux dessinés, pour ce qu'un emoji ne dit pas
@@ -91,6 +92,8 @@ src/
     locales/*.ts          # un fichier par langue, le français fait référence
   debug/
     observability.ts      # export toMermaid(), logger de transitions
+public/
+  sw.js                   # service worker : afficher une alerte quand la page ne le peut plus (§4.13)
 ```
 
 ### 2.1 Configuration de déploiement — `config.json`
@@ -1615,6 +1618,38 @@ seule défense contre le bruit, et c'est lui qui garantit que la notification de
 Rien ne s'annonce non plus tant que personne n'a demandé à être joignable : c'est le marqueur de
 reprise (§4.1) qui le dit, et sans lui l'accueil ou un formulaire ouvert passeraient pour des
 pannes.
+
+**Le gel est la seule chose qui n'attende pas le seuil.** Un `setTimeout` armé dans `freeze` est
+suspendu avec le reste de la page et ne se réveillerait qu'au dégel — quand l'alerte n'a plus lieu
+d'être. Elle part donc dans le handler `freeze` lui-même, avec le dernier battement de la page, et
+elle ne perd rien de ce que le seuil protégeait : celui-ci écarte une reconnexion de trois
+secondes, or un gel est annoncé, certain, et dure jusqu'au retour de l'utilisateur.
+
+**Et elle ne part pas de la page**, parce qu'elle ne le peut pas. `new Notification(...)` n'affiche
+rien dans l'appel qui la construit : le moteur prépare ses ressources puis **poste une tâche**, et
+les files de tâches de la page sont exactement ce que le gel suspend. C'est la raison d'être de
+`public/sw.js`, un service worker qui ne fait **que** cela — la page lui envoie un `postMessage`
+depuis `freeze`, il appelle `showNotification()` depuis son propre contexte, que le gel ne touche
+pas. `ui/notify.ts` choisit la voie : le worker quand il contrôle la page, `new Notification` en
+repli, et aucun échec avalé en silence — une alerte qui ne part pas ne se constate depuis aucun
+écran, alors que la console, elle, survit au gel.
+
+Cliquer sur l'alerte **reprend l'onglet Trix existant**, gelé compris — `focus()` le dégèle. Quand
+aucun onglet ne se laisse reprendre (il a été déchargé, il n'est plus un client), le worker n'ouvre
+rien : `openWindow()` donnerait un second Trix, donc un second enregistrement et un second contact
+chez le registrar, à côté d'un premier onglet toujours présent dans la barre et qu'un clic recharge.
+
+Ce service worker **n'a pas de handler `fetch`** : il n'intercepte rien, ne met rien en cache, et
+Trix se recharge comme n'importe quelle page. Il n'a rien non plus du push de l'étape 2 — aucun
+abonnement Web Push, aucun serveur, aucun message venu d'ailleurs que de la page. Il apporte en
+revanche `getNotifications()`, donc la possibilité de retirer pour de bon une alerte
+`requireInteraction` posée par une page qui n'existe plus. Côté serveur, il ne demande qu'une
+chose : ne pas être mis en cache (`config/nginx`, `config/apache`).
+
+**`pagehide` n'alerte jamais**, pour la raison inverse : fermer l'onglet ou naviguer ailleurs est
+une décision que l'utilisateur vient de prendre, et une alerte `requireInteraction` posée par une
+page qui va disparaître ne pourrait plus être effacée par personne. `ui/lifecycle.ts` rapporte donc
+`freeze` et `leave` séparément — même `sys:sleep`, même unREGISTER, mais pas le même mot.
 
 **Le retour à la normale se notifie aussi**, sur le même `tag`, dès qu'une alerte d'absence a été
 posée pendant l'épisode. Deux raisons, dont une purement technique. L'alerte d'absence est

@@ -37,12 +37,20 @@ const TICK_MS = 2000;
 const GAP_MS = 30_000;
 
 /**
- * Pourquoi la page s'endort, **parmi ce que le navigateur annonce**. Les
- * deux autres motifs d'injoignabilité — réseau coupé, onglet déchargé —
+ * Pourquoi la page s'endort, **parmi ce que le navigateur annonce**.
+ *
+ * `leave` n'est pas un `freeze` déguisé, et les confondre coûterait cher :
+ * le gel garde l'onglet dans la barre et le rendra plus tard, tandis que
+ * `pagehide` dit que la page s'en va — l'utilisateur a fermé, navigué
+ * ailleurs, ou le navigateur se ferme. Le SIP en tire la même conclusion
+ * (D3 : on se désenregistre dans les deux cas), mais on n'alerte personne
+ * de ce qu'il vient de décider (D2).
+ *
+ * Les deux autres motifs d'injoignabilité — réseau coupé, onglet déchargé —
  * ne s'observent pas ici : le premier se lit sur `navigator.onLine`, le
  * second au chargement suivant (`ui/reachability.ts`).
  */
-export type PageSleepReason = "freeze" | "system";
+export type PageSleepReason = "freeze" | "leave" | "system";
 
 export interface LifecycleEvents {
   onSleep: (reason: PageSleepReason) => void;
@@ -109,7 +117,7 @@ export function watchSystemLifecycle(ev: LifecycleEvents): () => void {
 
   const onPageHide = (): void => {
     disarm();
-    ev.onSleep("freeze");
+    ev.onSleep("leave");
   };
 
   const onPageShow = (e: PageTransitionEvent): void => {

@@ -162,10 +162,18 @@ voicemail. A contact still listed with nobody behind it just rings into the void
 
 **It tells you.** While you cannot receive calls, the call screen says so in a full
 sentence, the tab title and icon change (steadily, never blinking — there is nothing to
-pick up), and after ten continuous seconds a system notification goes out, but only if
-the window is hidden. The ten seconds are there so that a three-second reconnection does
-not wake anyone. When you are reachable again, a second notification says so and replaces
-the first.
+pick up), and a system notification goes out if the window is hidden. It waits ten
+continuous seconds first, so that a three-second reconnection does not wake anyone —
+except when the browser freezes the tab, where the notification goes out at once. There
+is no point waiting there: a freeze is announced, it is certain, and nothing in the page
+would be left running ten seconds later to send anything. That last notification is
+handed to a small service worker, because a frozen page cannot display one itself — it
+is the only part of Trix that keeps running once the tab is asleep, it does nothing else,
+and it caches nothing. Closing the tab or navigating
+away never sends one — you have just decided that yourself. When you are reachable again,
+a second notification says so and replaces the first. Clicking either one brings back the
+Trix tab you already have — it never opens a second one, which would register your
+account twice over.
 
 **It comes back on its own.** Return to the tab — or reload it, or reopen the browser —
 and Trix registers again with nothing to click. If the browser had discarded the tab, the
