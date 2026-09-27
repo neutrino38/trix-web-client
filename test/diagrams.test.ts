@@ -65,7 +65,8 @@ rendu la main : il est suspendu là, et c'est le tableau qui dit dans quel
 bloc.
 
 ${section("../src/machines/phone.ts")}
-${section("../src/machines/call.ts")}`;
+${section("../src/machines/call.ts")}
+${section("../src/machines/presence.ts")}`;
 }
 
 describe("observabilité — diagrammes", () => {

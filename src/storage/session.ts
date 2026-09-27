@@ -101,3 +101,57 @@ export function pinHintShown(): boolean {
 export function setPinHintShown(): void {
   write(PINHINT_KEY, "1");
 }
+
+/**
+ * Le statut **choisi** par l'utilisateur (ADR 0007, D5), et non celui que
+ * voient les autres : Invisible n'est pas un état publié, et « En
+ * communication » ou « Absent » ne se choisissent pas — ils découlent des
+ * deux règles.
+ */
+export type ChosenStatus = "available" | "busy" | "away" | "dnd" | "invisible";
+
+/** Statut choisi, note et règles automatiques d'un compte (D5). */
+export interface StatusPrefs {
+  chosen: ChosenStatus;
+  note: string | null;
+  /** Règle 1 : « En communication » pendant un appel. */
+  onThePhone: boolean;
+  /** Règle 2 : « Absent » après dix minutes sans activité. */
+  awayWhenIdle: boolean;
+}
+
+export const DEFAULT_STATUS: StatusPrefs = {
+  chosen: "available",
+  note: null,
+  onThePhone: true,
+  awayWhenIdle: true,
+};
+
+const CHOSEN: readonly ChosenStatus[] = ["available", "busy", "away", "dnd", "invisible"];
+
+/** Par compte : hors coffre, pour survivre au rechargement de D4 sans attendre le déchiffrement. */
+const statusKey = (accountId: string): string => `trix-status:${accountId}`;
+
+/**
+ * Les préférences de statut d'un compte. Chaque champ illisible retombe
+ * sur sa valeur par défaut, sans emporter les autres.
+ */
+export function statusPrefs(accountId: string): StatusPrefs {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(read(statusKey(accountId)) ?? "null");
+  } catch {
+    raw = null;
+  }
+  const r = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
+  return {
+    chosen: CHOSEN.includes(r.chosen as ChosenStatus) ? (r.chosen as ChosenStatus) : DEFAULT_STATUS.chosen,
+    note: typeof r.note === "string" && r.note.trim() !== "" ? r.note : null,
+    onThePhone: typeof r.onThePhone === "boolean" ? r.onThePhone : DEFAULT_STATUS.onThePhone,
+    awayWhenIdle: typeof r.awayWhenIdle === "boolean" ? r.awayWhenIdle : DEFAULT_STATUS.awayWhenIdle,
+  };
+}
+
+export function setStatusPrefs(accountId: string, prefs: StatusPrefs): void {
+  write(statusKey(accountId), JSON.stringify(prefs));
+}

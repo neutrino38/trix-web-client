@@ -312,7 +312,8 @@ par URI normalisée. Tests de `store` sur `fake-indexeddb`.
 
 **PR-5 — PresenceMachine et PhoneMachine (D12).** `machines/presence.ts` : les cinq états, le
 statut choisi et la note persistés, `publishedPresence`, la présence des contacts avec `fresh`,
-`support`. Événements `phone:*`, `sip:presence*`, `ui:setStatus`, `ui:setNote`. Tests avec un faux
+`support`. Événements `phone:*`, `sip:presence*`, `ui:setStatus`, `ui:setNote`, `ui:setRule` (les
+deux règles de D5, cochables). Tests avec un faux
 `PresenceLink`, découverte des trois niveaux comprise. `machines/presencesignals.ts` : la
 traduction pure des transitions de PhoneMachine, testée sur chaque sortie du couloir. Côté
 PhoneMachine : `ctx.contacts`, `ui:addContact`, `ui:renameContact`, `ui:removeContact`, l'argument

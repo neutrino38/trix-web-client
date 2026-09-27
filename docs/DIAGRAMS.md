@@ -188,3 +188,30 @@ stateDiagram-v2
 | `renegotiating` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
 | `media_offer` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
 | `hangingup` | `sip:progress`, `sip:accepted`, `sip:confirmed`, `sys:sleep`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:dtmf`, `sip:registrationFailed`, `sip:registered`, `sip:connected`, `sys:wake`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory` |
+
+## PresenceMachine — machine
+
+```mermaid
+stateDiagram-v2
+  state initial_state
+  state off
+  state live
+  state no_watch
+  state stale
+  state disabled
+  [*] --> initial_state
+  initial_state --> off: enter
+  initial_state --> disabled: enter (presence turned off)
+  off --> live: phone:up (registered)
+  off --> off: phone:down (never up), phone:contacts (contacts changed), ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  live --> live: phone:up (registered), phone:contacts (contacts changed), sip:presence (presence of a former contact), sip:presence (contact presence), sip:presenceSupport, ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  live --> stale: phone:down (unregistered)
+  live --> no_watch: sip:presenceSupport (SUBSCRIBE refused)
+  no_watch --> live: phone:up (registered)
+  no_watch --> stale: phone:down (unregistered)
+  no_watch --> no_watch: phone:contacts (contacts changed), sip:presence (late presence), sip:presenceSupport, ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  stale --> live: phone:up (registered)
+  stale --> stale: phone:down (already down), phone:contacts (contacts changed), sip:presence (late presence), sip:presenceSupport (late support), ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  disabled --> disabled: phone:up (presence off), phone:down (presence off), phone:contacts (presence off), phone:callStarted (presence off), phone:callEnded (presence off), sip:presence (presence off), sip:presenceSupport (presence off), ui:setStatus (presence off), ui:setNote (presence off), ui:setRule (presence off), sys:idle (presence off), sys:active (presence off)
+```
+
