@@ -1,0 +1,467 @@
+/**
+ * The "Échanges" thread on the stage (ADR 0007, D10): while no call is
+ * going on, the stage that would hold the video holds the thread — search,
+ * "Add a contact", then one line per correspondent grouped by the age of
+ * the last exchange. A line unfolds into its calls, day by day, each with
+ * the buttons it had in the history (conversation, SIP trace, media
+ * report); unfolding also fills the address to dial.
+ *
+ * Messages do not exist yet: no segment, no writing field, no enlarged
+ * conversation — they come with instant messaging, which fills the same
+ * lines.
+ *
+ * The screen is rebuilt on phone transitions only. Presence and the
+ * contact book change without one, so the list redraws itself
+ * (`refreshThread`), keeping the search field, the address being typed
+ * and — when it can — the focus.
+ */
+
+import type { PhoneInstance } from "../../../machines/phone.js";
+import { activeAccount } from "../../../machines/phone.js";
+import type { PresenceInstance } from "../../../machines/presence.js";
+import { formatDayMonth, formatTime, localeTag, t } from "../../../i18n/index.js";
+import { normalizeTarget } from "../../../sip/uri.js";
+import { showChatDialog } from "../../chatdialog.js";
+import { esc } from "../../el.js";
+import { GLYPH_LABEL, boundPresence, glyph, type Glyph } from "../../presence.js";
+import { showTraceDialog } from "../../tracedialog.js";
+import {
+  buildThreads,
+  contactFor,
+  groupOf,
+  initials,
+  threadSections,
+  type Thread,
+  type ThreadGroup,
+} from "../../thread.js";
+import {
+  HISTORY_ICONS,
+  ICONS,
+  OUTCOME_KEY,
+  currentMode,
+  displayTarget,
+  fmtDuration,
+  historyRow,
+  setDraft,
+} from "./parts.js";
+import { showStatsDialog } from "./stats.js";
+import type { MsgKey } from "../../../i18n/types.js";
+
+// ---- what survives a rebuild ----------------------------------------------
+
+let query = "";
+let openKey: string | null = null;
+let adding = false;
+/** What the add form holds: a refused address redraws the form, not the typing. */
+let addDraft = { name: "", uri: "" };
+let renaming: string | null = null;
+
+const GROUP_LABEL: Record<ThreadGroup, MsgKey> = {
+  today: "thread.group.today",
+  yesterday: "thread.group.yesterday",
+  week: "thread.group.week",
+  older: "thread.group.older",
+  none: "thread.group.none",
+};
+
+const CHEVRON = `<svg class="chev" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const PLUS = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const SEARCH = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const DIAL = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 4h2l1.5 4-2 1.3a11 11 0 0 0 6.2 6.2L16 13.5l4 1.5v2a2 2 0 0 1-2 2A15 15 0 0 1 5 6a2 2 0 0 1 2-2z" fill="currentColor"/></svg>`;
+
+// ---- presence of a line ---------------------------------------------------
+
+interface LinePresence {
+  glyph: Glyph | null;
+  stale: boolean;
+  text: string;
+  /** Available and fresh: the call button is drawn full. */
+  reachable: boolean;
+}
+
+/**
+ * What a line says of its correspondent. No glyph at all when presence is
+ * not there to be had (D8): a server that refused SUBSCRIBE, or presence
+ * turned off — contacts stay callable, without pretending.
+ */
+export function linePresence(thread: Thread, presence: PresenceInstance | null): LinePresence {
+  if (!thread.contact) return { glyph: null, stale: false, text: t("thread.notContact"), reachable: false };
+  const state = presence?.state;
+  if (!presence || state === "no_watch" || state === "disabled" || state === "off") {
+    return { glyph: null, stale: false, text: "", reachable: false };
+  }
+  const p = thread.presence;
+  if (!p) {
+    // live: not heard of yet; stale: never heard of before we went down
+    return { glyph: "unknown", stale: false, text: t(GLYPH_LABEL.unknown), reachable: false };
+  }
+  if (p.pending) return { glyph: "unknown", stale: false, text: t("thread.pending"), reachable: false };
+  const word = t(GLYPH_LABEL[p.info.state]);
+  const said = p.info.note ? `${word} · ${p.info.note}` : word;
+  if (!p.fresh) {
+    return {
+      glyph: p.info.state,
+      stale: true,
+      text: t("thread.stale", { status: said, time: formatTime(p.receivedAt) }),
+      reachable: false,
+    };
+  }
+  return { glyph: p.info.state, stale: false, text: said, reachable: p.info.state === "available" };
+}
+
+// ---- markup -----------------------------------------------------------------
+
+function when(ts: number, now: number): string {
+  switch (groupOf(ts, now)) {
+    case "today":
+      return formatTime(ts);
+    case "yesterday":
+      return t("thread.yesterday");
+    case "week":
+      return new Intl.DateTimeFormat(localeTag(), { weekday: "long" }).format(ts);
+    default:
+      return formatDayMonth(ts);
+  }
+}
+
+function summary(thread: Thread): string {
+  const last = thread.calls[0]?.entry;
+  if (!last) return "";
+  const duration = fmtDuration(last);
+  return `${HISTORY_ICONS[last.outcome]}<span>${esc(t(OUTCOME_KEY[last.outcome]))}${
+    duration ? ` · ${esc(duration)}` : ""
+  }</span>`;
+}
+
+function avatar(thread: Thread, p: LinePresence): string {
+  const face = thread.contact ? `<span>${esc(initials(thread.name))}</span>` : DIAL;
+  return `<span class="avatar ${thread.contact ? "" : "number"}">${face}${p.glyph ? glyph(p.glyph, 15, p.stale) : ""}</span>`;
+}
+
+function body(thread: Thread, now: number): string {
+  const days: string[] = [];
+  let day = "";
+  for (const { entry, index } of thread.calls) {
+    const group = groupOf(entry.startedAt, now);
+    const label =
+      group === "today" || group === "yesterday" ? t(GROUP_LABEL[group]) : formatDayMonth(entry.startedAt);
+    if (label !== day) {
+      day = label;
+      days.push(`<div class="thread-day"><span>${esc(label)}</span></div>`);
+    }
+    days.push(historyRow(entry, index, "thread-"));
+  }
+  const calls = days.length
+    ? `<div class="thread-calls">${days.join("")}</div>`
+    : `<p class="thread-none">${esc(t("thread.noCalls"))}</p>`;
+  const c = thread.contact;
+  const actions = c
+    ? renaming === thread.key
+      ? `<form class="thread-rename" data-form="rename" data-id="${esc(c.id)}">
+           <label class="sr-only" for="thread-rename">${esc(t("thread.form.name"))}</label>
+           <input id="thread-rename" name="name" value="${esc(c.name)}" maxlength="80" required>
+           <button type="submit" class="btn small primary">${esc(t("thread.renameSave"))}</button>
+           <button type="button" class="btn small" data-act="thread-rename-cancel">${esc(t("thread.form.cancel"))}</button>
+         </form>`
+      : `<div class="thread-actions">
+           <button type="button" class="linkbtn" data-act="thread-rename" data-key="${esc(thread.key)}">${esc(t("thread.rename"))}</button>
+           <button type="button" class="linkbtn" data-act="thread-remove" data-id="${esc(c.id)}">${esc(t("thread.remove"))}</button>
+         </div>`
+    : "";
+  return `<div class="thread-body">${calls}${actions}</div>`;
+}
+
+function row(thread: Thread, presence: PresenceInstance | null, ready: boolean, now: number): string {
+  const open = openKey === thread.key;
+  const p = linePresence(thread, presence);
+  return `<li class="thread ${open ? "open" : ""}">
+    <div class="thread-head">
+      <button type="button" class="thread-toggle" data-act="thread-toggle" data-key="${esc(thread.key)}"
+              aria-expanded="${open}">
+        ${CHEVRON}
+        ${avatar(thread, p)}
+        <span class="thread-who">
+          <span class="name">${esc(thread.name)}</span>
+          ${p.text ? `<span class="status ${p.stale ? "stale" : ""}">${esc(p.text)}</span>` : ""}
+        </span>
+        <span class="thread-last">${summary(thread)}</span>
+        <span class="when">${thread.last !== null ? esc(when(thread.last, now)) : ""}</span>
+      </button>
+      ${
+        open && !thread.contact
+          ? `<button type="button" class="btn small" data-act="thread-add-number" data-key="${esc(thread.key)}">${esc(
+              t("thread.addToContacts"),
+            )}</button>`
+          : ""
+      }
+      <button type="button" class="thread-call ${p.reachable ? "go" : ""}" data-act="thread-call"
+              data-key="${esc(thread.key)}" ${ready ? "" : "disabled"}
+              aria-label="${esc(t("thread.call", { name: thread.name }))}">${ICONS.phone}</button>
+    </div>
+    ${open ? body(thread, now) : ""}
+  </li>`;
+}
+
+function addForm(phone: PhoneInstance): string {
+  const error = phone.context.contactError;
+  return `<form class="thread-addform" data-form="add">
+    <div class="field">
+      <label for="thread-add-name">${esc(t("thread.form.name"))}</label>
+      <input id="thread-add-name" name="name" maxlength="80" autocomplete="off" value="${esc(addDraft.name)}">
+    </div>
+    <div class="field">
+      <label for="thread-add-uri">${esc(t("thread.form.address"))}</label>
+      <input id="thread-add-uri" name="uri" autocomplete="off" required value="${esc(addDraft.uri)}"
+             ${error ? 'aria-invalid="true" aria-describedby="thread-add-error"' : ""}>
+      ${error ? `<span class="call-error" id="thread-add-error">${esc(t(error))}</span>` : ""}
+    </div>
+    <div class="thread-formbtns">
+      <button type="submit" class="btn primary small">${esc(t("thread.form.save"))}</button>
+      <button type="button" class="btn small" data-act="thread-add-cancel">${esc(t("thread.form.cancel"))}</button>
+    </div>
+  </form>`;
+}
+
+/** The list alone: what `refreshThread` redraws. */
+function listHtml(phone: PhoneInstance, now: number): string {
+  const presence = boundPresence();
+  const threads = buildThreads(phone.context.contacts, phone.context.history, presence?.context.contacts ?? {});
+  const sections = threadSections(threads, query, now);
+  const ready = phone.state === "ready";
+  const content = sections.length
+    ? sections
+        .map(
+          (s) => `<section class="thread-group">
+            <h2>${esc(t(GROUP_LABEL[s.group]))}</h2>
+            <ul>${s.threads.map((th) => row(th, presence, ready, now)).join("")}</ul>
+          </section>`,
+        )
+        .join("")
+    : `<p class="thread-none">${esc(t(threads.length ? "thread.noMatch" : "thread.empty"))}</p>`;
+  return `${adding ? addForm(phone) : ""}${content}`;
+}
+
+/**
+ * The whole stage at rest. `notice` is what the phone has to say above the
+ * thread — a failed registration, a reconnection, the page asleep.
+ */
+export function threadStage(phone: PhoneInstance, notice: string): string {
+  const history = phone.context.history.length > 0;
+  return `<div class="thread-stage">
+    ${notice ? `<div class="thread-notice">${notice}</div>` : ""}
+    <div class="thread-bar">
+      <h1>${esc(t("thread.title"))}</h1>
+      <span class="thread-sub">${esc(t("thread.subtitle"))}</span>
+      <span class="spacer"></span>
+      <label class="sr-only" for="thread-search">${esc(t("thread.search"))}</label>
+      <span class="thread-search">${SEARCH}<input id="thread-search" type="search" data-ref="thread-search"
+            value="${esc(query)}" placeholder="${esc(t("thread.search"))}" autocomplete="off"></span>
+      <button type="button" class="btn small" data-act="thread-add">${PLUS}${esc(t("thread.add"))}</button>
+    </div>
+    <div class="thread-list" data-ref="thread-list">${listHtml(phone, Date.now())}</div>
+    ${
+      history
+        ? `<div class="thread-foot"><button type="button" class="linkbtn" data-act="thread-clear-history">${esc(
+            t("history.clear"),
+          )}</button></div>`
+        : ""
+    }
+  </div>`;
+}
+
+/** The hint under the address field: who it is, and how they are (D10). */
+export function contactHint(phone: PhoneInstance, typed: string): string {
+  const cfg = activeAccount(phone.context);
+  if (!cfg) return "";
+  const contact = contactFor(phone.context.contacts, typed, cfg.domain);
+  if (!contact) return "";
+  const presence = boundPresence();
+  const thread = buildThreads([contact], [], presence?.context.contacts ?? {})[0]!;
+  const status = linePresence(thread, presence).text;
+  return status ? t("call.contactHint", { name: contact.name, status }) : contact.name;
+}
+
+// ---- wiring -----------------------------------------------------------------
+
+interface Mounted {
+  node: HTMLElement;
+  phone: PhoneInstance;
+  signature: readonly unknown[];
+}
+
+let mounted: Mounted | null = null;
+
+function signature(phone: PhoneInstance): readonly unknown[] {
+  const presence = boundPresence();
+  return [
+    phone.state,
+    phone.context.contacts,
+    phone.context.history,
+    phone.context.contactError,
+    presence?.state,
+    presence?.context.contacts,
+  ];
+}
+
+function same(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Redraws the list, putting the focus back where it was if it was inside. */
+function redraw(m: Mounted): void {
+  const list = m.node.querySelector<HTMLElement>('[data-ref="thread-list"]');
+  if (!list) return;
+  const active = document.activeElement as HTMLElement | null;
+  const inside = active && list.contains(active);
+  const act = inside ? active.dataset.act : undefined;
+  const key = inside ? (active.dataset.key ?? active.dataset.id) : undefined;
+  const id = inside ? active.id : undefined;
+  list.innerHTML = listHtml(m.phone, Date.now());
+  m.signature = signature(m.phone);
+  if (!inside) return;
+  const back = id
+    ? list.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
+    : Array.from(list.querySelectorAll<HTMLElement>("[data-act]")).find(
+        (el) => el.dataset.act === act && (el.dataset.key ?? el.dataset.id) === key,
+      );
+  back?.focus();
+}
+
+/** After each `renderApp`: redraw the list if what it shows has changed. */
+export function refreshThread(): void {
+  const m = mounted;
+  if (!m || !m.node.isConnected) return;
+  const next = signature(m.phone);
+  if (!same(next, m.signature)) redraw(m);
+}
+
+export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
+  const stage = node.querySelector<HTMLElement>(".thread-stage");
+  if (!stage) {
+    mounted = null;
+    return;
+  }
+  const m: Mounted = { node, phone, signature: signature(phone) };
+  mounted = m;
+  const target = node.querySelector<HTMLInputElement>('[data-ref="target"]');
+  const hint = node.querySelector<HTMLElement>('[data-ref="contacthint"]');
+  const updateHint = () => {
+    if (hint && target) hint.textContent = contactHint(phone, target.value);
+  };
+  target?.addEventListener("input", updateHint);
+
+  const threadOf = (key: string | undefined): Thread | undefined =>
+    buildThreads(phone.context.contacts, phone.context.history, boundPresence()?.context.contacts ?? {}).find(
+      (th) => th.key === key,
+    );
+  const entryAt = (i: string | undefined) => phone.context.history[Number(i)];
+
+  stage.addEventListener("input", (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.dataset.ref === "thread-search") {
+      query = input.value;
+      redraw(m);
+    } else if (input.id === "thread-add-name") {
+      addDraft = { ...addDraft, name: input.value };
+    } else if (input.id === "thread-add-uri") {
+      addDraft = { ...addDraft, uri: input.value };
+    }
+  });
+
+  stage.addEventListener("click", (e) => {
+    const el = (e.target as Element).closest<HTMLElement>("[data-act]");
+    if (!el || !stage.contains(el)) return;
+    const { act, key, id, i } = el.dataset;
+    switch (act) {
+      case "thread-toggle": {
+        openKey = openKey === key ? null : (key ?? null);
+        renaming = null;
+        const thread = threadOf(key);
+        if (openKey && thread && target && !target.disabled) {
+          // D10: unfolding a line fills the address to dial
+          target.value = displayTarget(thread.target);
+          setDraft(target.value);
+          updateHint();
+        }
+        redraw(m);
+        return;
+      }
+      case "thread-call": {
+        const cfg = activeAccount(phone.context);
+        const thread = threadOf(key);
+        const to = cfg && thread ? normalizeTarget(thread.target, cfg.domain) : null;
+        if (cfg && to) phone.send({ type: "ui:call", target: to, media: currentMode(cfg.rtt).media });
+        return;
+      }
+      case "thread-add":
+        adding = !adding;
+        redraw(m);
+        if (adding) stage.querySelector<HTMLInputElement>("#thread-add-name")?.focus();
+        return;
+      case "thread-add-cancel":
+        adding = false;
+        addDraft = { name: "", uri: "" };
+        redraw(m);
+        stage.querySelector<HTMLElement>('[data-act="thread-add"]')?.focus();
+        return;
+      case "thread-add-number": {
+        const thread = threadOf(key);
+        if (thread) phone.send({ type: "ui:addContact", name: "", uri: thread.target });
+        return;
+      }
+      case "thread-rename":
+        renaming = key ?? null;
+        redraw(m);
+        stage.querySelector<HTMLInputElement>("#thread-rename")?.select();
+        return;
+      case "thread-rename-cancel":
+        renaming = null;
+        redraw(m);
+        return;
+      case "thread-remove":
+        if (id) phone.send({ type: "ui:removeContact", id });
+        return;
+      case "thread-clear-history":
+        phone.send({ type: "ui:clearHistory" });
+        return;
+      case "thread-trace": {
+        const entry = entryAt(i);
+        if (entry) showTraceDialog(entry);
+        return;
+      }
+      case "thread-stats": {
+        const entry = entryAt(i);
+        if (entry) showStatsDialog(entry);
+        return;
+      }
+      case "thread-chat-log": {
+        const entry = entryAt(i);
+        if (entry) showChatDialog(entry);
+        return;
+      }
+    }
+  });
+
+  stage.addEventListener("submit", (e) => {
+    const form = e.target as HTMLFormElement;
+    e.preventDefault();
+    const data = new FormData(form);
+    if (form.dataset.form === "add") {
+      phone.send({ type: "ui:addContact", name: String(data.get("name") ?? ""), uri: String(data.get("uri") ?? "") });
+      // refused: the form stays, with the reason (the machine said it in contactError)
+      if (!phone.context.contactError) {
+        adding = false;
+        addDraft = { name: "", uri: "" };
+        redraw(m);
+        stage.querySelector<HTMLElement>('[data-act="thread-add"]')?.focus();
+      } else {
+        redraw(m);
+        stage.querySelector<HTMLInputElement>("#thread-add-uri")?.focus();
+      }
+    } else if (form.dataset.form === "rename" && form.dataset.id) {
+      renaming = null;
+      phone.send({ type: "ui:renameContact", id: form.dataset.id, name: String(data.get("name") ?? "") });
+      redraw(m);
+    }
+  });
+}

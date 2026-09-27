@@ -87,6 +87,11 @@ export function bindPresence(instance: PresenceInstance): void {
   presence = instance;
 }
 
+/** The presence machine the screens read, once `main.ts` has bound it. */
+export function boundPresence(): PresenceInstance | null {
+  return presence;
+}
+
 /**
  * The status button replaces the registration pill only while registered
  * and while the server takes SUBSCRIBE (D8): otherwise the pill of before.

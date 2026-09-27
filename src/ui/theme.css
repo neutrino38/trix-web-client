@@ -1525,3 +1525,110 @@ fieldset.field { border: none; }
 .statusrule .sub { display: block; font-size: 0.74rem; color: var(--ink-soft); }
 .statushint, .statusnote-off { margin: 0.3rem 0.8rem 0.5rem; font-size: 0.74rem; color: var(--ink-soft); line-height: 1.4; }
 .statusnote-off { color: var(--ink); background: var(--panel-2); border-radius: 8px; padding: 0.5rem 0.7rem; margin: 0.3rem 0.3rem 0.2rem; }
+
+/* ---- Le fil Échanges, sur la scène au repos (ADR 0007, D10) ---- */
+
+.thread-stage {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  background: var(--ground); color: var(--ink);
+}
+.thread-notice {
+  display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.thread-notice .idle-msg { color: var(--ink-soft); font-size: 0.9rem; text-align: center; }
+.thread-bar {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  padding: 1rem 1.5rem 0.75rem;
+}
+.thread-bar h1 { font-size: 1.3rem; font-weight: 700; }
+.thread-sub { font-size: 0.8rem; color: var(--ink-soft); }
+.thread-bar .spacer { flex: 1; }
+.thread-search {
+  display: inline-flex; align-items: center; gap: 0.4rem; min-width: 14rem;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--panel);
+  padding: 0 0.8rem; color: var(--ink-soft);
+}
+.thread-search input {
+  flex: 1; min-width: 0; font: inherit; font-size: 0.85rem; color: var(--ink);
+  border: none; background: none; min-height: 40px; outline: none;
+}
+.thread-search:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn.small { padding: 0.35rem 1rem; min-height: 40px; font-size: 0.85rem; }
+.btn.small svg { flex: none; }
+
+.thread-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 1.5rem 1rem; }
+.thread-group h2 {
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); padding: 0.9rem 0.6rem 0.35rem;
+}
+.thread-group ul { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.thread { border-radius: 14px; }
+.thread.open { background: var(--panel); box-shadow: var(--shadow); }
+.thread-head { display: flex; align-items: center; gap: 0.5rem; padding-inline-end: 0.5rem; }
+.thread-toggle {
+  flex: 1; min-width: 0; font: inherit; color: inherit; text-align: start; cursor: pointer;
+  background: none; border: none; border-radius: 12px; padding: 0.55rem 0.6rem;
+  display: grid; grid-template-columns: 16px 38px minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  align-items: center; column-gap: 0.75rem;
+}
+.thread-toggle:hover { background: var(--panel-2); }
+.thread.open .thread-toggle:hover { background: none; }
+.thread-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.thread-toggle .chev { color: var(--ink-soft); transition: transform 0.12s; }
+.thread-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+[dir="rtl"] .thread-toggle .chev { transform: scaleX(-1); }
+[dir="rtl"] .thread-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .thread-toggle .chev { transition: none; } }
+.avatar {
+  position: relative; width: 38px; height: 38px; border-radius: 50%;
+  background: var(--panel-2); color: var(--ink); font-weight: 600; font-size: 0.8rem;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.avatar.number { color: var(--ink-soft); }
+.avatar .pglyph {
+  position: absolute; inset-inline-end: -3px; bottom: -3px; border-radius: 50%;
+  background: var(--panel); box-shadow: 0 0 0 2px var(--panel);
+}
+.thread-who { display: flex; flex-direction: column; min-width: 0; }
+.thread-who .name { font-weight: 600; font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-who .status { font-size: 0.78rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-who .status.stale { font-style: italic; }
+.thread-last {
+  display: flex; align-items: center; gap: 0.4rem; min-width: 0;
+  font-size: 0.8rem; color: var(--ink-soft);
+}
+.thread-last span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-last .icon.dir { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.thread-toggle .when { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+.thread-call {
+  width: 44px; height: 44px; border-radius: 50%; flex: none; cursor: pointer;
+  border: 1px solid var(--border); background: var(--panel); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.thread-call svg { width: 20px; height: 20px; fill: currentColor; }
+.thread-call.go { background: var(--presence-available); border-color: var(--presence-available); color: #fff; }
+.thread-call:disabled { opacity: 0.5; cursor: default; }
+.thread-call:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.thread-body { padding: 0 1rem 0.9rem 3.9rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.thread-day { display: flex; align-items: center; gap: 0.6rem; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); }
+.thread-day::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.thread-calls { display: flex; flex-direction: column; gap: 0.35rem; }
+.thread-actions { display: flex; gap: 1rem; }
+.thread-rename { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.thread-rename input, .thread-addform input {
+  font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--ground);
+  border: 1px solid var(--border); border-radius: 8px; padding: 0.45rem 0.7rem; min-height: 40px;
+}
+.thread-none { color: var(--ink-soft); font-size: 0.85rem; padding: 1.5rem 0.6rem; }
+.thread-addform {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0.9rem 1rem; margin-top: 0.5rem;
+}
+.thread-addform .field { flex: 1 1 12rem; }
+.thread-formbtns { display: flex; gap: 0.5rem; }
+.thread-foot { padding: 0.4rem 1.5rem 0.8rem; text-align: end; border-top: 1px solid var(--border); }
+.field .hint.contact:empty { display: none; }
+.field .hint.contact { color: var(--ink); font-weight: 600; }

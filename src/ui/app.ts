@@ -13,6 +13,7 @@ import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
 import type { CallLogEntry } from "../storage/store.js";
 import { closeStatusMenu, headerKey } from "./presence.js";
+import { refreshThread } from "./screens/call/thread.js";
 
 let lastState: string | null = null;
 let lastLayout: LayoutMode | null = null;
@@ -111,6 +112,9 @@ export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
     presence === lastPresence &&
     phone.state !== "in_call"
   ) {
+    // l'écran reste, mais le fil Échanges peut avoir changé : présence
+    // d'un contact, carnet modifié (ADR 0007, D10)
+    refreshThread();
     return;
   }
   lastState = phone.state;

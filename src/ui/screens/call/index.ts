@@ -17,6 +17,7 @@ import { closeSheet, wireSheet } from "./sheet.js";
 import { stopChrono, wireCallScreen } from "./parts.js";
 import { stopMediaStats } from "./stats.js";
 import { wireStatusButton } from "../../presence.js";
+import { wireThread } from "./thread.js";
 
 export function renderCall(phone: PhoneInstance): HTMLElement {
   stopChrono(); // le nœud précédent disparaît avec ses timers
@@ -48,6 +49,9 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
   // le bouton de statut et son menu, qui vit hors de l'écran et s'y
   // raccroche à chaque reconstruction (ui/presence.ts)
   wireStatusButton(node);
+  // le fil Échanges, sur la scène au repos (ADR 0007, D10) : il se
+  // redessine seul quand la présence ou le carnet changent
+  wireThread(node, phone);
   // même partage pour la question posée en cours d'appel (« Alice souhaite
   // ajouter la vidéo ») : les deux boutons sont câblés avec les autres,
   // seul le focus est propre à la popup

@@ -298,6 +298,10 @@ let shownNotice = 0;
 let chronoTimer: ReturnType<typeof setInterval> | null = null;
 
 export const draft = (): string => draftTarget;
+/** Pré-remplit l'adresse à composer — depuis le fil Échanges, qui déplie une ligne (D10). */
+export const setDraft = (value: string): void => {
+  draftTarget = value;
+};
 export const isSpeakerMuted = (): boolean => speakerMuted;
 
 /** À appeler en tête de chaque rendu : l'ancien nœud disparaît avec son timer. */
@@ -416,7 +420,7 @@ export function callerName(view: CallView): string {
 // Historique d'appels
 // ---------------------------------------------------------------------------
 
-const OUTCOME_KEY: Record<CallLogEntry["outcome"], MsgKey> = {
+export const OUTCOME_KEY: Record<CallLogEntry["outcome"], MsgKey> = {
   answered: "outcome.answered",
   missed: "outcome.missed",
   failed: "outcome.failed",
@@ -431,7 +435,7 @@ const ENDED_BY_KEY: Record<NonNullable<CallLogEntry["endedBy"]>, MsgKey> = {
   network: "endedBy.network",
 };
 
-const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
+export const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
   // flèches sortante/entrante ; la couleur porte le sens (vert/rouge/orange)
   answered: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   canceled: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
@@ -449,13 +453,13 @@ const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
 const HISTORY_CAM = ICONS.cam.replace('class="icon"', 'class="icon cam"');
 
 /** Heure seule pour aujourd'hui, date + heure au-delà — au format de la langue. */
-function fmtWhen(ts: number): string {
+export function fmtWhen(ts: number): string {
   const sameDay = new Date(ts).toDateString() === new Date().toDateString();
   const time = formatTime(ts);
   return sameDay ? time : `${formatDayMonth(ts)} ${time}`;
 }
 
-function fmtDuration(entry: CallLogEntry): string {
+export function fmtDuration(entry: CallLogEntry): string {
   if (entry.connectedAt === null) return "";
   const s = Math.max(0, Math.round((entry.endedAt - entry.connectedAt) / 1000));
   const m = Math.floor(s / 60);
@@ -469,7 +473,12 @@ function fmtDuration(entry: CallLogEntry): string {
  * trace — c'est par là que le câblage retrouve l'entrée à ouvrir, sans que
  * le gabarit ait à transporter le carnet lui-même.
  */
-export function historyRow(entry: CallLogEntry, index: number): string {
+/**
+ * `scope` préfixe les actions de ses boutons : le fil Échanges (ADR 0007)
+ * les câble lui-même, par délégation, parce qu'il se redessine sans que
+ * l'écran soit reconstruit.
+ */
+export function historyRow(entry: CallLogEntry, index: number, scope = ""): string {
   const outcome = t(OUTCOME_KEY[entry.outcome]);
   const detail =
     entry.connectedAt !== null
@@ -484,7 +493,7 @@ export function historyRow(entry: CallLogEntry, index: number): string {
     ${entry.media.video ? HISTORY_CAM : ""}
     <span class="when">${esc(fmtWhen(entry.startedAt))}</span>
     <span class="detail">${esc(detail)}</span>
-    ${rowButtons(entry, index)}
+    ${rowButtons(entry, index, scope)}
   </div>`;
 }
 
@@ -498,9 +507,9 @@ export function historyRow(entry: CallLogEntry, index: number): string {
  * La conversation vient en tête parce que c'est la seule des trois qui
  * parle de ce qui a été dit ; les deux autres parlent de la mécanique.
  */
-function rowButtons(entry: CallLogEntry, index: number): string {
+function rowButtons(entry: CallLogEntry, index: number, scope: string): string {
   const one = (act: string, cls: string, label: MsgKey, icon: string): string =>
-    `<button class="${cls}" data-act="${act}" data-i="${index}"
+    `<button class="${cls}" data-act="${scope}${act}" data-i="${index}"
              title="${esc(t(label))}" aria-label="${esc(t(label))}">${icon}</button>`;
   const btns = [
     // sans condition, elle : le fil rejoint l'historique dès que quelqu'un
@@ -767,7 +776,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   });
   if (targetInput && !view) {
     // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler
-    for (const row of node.querySelectorAll(".calllog-row")) {
+    for (const row of node.querySelectorAll(".calllog-list .calllog-row")) {
       const who = row.querySelector(".who")?.textContent ?? "";
       row.addEventListener("click", () => {
         draftTarget = who;

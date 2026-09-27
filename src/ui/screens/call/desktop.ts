@@ -11,6 +11,7 @@ import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { statusButton } from "../../presence.js";
+import { contactHint, threadStage } from "./thread.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { mediaAskDialog } from "./mediaask.js";
@@ -38,7 +39,6 @@ import {
   displayTarget,
   draft,
   fmtChrono,
-  historyRow,
   isSpeakerMuted,
   reachBanner,
   statusOf,
@@ -61,7 +61,6 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   const err = phone.context.lastError;
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
-  const history = phone.context.history;
   const width = panelWidth();
   // Le repli ne vaut qu'en communication : hors appel le panneau porte le
   // composeur, et pendant la sonnerie les boutons de réponse — le masquer
@@ -82,6 +81,30 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // centre, et la sidebar n'en garde rien — un panneau vide à côté d'un fil
   // plein serait la même conversation affichée deux fois.
   const stageChat = chatOnStage(view);
+  // ce que le téléphone a à dire au repos, au-dessus du fil : l'échec, la
+  // reconnexion, la veille — ou l'état en cours tant qu'il n'est pas prêt
+  const restNotice = view
+    ? ""
+    : failed
+      ? `${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
+         ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
+         <div class="error-actions">
+           <button class="btn primary" data-act="fix-settings">${esc(t("action.fixSettings"))}</button>
+           <button class="btn" data-act="retry">${esc(t("action.retry"))}</button>
+         </div>`
+      : reconnecting
+        ? `${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
+           ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
+           <span class="idle-msg">${esc(t("call.retryIn"))}</span>
+           <div class="error-actions">
+             <button class="btn primary" data-act="retry">${esc(t("action.retryNow"))}</button>
+             <button class="btn" data-act="fix-settings">${esc(t("action.settings"))}</button>
+           </div>`
+        : sleeping
+          ? `<span class="idle-msg">${esc(t("call.sleeping"))}</span>`
+          : ready
+            ? ""
+            : `<span class="idle-msg">${esc(status.label)}</span>`;
 
   return el(`
     <div class="screen-call ${collapsed ? "panel-collapsed" : ""}">
@@ -140,7 +163,11 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           ${
             // `view &&` : la scène de texte suppose un appel, et c'est ce qui
             // le dit au compilateur — `stageChat` seul le sait sans le prouver
-            view && stageChat
+            !view
+              ? // au repos, le fil Échanges tient la scène (ADR 0007, D10) ; ce
+                // que le téléphone a à dire se pose au-dessus de lui
+                threadStage(phone, restNotice)
+              : stageChat
               ? chatStage({
                   peer: callerName(view),
                   bar: overlayBar({
@@ -199,24 +226,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                      withHangup: true,
                      panel: { collapsed, controls: "call-panel" },
                    })}`
-                : failed
-                  ? `${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
-                     ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
-                     <div class="error-actions">
-                       <button class="btn primary" data-act="fix-settings">${esc(t("action.fixSettings"))}</button>
-                       <button class="btn" data-act="retry">${esc(t("action.retry"))}</button>
-                     </div>`
-                  : reconnecting
-                    ? `${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
-                       ${errCode ? `<span class="error-code">${esc(errCode)}</span>` : ""}
-                       <span class="idle-msg">${esc(t("call.retryIn"))}</span>
-                       <div class="error-actions">
-                         <button class="btn primary" data-act="retry">${esc(t("action.retryNow"))}</button>
-                         <button class="btn" data-act="fix-settings">${esc(t("action.settings"))}</button>
-                       </div>`
-                    : sleeping
-                      ? `<span class="idle-msg">${esc(t("call.sleeping"))}</span>`
-                      : `<span class="idle-msg">${esc(ready ? t("call.idle") : status.label)}</span>`
+                : ""
             }
           </div>`
           }
@@ -230,7 +240,10 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                      value="${view ? esc(displayTarget(view.target)) : esc(draft())}">
               ${
                 cfg && !view
-                  ? `<span class="hint">${t("call.domainHint", { domain: esc(cfg.domain) })}</span>`
+                  ? `<span class="hint">${t("call.domainHint", { domain: esc(cfg.domain) })}</span>
+                     <span class="hint contact" data-ref="contacthint" aria-live="polite">${esc(
+                       contactHint(phone, draft()),
+                     )}</span>`
                   : ""
               }
               ${callError && !view ? `<span class="call-error">${esc(t(callError))}</span>` : ""}
@@ -257,29 +270,9 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             }
           </div>
           ${
-            // l'historique quitte la sidebar dès qu'il y a un appel : il n'a
-            // rien à dire pendant qu'on parle, et la place revient au tchat
-            view
-              ? ""
-              : `<div class="calllog">
-                   <div class="calllog-head">
-                     <span>${esc(t("history.title"))}</span>
-                     ${
-                       history.length
-                         ? `<button class="linkbtn" data-act="clear-history">${esc(
-                             t("history.clear"),
-                           )}</button>`
-                         : ""
-                     }
-                   </div>
-                   <div class="calllog-list">
-                     ${
-                       history.length
-                         ? history.map((e, i) => historyRow(e, i)).join("")
-                         : `<p class="calllog-empty">${esc(t("history.empty"))}</p>`
-                     }
-                   </div>
-                 </div>`
+            // l'historique a quitté la sidebar pour le fil Échanges (ADR 0007,
+            // D10) : elle ne garde que la composition d'appel
+            ""
           }
           ${
             // le tchat ne tient la sidebar que si la scène ne l'a pas pris :
