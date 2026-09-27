@@ -48,6 +48,12 @@ export interface Deployment {
   rtt: RttTransport | null;
   /** False only for `"debug_activated": "no"`: no SIP trace, and no way to ask for one. */
   debug: boolean;
+  /**
+   * False only for `"presence": "no"` (ADR 0007, D8): no SUBSCRIBE, no
+   * PUBLISH, no status menu — for a server known to refuse them, whose
+   * operator does not want to see them tried at every registration.
+   */
+  presence: boolean;
 }
 
 /** No file, or nothing usable in it: Trix as it is without deployment configuration. */
@@ -57,6 +63,7 @@ export const OPEN_DEPLOYMENT: Deployment = {
   ice: null,
   rtt: null,
   debug: true,
+  presence: true,
 };
 
 /** Where the file is looked for, relative to wherever Trix is served from. */
@@ -141,6 +148,8 @@ export function parseDeployment(raw: unknown): Deployment {
     rtt: rttOf(obj),
     // stated and not "no" — an absent key leaves the trace available
     debug: text(obj, "debug_activated")?.toLowerCase() !== "no",
+    // same reading: only "no" turns it off, and discovery (D8) does the rest
+    presence: text(obj, "presence")?.toLowerCase() !== "no",
   };
 }
 

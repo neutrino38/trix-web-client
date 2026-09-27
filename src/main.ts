@@ -18,7 +18,7 @@ import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
 import { traceCallStates } from "./sip/trace.js";
 import { initI18n, onLocaleChange } from "./i18n/index.js";
-import { loadDeployment } from "./deployment.js";
+import { deployment, loadDeployment } from "./deployment.js";
 
 applyPrefs();
 
@@ -52,7 +52,9 @@ const presence = PresenceMachine.start({
   debug: true,
   args: {
     statusStore: { load: statusPrefs, save: setStatusPrefs },
-    enabled: true,
+    // `"presence": "no"` dans config.json (ADR 0007, D8) : la machine reste
+    // en `disabled`, et pas un SUBSCRIBE ne part
+    enabled: deployment().presence,
   },
 });
 

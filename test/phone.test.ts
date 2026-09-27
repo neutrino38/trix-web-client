@@ -300,6 +300,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       ice: { stun: "stun.impose.fr", turn: null },
       rtt: "datachannel",
       debug: true,
+      presence: true,
     });
     const { phone, sip } = await bootTo("connecting", CFG);
     expect(activeCfg(phone)).toEqual({
@@ -342,6 +343,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       ice: { stun: "stun.impose.fr", turn: null },
       rtt: "datachannel",
       debug: true,
+      presence: true,
     });
     const { phone, box } = await bootTo("home", null);
     phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
