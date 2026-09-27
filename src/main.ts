@@ -10,6 +10,7 @@ import { chatTranscript } from "./ui/screens/call/chat.js";
 import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
+import { watchActivity } from "./ui/activity.js";
 import { noteSleepReason, watchReachability } from "./ui/reachability.js";
 import { registerNotifier } from "./ui/notify.js";
 import { watchLayout } from "./ui/layout.js";
@@ -147,6 +148,14 @@ watchSystemLifecycle({
     phone.send({ type: "sys:sleep" });
   },
   onWake: () => phone.send({ type: "sys:wake" }),
+});
+
+// Personne au clavier depuis dix minutes : Disponible devient Absent pour
+// les autres, et revient au premier geste (ADR 0007, D5, règle 2). La
+// présence seule en décide ; le téléphone n'en sait rien.
+watchActivity({
+  onIdle: () => presence.send({ type: "sys:idle" }),
+  onActive: () => presence.send({ type: "sys:active" }),
 });
 
 // Observabilité (docs/CONCEPTION.md §4.5) : depuis la console,
