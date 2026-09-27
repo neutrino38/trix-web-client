@@ -175,6 +175,7 @@ const messages: Translation = {
   "status.ready": "مُسجَّل",
   "status.reconnecting": "جارٍ إعادة الاتصال…",
   "status.sleeping": "في وضع السكون",
+  "status.sleepingSeen": "في وضع السكون — تراك جهات اتصالك غير متصل",
   "status.regFailed": "فشل التسجيل",
   "status.unregistering": "جارٍ تسجيل الخروج…",
   "status.switching": "جارٍ تبديل الحساب…",
@@ -215,7 +216,9 @@ const messages: Translation = {
   "thread.pending": "بانتظار موافقته",
   "thread.call": "اتصل بـ {name}",
   "thread.noMatch": "لا توجد محادثة تطابق هذا البحث.",
-  "thread.empty": "لا جهات اتصال ولا مكالمات بعد: أضف جهة اتصال، أو اتصل من حقل العنوان.",
+  "thread.firstContact": "أضف جهة اتصال لتعرف إن كانت متاحة قبل الاتصال.",
+  "thread.addLast": "أضف {name}",
+  "thread.noPresence": "هذا الخادم لا ينقل الحالة. يمكنك الاتصال بجهات اتصالك كالمعتاد.",
   "thread.noCalls": "لا مكالمات مع جهة الاتصال هذه بعد.",
   "thread.form.name": "الاسم",
   "thread.form.address": "عنوان SIP أو رقم",
@@ -500,9 +503,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.title": "السجلّ",
   "history.clear": "مسح",
-  "history.empty": "لا مكالمات مسجَّلة",
   "history.entryTitle": "{target} — {outcome}",
 
   // دفتر المكالمة: حزم SIP المحفوظة عندما كان التتبّع مُفعَّلًا

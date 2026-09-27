@@ -147,3 +147,16 @@ export function initials(name: string): string {
   const letters = words.slice(0, 2).map((w) => Array.from(w)[0] ?? "");
   return letters.join("").toUpperCase() || "?";
 }
+
+/**
+ * The most recent line outside the book: what an empty book offers to add
+ * first ("Ajouter bob@example.fr"), so the first contact is one click away.
+ */
+export function lastStranger(threads: readonly Thread[]): Thread | null {
+  let best: Thread | null = null;
+  for (const thread of threads) {
+    if (thread.contact || thread.last === null) continue;
+    if (!best || thread.last > (best.last ?? 0)) best = thread;
+  }
+  return best;
+}

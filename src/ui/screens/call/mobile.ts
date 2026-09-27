@@ -3,9 +3,9 @@
  *
  * Hors appel : pastille d'état + Paramètres/Déconnexion en barre haute,
  * champ d'adresse (sans aide), bouton d'appel et son menu de mode, puis
- * l'historique. Ni vidéo ni contrôles média.
+ * le fil Échanges (call/thread.ts). Ni vidéo ni contrôles média.
  *
- * En appel : l'adresse et l'historique disparaissent, la vidéo occupe
+ * En appel : l'adresse et le fil disparaissent, la vidéo occupe
  * l'écran, les contrôles média sont en surimpression au bas de la vidéo
  * et le raccrochage est un bouton rond rouge à leur droite.
  *
@@ -16,7 +16,8 @@
 import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import type { CallView } from "../../../machines/events.js";
 import { el, esc } from "../../el.js";
-import { statusButton } from "../../presence.js";
+import { pillLabel, statusButton } from "../../presence.js";
+import { threadStage } from "./thread.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { mediaAskDialog } from "./mediaask.js";
@@ -43,7 +44,6 @@ import {
   displayTarget,
   draft,
   fmtChrono,
-  historyRow,
   isSpeakerMuted,
   reachBanner,
   statusOf,
@@ -65,7 +65,6 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const err = phone.context.lastError;
   const errCode = phone.context.lastErrorCode;
   const callError = phone.context.callError;
-  const history = phone.context.history;
   // le tchat n'existe que si le texte est **négocié** (§4.9) ; déplié, il
   // prend la place que la vidéo lui cède — ce n'est pas une couche de plus
   const chat = chatAvailable(view);
@@ -94,7 +93,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
             statsPill(
               view
                 ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
-                : esc(status.label),
+                : esc(pillLabel(phone, status.label)),
               { cls: "mstatus", connected },
             )
           }`
@@ -224,23 +223,11 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                          aria-label="${esc(t("call.chooseMode"))}" aria-expanded="false">▾</button>
                  <div class="dropdown" data-ref="modemenu" hidden></div>
                </div>
-               <div class="calllog">
-                 <div class="calllog-head">
-                   <span>${esc(t("history.title"))}</span>
-                   ${
-                     history.length
-                       ? `<button class="linkbtn" data-act="clear-history">${esc(t("history.clear"))}</button>`
-                       : ""
-                   }
-                 </div>
-                 <div class="calllog-list">
-                   ${
-                     history.length
-                       ? history.map((e, i) => historyRow(e, i)).join("")
-                       : `<p class="calllog-empty">${esc(t("history.empty"))}</p>`
-                   }
-                 </div>
-               </div>
+               ${
+                 // le fil Échanges sous l'adresse (ADR 0007, D10) : c'est
+                 // l'écran d'accueil du téléphone, sans la place d'une scène
+                 threadStage(phone, "")
+               }
              </div>`
       }
       ${incoming ? incomingDialog(view) : ""}

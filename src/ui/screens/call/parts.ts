@@ -23,8 +23,8 @@ import { audioLevel, barHeight } from "../../vumeter.js";
 import { hideToast, showToast } from "../../toast.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
-import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
-import { CHAT_LOG_ICON, showChatDialog } from "../../chatdialog.js";
+import { SCROLL_ICON } from "../../tracedialog.js";
+import { CHAT_LOG_ICON } from "../../chatdialog.js";
 import { setStateTitle } from "../../title.js";
 import {
   discardedEpisode,
@@ -37,7 +37,7 @@ import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
 import { wireChat } from "./chat.js";
 import { wireShareStage } from "./share.js";
-import { LENS_ICON, showStatsDialog, startMediaStats } from "./stats.js";
+import { LENS_ICON, startMediaStats } from "./stats.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
 
@@ -472,8 +472,7 @@ export function fmtDuration(entry: CallLogEntry): string {
  * `index` : la place de la ligne dans `ctx.history`, portée par le bouton de
  * trace — c'est par là que le câblage retrouve l'entrée à ouvrir, sans que
  * le gabarit ait à transporter le carnet lui-même.
- */
-/**
+ *
  * `scope` préfixe les actions de ses boutons : le fil Échanges (ADR 0007)
  * les câble lui-même, par délégation, parce qu'il se redessine sans que
  * l'écran soit reconstruit.
@@ -756,35 +755,6 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     dismissPinHint();
     btn.closest(".reach-note")?.remove();
   });
-
-  // --- historique ----------------------------------------------------------
-  on('[data-act="clear-history"]', () => phone.send({ type: "ui:clearHistory" }));
-  // parchemin : le carnet de l'appel, relu tel qu'il a été enregistré
-  on('[data-act="trace"]', (elem) => {
-    const entry = phone.context.history[Number(elem.dataset.i)];
-    if (entry) showTraceDialog(entry);
-  });
-  // loupe : le bilan média du même appel, sur toute sa durée mesurée
-  on('[data-act="stats"]', (elem) => {
-    const entry = phone.context.history[Number(elem.dataset.i)];
-    if (entry) showStatsDialog(entry);
-  });
-  // bulle « T » : la conversation de cet appel, en lecture seule (§4.9)
-  on('[data-act="chat-log"]', (elem) => {
-    const entry = phone.context.history[Number(elem.dataset.i)];
-    if (entry) showChatDialog(entry);
-  });
-  if (targetInput && !view) {
-    // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler
-    for (const row of node.querySelectorAll(".calllog-list .calllog-row")) {
-      const who = row.querySelector(".who")?.textContent ?? "";
-      row.addEventListener("click", () => {
-        draftTarget = who;
-        targetInput.value = who;
-        targetInput.focus();
-      });
-    }
-  }
 
   // --- clavier DTMF ---------------------------------------------------------
   // Le pavé s'ouvre et se ferme sans la machine (call/dtmf.ts) ; seule la

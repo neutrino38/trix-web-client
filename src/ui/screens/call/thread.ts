@@ -30,6 +30,7 @@ import {
   contactFor,
   groupOf,
   initials,
+  lastStranger,
   threadSections,
   type Thread,
   type ThreadGroup,
@@ -55,6 +56,8 @@ let adding = false;
 /** What the add form holds: a refused address redraws the form, not the typing. */
 let addDraft = { name: "", uri: "" };
 let renaming: string | null = null;
+/** The "no presence here" banner is said once; dismissed, it stays so until reload. */
+let noPresenceDismissed = false;
 
 const GROUP_LABEL: Record<ThreadGroup, MsgKey> = {
   today: "thread.group.today",
@@ -222,12 +225,34 @@ function addForm(phone: PhoneInstance): string {
   </form>`;
 }
 
+/**
+ * An empty book still opens the thread: one sentence, and the most recent
+ * correspondent offered as the first contact.
+ */
+function firstContact(threads: readonly Thread[]): string {
+  const last = lastStranger(threads);
+  return `<div class="thread-first">
+    <p>${esc(t("thread.firstContact"))}</p>
+    <div class="thread-formbtns">
+      <button type="button" class="btn small" data-act="thread-add">${PLUS}${esc(t("thread.add"))}</button>
+      ${
+        last
+          ? `<button type="button" class="btn small primary" data-act="thread-add-number" data-key="${esc(last.key)}">${esc(
+              t("thread.addLast", { name: displayTarget(last.target) }),
+            )}</button>`
+          : ""
+      }
+    </div>
+  </div>`;
+}
+
 /** The list alone: what `refreshThread` redraws. */
 function listHtml(phone: PhoneInstance, now: number): string {
   const presence = boundPresence();
   const threads = buildThreads(phone.context.contacts, phone.context.history, presence?.context.contacts ?? {});
   const sections = threadSections(threads, query, now);
   const ready = phone.state === "ready";
+  const first = !adding && !query.trim() && phone.context.contacts.length === 0 ? firstContact(threads) : "";
   const content = sections.length
     ? sections
         .map(
@@ -237,8 +262,10 @@ function listHtml(phone: PhoneInstance, now: number): string {
           </section>`,
         )
         .join("")
-    : `<p class="thread-none">${esc(t(threads.length ? "thread.noMatch" : "thread.empty"))}</p>`;
-  return `${adding ? addForm(phone) : ""}${content}`;
+    : threads.length
+      ? `<p class="thread-none">${esc(t("thread.noMatch"))}</p>`
+      : "";
+  return `${adding ? addForm(phone) : first}${content}`;
 }
 
 /**
@@ -247,8 +274,17 @@ function listHtml(phone: PhoneInstance, now: number): string {
  */
 export function threadStage(phone: PhoneInstance, notice: string): string {
   const history = phone.context.history.length > 0;
+  // SUBSCRIBE refused (D8): said once, above the lines that lost their glyph
+  const noPresence = boundPresence()?.state === "no_watch" && !noPresenceDismissed;
   return `<div class="thread-stage">
     ${notice ? `<div class="thread-notice">${notice}</div>` : ""}
+    ${
+      noPresence
+        ? `<p class="reach-note thread-banner" role="status">${esc(t("thread.noPresence"))}
+             <button type="button" class="linkbtn" data-act="thread-banner-dismiss">${esc(t("reach.dismiss"))}</button>
+           </p>`
+        : ""
+    }
     <div class="thread-bar">
       <h1>${esc(t("thread.title"))}</h1>
       <span class="thread-sub">${esc(t("thread.subtitle"))}</span>
@@ -406,7 +442,14 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         return;
       case "thread-add-number": {
         const thread = threadOf(key);
-        if (thread) phone.send({ type: "ui:addContact", name: "", uri: thread.target });
+        if (!thread) return;
+        phone.send({ type: "ui:addContact", name: "", uri: thread.target });
+        // the button is gone with the stranger's line: the focus goes to the
+        // line that now holds the contact, same key
+        redraw(m);
+        stage
+          .querySelector<HTMLElement>(`[data-act="thread-toggle"][data-key="${CSS.escape(thread.key)}"]`)
+          ?.focus();
         return;
       }
       case "thread-rename":
@@ -420,6 +463,10 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         return;
       case "thread-remove":
         if (id) phone.send({ type: "ui:removeContact", id });
+        return;
+      case "thread-banner-dismiss":
+        noPresenceDismissed = true;
+        el.closest(".thread-banner")?.remove();
         return;
       case "thread-clear-history":
         phone.send({ type: "ui:clearHistory" });

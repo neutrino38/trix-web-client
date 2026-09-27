@@ -133,6 +133,16 @@ export function statusButton(phone: PhoneInstance, identity: string): string | n
   </button>`;
 }
 
+/**
+ * The pill's word while the page sleeps (D9). Once the server took our
+ * PUBLISH, being asleep also means being offline for the contacts: the
+ * pill says so, rather than leave the user to believe they still show.
+ */
+export function pillLabel(phone: PhoneInstance, label: string): string {
+  const seen = presence?.state === "stale" && presence.context.support.publish === true;
+  return phone.state === "sleeping" && seen ? t("status.sleepingSeen") : label;
+}
+
 // ---- the menu ---------------------------------------------------------------
 
 const CHOICES: readonly { status: ChosenStatus; glyph: Glyph; hint?: MsgKey }[] = [

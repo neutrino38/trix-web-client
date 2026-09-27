@@ -994,28 +994,16 @@ fieldset.field { border: none; }
   display: inline-flex; align-items: center; gap: 0.45rem; color: var(--ink);
 }
 
-/* historique d'appels */
-.calllog {
-  flex: 1; min-height: 0; border-top: 1px solid var(--border);
-  display: flex; flex-direction: column; background: var(--ground);
-}
-.calllog-head {
-  flex: none; display: flex; align-items: center; justify-content: space-between;
-  padding: 0.5rem 1rem; font-size: 0.72rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft);
-}
+/* une ligne d'historique, dépliée dans le fil Échanges */
 .linkbtn {
   font: inherit; font-size: 0.72rem; font-weight: 600; text-transform: none;
   border: none; background: none; color: var(--accent); cursor: pointer; padding: 0;
 }
-.calllog-list { flex: 1; min-height: 0; overflow-y: auto; }
-.calllog-empty { padding: 1rem; font-size: 0.8rem; color: var(--ink-soft); text-align: center; }
 .calllog-row {
   display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.15rem 0.45rem;
-  align-items: center; padding: 0.45rem 1rem; cursor: pointer;
+  align-items: center; padding: 0.45rem 1rem;
   border-bottom: 1px solid var(--border); font-size: 0.82rem;
 }
-.calllog-row:hover { background: var(--panel-2); }
 /* Placement explicite : sans lui, la colonne de l'heure dépend de la présence
    de la caméra, et le parchemin — deuxième rangée, sous cette même caméra —
    n'y retomberait pas d'une ligne à l'autre. */
@@ -1402,7 +1390,8 @@ fieldset.field { border: none; }
 }
 .mdial .field input { font-size: 1rem; padding: 0.7rem 0.9rem; }
 .mdial .splitbtn .btn.call { font-size: 0.95rem; }
-.mdial .calllog { border-top: 1px solid var(--border); margin: 0 -0.75rem; }
+/* le fil sous l'adresse : bord à bord, il défile seul sous le composeur */
+.mdial .thread-stage { border-top: 1px solid var(--border); margin: 0 -0.75rem; }
 .mdial .error-actions { flex-direction: row; }
 .mdial .idle-msg { font-size: 0.85rem; color: var(--ink-soft); text-align: center; }
 
@@ -1629,6 +1618,32 @@ fieldset.field { border: none; }
 }
 .thread-addform .field { flex: 1 1 12rem; }
 .thread-formbtns { display: flex; gap: 0.5rem; }
+.thread-banner { border-bottom: 1px solid var(--border); }
+.thread-first {
+  display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 0.9rem 1rem; margin-top: 0.5rem; font-size: 0.9rem;
+}
+.thread-first .thread-formbtns { flex-wrap: wrap; }
 .thread-foot { padding: 0.4rem 1.5rem 0.8rem; text-align: end; border-top: 1px solid var(--border); }
 .field .hint.contact:empty { display: none; }
 .field .hint.contact { color: var(--ink); font-weight: 600; }
+
+/* Le fil sur mobile (ADR 0007, D10) : sous le composeur, la place d'une
+   colonne. Le dernier échange d'une ligne se retire — il reste à un pli —,
+   la recherche prend la largeur, et le corps déplié ne décale plus que de
+   l'avatar. */
+.screen-call.mobile .thread-bar { padding: 0.75rem 0.75rem 0.5rem; gap: 0.5rem; }
+.screen-call.mobile .thread-bar h1 { font-size: 1.05rem; }
+.screen-call.mobile .thread-sub { display: none; }
+.screen-call.mobile .thread-search { order: 3; flex: 1 1 100%; min-width: 0; }
+.screen-call.mobile .thread-search input { font-size: 1rem; }
+.screen-call.mobile .thread-list { padding: 0 0.5rem 0.75rem; }
+.screen-call.mobile .thread-toggle {
+  grid-template-columns: 16px 38px minmax(0, 1fr) auto; column-gap: 0.6rem; padding: 0.5rem 0.4rem;
+}
+.screen-call.mobile .thread-last { display: none; }
+.screen-call.mobile .thread-head { flex-wrap: wrap; padding-inline-end: 0.25rem; }
+.screen-call.mobile .thread-head > .btn { order: 3; margin-inline-start: 3.4rem; margin-bottom: 0.4rem; }
+.screen-call.mobile .thread-body { padding: 0 0.6rem 0.8rem; }
+.screen-call.mobile .thread-foot { padding: 0.4rem 0.75rem 0.6rem; }

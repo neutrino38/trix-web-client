@@ -180,6 +180,7 @@ const messages: Translation = {
   "status.ready": "Enregistré",
   "status.reconnecting": "On se rebranche…",
   "status.sleeping": "En veille",
+  "status.sleepingSeen": "En veille — vos contacts vous voient hors ligne",
   "status.regFailed": "Échec d'enregistrement",
   "status.unregistering": "Fermeture de la session…",
   "status.switching": "Changement de compte…",
@@ -220,7 +221,9 @@ const messages: Translation = {
   "thread.pending": "En attente de son accord",
   "thread.call": "Appeler {name}",
   "thread.noMatch": "Aucun échange ne correspond à cette recherche.",
-  "thread.empty": "Aucun contact ni appel pour l'instant : ajoutez un contact, ou appelez depuis le champ d'adresse.",
+  "thread.firstContact": "Ajoutez un contact pour savoir s'il est disponible avant d'appeler.",
+  "thread.addLast": "Ajouter {name}",
+  "thread.noPresence": "Ce serveur ne transmet pas la présence. Vos contacts restent disponibles pour appeler.",
   "thread.noCalls": "Aucun appel avec ce contact pour l'instant.",
   "thread.form.name": "Nom",
   "thread.form.address": "Adresse SIP ou numéro",
@@ -489,9 +492,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.title": "Historique",
   "history.clear": "Effacer",
-  "history.empty": "Pas un appel, pantoute",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active

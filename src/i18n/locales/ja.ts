@@ -171,6 +171,7 @@ const messages: Translation = {
   "status.ready": "登録済み",
   "status.reconnecting": "再接続中…",
   "status.sleeping": "スリープ中",
+  "status.sleepingSeen": "スリープ中 — 連絡先からはオフラインに見えます",
   "status.regFailed": "登録に失敗しました",
   "status.unregistering": "切断中…",
   "status.switching": "アカウントを切り替え中…",
@@ -211,7 +212,9 @@ const messages: Translation = {
   "thread.pending": "相手の承認待ち",
   "thread.call": "{name} に発信",
   "thread.noMatch": "この検索に一致するやり取りはありません。",
-  "thread.empty": "連絡先も通話もまだありません。連絡先を追加するか、アドレス欄から発信してください。",
+  "thread.firstContact": "連絡先を追加すると、発信前に相手が対応可能かわかります。",
+  "thread.addLast": "{name} を追加",
+  "thread.noPresence": "このサーバーは在席状況を中継しません。連絡先への発信は引き続き可能です。",
   "thread.noCalls": "この連絡先との通話はまだありません。",
   "thread.form.name": "名前",
   "thread.form.address": "SIP アドレスまたは番号",
@@ -478,9 +481,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.title": "履歴",
   "history.clear": "消去",
-  "history.empty": "通話履歴はありません",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active

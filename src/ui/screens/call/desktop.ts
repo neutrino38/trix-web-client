@@ -10,7 +10,7 @@
 import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
-import { statusButton } from "../../presence.js";
+import { pillLabel, statusButton } from "../../presence.js";
 import { contactHint, threadStage } from "./thread.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
@@ -115,7 +115,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           // remplace la pastille (ADR 0007, D5, D8) ; sinon, celle d'avant
           statusButton(phone, cfg ? `${cfg.username}@${cfg.domain}` : "") ??
           `<span class="pill"><span class="dot ${status.cls}"></span>
-            ${status.label}${ready ? identity : ""}</span>`
+            ${esc(pillLabel(phone, status.label))}${ready ? identity : ""}</span>`
         }
         ${
           // en communication, la pastille découvre les statistiques média

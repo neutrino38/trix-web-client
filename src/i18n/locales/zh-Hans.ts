@@ -161,6 +161,7 @@ const messages: Translation = {
   "status.ready": "已注册",
   "status.reconnecting": "正在重新连接…",
   "status.sleeping": "已休眠",
+  "status.sleepingSeen": "已休眠 — 联系人看到您离线",
   "status.regFailed": "注册失败",
   "status.unregistering": "正在断开…",
   "status.switching": "正在切换账号…",
@@ -201,7 +202,9 @@ const messages: Translation = {
   "thread.pending": "等待对方同意",
   "thread.call": "呼叫 {name}",
   "thread.noMatch": "没有与此搜索匹配的往来。",
-  "thread.empty": "还没有联系人或通话：添加联系人，或从地址栏发起呼叫。",
+  "thread.firstContact": "添加联系人，即可在呼叫前了解对方是否有空。",
+  "thread.addLast": "添加 {name}",
+  "thread.noPresence": "此服务器不传递在线状态。您仍可呼叫联系人。",
   "thread.noCalls": "与此联系人还没有通话。",
   "thread.form.name": "名称",
   "thread.form.address": "SIP 地址或号码",
@@ -462,9 +465,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.title": "历史记录",
   "history.clear": "清除",
-  "history.empty": "暂无通话记录",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active

@@ -157,9 +157,9 @@ describe("détection de la langue du navigateur", () => {
 describe("traduction", () => {
   it("rend le libellé de la langue chargée", async () => {
     await useLocale("fr");
-    expect(t("history.empty")).toBe("Aucun appel enregistré");
+    expect(t("thread.title")).toBe("Échanges");
     await useLocale("en");
-    expect(t("history.empty")).toBe("No calls yet. Blissfully quiet");
+    expect(t("status.ready")).toBe("Registered");
   });
 
   it("substitue les variables", async () => {

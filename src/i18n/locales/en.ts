@@ -164,6 +164,7 @@ const messages: Translation = {
   "status.ready": "Registered",
   "status.reconnecting": "Reconnecting…",
   "status.sleeping": "Asleep",
+  "status.sleepingSeen": "Asleep — your contacts see you offline",
   "status.regFailed": "Registration failed",
   "status.unregistering": "Signing out…",
   "status.switching": "Switching account…",
@@ -204,7 +205,9 @@ const messages: Translation = {
   "thread.pending": "Waiting for their consent",
   "thread.call": "Call {name}",
   "thread.noMatch": "No exchange matches this search.",
-  "thread.empty": "No contact or call yet: add a contact, or call from the address field.",
+  "thread.firstContact": "Add a contact to know whether they are available before you call.",
+  "thread.addLast": "Add {name}",
+  "thread.noPresence": "This server does not relay presence. Your contacts can still be called.",
   "thread.noCalls": "No call with this contact yet.",
   "thread.form.name": "Name",
   "thread.form.address": "SIP address or number",
@@ -472,9 +475,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Call history
   // ---------------------------------------------------------------------
-  "history.title": "History",
   "history.clear": "Clear",
-  "history.empty": "No calls yet. Blissfully quiet",
   "history.entryTitle": "{target} — {outcome}",
 
   // A call's notebook: the SIP packets kept while tracing was on

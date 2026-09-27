@@ -4,7 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildThreads, contactFor, groupOf, initials, threadSections } from "../src/ui/thread.js";
+import {
+  buildThreads,
+  contactFor,
+  groupOf,
+  initials,
+  lastStranger,
+  threadSections,
+} from "../src/ui/thread.js";
 import type { CallLogEntry, Contact } from "../src/storage/store.js";
 
 const NOW = new Date(2026, 8, 27, 15, 0).getTime();
@@ -62,6 +69,16 @@ describe("helpers", () => {
     expect(contactFor([BOB], "bob", "example.fr")?.id).toBe("c1");
     expect(contactFor([BOB], "sip:bob@example.fr", "example.fr")?.id).toBe("c1");
     expect(contactFor([BOB], "carol", "example.fr")).toBeNull();
+  });
+
+  it("lastStranger: the most recent line outside the book", () => {
+    const threads = buildThreads(
+      [BOB],
+      [call("bob@example.fr", NOW), call("carol@example.fr", NOW - 2 * H), call("dan@example.fr", NOW - H)],
+      {},
+    );
+    expect(lastStranger(threads)?.key).toBe("dan@example.fr");
+    expect(lastStranger(buildThreads([BOB], [call("bob@example.fr", NOW)], {}))).toBeNull();
   });
 
   it("initials", () => {
