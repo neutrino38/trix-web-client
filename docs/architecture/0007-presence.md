@@ -4,7 +4,8 @@
 **Maquette :** [docs/mockups/trix-presence.html](../mockups/trix-presence.html) (export du canevas
 « Trix — Présence » : bureau en fil unifié, menu de statut, mobile, glyphes, états limites)
 **Portée :** `sip/pidf.ts`, `sip/publish.ts`, `sip/presence.ts` (nouveaux), `sip/port.ts`,
-`storage/store.ts`, `machines/phone.ts`, `machines/events.ts`, `ui/activity.ts`,
+`storage/store.ts`, `machines/phone.ts`, `machines/events.ts`, `machines/presence.ts`,
+`machines/presencesignals.ts` (nouveaux), `main.ts`, `ui/activity.ts`,
 `ui/presence.ts` (nouveaux), `ui/screens/call/*`, `ui/theme.css`, `deployment.ts`,
 `i18n/locales/*`, `docs/CONCEPTION.md`, `USERGUIDE.md`
 **Hors périmètre :** la messagerie hors appel (SIP MESSAGE, RFC 3428), qui remplira la partie
@@ -207,6 +208,78 @@ Les changements d'état des contacts **ne sont pas annoncés** aux lecteurs d'é
 vingt contacts qui bougent serait un bruit continu. Seul le changement de son propre statut est
 annoncé (`ui/announce.ts`), parce qu'il répond à un geste.
 
+### D12 — Une machine de présence à part, paire de PhoneMachine
+
+La présence est tenue par `PresenceMachine` (`machines/presence.ts`), une seconde instance que
+`main.ts` démarre à côté de PhoneMachine. Ce n'est ni un état de PhoneMachine, ni un enfant.
+
+**Pas dans PhoneMachine.** La présence ne fait pas partie du cycle d'enregistrement : elle se
+déroule en parallèle, et les NOTIFY arrivent à tout moment. Pendant un appel, ils tomberaient dans
+`CallBlock`, qui consomme tout ce qui arrive (`machines/call.ts`) et devrait alors savoir les
+traiter. Hors de `ready`, ils rempliraient la file d'attente (32 places par défaut) d'événements
+qu'aucun état ne consomme.
+
+**Pas un enfant (`fx.spawn`).** FSL n'expose pas l'instance d'un enfant. L'écran ne pourrait lire
+la présence qu'à travers un miroir tenu dans le contexte du parent et mis à jour par `child:msg`,
+c'est-à-dire le miroir que `CallBlock` a été écrit pour éviter. Les messages `parent:msg` et
+`child:msg` portent un `payload: unknown` qui échappe au typage des événements. Enfin, le relais
+par le parent repasserait par la boîte aux lettres que `CallBlock` occupe pendant l'appel.
+
+**Deux pairs et une colle.** Les deux machines ne se voient pas ; `main.ts` les relie.
+
+- *Du téléphone vers la présence.* `main.ts` observe PhoneMachine (`subscribe`) et traduit ses
+  transitions par une fonction pure, testée à part (`presenceSignals(before, after, ctx)`) :
+  - `phone:up { handle, accountId, uris }` à l'entrée dans `ready` depuis hors du couloir ;
+  - `phone:down` à la sortie de `ready` ou de `in_call` vers tout autre état que ces deux-là ;
+  - `phone:callStarted` à l'entrée dans `in_call`, `phone:callEnded` au retour en `ready` ;
+  - `phone:contacts { uris }` quand `ctx.contacts` change.
+- *De la pile vers la présence.* Les événements des abonnements et de la publication ne passent
+  pas par PhoneMachine. `SipHandle` gagne `presence(send)`, sur le modèle de
+  `SipPort.start(cfg, send)` : cet appel rend un `PresenceLink` (`watch(uri)`, `unwatch(uri)`,
+  `publish(info)`) dont les événements (`sip:presence`, `sip:presenceSupport`) vont au `send` de
+  celui qui l'a ouvert. `PhoneEvent` n'en voit aucun.
+- *De la présence vers le téléphone.* Il n'y a qu'un besoin, D6. PhoneMachine reçoit un argument
+  `doNotDisturb: () => boolean`, lu au `sip:incoming`, sur le modèle de `transcript` ; `main.ts` le
+  branche sur le statut choisi de PresenceMachine.
+
+**Ce qui reste où.**
+
+| | PhoneMachine | PresenceMachine |
+|---|---|---|
+| Contacts (D7) | oui : ils sont dans le coffre, comme l'historique | ne connaît que leurs URI |
+| Refus 486 et issue `declined` (D6) | oui | fournit `doNotDisturb` |
+| Statut choisi, note, règles (D5) | | oui, persistés par `storage/session.ts` injecté |
+| Présence des contacts et fraîcheur (D9) | | oui |
+| Niveau de prise en charge (D8) | | oui |
+| `ui:setStatus`, `ui:setNote`, `sys:idle`, `sys:active` | | oui |
+| `ui:addContact`, `ui:renameContact`, `ui:removeContact` | oui | |
+
+Le retrait de la publication avant l'unREGISTER (D2) se fait dans `SipHandle.stop()`, pas dans une
+machine : l'ordre des deux requêtes est une affaire de pile, et `stopSip()` reste la seule porte de
+sortie du couloir. Après `stop()`, le `PresenceLink` ne fait plus rien. La colle est notifiée
+avant l'`enter()` du nouvel état de PhoneMachine, mais rien n'oblige PresenceMachine à avoir
+traité `phone:down` à ce moment-là.
+
+**Les états.**
+
+| État | Sens | Sorties |
+|---|---|---|
+| `off` | pas encore enregistré depuis le chargement de la page ; rien de connu | `phone:up` → `live` |
+| `live` | enregistré ; abonnements et publication en cours | SUBSCRIBE refusé → `no_watch` ; `phone:down` → `stale` |
+| `no_watch` | enregistré, SUBSCRIBE refusé (489, 405) : plus aucun SUBSCRIBE jusqu'au prochain enregistrement | `phone:down` → `stale` |
+| `stale` | états connus gardés, marqués périmés (D9) | `phone:up` → `live` |
+| `disabled` | `presence: "no"` dans `config.json` (D8) | aucune |
+
+`phone:up` refait la découverte (D8). Si le compte a changé, le contexte est vidé avant tout
+réabonnement. Le refus du PUBLISH n'est pas un état mais un drapeau du contexte
+(`support.publish`) : il ne change rien aux abonnements, seulement au menu, et la machine cesse de
+publier jusqu'au prochain enregistrement.
+
+Le statut publié n'est pas un état non plus. Une fonction pure, `publishedPresence(chosen, rules,
+inCall, idle)`, le recalcule quand l'une de ses entrées change, et la machine ne publie que si le
+résultat diffère. En faire des états multiplierait `live` par l'appel et l'inactivité, sans aucune
+différence de comportement au-delà de cette valeur.
+
 ## 3. Écarts assumés
 
 - Pas de liste de ressources ni de XCAP (D3, D7).
@@ -228,22 +301,26 @@ corps illisible (→ `unknown`, jamais une exception).
 en SHA-256 (même vérification que `test/digest.test.ts`).
 
 **PR-3 — `sip/presence.ts` et le port.** Les abonnements (D3), la découverte (D8), le refus des
-SUBSCRIBE entrants (D1). Le port reste la seule frontière : `SipHandle` gagne
-`watch(uri)`, `unwatch(uri)`, `publish(info)`, et `SipEvent` gagne
-`sip:presence { uri, info, pending }`, `sip:presenceSupport { subscribe, publish }`. Les tests de
-machine injectent ces événements, comme les autres.
+SUBSCRIBE entrants (D1). Le port reste la seule frontière : `SipHandle` gagne `presence(send)`, qui
+rend un `PresenceLink` (`watch(uri)`, `unwatch(uri)`, `publish(info)`, sans effet après `stop()`).
+Ses événements, `sip:presence { uri, info, pending }` et `sip:presenceSupport { subscribe, publish }`,
+forment un type à part, hors de `SipEvent` (D12). `stop()` retire la publication avant
+l'unREGISTER.
 
 **PR-4 — Contacts dans le coffre (D7).** `Contact`, `loadContacts`/`saveContacts`, rattachement
 par URI normalisée. Tests de `store` sur `fake-indexeddb`.
 
-**PR-5 — PhoneMachine.** `ctx.contacts`, `ctx.presence` (par URI, avec `fresh`), `ctx.myStatus`,
-`ctx.presenceSupport`. Événements `ui:setStatus`, `ui:setNote`, `ui:addContact`, `ui:renameContact`,
-`ui:removeContact`. Abonnements à l'entrée de `ready`, péremption à la sortie du couloir (D9),
-En communication en `in_call` (D5), refus 486 et issue `declined` en Ne pas déranger (D6).
-Diagrammes régénérés (`npm run diagrams`).
+**PR-5 — PresenceMachine et PhoneMachine (D12).** `machines/presence.ts` : les cinq états, le
+statut choisi et la note persistés, `publishedPresence`, la présence des contacts avec `fresh`,
+`support`. Événements `phone:*`, `sip:presence*`, `ui:setStatus`, `ui:setNote`. Tests avec un faux
+`PresenceLink`, découverte des trois niveaux comprise. `machines/presencesignals.ts` : la
+traduction pure des transitions de PhoneMachine, testée sur chaque sortie du couloir. Côté
+PhoneMachine : `ctx.contacts`, `ui:addContact`, `ui:renameContact`, `ui:removeContact`, l'argument
+`doNotDisturb`, le refus 486 et l'issue `declined` (D6). Branchement dans `main.ts`. Diagrammes des
+deux machines régénérés (`npm run diagrams`).
 
-**PR-6 — `ui/activity.ts` (D5, règle 2).** `sys:idle` après 10 min, `sys:active` au premier geste.
-Branché dans `main.ts` comme `watchSystemLifecycle`.
+**PR-6 — `ui/activity.ts` (D5, règle 2).** `sys:idle` après 10 min, `sys:active` au premier geste,
+envoyés à PresenceMachine. Branché dans `main.ts` comme `watchSystemLifecycle`.
 
 **PR-7 — Glyphes et statut.** `ui/presence.ts` : les sept glyphes plus Invisible, leur mot, les
 jetons `--presence-*`. Le bouton de statut de l'en-tête et son menu (motif ARIA *menu button*,
