@@ -303,9 +303,9 @@ en SHA-256 (même vérification que `test/digest.test.ts`).
 **PR-3 — `sip/presence.ts` et le port.** Les abonnements (D3), la découverte (D8), le refus des
 SUBSCRIBE entrants (D1). Le port reste la seule frontière : `SipHandle` gagne `presence(send)`, qui
 rend un `PresenceLink` (`watch(uri)`, `unwatch(uri)`, `publish(info)`, sans effet après `stop()`).
-Ses événements, `sip:presence { uri, info, pending }` et `sip:presenceSupport { subscribe, publish }`,
-forment un type à part, hors de `SipEvent` (D12). `stop()` retire la publication avant
-l'unREGISTER.
+Ses événements, `sip:presence { uri, info, pending }` et
+`sip:presenceSupport { method, supported }` (une fois par méthode), forment un type à part, hors
+de `SipEvent` (D12). `stop()` retire la publication avant l'unREGISTER.
 
 **PR-4 — Contacts dans le coffre (D7).** `Contact`, `loadContacts`/`saveContacts`, rattachement
 par URI normalisée. Tests de `store` sur `fake-indexeddb`.
@@ -340,6 +340,20 @@ périmées ; fil vide avec « Ajouter <dernier correspondant> » ; ajout depuis 
 **PR-11 — Langues et documentation.** Clés dans les six langues (le build échoue si l'une
 manque). `CONCEPTION.md` : §4.14 « La présence », §5.7 « PUBLISH hors JsSIP » ;
 `USERGUIDE.md` ; case Phase 6 du README partiellement cochée.
+
+**PR-12 — Contributions à JsSIP.** Ce que les greffes de PR-2 et PR-3 compensent, proposé en amont
+(versatica/JsSIP), en contributions séparées, de la plus simple à la plus lourde :
+
+1. le code de réponse dans l'événement `terminated` de `Subscriber` (489 et 404 arrivent tous deux
+   en `SUBSCRIBE_NON_OK_RESPONSE`), et les déclarations de types manquantes (constructeur de
+   `OutgoingRequest`, `IncomingRequest.reply`, `UA.normalizeTarget`) ;
+2. `UA.stop()` qui termine les abonnements en cours avant l'unREGISTER, comme il termine les
+   sessions ;
+3. une classe `Publisher` (RFC 3903) sur le modèle de `Subscriber`, reprenant le cycle de
+   `createPublisher` et ses tests.
+
+Rien n'attend ces contributions : la greffe est confinée à `jssipPublishSend` et `jssipWatcher`, et
+c'est tout ce qu'une version de JsSIP qui les intègre ferait remplacer.
 
 ## 5. Validation
 
