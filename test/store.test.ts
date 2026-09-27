@@ -8,6 +8,7 @@ import {
   createBrowserStore,
   type AccountConfig,
   type CallLogEntry,
+  type Contact,
   type StoredAccount,
 } from "../src/storage/store.js";
 import { NO_ICE } from "../src/sip/ice.js";
@@ -287,6 +288,47 @@ describe("browserStore — historique par compte", () => {
     await store.saveHistory(ALICE.id, [legacy as unknown as CallLogEntry]);
     const [loaded] = await store.loadHistory(ALICE.id);
     expect(loaded!.reason).toEqual({ key: "misc.raw", vars: { text: "Busy (SIP 486)" } });
+  });
+});
+
+describe("browserStore — carnet de contacts par compte (ADR 0007, D7)", () => {
+  const CAROL: Contact = { id: "c1", name: "Carol", uri: "sip:carol@example.fr", addedAt: 1_700_000_000_000 };
+  const DAVE: Contact = { id: "c2", name: "Dave", uri: "sip:dave@example.fr", addedAt: 1_700_000_100_000 };
+
+  it("round-trip, dans l'ordre, sous l'identifiant du compte", async () => {
+    const store = createBrowserStore();
+    await store.saveContacts(ALICE.id, [CAROL, DAVE]);
+    expect(await store.loadContacts(ALICE.id)).toEqual([CAROL, DAVE]);
+  });
+
+  it("chaque compte a le sien, et un compte sans carnet en a un vide", async () => {
+    const store = createBrowserStore();
+    await store.saveContacts(ALICE.id, [CAROL]);
+    expect(await store.loadContacts(BOB.id)).toEqual([]);
+  });
+
+  it("deleteContacts efface celui d'un compte, et lui seul", async () => {
+    const store = createBrowserStore();
+    await store.saveContacts(ALICE.id, [CAROL]);
+    await store.saveContacts(BOB.id, [DAVE]);
+    await store.deleteContacts(ALICE.id);
+    expect(await store.loadContacts(ALICE.id)).toEqual([]);
+    expect(await store.loadContacts(BOB.id)).toEqual([DAVE]);
+  });
+
+  it("un enregistrement abîmé ne coûte pas les autres", async () => {
+    const store = createBrowserStore();
+    const broken = [CAROL, { id: "c3", name: 42 }, null, DAVE] as unknown as Contact[];
+    await store.saveContacts(ALICE.id, broken);
+    expect(await store.loadContacts(ALICE.id)).toEqual([CAROL, DAVE]);
+  });
+
+  it("le carnet et l'historique ne se mélangent pas", async () => {
+    const store = createBrowserStore();
+    await store.saveContacts(ALICE.id, [CAROL]);
+    expect(await store.loadHistory(ALICE.id)).toEqual([]);
+    await store.deleteHistory(ALICE.id);
+    expect(await store.loadContacts(ALICE.id)).toEqual([CAROL]);
   });
 });
 

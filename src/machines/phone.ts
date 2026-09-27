@@ -681,10 +681,10 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
 
     /**
      * Suppression du compte que le formulaire modifiait : le coffre amputé
-     * est écrit, puis son historique effacé. Dans cet ordre — un historique
-     * orphelin est un désagrément, un compte sans son historique est une
-     * fuite : quelques dizaines d'appels chiffrés sous une clé que plus
-     * personne ne lit.
+     * est écrit, puis son historique et son carnet de contacts effacés. Dans
+     * cet ordre — un historique orphelin est un désagrément, un compte sans
+     * son historique est une fuite : quelques dizaines d'appels chiffrés
+     * sous une clé que plus personne ne lit.
      */
     deleting: {
       enter(ctx, fx) {
@@ -692,7 +692,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         ctx.autoReconnect = false;
         const id = ctx.pendingDelete!;
         fx.task(
-          ctx.store.save(vaultOf(ctx)).then(() => ctx.store.deleteHistory(id)),
+          ctx.store
+            .save(vaultOf(ctx))
+            .then(() => Promise.all([ctx.store.deleteHistory(id), ctx.store.deleteContacts(id)])),
           "deleteAccount",
           { timeout: 3000 },
         );

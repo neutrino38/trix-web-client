@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { machineGraphs } from "finite-state-language/diagram";
 import { activeAccount, PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
 import type {
+  Contact,
   AccountConfig,
   CallLogEntry,
   SecureStore,
@@ -85,6 +86,7 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
     },
   };
   if (seed) box.history.set(seed.id, history);
+  const contacts = new Map<string, Contact[]>();
   const store: SecureStore = {
     load: async () => box.vault,
     save: async (vault) => {
@@ -100,6 +102,13 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
     deleteHistory: async (id) => {
       box.dropped.push(id);
       box.history.delete(id);
+    },
+    loadContacts: async (id) => contacts.get(id) ?? [],
+    saveContacts: async (id, list) => {
+      contacts.set(id, list);
+    },
+    deleteContacts: async (id) => {
+      contacts.delete(id);
     },
   };
   return { store, box };

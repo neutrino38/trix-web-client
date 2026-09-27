@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { activeAccount, PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
 import type { ConfigForm } from "../src/machines/events.js";
 import type {
+  Contact,
   AccountConfig,
   CallLogEntry,
   SecureStore,
@@ -68,6 +69,7 @@ function fakeStore(vault: Vault, histories: Record<string, CallLogEntry[]> = {})
     history: new Map<string, CallLogEntry[]>(Object.entries(histories)),
     dropped: [] as string[],
   };
+  const contacts = new Map<string, Contact[]>();
   const store: SecureStore = {
     load: async () => box.vault,
     save: async (v) => {
@@ -83,6 +85,13 @@ function fakeStore(vault: Vault, histories: Record<string, CallLogEntry[]> = {})
     deleteHistory: async (id) => {
       box.dropped.push(id);
       box.history.delete(id);
+    },
+    loadContacts: async (id) => contacts.get(id) ?? [],
+    saveContacts: async (id, list) => {
+      contacts.set(id, list);
+    },
+    deleteContacts: async (id) => {
+      contacts.delete(id);
     },
   };
   return { store, box };
