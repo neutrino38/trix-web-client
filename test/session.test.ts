@@ -19,6 +19,9 @@ import {
   setAlertPosted,
   setPinHintShown,
   setResumeAccount,
+  setStatusPrefs,
+  statusPrefs,
+  DEFAULT_STATUS,
 } from "../src/storage/session.js";
 
 /** localStorage minimal, en mémoire. */
@@ -116,6 +119,42 @@ describe("état de session — les deux marqueurs booléens", () => {
     expect(pinHintShown()).toBe(false);
     setPinHintShown();
     expect(pinHintShown()).toBe(true);
+  });
+});
+
+describe("état de session — le statut de présence (ADR 0007, D5)", () => {
+  it("par défaut : disponible, sans note, les deux règles cochées", () => {
+    stubStorage();
+    expect(statusPrefs("acc")).toEqual(DEFAULT_STATUS);
+  });
+
+  it("round-trip, compte par compte", () => {
+    stubStorage();
+    const prefs = { chosen: "dnd", note: "Réunion", onThePhone: false, awayWhenIdle: true } as const;
+    setStatusPrefs("acc", prefs);
+    expect(statusPrefs("acc")).toEqual(prefs);
+    expect(statusPrefs("autre")).toEqual(DEFAULT_STATUS);
+  });
+
+  it("un champ illisible retombe sur son défaut sans emporter les autres", () => {
+    stubStorage({
+      "trix-status:acc": JSON.stringify({ chosen: "sieste", note: "  ", onThePhone: false, awayWhenIdle: "oui" }),
+    });
+    expect(statusPrefs("acc")).toEqual({ ...DEFAULT_STATUS, onThePhone: false });
+  });
+
+  it("une valeur qui n'est pas du JSON vaut une valeur absente", () => {
+    stubStorage({ "trix-status:acc": "{pas du json" });
+    expect(statusPrefs("acc")).toEqual(DEFAULT_STATUS);
+  });
+
+  it.each([
+    ["refusé", stubBrokenStorage],
+    ["absent", stubNoStorage],
+  ])("stockage %s : les défauts, et l'écriture passe en silence", (_, stub) => {
+    stub();
+    expect(() => setStatusPrefs("acc", { ...DEFAULT_STATUS, chosen: "busy" })).not.toThrow();
+    expect(statusPrefs("acc")).toEqual(DEFAULT_STATUS);
   });
 });
 
