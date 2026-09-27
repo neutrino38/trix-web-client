@@ -128,7 +128,12 @@ Full steps, required modules and per-distribution paths:
       account travels in a single URL, created on the other device after a confirmation
       screen (call history never travels — see
       [ADR 0004](docs/architecture/0004-partage-compte-par-lien.md))
-- [ ] Phase 6 - Instant Messaging. Converged call history and IM, presence handling
+- [x] Phase 6 (presence) — contacts kept encrypted in the browser, SIP presence (SUBSCRIBE,
+      and PUBLISH grafted onto JsSIP), your own status with do-not-disturb and two automatic
+      rules, and the **Exchanges thread**: contacts and calls, one line per correspondent,
+      on desktop and mobile. Whatever the server supports is discovered at each
+      registration (see [ADR 0007](docs/architecture/0007-presence.md))
+- [ ] Phase 6 (messaging) — instant messaging (SIP MESSAGE) in the same thread
 
 ## Observability
 

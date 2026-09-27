@@ -1,6 +1,6 @@
 # ADR 0007 — La présence
 
-**Statut :** proposé — 2026-09-27
+**Statut :** accepté — 2026-09-27 · **implémenté** — 2026-09-27 (PR-1 à PR-11 ; PR-12 attend JsSIP)
 **Maquette :** [docs/mockups/trix-presence.html](../mockups/trix-presence.html) (export du canevas
 « Trix — Présence » : bureau en fil unifié, menu de statut, mobile, glyphes, états limites)
 **Portée :** `sip/pidf.ts`, `sip/publish.ts`, `sip/presence.ts` (nouveaux), `sip/port.ts`,
@@ -287,6 +287,9 @@ différence de comportement au-delà de cette valeur.
   La maquette (états limites, cas 3) dessine la demande d'accès ; elle attendra watcher-info.
 - Pas de `Notifier` : Trix ne sert pas sa présence en direct (D1).
 - Ne pas déranger ressemble à « occupé » pour un client qui n'est pas Trix (D4).
+- **PUBLISH refusé : le menu garde les statuts** (écart à D8, constaté à l'implémentation). Une
+  phrase en tête dit que le serveur ne diffuse pas le statut ; les cinq choix restent, parce que
+  Ne pas déranger agit ici (D6) que le serveur le diffuse ou non.
 
 ## 4. Plan d'implémentation
 
