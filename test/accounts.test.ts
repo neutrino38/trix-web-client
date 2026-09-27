@@ -14,6 +14,7 @@ import type {
   Vault,
 } from "../src/storage/store.js";
 import type { CallMedia, SipEvent, SipPort } from "../src/sip/port.js";
+import { NO_PRESENCE } from "../src/sip/presence.js";
 import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 import { MAX_ACCOUNTS } from "../src/accounts.js";
@@ -100,6 +101,7 @@ class FakeSip implements SipPort {
         this.stopped++;
       },
       refresh: () => true,
+      presence: () => NO_PRESENCE,
       call: (target: string, media: CallMedia) => {
         this.calls.push({ target, media });
         return {

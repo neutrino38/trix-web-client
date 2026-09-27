@@ -26,6 +26,7 @@ import type {
   SipPort,
 } from "../src/sip/port.js";
 import { NO_MEDIA } from "../src/sip/port.js";
+import { NO_PRESENCE } from "../src/sip/presence.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 import type { ChatItem } from "../src/sip/transcript.js";
@@ -173,6 +174,7 @@ class FakeSip implements SipPort {
       stop: () => {
         this.stopped++;
       },
+      presence: () => NO_PRESENCE,
       refresh: () => {
         this.refreshed++;
         return this.connected;
