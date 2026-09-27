@@ -438,6 +438,7 @@ const messages: Translation = {
   "outcome.failed": "失败",
   "outcome.canceled": "已取消",
   "outcome.dropped": "已中断",
+  "outcome.declined": "已拒接",
   "endedBy.local": "您挂断了",
   "endedBy.remote": "对方挂断了",
   "endedBy.network": "被网络中断",

@@ -465,6 +465,7 @@ const messages: Translation = {
   "outcome.failed": "Échec",
   "outcome.canceled": "Annulé",
   "outcome.dropped": "Interrompu",
+  "outcome.declined": "Refusé",
   "endedBy.local": "vous avez fermé la ligne",
   "endedBy.remote": "le correspondant a fermé la ligne",
   "endedBy.network": "le réseau a pris une débarque",

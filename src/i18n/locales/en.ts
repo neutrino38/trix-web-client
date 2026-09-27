@@ -449,6 +449,7 @@ const messages: Translation = {
   "outcome.failed": "Failed",
   "outcome.canceled": "Cancelled",
   "outcome.dropped": "Dropped",
+  "outcome.declined": "Declined",
   "endedBy.local": "you rang off",
   "endedBy.remote": "the other party rang off",
   "endedBy.network": "the network gave up",

@@ -422,6 +422,7 @@ const OUTCOME_KEY: Record<CallLogEntry["outcome"], MsgKey> = {
   failed: "outcome.failed",
   canceled: "outcome.canceled",
   dropped: "outcome.dropped",
+  declined: "outcome.declined",
 };
 
 const ENDED_BY_KEY: Record<NonNullable<CallLogEntry["endedBy"]>, MsgKey> = {
@@ -437,6 +438,7 @@ const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
   failed: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   dropped: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   missed: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>`,
+  declined: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>`,
 };
 
 /**

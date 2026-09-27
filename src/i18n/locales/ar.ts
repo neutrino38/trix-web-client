@@ -480,6 +480,7 @@ const messages: Translation = {
   "outcome.failed": "فشلت",
   "outcome.canceled": "أُلغيت",
   "outcome.dropped": "انقطعت",
+  "outcome.declined": "رُفضت",
   "endedBy.local": "أنهيتَ المكالمة",
   "endedBy.remote": "أنهى الطرف الآخر المكالمة",
   "endedBy.network": "قطعتها الشبكة",

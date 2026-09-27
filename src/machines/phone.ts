@@ -19,6 +19,7 @@ import {
   type AccountConfig,
   type CallDirection,
   type CallLogEntry,
+  type Contact,
   type SecureStore,
   type StoredAccount,
   type Vault,
@@ -30,9 +31,9 @@ import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
 import type { ChatItem } from "../sip/transcript.js";
 import { computeHa1, computeHa1Sha256 } from "../storage/ha1.js";
-import { parseSipUri } from "../sip/uri.js";
+import { addressKey, normalizeTarget, parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
-import type { CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
+import type { AccountData, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { parseIceForm } from "../sip/ice.js";
 import { parseRttTransport } from "../sip/rtt.js";
 import { deployment, pinAccount } from "../deployment.js";
@@ -50,6 +51,12 @@ export interface PhoneCtx {
    * hôte qui n'affiche pas de tchat n'en consigne pas.
    */
   transcript: () => ChatItem[];
+  /**
+   * Ne pas déranger est-il le statut choisi ? (ADR 0007, D6.) Lu à chaque
+   * INVITE en `ready` : c'est PresenceMachine qui tient le statut, et
+   * `main.ts` qui la branche ici — les deux machines ne se voient pas (D12).
+   */
+  doNotDisturb: () => boolean;
   /**
    * Les comptes du coffre, dans l'ordre où ils y sont (ADR 0002). La
    * machine en manipule une liste sans savoir combien il en tient : la
@@ -96,6 +103,10 @@ export interface PhoneCtx {
   callError: Msg | null;
   /** Historique d'appels du compte courant, persisté chiffré. */
   history: CallLogEntry[];
+  /** Carnet de contacts du compte courant, persisté chiffré (ADR 0007, D7). */
+  contacts: Contact[];
+  /** Adresse de contact refusée, affichée près du formulaire d'ajout. */
+  contactError: Msg | null;
   /** Compte dont la suppression est en cours d'écriture (état `deleting`). */
   pendingDelete: string | null;
   /** Boucle de reconnexion active : les échecs de connexion repartent en reconnecting. */
@@ -262,8 +273,78 @@ function recordCall(ctx: PhoneCtx, ev: CallReturn): void {
     // la conversation, s'il y en a eu une (§4.9) — sans condition, elle
     ...chatOf(ctx),
   };
+  logCall(ctx, entry);
+}
+
+/** Ajoute une ligne en tête de l'historique et le persiste (fire-and-forget). */
+function logCall(ctx: PhoneCtx, entry: CallLogEntry): void {
+  if (!ctx.activeId) return;
   ctx.history = recent([entry, ...ctx.history]);
   void ctx.store.saveHistory(ctx.activeId, ctx.history).catch(() => {});
+}
+
+/**
+ * Ne pas déranger (ADR 0007, D6) : l'INVITE est refusé en 486 sans que rien
+ * ne sonne, et consigné comme **refusé** — une issue à part, parce que
+ * personne ne l'a laissé sonner.
+ */
+function declineIncoming(ctx: PhoneCtx, call: IncomingCall): void {
+  call.reject("busy");
+  const now = Date.now();
+  logCall(ctx, {
+    target: call.from.replace(/^sips?:/i, ""),
+    direction: "incoming",
+    outcome: "declined",
+    media: call.offered,
+    startedAt: now,
+    connectedAt: null,
+    endedAt: now,
+    endedBy: null,
+    reason: null,
+  });
+}
+
+/** Persiste le carnet du compte courant (fire-and-forget, comme l'historique). */
+function saveContacts(ctx: PhoneCtx): void {
+  if (ctx.activeId) void ctx.store.saveContacts(ctx.activeId, ctx.contacts).catch(() => {});
+}
+
+/**
+ * Ajout d'un contact. L'adresse est normalisée comme une cible d'appel
+ * (un numéro court prend le domaine du compte) ; une adresse déjà au carnet
+ * — même clé, `sip/uri.ts` — n'est pas ajoutée deux fois. Sans nom, le
+ * contact prend la partie utilisateur de son adresse.
+ */
+function addContact(ev: Extract<PhoneEvent, { type: "ui:addContact" }>, ctx: PhoneCtx) {
+  const account = activeAccount(ctx);
+  if (!account) return stay("aucun compte actif");
+  const uri = normalizeTarget(ev.uri, account.domain);
+  const key = uri ? addressKey(uri) : null;
+  if (!uri || !key) {
+    ctx.contactError = msg("error.invalidUri");
+    return stay("adresse de contact invalide");
+  }
+  ctx.contactError = null;
+  if (ctx.contacts.some((c) => addressKey(c.uri) === key)) return stay("déjà au carnet");
+  const name = ev.name.trim() || key.slice(0, key.indexOf("@"));
+  ctx.contacts = [...ctx.contacts, { id: newAccountId(), name, uri, addedAt: Date.now() }];
+  saveContacts(ctx);
+  return stay("contact ajouté");
+}
+
+function renameContact(ev: Extract<PhoneEvent, { type: "ui:renameContact" }>, ctx: PhoneCtx) {
+  const name = ev.name.trim();
+  if (!name || !ctx.contacts.some((c) => c.id === ev.id)) return stay("renommage ignoré");
+  ctx.contacts = ctx.contacts.map((c) => (c.id === ev.id ? { ...c, name } : c));
+  saveContacts(ctx);
+  return stay("contact renommé");
+}
+
+function removeContact(ev: Extract<PhoneEvent, { type: "ui:removeContact" }>, ctx: PhoneCtx) {
+  if (!ctx.contacts.some((c) => c.id === ev.id)) return stay("contact inconnu");
+  ctx.contacts = ctx.contacts.filter((c) => c.id !== ev.id);
+  saveContacts(ctx);
+  return stay("contact retiré");
 }
 
 /**
@@ -401,7 +482,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
 }
 
 /**
- * Écrit le coffre et relit l'historique du compte actif — le même travail
+ * Écrit le coffre et relit l'historique et le carnet du compte actif — le même travail
  * pour `saving` (le formulaire vient d'être validé) et pour `switching`
  * (c'est `activeId` qui vient de changer). Les deux repartent ensuite en
  * `connecting` : ce qui suit une écriture réussie ou ratée est ce qui les
@@ -409,9 +490,21 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
  */
 function persistVault(ctx: PhoneCtx, fx: Fx<PhoneEvent, PhoneCtx>): void {
   const id = ctx.activeId!;
-  fx.task(ctx.store.save(vaultOf(ctx)).then(() => ctx.store.loadHistory(id)), "saveVault", {
+  fx.task(ctx.store.save(vaultOf(ctx)).then(() => loadAccountData(ctx.store, id)), "saveVault", {
     timeout: 3000,
   });
+}
+
+async function loadAccountData(store: SecureStore, id: string): Promise<AccountData> {
+  const [history, contacts] = await Promise.all([store.loadHistory(id), store.loadContacts(id)]);
+  return { history, contacts };
+}
+
+/** Ce que le compte qui prend la main apporte, ou rien si la lecture a échoué. */
+function adoptAccountData(ctx: PhoneCtx, data: AccountData | null): void {
+  ctx.history = data ? recent(data.history) : [];
+  ctx.contacts = data?.contacts ?? [];
+  ctx.contactError = null;
 }
 
 /**
@@ -433,7 +526,7 @@ function deleteAccount(_ev: PhoneEvent, ctx: PhoneCtx) {
   // qu'on l'ait demandé serait une décision prise à la place de quelqu'un
   if (ctx.activeId === id) {
     ctx.activeId = null;
-    ctx.history = [];
+    adoptAccountData(ctx, null);
   }
   clearError(ctx);
   return goto("deleting");
@@ -489,6 +582,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     store: null as unknown as SecureStore,
     sip: null as unknown as SipPort,
     transcript: () => [],
+    doNotDisturb: () => false,
     accounts: [],
     activeId: null,
     editing: null,
@@ -501,6 +595,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     call: null,
     callError: null,
     history: [],
+    contacts: [],
+    contactError: null,
     pendingDelete: null,
     autoReconnect: false,
     sleepRequested: false,
@@ -521,12 +617,10 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
             const activeId = vault.accounts.some((a) => a.id === resume)
               ? resume
               : vault.activeId;
-            return {
-              vault,
-              activeId,
-              resume: activeId !== null && activeId === resume,
-              history: activeId ? await ctx.store.loadHistory(activeId) : [],
-            };
+            const data = activeId
+              ? await loadAccountData(ctx.store, activeId)
+              : { history: [], contacts: [] };
+            return { vault, activeId, resume: activeId !== null && activeId === resume, ...data };
           }),
           "loadVault",
           { timeout: 3000 },
@@ -547,7 +641,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           });
           const wanted = ev.ok ? ev.value.activeId : null;
           ctx.activeId = ctx.accounts.some((a) => a.id === wanted) ? wanted : null;
-          ctx.history = ctx.activeId && ev.ok ? recent(ev.value.history) : [];
+          adoptAccountData(ctx, ctx.activeId && ev.ok ? ev.value : null);
           // D4 : quel que soit le motif du chargement — onglet déchargé par
           // l'Économiseur de mémoire, F5, redémarrage du navigateur —, un
           // compte marqué « à reprendre » se réenregistre sans rien
@@ -631,11 +725,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "task:saveVault": (ev, ctx) => {
           // même si la persistance échoue, la session en mémoire reste utilisable
-          if (ev.ok) ctx.history = recent(ev.value);
-          else {
-            ctx.lastError = msg("error.saveFailed", { detail: String(ev.error) });
-            ctx.history = [];
-          }
+          adoptAccountData(ctx, ev.ok ? ev.value : null);
+          if (!ev.ok) ctx.lastError = msg("error.saveFailed", { detail: String(ev.error) });
           return goto("connecting");
         },
         "sys:sleep": () => undefined,
@@ -659,14 +750,15 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         stopSip(ctx);
         ctx.autoReconnect = false;
         // rien de l'ancien compte ne doit survivre à la bascule : ni son
-        // journal d'appels à l'écran, ni l'erreur de son enregistrement
-        ctx.history = [];
+        // journal d'appels à l'écran, ni son carnet, ni l'erreur de son
+        // enregistrement
+        adoptAccountData(ctx, null);
         clearError(ctx);
         persistVault(ctx, fx);
       },
       on: {
         "task:saveVault": (ev, ctx) => {
-          if (ev.ok) ctx.history = recent(ev.value);
+          adoptAccountData(ctx, ev.ok ? ev.value : null);
           return goto("connecting", "compte changé");
         },
         "sip:disconnected": () => undefined,
@@ -788,8 +880,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           };
           return goto("in_call", `appel vers ${target}`);
         },
-        // INVITE entrant : même écran d'appel, le bloc démarre en sonnerie
+        // INVITE entrant : même écran d'appel, le bloc démarre en sonnerie —
+        // sauf en Ne pas déranger, où rien ne sonne (ADR 0007, D6)
         "sip:incoming": (ev, ctx) => {
+          if (ctx.doNotDisturb()) {
+            declineIncoming(ctx, ev.call);
+            return stay("ne pas déranger : 486");
+          }
           ctx.callError = null;
           ctx.incoming = ev.call;
           ctx.pendingCall = {
@@ -847,6 +944,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           return goto("unregistering");
         },
         "ui:clearHistory": clearHistory,
+        "ui:addContact": addContact,
+        "ui:renameContact": renameContact,
+        "ui:removeContact": removeContact,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         // réveil détecté : la WSS peut être morte sans que le navigateur le
         // sache. Un REGISTER sur le transport existant tranche — même Call-ID,
@@ -907,6 +1007,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // bouton grisé : on consomme pour éviter un appel rejoué à la reconnexion
         "ui:call": () => undefined,
         "ui:clearHistory": clearHistory,
+        "ui:addContact": addContact,
+        "ui:renameContact": renameContact,
+        "ui:removeContact": removeContact,
         "ui:backToSettings": (_ev, ctx) => {
           ctx.autoReconnect = false;
           ctx.editing = ctx.activeId;
@@ -945,6 +1048,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // bouton grisé : on consomme pour éviter un appel rejoué à la reconnexion
         "ui:call": () => undefined,
         "ui:clearHistory": clearHistory,
+        "ui:addContact": addContact,
+        "ui:renameContact": renameContact,
+        "ui:removeContact": removeContact,
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
         "sip:incoming": refuseIncoming("timeout"),
@@ -969,6 +1075,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "ui:retry": () => goto("connecting"),
         "ui:clearHistory": clearHistory,
+        "ui:addContact": addContact,
+        "ui:renameContact": renameContact,
+        "ui:removeContact": removeContact,
         "ui:switchAccount": switchAccount,
         // le compte dont l'enregistrement vient d'échouer : c'est celui-là
         // qu'il faut corriger, et l'erreur reste affichée sur son formulaire

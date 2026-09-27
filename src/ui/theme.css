@@ -1033,7 +1033,9 @@ fieldset.field { border: none; }
 .calllog-row .icon { width: 16px; height: 16px; }
 .calllog-row .icon.dir { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
 .calllog-row.answered .icon.dir { color: var(--green); }
-.calllog-row.canceled .icon.dir { color: var(--ink-soft); }
+.calllog-row.canceled .icon.dir,
+/* refusé en Ne pas déranger : un choix, pas un incident (ADR 0007, D6) */
+.calllog-row.declined .icon.dir { color: var(--ink-soft); }
 .calllog-row.failed .icon.dir,
 .calllog-row.missed .icon.dir { color: var(--red); }
 .calllog-row.dropped .icon.dir { color: var(--orange); }

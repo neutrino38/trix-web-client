@@ -454,6 +454,7 @@ const messages: Translation = {
   "outcome.failed": "失敗",
   "outcome.canceled": "取り消し",
   "outcome.dropped": "切断",
+  "outcome.declined": "拒否",
   "endedBy.local": "自分が切りました",
   "endedBy.remote": "相手が切りました",
   "endedBy.network": "ネットワークが切断しました",

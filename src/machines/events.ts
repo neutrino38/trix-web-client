@@ -1,5 +1,11 @@
 import type { SbbReturn, TaskResult } from "finite-state-language";
-import type { CallDirection, CallLogEntry, Vault } from "../storage/store.js";
+import type { CallDirection, CallLogEntry, Contact, Vault } from "../storage/store.js";
+
+/** Ce qu'un compte emporte avec lui en prenant la main : son historique et son carnet. */
+export interface AccountData {
+  history: CallLogEntry[];
+  contacts: Contact[];
+}
 import type {
   CallMedia,
   CallSession,
@@ -260,6 +266,14 @@ export type PhoneEvent =
   | { type: "ui:call"; target: string; media: CallMedia }
   | { type: "ui:clearHistory" }
   /**
+   * Carnet de contacts du compte actif (ADR 0007, D7). `uri` est la saisie
+   * telle quelle : la machine la normalise, et refuse ce qui n'est pas une
+   * adresse.
+   */
+  | { type: "ui:addContact"; name: string; uri: string }
+  | { type: "ui:renameContact"; id: string; name: string }
+  | { type: "ui:removeContact"; id: string }
+  /**
    * Endormissement / réveil, machine **ou** page (ADR 0006, `ui/lifecycle.ts`) :
    * veille de l'ordinateur constatée au saut d'horloge, gel de l'onglet par
    * l'Économiseur d'énergie, départ en bfcache ou fermeture de la page.
@@ -274,7 +288,7 @@ export type PhoneEvent =
   | CallReturn
   | SipEvent
   /**
-   * boot : coffre + historique du compte actif, chargés d'un seul tenant.
+   * boot : coffre, historique et carnet du compte actif, chargés d'un seul tenant.
    * `activeId` n'est pas forcément celui du coffre — le marqueur de reprise
    * (ADR 0006, D4) peut en désigner un autre, et c'est alors *son*
    * historique qui a été lu. `resume` dit que ce marqueur a parlé : sans
@@ -282,9 +296,15 @@ export type PhoneEvent =
    */
   | TaskResult<
       "loadVault",
-      { vault: Vault; activeId: string | null; resume: boolean; history: CallLogEntry[] }
+      {
+        vault: Vault;
+        activeId: string | null;
+        resume: boolean;
+        history: CallLogEntry[];
+        contacts: Contact[];
+      }
     >
-  // écriture du coffre : rend l'historique du compte qui prend la main
-  | TaskResult<"saveVault", CallLogEntry[]>
-  // suppression : coffre amputé écrit, puis historique effacé
+  // écriture du coffre : rend l'historique et le carnet du compte qui prend la main
+  | TaskResult<"saveVault", AccountData>
+  // suppression : coffre amputé écrit, puis historique et carnet effacés
   | TaskResult<"deleteAccount", void>;

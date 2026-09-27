@@ -108,9 +108,11 @@ export function newAccountId(): string {
 export type CallDirection = "outgoing" | "incoming";
 /**
  * `missed` : entrant non répondu (phase 3) ; `canceled` : sortant abandonné
- * avant réponse ; `dropped` : incident réseau (proxy perdu pendant l'appel).
+ * avant réponse ; `dropped` : incident réseau (proxy perdu pendant l'appel) ;
+ * `declined` : entrant refusé d'office en Ne pas déranger (ADR 0007, D6) —
+ * personne ne l'a laissé sonner, ce n'est pas un appel manqué.
  */
-export type CallOutcome = "answered" | "missed" | "failed" | "canceled" | "dropped";
+export type CallOutcome = "answered" | "missed" | "failed" | "canceled" | "dropped" | "declined";
 
 /** Qui a mis fin à un appel établi. */
 export type CallEndedBy = "local" | "remote" | "network";

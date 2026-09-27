@@ -76,6 +76,7 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
       activeId: seed?.id ?? null,
     } as Vault,
     history: new Map<string, CallLogEntry[]>(),
+    contacts: new Map<string, Contact[]>(),
     /** Les historiques effacés par une suppression de compte. */
     dropped: [] as string[],
     get saved(): AccountConfig | null {
@@ -86,7 +87,6 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
     },
   };
   if (seed) box.history.set(seed.id, history);
-  const contacts = new Map<string, Contact[]>();
   const store: SecureStore = {
     load: async () => box.vault,
     save: async (vault) => {
@@ -103,12 +103,12 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
       box.dropped.push(id);
       box.history.delete(id);
     },
-    loadContacts: async (id) => contacts.get(id) ?? [],
+    loadContacts: async (id) => box.contacts.get(id) ?? [],
     saveContacts: async (id, list) => {
-      contacts.set(id, list);
+      box.contacts.set(id, list);
     },
     deleteContacts: async (id) => {
-      contacts.delete(id);
+      box.contacts.delete(id);
     },
   };
   return { store, box };
@@ -235,6 +235,8 @@ async function bootTo(
   history: CallLogEntry[] = [],
   /** Le fil du tchat, que l'hôte branche sur le panneau (voir `main.ts`). */
   transcript: () => ChatItem[] = () => [],
+  /** Le statut Ne pas déranger, que l'hôte lit chez PresenceMachine (ADR 0007, D12). */
+  doNotDisturb: () => boolean = () => false,
 ): Promise<{
   phone: PhoneInstance;
   sip: FakeSip;
@@ -242,7 +244,7 @@ async function bootTo(
 }> {
   const { store, box } = fakeStore(initial, history);
   const sip = new FakeSip();
-  const phone = PhoneMachine.start({ args: { store, sip, transcript } });
+  const phone = PhoneMachine.start({ args: { store, sip, transcript, doNotDisturb } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
   if (state === "home") return { phone, sip, box };
   // choisir un compte passe par `switching`, qui écrit le coffre et charge
@@ -1247,6 +1249,104 @@ describe("PhoneMachine — historique d'appels", () => {
     expect(phone.context.history).toHaveLength(50);
     expect(phone.context.history[0]!.target).toBe("carol@example.fr");
     expect(phone.context.history.some((e) => e.target === "bob49@example.fr")).toBe(false);
+  });
+});
+
+describe("PhoneMachine — carnet de contacts (ADR 0007, D7)", () => {
+  it("ajout : adresse normalisée, persistée sous le compte actif", async () => {
+    const { phone, box } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:addContact", name: " Bob Martin ", uri: "bob" });
+    expect(phone.context.contacts).toMatchObject([{ name: "Bob Martin", uri: "sip:bob@example.fr" }]);
+    await vi.waitFor(() => expect(box.contacts.get(SEED_ID)).toHaveLength(1));
+  });
+
+  it("sans nom, le contact prend la partie utilisateur", async () => {
+    const { phone } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:addContact", name: "", uri: "sip:carol@example.fr" });
+    expect(phone.context.contacts[0]!.name).toBe("carol");
+  });
+
+  it("une adresse invalide est refusée et le dit", async () => {
+    const { phone } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:addContact", name: "X", uri: "not an address" });
+    expect(phone.context.contacts).toEqual([]);
+    expect(phone.context.contactError).toEqual({ key: "error.invalidUri" });
+    // l'erreur tombe au geste suivant qui réussit
+    phone.send({ type: "ui:addContact", name: "Bob", uri: "bob@example.fr" });
+    expect(phone.context.contactError).toBeNull();
+  });
+
+  it("la même adresse n'entre pas deux fois, quelle que soit sa forme", async () => {
+    const { phone } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:addContact", name: "Bob", uri: "bob@example.fr" });
+    phone.send({ type: "ui:addContact", name: "Bobby", uri: "sip:bob@EXAMPLE.fr" });
+    expect(phone.context.contacts).toHaveLength(1);
+  });
+
+  it("renommer et retirer", async () => {
+    const { phone, box } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:addContact", name: "Bob", uri: "bob" });
+    const id = phone.context.contacts[0]!.id;
+    phone.send({ type: "ui:renameContact", id, name: "Robert" });
+    expect(phone.context.contacts[0]!.name).toBe("Robert");
+    phone.send({ type: "ui:renameContact", id, name: "  " });
+    expect(phone.context.contacts[0]!.name).toBe("Robert");
+    phone.send({ type: "ui:removeContact", id });
+    expect(phone.context.contacts).toEqual([]);
+    await vi.waitFor(() => expect(box.contacts.get(SEED_ID)).toEqual([]));
+  });
+
+  it("le carnet est relu avec le compte, et ne suit pas une bascule", async () => {
+    const { store, box } = fakeStore(CFG);
+    const other: StoredAccount = { ...CFG, id: "acc-other", username: "zoe" };
+    box.vault = { accounts: [...box.vault.accounts, other], activeId: SEED_ID };
+    const bob: Contact = { id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1 };
+    box.contacts.set(SEED_ID, [bob]);
+    const sip = new FakeSip();
+    const phone = PhoneMachine.start({ args: { store, sip } });
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(phone.context.contacts).toEqual([bob]);
+    phone.send({ type: "ui:useAccount", id: "acc-other" });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(phone.context.contacts).toEqual([]);
+  });
+
+  it("supprimer le compte efface son carnet", async () => {
+    const { phone, box } = await bootTo("home", CFG);
+    box.contacts.set(SEED_ID, [{ id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1 }]);
+    phone.send({ type: "ui:configure", id: SEED_ID });
+    phone.send({ type: "ui:deleteAccount" });
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(box.contacts.has(SEED_ID)).toBe(false);
+  });
+});
+
+describe("PhoneMachine — Ne pas déranger (ADR 0007, D6)", () => {
+  it("l'INVITE est refusé en 486 sans sonner, et consigné comme refusé", async () => {
+    const { phone, sip, box } = await bootTo("ready", CFG, [], () => [], () => true);
+    const { call, box: incoming } = fakeIncoming({ audio: true, video: true, text: false });
+    sip.send({ type: "sip:incoming", call });
+    expect(phone.state).toBe("ready");
+    expect(incoming.rejected).toEqual(["busy"]);
+    expect(phone.context.history[0]).toMatchObject({
+      target: "bob@example.fr",
+      direction: "incoming",
+      outcome: "declined",
+      media: { audio: true, video: true, text: false },
+      connectedAt: null,
+      endedBy: null,
+    });
+    await vi.waitFor(() => expect(box.history.get(SEED_ID)).toHaveLength(1));
+  });
+
+  it("le statut est relu à chaque INVITE", async () => {
+    let dnd = true;
+    const { phone, sip } = await bootTo("ready", CFG, [], () => [], () => dnd);
+    sip.send({ type: "sip:incoming", call: fakeIncoming().call });
+    expect(phone.state).toBe("ready");
+    dnd = false;
+    sip.send({ type: "sip:incoming", call: fakeIncoming().call });
+    expect(phone.state).toBe("in_call");
   });
 });
 

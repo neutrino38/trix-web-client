@@ -499,6 +499,7 @@ const messages = {
   "outcome.failed": "Échec",
   "outcome.canceled": "Annulé",
   "outcome.dropped": "Interrompu",
+  "outcome.declined": "Refusé",
   "endedBy.local": "raccroché par vous",
   "endedBy.remote": "raccroché par le correspondant",
   "endedBy.network": "coupé par le réseau",
