@@ -3,6 +3,7 @@ import { PhoneMachine, type PhoneInstance } from "./machines/phone.js";
 import { CallBlock } from "./machines/call.js";
 import { PresenceMachine } from "./machines/presence.js";
 import { linkPresence } from "./machines/presencesignals.js";
+import { bindPresence } from "./ui/presence.js";
 import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
@@ -108,6 +109,10 @@ function scheduleRender(): void {
 }
 
 phone.subscribe(scheduleRender);
+// notre statut change sans que le téléphone bouge (menu, appel, inactivité) :
+// l'en-tête suit — `renderApp` ne reconstruit que si ce qu'il en montre a changé
+bindPresence(presence);
+presence.subscribe(scheduleRender);
 renderApp(root, phone);
 
 // bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé

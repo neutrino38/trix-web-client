@@ -20,6 +20,13 @@
      fond du thème — c'est tout leur objet. */
   --t140-blue: #2F6FB8;
   --t140-cyan: #17786F;
+  /* Les trois teintes des glyphes de présence (ADR 0007, D11) : un cran
+     plus sombres que --green, --orange et --red, pour que la marque
+     blanche posée dessus tienne 3:1. Les mêmes en sombre : c'est le blanc
+     de la marque qui compte, pas le fond. */
+  --presence-available: #2E8F3A;
+  --presence-away: #C26F14;
+  --presence-busy: #D43F2E;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -1466,3 +1473,55 @@ fieldset.field { border: none; }
 .hangup-round:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .hangup-round .icon { width: 26px; height: 26px; }
 .hangup-round.inactive { opacity: 0.5; cursor: default; }
+
+/* ---- Présence : bouton de statut et son menu (ADR 0007, ui/presence.ts) ---- */
+
+.pglyph { flex: none; display: block; }
+.statusbtn { cursor: pointer; font: inherit; font-size: 0.8rem; font-weight: 600; min-height: 36px; gap: 0.5rem; }
+.statusbtn .who { font-weight: 500; color: var(--ink-soft); }
+.statusbtn .who::before { content: "— "; }
+.statusbtn .chev { flex: none; transition: transform 0.15s; }
+.statusbtn[aria-expanded="true"] { border-color: var(--accent); }
+.statusbtn[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.statusbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .statusbtn .chev { transition: none; } }
+
+.statuslayer { position: fixed; z-index: 50; }
+.statusmenu {
+  width: min(420px, calc(100vw - 16px)); max-height: calc(100vh - 80px); overflow-y: auto;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 14px; box-shadow: var(--shadow); padding: 0.5rem;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.statusmenu hr { border: none; height: 1px; background: var(--border); margin: 0.4rem 0.3rem; }
+.statusmenu .sect {
+  font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); padding: 0.4rem 0.8rem 0.2rem;
+}
+.statusitem {
+  font: inherit; text-align: start; width: 100%; cursor: pointer;
+  display: grid; grid-template-columns: 18px 1fr 18px; column-gap: 0.75rem; align-items: center;
+  padding: 0.55rem 0.8rem; min-height: 48px; border: none; border-radius: 10px;
+  background: none; color: var(--ink);
+}
+.statusitem .lbl { font-weight: 600; font-size: 0.9rem; }
+.statusitem .sub { grid-column: 2; font-size: 0.74rem; color: var(--ink-soft); line-height: 1.35; }
+.statusitem.on { background: var(--panel-2); }
+.statusitem:hover { background: var(--panel-2); }
+.statusitem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.statusnote { padding: 0 0.8rem 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.statusnote .sect { padding: 0.2rem 0 0; }
+.statusnote .row { display: flex; gap: 0.4rem; }
+.statusnote input {
+  flex: 1; min-width: 0; font: inherit; font-size: 0.85rem; color: var(--ink);
+  background: var(--ground); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.5rem 0.7rem; min-height: 44px;
+}
+.statusnote input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.statusnote .iconbtn { width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 8px; color: var(--ink-soft); }
+.statusnote .iconbtn svg { fill: none; }
+.statusrule { display: flex; align-items: flex-start; gap: 0.65rem; padding: 0.45rem 0.8rem; font-size: 0.85rem; cursor: pointer; }
+.statusrule input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.statusrule .sub { display: block; font-size: 0.74rem; color: var(--ink-soft); }
+.statushint, .statusnote-off { margin: 0.3rem 0.8rem 0.5rem; font-size: 0.74rem; color: var(--ink-soft); line-height: 1.4; }
+.statusnote-off { color: var(--ink); background: var(--panel-2); border-radius: 8px; padding: 0.5rem 0.7rem; margin: 0.3rem 0.3rem 0.2rem; }

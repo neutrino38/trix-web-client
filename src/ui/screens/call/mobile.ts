@@ -16,6 +16,7 @@
 import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
 import type { CallView } from "../../../machines/events.js";
 import { el, esc } from "../../el.js";
+import { statusButton } from "../../presence.js";
 import { overlayBar } from "./overlay.js";
 import { incomingDialog } from "./incoming.js";
 import { mediaAskDialog } from "./mediaask.js";
@@ -81,17 +82,22 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   return el(`
     <div class="screen-call mobile ${chatOpen ? "chat-open" : ""}">
       <div class="mtopbar">
-        <span class="dot ${status.cls}" title="${esc(status.label)}"
-              role="img" aria-label="${esc(status.label)}"></span>
         ${
-          // en communication, l'état devient un bouton : les statistiques
-          // média se découvrent au doigt, faute de survol (call/stats.ts)
-          statsPill(
-            view
-              ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
-              : esc(status.label),
-            { cls: "mstatus", connected },
-          )
+          // hors appel et enregistré : le statut de présence, sans l'adresse
+          // que la place ne permet pas (ADR 0007, D5) ; en appel, l'appel
+          (!view && statusButton(phone, "")) ||
+          `<span class="dot ${status.cls}" title="${esc(status.label)}"
+                role="img" aria-label="${esc(status.label)}"></span>
+          ${
+            // en communication, l'état devient un bouton : les statistiques
+            // média se découvrent au doigt, faute de survol (call/stats.ts)
+            statsPill(
+              view
+                ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
+                : esc(status.label),
+              { cls: "mstatus", connected },
+            )
+          }`
         }
         <span class="spacer"></span>
         ${

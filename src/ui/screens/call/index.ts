@@ -16,6 +16,7 @@ import { closeDtmf } from "./dtmf.js";
 import { closeSheet, wireSheet } from "./sheet.js";
 import { stopChrono, wireCallScreen } from "./parts.js";
 import { stopMediaStats } from "./stats.js";
+import { wireStatusButton } from "../../presence.js";
 
 export function renderCall(phone: PhoneInstance): HTMLElement {
   stopChrono(); // le nœud précédent disparaît avec ses timers
@@ -44,6 +45,9 @@ export function renderCall(phone: PhoneInstance): HTMLElement {
   // n'a pas forcément la même composition
   if (view?.state !== "connected") closeSheet();
   wireSheet(node);
+  // le bouton de statut et son menu, qui vit hors de l'écran et s'y
+  // raccroche à chaque reconstruction (ui/presence.ts)
+  wireStatusButton(node);
   // même partage pour la question posée en cours d'appel (« Alice souhaite
   // ajouter la vidéo ») : les deux boutons sont câblés avec les autres,
   // seul le focus est propre à la popup
