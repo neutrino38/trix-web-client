@@ -23,6 +23,7 @@ import type {
   SipHandle,
 } from "../src/sip/port.js";
 import { MEDIA_KINDS, NO_MEDIA } from "../src/sip/port.js";
+import { NO_PRESENCE } from "../src/sip/presence.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 
@@ -114,6 +115,7 @@ function fakeHandle(opts: { throwOnCall?: string } = {}) {
   const handle: SipHandle = {
     stop: () => {},
     refresh: () => true,
+    presence: () => NO_PRESENCE,
     call(target, media, send) {
       if (opts.throwOnCall) throw new Error(opts.throwOnCall);
       box.calls.push({ target, media });

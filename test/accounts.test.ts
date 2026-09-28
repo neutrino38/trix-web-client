@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { activeAccount, PhoneMachine, type PhoneInstance } from "../src/machines/phone.js";
 import type { ConfigForm } from "../src/machines/events.js";
 import type {
+  Contact,
   AccountConfig,
   CallLogEntry,
   SecureStore,
@@ -14,6 +15,7 @@ import type {
   Vault,
 } from "../src/storage/store.js";
 import type { CallMedia, SipEvent, SipPort } from "../src/sip/port.js";
+import { NO_PRESENCE } from "../src/sip/presence.js";
 import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 import { MAX_ACCOUNTS } from "../src/accounts.js";
@@ -67,6 +69,7 @@ function fakeStore(vault: Vault, histories: Record<string, CallLogEntry[]> = {})
     history: new Map<string, CallLogEntry[]>(Object.entries(histories)),
     dropped: [] as string[],
   };
+  const contacts = new Map<string, Contact[]>();
   const store: SecureStore = {
     load: async () => box.vault,
     save: async (v) => {
@@ -82,6 +85,13 @@ function fakeStore(vault: Vault, histories: Record<string, CallLogEntry[]> = {})
     deleteHistory: async (id) => {
       box.dropped.push(id);
       box.history.delete(id);
+    },
+    loadContacts: async (id) => contacts.get(id) ?? [],
+    saveContacts: async (id, list) => {
+      contacts.set(id, list);
+    },
+    deleteContacts: async (id) => {
+      contacts.delete(id);
     },
   };
   return { store, box };
@@ -100,6 +110,7 @@ class FakeSip implements SipPort {
         this.stopped++;
       },
       refresh: () => true,
+      presence: () => NO_PRESENCE,
       call: (target: string, media: CallMedia) => {
         this.calls.push({ target, media });
         return {

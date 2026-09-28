@@ -1,19 +1,24 @@
 import "./ui/theme.css";
 import { PhoneMachine, type PhoneInstance } from "./machines/phone.js";
 import { CallBlock } from "./machines/call.js";
+import { PresenceMachine } from "./machines/presence.js";
+import { linkPresence } from "./machines/presencesignals.js";
+import { bindPresence } from "./ui/presence.js";
+import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
 import { chatTranscript } from "./ui/screens/call/chat.js";
 import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
+import { watchActivity } from "./ui/activity.js";
 import { noteSleepReason, watchReachability } from "./ui/reachability.js";
 import { registerNotifier } from "./ui/notify.js";
 import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
 import { traceCallStates } from "./sip/trace.js";
 import { initI18n, onLocaleChange } from "./i18n/index.js";
-import { loadDeployment } from "./deployment.js";
+import { deployment, loadDeployment } from "./deployment.js";
 
 applyPrefs();
 
@@ -39,6 +44,20 @@ watchGlobalErrors();
 // initiale) : le logger passe par cette variable, pas par la const
 let started: PhoneInstance | null = null;
 
+// La présence (ADR 0007, D12) : une machine paire de PhoneMachine, démarrée
+// avant elle parce que PhoneMachine lit son statut à chaque INVITE. Les deux
+// ne se voient pas : `linkPresence`, plus bas, lui traduit les transitions
+// du téléphone.
+const presence = PresenceMachine.start({
+  debug: true,
+  args: {
+    statusStore: { load: statusPrefs, save: setStatusPrefs },
+    // `"presence": "no"` dans config.json (ADR 0007, D8) : la machine reste
+    // en `disabled`, et pas un SUBSCRIBE ne part
+    enabled: deployment().presence,
+  },
+});
+
 const phone = PhoneMachine.start({
   debug: true,
   // les transitions restent en console.debug ; ce que le moteur signale
@@ -51,6 +70,9 @@ const phone = PhoneMachine.start({
     // où la machine range sa ligne d'historique (§4.9) : c'est ici, et
     // nulle part ailleurs, que l'écran et la machine se rencontrent
     transcript: chatTranscript,
+    // Ne pas déranger refuse les appels (ADR 0007, D6) : le statut est tenu
+    // par PresenceMachine, lu ici au moment de décider
+    doNotDisturb: () => presence.state !== "disabled" && presence.context.prefs.chosen === "dnd",
   },
 });
 
@@ -58,6 +80,10 @@ const phone = PhoneMachine.start({
 // non consommés) : l'écran en montre une phrase, la console en garde la trace
 started = phone;
 watchMachine(phone);
+
+// du téléphone vers la présence : enregistré, désenregistré, en appel,
+// carnet modifié (machines/presencesignals.ts)
+linkPresence(phone, presence);
 
 // états et transitions de l'appel, dans le même flux que les paquets SIP et
 // sous le même réglage : c'est de leur juxtaposition qu'on lit un échange
@@ -85,6 +111,10 @@ function scheduleRender(): void {
 }
 
 phone.subscribe(scheduleRender);
+// notre statut change sans que le téléphone bouge (menu, appel, inactivité) :
+// l'en-tête suit — `renderApp` ne reconstruit que si ce qu'il en montre a changé
+bindPresence(presence);
+presence.subscribe(scheduleRender);
 renderApp(root, phone);
 
 // bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé
@@ -127,16 +157,31 @@ watchSystemLifecycle({
   onWake: () => phone.send({ type: "sys:wake" }),
 });
 
+// Personne au clavier depuis dix minutes : Disponible devient Absent pour
+// les autres, et revient au premier geste (ADR 0007, D5, règle 2). La
+// présence seule en décide ; le téléphone n'en sait rien.
+watchActivity({
+  onIdle: () => presence.send({ type: "sys:idle" }),
+  onActive: () => presence.send({ type: "sys:active" }),
+});
+
 // Observabilité (docs/CONCEPTION.md §4.5) : depuis la console,
 // trix.mermaid() exporte les diagrammes, trix.phone.log les transitions.
 declare global {
   interface Window {
-    trix: { phone: typeof phone; mermaid: () => string; dump: () => string };
+    trix: {
+      phone: typeof phone;
+      presence: typeof presence;
+      mermaid: () => string;
+      dump: () => string;
+    };
   }
 }
 window.trix = {
   phone,
-  mermaid: () => `${PhoneMachine.toMermaid()}\n${CallBlock.toMermaid()}`,
+  presence,
+  mermaid: () =>
+    `${PhoneMachine.toMermaid()}\n${CallBlock.toMermaid()}\n${PresenceMachine.toMermaid()}`,
   // à copier dans un rapport de bug : les dernières transitions, en clair
   dump: () => formatLog(phone.log),
 };

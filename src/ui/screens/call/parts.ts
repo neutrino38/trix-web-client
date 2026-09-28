@@ -23,8 +23,8 @@ import { audioLevel, barHeight } from "../../vumeter.js";
 import { hideToast, showToast } from "../../toast.js";
 import { bumpFont, getCallModeId, setCallModeId } from "../../prefs.js";
 import { announce } from "../../announce.js";
-import { SCROLL_ICON, showTraceDialog } from "../../tracedialog.js";
-import { CHAT_LOG_ICON, showChatDialog } from "../../chatdialog.js";
+import { SCROLL_ICON } from "../../tracedialog.js";
+import { CHAT_LOG_ICON } from "../../chatdialog.js";
 import { setStateTitle } from "../../title.js";
 import {
   discardedEpisode,
@@ -37,7 +37,7 @@ import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
 import { wireChat } from "./chat.js";
 import { wireShareStage } from "./share.js";
-import { LENS_ICON, showStatsDialog, startMediaStats } from "./stats.js";
+import { LENS_ICON, startMediaStats } from "./stats.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
 
@@ -298,6 +298,10 @@ let shownNotice = 0;
 let chronoTimer: ReturnType<typeof setInterval> | null = null;
 
 export const draft = (): string => draftTarget;
+/** Pré-remplit l'adresse à composer — depuis le fil Échanges, qui déplie une ligne (D10). */
+export const setDraft = (value: string): void => {
+  draftTarget = value;
+};
 export const isSpeakerMuted = (): boolean => speakerMuted;
 
 /** À appeler en tête de chaque rendu : l'ancien nœud disparaît avec son timer. */
@@ -416,12 +420,13 @@ export function callerName(view: CallView): string {
 // Historique d'appels
 // ---------------------------------------------------------------------------
 
-const OUTCOME_KEY: Record<CallLogEntry["outcome"], MsgKey> = {
+export const OUTCOME_KEY: Record<CallLogEntry["outcome"], MsgKey> = {
   answered: "outcome.answered",
   missed: "outcome.missed",
   failed: "outcome.failed",
   canceled: "outcome.canceled",
   dropped: "outcome.dropped",
+  declined: "outcome.declined",
 };
 
 const ENDED_BY_KEY: Record<NonNullable<CallLogEntry["endedBy"]>, MsgKey> = {
@@ -430,13 +435,14 @@ const ENDED_BY_KEY: Record<NonNullable<CallLogEntry["endedBy"]>, MsgKey> = {
   network: "endedBy.network",
 };
 
-const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
+export const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
   // flèches sortante/entrante ; la couleur porte le sens (vert/rouge/orange)
   answered: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   canceled: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   failed: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   dropped: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M5 19L18 6M18 6h-7M18 6v7"/></svg>`,
   missed: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>`,
+  declined: `<svg class="icon dir" viewBox="0 0 24 24"><path d="M19 5L6 18M6 18h7M6 18v-7"/></svg>`,
 };
 
 /**
@@ -447,13 +453,13 @@ const HISTORY_ICONS: Record<CallLogEntry["outcome"], string> = {
 const HISTORY_CAM = ICONS.cam.replace('class="icon"', 'class="icon cam"');
 
 /** Heure seule pour aujourd'hui, date + heure au-delà — au format de la langue. */
-function fmtWhen(ts: number): string {
+export function fmtWhen(ts: number): string {
   const sameDay = new Date(ts).toDateString() === new Date().toDateString();
   const time = formatTime(ts);
   return sameDay ? time : `${formatDayMonth(ts)} ${time}`;
 }
 
-function fmtDuration(entry: CallLogEntry): string {
+export function fmtDuration(entry: CallLogEntry): string {
   if (entry.connectedAt === null) return "";
   const s = Math.max(0, Math.round((entry.endedAt - entry.connectedAt) / 1000));
   const m = Math.floor(s / 60);
@@ -466,8 +472,12 @@ function fmtDuration(entry: CallLogEntry): string {
  * `index` : la place de la ligne dans `ctx.history`, portée par le bouton de
  * trace — c'est par là que le câblage retrouve l'entrée à ouvrir, sans que
  * le gabarit ait à transporter le carnet lui-même.
+ *
+ * `scope` préfixe les actions de ses boutons : le fil Échanges (ADR 0007)
+ * les câble lui-même, par délégation, parce qu'il se redessine sans que
+ * l'écran soit reconstruit.
  */
-export function historyRow(entry: CallLogEntry, index: number): string {
+export function historyRow(entry: CallLogEntry, index: number, scope = ""): string {
   const outcome = t(OUTCOME_KEY[entry.outcome]);
   const detail =
     entry.connectedAt !== null
@@ -482,7 +492,7 @@ export function historyRow(entry: CallLogEntry, index: number): string {
     ${entry.media.video ? HISTORY_CAM : ""}
     <span class="when">${esc(fmtWhen(entry.startedAt))}</span>
     <span class="detail">${esc(detail)}</span>
-    ${rowButtons(entry, index)}
+    ${rowButtons(entry, index, scope)}
   </div>`;
 }
 
@@ -496,9 +506,9 @@ export function historyRow(entry: CallLogEntry, index: number): string {
  * La conversation vient en tête parce que c'est la seule des trois qui
  * parle de ce qui a été dit ; les deux autres parlent de la mécanique.
  */
-function rowButtons(entry: CallLogEntry, index: number): string {
+function rowButtons(entry: CallLogEntry, index: number, scope: string): string {
   const one = (act: string, cls: string, label: MsgKey, icon: string): string =>
-    `<button class="${cls}" data-act="${act}" data-i="${index}"
+    `<button class="${cls}" data-act="${scope}${act}" data-i="${index}"
              title="${esc(t(label))}" aria-label="${esc(t(label))}">${icon}</button>`;
   const btns = [
     // sans condition, elle : le fil rejoint l'historique dès que quelqu'un
@@ -745,35 +755,6 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
     dismissPinHint();
     btn.closest(".reach-note")?.remove();
   });
-
-  // --- historique ----------------------------------------------------------
-  on('[data-act="clear-history"]', () => phone.send({ type: "ui:clearHistory" }));
-  // parchemin : le carnet de l'appel, relu tel qu'il a été enregistré
-  on('[data-act="trace"]', (elem) => {
-    const entry = phone.context.history[Number(elem.dataset.i)];
-    if (entry) showTraceDialog(entry);
-  });
-  // loupe : le bilan média du même appel, sur toute sa durée mesurée
-  on('[data-act="stats"]', (elem) => {
-    const entry = phone.context.history[Number(elem.dataset.i)];
-    if (entry) showStatsDialog(entry);
-  });
-  // bulle « T » : la conversation de cet appel, en lecture seule (§4.9)
-  on('[data-act="chat-log"]', (elem) => {
-    const entry = phone.context.history[Number(elem.dataset.i)];
-    if (entry) showChatDialog(entry);
-  });
-  if (targetInput && !view) {
-    // clic sur une ligne : pré-remplit le champ d'adresse pour rappeler
-    for (const row of node.querySelectorAll(".calllog-row")) {
-      const who = row.querySelector(".who")?.textContent ?? "";
-      row.addEventListener("click", () => {
-        draftTarget = who;
-        targetInput.value = who;
-        targetInput.focus();
-      });
-    }
-  }
 
   // --- clavier DTMF ---------------------------------------------------------
   // Le pavé s'ouvre et se ferme sans la machine (call/dtmf.ts) ; seule la

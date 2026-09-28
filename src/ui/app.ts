@@ -12,6 +12,8 @@ import { STATUS, callLabel, displayTarget, fmtChrono, statusOf } from "./screens
 import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
 import type { CallLogEntry } from "../storage/store.js";
+import { closeStatusMenu, headerKey } from "./presence.js";
+import { refreshThread } from "./screens/call/thread.js";
 
 let lastState: string | null = null;
 let lastLayout: LayoutMode | null = null;
@@ -23,6 +25,12 @@ let lastLayout: LayoutMode | null = null;
  * cas où un `stay()` doit malgré tout redessiner l'écran d'accueil.
  */
 let lastHistory: readonly CallLogEntry[] | null = null;
+/**
+ * Ce que l'en-tête montre de la présence (`ui/presence.ts`) : notre statut,
+ * sa note, ce que le serveur en accepte. La présence des contacts n'en fait
+ * pas partie — elle ne touche pas l'en-tête.
+ */
+let lastPresence: string | null = null;
 
 /** Écrans sans état de téléphone à afficher : l'onglet nomme quand même l'écran. */
 const SCREEN_TITLE: Record<string, MsgKey> = {
@@ -57,9 +65,15 @@ function syncStatus(phone: PhoneInstance): void {
   const screen = SCREEN_TITLE[phone.state];
   setStateTitle(label ?? (screen ? t(screen) : null));
   // les écrans hors appel se lisent d'eux-mêmes : seul l'état du téléphone,
-  // qui change sans que l'utilisateur agisse, mérite d'être annoncé
-  if (label) announce(label);
+  // qui change sans que l'utilisateur agisse, mérite d'être annoncé — et
+  // seulement quand il change. Un rendu venu d'ailleurs (notre statut de
+  // présence, l'historique) écraserait sinon l'annonce qui vient d'être faite
+  if (label && label !== lastAnnounced) announce(label);
+  lastAnnounced = label;
 }
+
+/** Le dernier état du téléphone annoncé : on ne le répète pas à chaque rendu. */
+let lastAnnounced: string | null = null;
 
 /**
  * Oublie l'écran rendu : le prochain `renderApp` reconstruira tout, même
@@ -70,6 +84,7 @@ export function invalidateScreen(): void {
   lastState = null;
   lastLayout = null;
   lastHistory = null;
+  lastPresence = null;
 }
 
 /**
@@ -89,17 +104,23 @@ export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
   const layout = layoutMode();
   syncStatus(phone); // avant le filtre : l'état peut changer sans re-rendu
   const history = phone.context.history;
+  const presence = headerKey(phone);
   if (
     phone.state === lastState &&
     layout === lastLayout &&
     history === lastHistory &&
+    presence === lastPresence &&
     phone.state !== "in_call"
   ) {
+    // l'écran reste, mais le fil Échanges peut avoir changé : présence
+    // d'un contact, carnet modifié (ADR 0007, D10)
+    refreshThread();
     return;
   }
   lastState = phone.state;
   lastLayout = layout;
   lastHistory = history;
+  lastPresence = presence;
   root.replaceChildren(pick(phone));
 }
 
@@ -108,6 +129,7 @@ function pick(phone: PhoneInstance): HTMLElement {
     case "initial_state":
       return document.createElement("div"); // chargement de la config (< 3 s)
     case "home":
+      closeStatusMenu();
       stopIncomingAlert();
       stopRingback();
       closeIncoming();
@@ -124,6 +146,7 @@ function pick(phone: PhoneInstance): HTMLElement {
       stopIncomingAlert();
       stopRingback();
       closeIncoming();
+      closeStatusMenu();
       return renderConfig(phone);
     default:
       return renderCall(phone);

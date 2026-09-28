@@ -89,7 +89,8 @@ Un gabarit complet est fourni : [`config/config.json.example`](../../config/conf
   "turn_password": "change-me",
   "turn_tls": true,
   "realtime_text": "user_choice",
-  "debug_activated": "yes"
+  "debug_activated": "yes",
+  "presence": "yes"
 }
 ```
 
@@ -101,6 +102,7 @@ Un gabarit complet est fourni : [`config/config.json.example`](../../config/conf
 | `turn_server`, `turn_username`, `turn_password`, `turn_tls` | Le relais TURN. Sans identifiant **et** mot de passe, le relais est ignoré : TURN n'a pas de mode anonyme. |
 | `realtime_text` | `"none"`, `"websocket"`, `"datachannel"` ou `"user_choice"`. Les trois premières valeurs imposent le transport et retirent le menu ; `"user_choice"` le laisse. Avec `"none"`, toute mention du tchat quitte l'interface. |
 | `debug_activated` | `"no"` retire la case « Trace SIP » et éteint la trace, y compris pour qui l'avait laissée allumée. Toute autre valeur, ou l'absence de clé, laisse la case. |
+| `presence` | `"no"` éteint la présence : aucun SUBSCRIBE ni PUBLISH ne part, le menu de statut disparaît et la pastille reste « Enregistré ». Les contacts restent affichés et appelables, sans glyphe. Toute autre valeur, ou l'absence de clé, laisse Trix découvrir ce que le serveur accepte. |
 
 Quelques conséquences à connaître :
 
@@ -112,6 +114,13 @@ Quelques conséquences à connaître :
   **autre domaine** que `sip_domain` est écarté et l'utilisateur reconfigure le sien :
   son empreinte de mot de passe (HA1) a été calculée avec l'ancien domaine comme
   *realm*, et rien ne peut la rattraper.
+- **La présence n'a pas besoin de cette clé pour s'adapter au serveur.** À chaque
+  enregistrement, Trix essaie SUBSCRIBE et PUBLISH et s'en tient à ce qui est accepté :
+  un serveur qui répond 489 ou 405 au SUBSCRIBE vaut un bandeau et des contacts sans
+  glyphe, un PUBLISH refusé retire le choix du statut. `"presence": "no"` sert à
+  l'exploitant qui sait que son serveur n'en veut pas et ne souhaite voir partir aucune
+  de ces requêtes. Ne pas déranger est éteint avec le reste : aucun appel n'est refusé
+  à cause d'un statut choisi auparavant.
 - **Le mot de passe TURN y est en clair**, comme dans toute configuration WebRTC servie
   à un navigateur. Ce fichier est public : n'y mettez aucun secret que vous ne
   distribueriez pas à vos utilisateurs.

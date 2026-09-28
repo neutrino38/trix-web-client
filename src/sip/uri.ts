@@ -28,3 +28,15 @@ export function normalizeTarget(input: string, domain: string): string | null {
   if (!s || /\s/.test(s) || s.startsWith("@") || s.endsWith("@")) return null;
   return `sip:${s.includes("@") ? s : `${s}@${domain}`}`;
 }
+
+/**
+ * La clé qui dit que deux adresses désignent le même correspondant
+ * (ADR 0007, D7) : `user@domaine`, sans préfixe `sip:` ni paramètres, le
+ * domaine en minuscules — il est insensible à la casse, la partie
+ * utilisateur ne l'est pas (RFC 3261 §19.1.4). C'est elle qui rattache une
+ * ligne d'historique, écrite sans préfixe, à un contact, gardé avec.
+ */
+export function addressKey(raw: string): string | null {
+  const parts = parseSipUri(raw.split(";")[0] ?? "");
+  return parts ? `${parts.username}@${parts.domain.toLowerCase()}` : null;
+}

@@ -7,5 +7,6 @@
   "turn_password": "change-me",
   "turn_tls": true,
   "realtime_text": "user_choice",
-  "debug_activated": "yes"
+  "debug_activated": "yes",
+  "presence": "yes"
 }

@@ -130,6 +130,13 @@ describe("parseDeployment — real-time text and the SIP trace", () => {
     expect(parseDeployment({ debug_activated: "yes" }).debug).toBe(true);
     expect(parseDeployment({}).debug).toBe(true);
   });
+
+  it('only "no" turns presence off', () => {
+    expect(parseDeployment({ presence: "no" }).presence).toBe(false);
+    expect(parseDeployment({ presence: " No " }).presence).toBe(false);
+    expect(parseDeployment({ presence: "yes" }).presence).toBe(true);
+    expect(parseDeployment({}).presence).toBe(true);
+  });
 });
 
 describe("loadDeployment", () => {
@@ -179,6 +186,7 @@ describe("pinAccount", () => {
     ice: { stun: "stun.example.fr", turn: null },
     rtt: "datachannel",
     debug: false,
+    presence: false,
   };
 
   it("realigns a stored account on what the deployment pins", () => {

@@ -31,6 +31,9 @@ connected / call_failed`), à transposer sur JsSIP.
 ├───────────────────────────────────────────────┤
 │ Machines FSL                                  │
 │  PhoneMachine ──fx.sbb──► CallBlock (l'appel) │
+│       │ presencesignals (colle, main.ts)      │
+│       ▼                                       │
+│  PresenceMachine (paire, §4.14)               │
 ├───────────────┬───────────────────────────────┤
 │ sip/binding.ts│ storage/SecureStore           │
 │ (JsSIP⇄events)│  browserStore (WebCrypto)     │
@@ -60,8 +63,10 @@ src/
     link.ts               # encodage/décodage d'un compte dans une URL (§6.1)
     page.ts               # share_account.html : le compte reçu, montré puis créé
   machines/
-    phone.ts              # PhoneMachine (cycle de vie app + REGISTER)
+    phone.ts              # PhoneMachine (cycle de vie app + REGISTER, carnet de contacts)
     call.ts               # CallBlock (bloc de service : l'appel)
+    presence.ts           # PresenceMachine : statut publié, présence des contacts (§4.14)
+    presencesignals.ts    # colle PhoneMachine → PresenceMachine, fonction pure (§4.14)
     events.ts             # types d'événements ui:* / sip:*
   sip/
     binding.ts            # JsSIP → phone.send({type:"sip:..."})
@@ -70,6 +75,9 @@ src/
     record.ts             # carnet d'un appel, attaché à son historique (§5.3)
     stats.ts              # statistiques média : fenêtre 10 s + bilan d'appel (§5.4)
     mediaerror.ts         # échecs WebRTC et fil texte : console, carnet, motif (§5.5)
+    pidf.ts               # PIDF + RPID, lus et écrits : le seul qui sache (§4.14)
+    presence.ts           # abonnements, découverte, publication (§4.14, §5.7)
+    publish.ts            # PUBLISH (RFC 3903), greffé sur les internes de JsSIP (§5.7)
   storage/
     store.ts              # interface SecureStore + implé navigateur (coffre à deux comptes)
     session.ts            # état de session hors coffre : compte à reprendre, joignabilité (§4.13)
@@ -79,6 +87,10 @@ src/
     screens/{home,config,call}.ts
     lifecycle.ts          # gel, dégel, bfcache, veille machine → sys:sleep / sys:wake (§4.1)
     reachability.ts       # le niveau de joignabilité et ce qu'on en dit (§4.13)
+    activity.ts           # inactivité de l'utilisateur → sys:idle / sys:active (§4.14)
+    presence.ts           # glyphes, bouton de statut et son menu (§4.14)
+    thread.ts             # le fil Échanges comme donnée, pur (§4.14)
+    screens/call/thread.ts # le fil Échanges à l'écran (§4.14)
     notify.ts             # poser une notification par la voie qui survit au gel (§4.13)
     title.ts, favicon.ts  # propriétaires uniques de l'onglet : état + override d'alerte
     langpicker.ts         # sélecteur de langue (accueil + paramètres)
@@ -105,7 +117,8 @@ jour du client ne le remplace pas. Le mode d'emploi, côté serveur, est dans
 [docs/utilisation/deploiement.md](utilisation/deploiement.md).
 
 Il fixe ce que la plateforme décide déjà : proxy SIP, domaine SIP, serveurs
-STUN/TURN, transport du texte temps réel, existence même de la trace SIP. Chaque
+STUN/TURN, transport du texte temps réel, existence même de la trace SIP, et de la
+présence. Chaque
 réglage imposé **disparaît de l'écran des paramètres** au lieu de s'y afficher
 grisé : un champ qu'on ne peut pas changer n'a pas à être lu, et le formulaire se
 remplit d'autant plus vite.
@@ -137,6 +150,11 @@ case, elle éteint `sipTraceEnabled()` (§5.2) quoi qu'en dise `localStorage`. C
 tout ce qui passe par là est aussi proposé au carnet de l'appel (§5.3), c'est du même
 coup la fin des paquets SIP dans l'historique — y compris pour qui avait laissé la
 trace allumée avant que le fichier n'arrive.
+
+`presence: "no"` suit la même lecture — seul `"no"` compte — et laisse PresenceMachine
+dans `disabled` (§4.14). Elle n'est pas nécessaire pour qu'un serveur sans présence soit
+bien traité : la découverte s'en charge à chaque enregistrement. Elle sert l'exploitant
+qui ne veut voir partir ni SUBSCRIBE ni PUBLISH.
 
 ## 3. Conventions d'événements
 
@@ -1680,6 +1698,97 @@ Hors périmètre, et c'est l'étape 2 : le push SIP (RFC 8599) — service worke
 et un proxy capable de retenir l'INVITE le temps que le client réveillé se réenregistre. Rien de ce
 qui précède n'en dépend, et rien n'en devient inutile quand il arrivera.
 
+### 4.14 La présence (ADR 0007)
+
+La présence est tenue par une **seconde machine**, `PresenceMachine`, que `main.ts` démarre à
+côté de PhoneMachine. Ni état de PhoneMachine — les NOTIFY arrivent à tout moment, et pendant un
+appel ils tomberaient dans `CallBlock`, qui consomme tout —, ni enfant `fx.spawn` : l'écran
+n'aurait eu accès à la présence qu'à travers un miroir tenu par le parent, celui-là même que
+`CallBlock` a été écrit pour éviter. Deux pairs, donc, qui ne se voient pas.
+
+**La colle** (`machines/presencesignals.ts`) observe PhoneMachine et traduit ses transitions en
+événements `phone:*` par une fonction pure, testée sur chaque sortie du couloir `ready` /
+`in_call` : `phone:up` en y entrant, `phone:down` en le quittant, `phone:callStarted` et
+`phone:callEnded`, `phone:contacts` quand le carnet change. Les événements de la pile ne passent
+pas par PhoneMachine : `SipHandle.presence(send)` ouvre un `PresenceLink` (`watch`, `unwatch`,
+`publish`) dont `sip:presence` et `sip:presenceSupport` vont au seul `send` qui l'a ouvert.
+`PhoneEvent` n'en voit aucun. Dans l'autre sens, un seul besoin : PhoneMachine reçoit
+`doNotDisturb: () => boolean`, lu au `sip:incoming`.
+
+| État | Sens |
+| --- | --- |
+| `off` | pas encore enregistré depuis le chargement ; rien de connu |
+| `live` | enregistré ; abonnements et publication en cours |
+| `no_watch` | le serveur a refusé SUBSCRIBE (489, 405, 501) : plus aucun jusqu'au prochain enregistrement |
+| `stale` | désenregistré ; ce qu'on savait est gardé, marqué périmé |
+| `disabled` | `presence: "no"` dans `config.json` (§2.1) ; aucune sortie |
+
+Le refus du PUBLISH n'est pas un état mais un drapeau (`support.publish`) : il ne change rien aux
+abonnements. Le **statut publié** n'en est pas un non plus : `publishedPresence(prefs, inCall,
+idle)` le recalcule à chaque changement d'une de ses entrées, et la machine ne publie que si le
+résultat diffère. Le statut **choisi**, la note et les deux règles automatiques (« En
+communication » pendant un appel, « Absent » après 10 min d'inactivité, `ui/activity.ts`) sont
+gardés par compte hors coffre (`storage/session.ts`), pour être là dès le rechargement.
+
+**Le carnet reste à PhoneMachine**, chiffré par compte à côté de l'historique
+(`contacts:<accountId>`) ; PresenceMachine n'en connaît que les URI. C'est aussi PhoneMachine qui
+refuse en **486** un appel reçu en Ne pas déranger, sans le faire sonner, et le consigne avec une
+issue à part, `declined` : personne n'a laissé sonner, ce n'est pas un appel manqué.
+
+**Sept états, un seul lecteur.** `sip/pidf.ts` est le seul module qui sache à quoi ressemble un
+corps PIDF + RPID. Il ne lève jamais d'exception — un corps illisible vaut `unknown` —, cherche
+les activités partout dans le document (Kamailio, Asterisk et les vieux clients ne les rangent pas
+au même endroit) et, quand plusieurs terminaux parlent pour une personne, retient le plus
+contraignant : `on-the-phone` > `dnd` > `busy` > `away` > `available` > `offline`. RPID n'a pas de
+« ne pas déranger » : Trix publie `busy` avec un `<trix:dnd/>` dans son propre espace de noms, qu'un
+client tiers lit « occupé ».
+
+**Découverte, jamais configuration.** À chaque enregistrement, la réponse au premier SUBSCRIBE
+tranche pour le serveur : un 2xx dit oui, 489, 405 ou 501 disent non, et plus rien ne part. Même
+chose pour le PUBLISH. Un 403 ou un 404, eux, parlent d'un contact, pas du serveur. Le résultat
+n'est pas gardé : le serveur de demain n'est pas forcément celui d'aujourd'hui.
+
+Seul un contact de notre propre domaine parle pour le serveur. Un 489, 405 ou 501 reçu pour un
+autre domaine (`domainOf` dans `sip/presence.ts`) — un pont de conférence, un serveur pair — ne
+retire que ce domaine : ses contacts passent en inconnu, plus aucun SUBSCRIBE n'y part jusqu'au
+prochain enregistrement, les autres abonnements ne bougent pas. De même, un 401 ou 407 sur un realm
+qui n'est pas celui du compte reste sans réponse, JsSIP n'ayant gardé que le HA1 de ce realm-là ;
+`jssipWatcher` le dit en console (`unansweredChallenge`) plutôt que de laisser le contact inconnu
+sans explication.
+
+**Une présence n'est fraîche que tant qu'on est enregistré.** Hors du couloir, les glyphes
+passent en anneau pointillé et la ligne dit l'heure de ce qu'on sait (« Disponible, vu à 14:02 —
+non actualisé ») ; en veille, la pastille dit que les contacts nous voient hors ligne. C'est la
+règle du §4.13 appliquée aux autres.
+
+**À l'écran.** Le bouton de statut remplace la pastille « Enregistré » tant qu'on est enregistré
+sur un serveur qui prend SUBSCRIBE (`ui/presence.ts`). Son menu est un dialogue non modal qui vit
+hors de `#app`, comme la région d'annonce, et se raccroche au bouton après chaque reconstruction :
+une reconstruction ne le ferme pas sous les doigts. Les cinq statuts y sont un vrai `role="menu"`
+de `menuitemradio`, parcouru aux flèches ; la note et les règles suivent. Au repos, le fil
+**Échanges** tient la scène (sous le champ d'adresse sur mobile) : `ui/thread.ts`, pur, bâtit une
+ligne par correspondant à partir du carnet, de l'historique regroupé par clé d'adresse
+(`addressKey`, §7) et de la présence ; `ui/screens/call/thread.ts` le dessine. Comme la présence et
+le carnet changent sans transition de PhoneMachine, la liste se redessine seule (`refreshThread`,
+sur une signature de ce qu'elle montre), en gardant la recherche, la saisie et le focus.
+L'historique n'est ni migré ni dupliqué : le fil en est une vue.
+
+**Accessibilité.** Chaque état a une forme et un mot, et le mot est toujours écrit dans la ligne
+(RGAA 3.1). Les trois teintes sont assombries d'un cran (`--presence-*`) pour que la marque blanche
+tienne 3:1. Les changements d'état des contacts ne sont **pas** annoncés — vingt contacts qui
+bougent seraient un bruit continu — ; seul son propre changement de statut l'est, parce qu'il
+répond à un geste.
+
+**Un écart avec l'ADR.** D8 voulait qu'un PUBLISH refusé retire les statuts du menu. Ils y
+restent, sous une phrase qui dit que le serveur ne diffuse rien : Ne pas déranger agit ici, sur les
+appels entrants, que le serveur le diffuse ou non, et le retirer aurait retiré ce refus avec lui.
+
+**Reste à valider en réel** (ADR 0007, §5) : deux Trix qui s'observent derrière Kamailio et son
+module `presence`, un Asterisk (le code exact qu'il rend au PUBLISH, ce qu'il met dans le PIDF d'un
+poste en communication), et le délai après lequel un onglet gelé passe hors ligne chez les autres
+par la seule expiration de sa publication. Ce qui a été vu tient à un faux registrar local : les
+glyphes, la péremption, le serveur qui refuse SUBSCRIBE, et `presence: "no"`.
+
 ## 5. Intégration JsSIP
 
 ```ts
@@ -2083,6 +2192,49 @@ appel passé à naviguer dans un serveur vocal ne dirait rien de ce qui a été 
 la seule chose qu'on veuille y relire. D'où `traceNote()` (`sip/trace.ts`), qui pose la
 ligne au carnet et à la console, au même réglage que le reste (§5.2).
 
+### 5.7 PUBLISH hors JsSIP
+
+JsSIP a les abonnements (`Subscriber`, `ua.subscribe()`) mais pas la publication : aucune classe,
+aucun crochet. `sip/publish.ts` construit donc le PUBLISH (RFC 3903) sur ses internes, comme
+`sip/digest.ts` le fait pour SHA-256 : `OutgoingRequest` (`jssip/lib/SIPMessage.js`) rédige la
+requête, `RequestSender` (`jssip/lib/RequestSender.js`) mène la transaction et répond au défi
+Digest — SHA-256 compris, puisque la greffe porte sur la classe qu'il instancie. Même précaution
+aussi : le chemin interne est importé tel quel, et un test vérifie qu'un PUBLISH défié trouve
+réponse.
+
+Deux couches. `createPublisher` tient le cycle RFC 3903 et ne voit jamais JsSIP ;
+`jssipPublishSend` est la fonction d'envoi d'un UA vivant, la seule chose qu'une version de JsSIP
+dotée d'un `Publisher` remplacerait.
+
+| Situation | Ce qui part |
+| --- | --- |
+| Première publication | le corps, sans `SIP-If-Match` ; la réponse donne le `SIP-ETag` |
+| Rafraîchissement, à 80 % de l'`Expires` accordé | corps vide, `SIP-If-Match` |
+| Modification | `SIP-If-Match` et le nouveau corps |
+| **412** — le serveur a perdu notre ETag | republication depuis zéro, une fois ; un second 412 attend le délai de reprise |
+| **423** | de nouveau, avec le `Min-Expires` du serveur |
+| **489**, **405**, **501** | le serveur ne prend pas PUBLISH : dit une fois (`onSupport(false)`), plus rien ne part |
+| Pas de réponse, 5xx | nouvel essai plus tard, avec le dernier corps |
+| Retrait | `Expires: 0` et `SIP-If-Match` |
+
+Une requête au plus en vol : un changement fait pendant qu'une autre attend part à son retour, si
+bien que l'ETag tenu nomme toujours la dernière réponse.
+
+**L'ordre de sortie est une affaire de pile.** `RequestSender` refuse d'envoyer quand l'UA est en
+fermeture, alors qu'`UA.stop()` attend les transactions déjà parties. `SipHandle.stop()` ferme donc
+le lien de présence — retrait de la publication, puis désabonnements — **avant** `ua.stop()` et
+son unREGISTER. Ce n'est pas l'affaire d'une machine : `stopSip()` reste la seule porte de sortie.
+
+**Les abonnements** passent par `Subscriber` (`jssipWatcher`), avec une greffe plus légère : son
+événement `terminated` ne donne pas le code de réponse (489 et 404 arrivent tous deux en
+`SUBSCRIBE_NON_OK_RESPONSE`), que `jssipWatcher` relève donc sur la réponse elle-même. **Un SUBSCRIBE
+entrant** reçoit 489 : Trix ne sert pas sa présence lui-même, le serveur répond à sa place. Sans
+écouteur `newSubscribe`, JsSIP aurait répondu 405, qui dit « méthode inconnue » — ce qui est faux.
+
+Ce que ces greffes compensent sera proposé à JsSIP (ADR 0007, PR-12) : le code de réponse dans
+`terminated`, un `UA.stop()` qui termine les abonnements avant l'unREGISTER, une classe
+`Publisher`.
+
 ## 6. Stockage sécurisé du compte
 
 **Réponse à la question de goals.md (« JS offre-t-il une possibilité de stockage sûr ? ») :**
@@ -2287,6 +2439,13 @@ préfixe sip: déjà présent → inchangé
 
 Validation minimale (caractères autorisés) avant `ua.call()` ; l'erreur JsSIP reste le
 filet de sécurité (`sip:failed {cause}` affichée).
+
+Pour **rattacher** une adresse à une autre, la forme écrite ne suffit pas :
+`sip:bob@Example.fr` et `bob@example.fr;transport=ws` désignent la même personne.
+`addressKey()` en tire une clé — `utilisateur@domaine`, sans préfixe ni paramètres, le
+domaine en minuscules (la partie utilisateur, elle, reste sensible à la casse, RFC 3261
+§19.1.4) — qui relie un appel de l'historique à un contact et porte le fil Échanges
+(§4.14). Elle ne sert qu'à comparer : ce qu'on compose reste l'adresse normalisée.
 
 ## 8. Compatibilité Tauri (perspective future — contraintes à respecter dès maintenant)
 

@@ -108,9 +108,11 @@ export function newAccountId(): string {
 export type CallDirection = "outgoing" | "incoming";
 /**
  * `missed` : entrant non répondu (phase 3) ; `canceled` : sortant abandonné
- * avant réponse ; `dropped` : incident réseau (proxy perdu pendant l'appel).
+ * avant réponse ; `dropped` : incident réseau (proxy perdu pendant l'appel) ;
+ * `declined` : entrant refusé d'office en Ne pas déranger (ADR 0007, D6) —
+ * personne ne l'a laissé sonner, ce n'est pas un appel manqué.
  */
-export type CallOutcome = "answered" | "missed" | "failed" | "canceled" | "dropped";
+export type CallOutcome = "answered" | "missed" | "failed" | "canceled" | "dropped" | "declined";
 
 /** Qui a mis fin à un appel établi. */
 export type CallEndedBy = "local" | "remote" | "network";
@@ -161,6 +163,19 @@ export interface CallLogEntry {
   chat?: ChatItem[];
 }
 
+/**
+ * Un contact du carnet (ADR 0007, D7), gardé chiffré par compte comme
+ * l'historique. `uri` est normalisée (`sip:user@domaine`,
+ * `sip/uri.ts`) : c'est elle qui porte l'abonnement de présence, et sa
+ * clé (`addressKey`) qui rattache les appels de l'historique au contact.
+ */
+export interface Contact {
+  id: string;
+  name: string;
+  uri: string;
+  addedAt: number; // epoch ms
+}
+
 export interface SecureStore {
   /** Le coffre entier, migré depuis le format à compte unique s'il le faut. */
   load(): Promise<Vault>;
@@ -172,6 +187,11 @@ export interface SecureStore {
   saveHistory(id: string, entries: CallLogEntry[]): Promise<void>;
   /** Supprime l'historique d'un compte — la suppression du compte l'emporte. */
   deleteHistory(id: string): Promise<void>;
+  /** Carnet de contacts d'un compte, chiffré comme le coffre. */
+  loadContacts(id: string): Promise<Contact[]>;
+  saveContacts(id: string, contacts: Contact[]): Promise<void>;
+  /** Supprime le carnet d'un compte, avec le compte. */
+  deleteContacts(id: string): Promise<void>;
 }
 
 const DB_NAME = "trix";
@@ -262,6 +282,25 @@ async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
 }
 
 const historyId = (id: string): string => `history:${id}`;
+const contactsId = (id: string): string => `contacts:${id}`;
+
+/**
+ * Un carnet relu : ce qui n'a pas la forme d'un contact est écarté plutôt
+ * que de faire tomber tout le carnet — un enregistrement abîmé ne doit pas
+ * coûter les autres.
+ */
+function normalizeContacts(raw: unknown): Contact[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (c): c is Contact =>
+      typeof c === "object" &&
+      c !== null &&
+      typeof c.id === "string" &&
+      typeof c.name === "string" &&
+      typeof c.uri === "string" &&
+      typeof c.addedAt === "number",
+  );
+}
 
 /**
  * Une ligne d'historique relue, complétée des champs apparus après elle —
@@ -415,6 +454,33 @@ export function createBrowserStore(): SecureStore {
       const db = await openDb();
       try {
         await idbDelete(db, historyId(id));
+      } finally {
+        db.close();
+      }
+    },
+
+    async loadContacts(id: string): Promise<Contact[]> {
+      const db = await openDb();
+      try {
+        return normalizeContacts(await decryptGet(db, contactsId(id)));
+      } finally {
+        db.close();
+      }
+    },
+
+    async saveContacts(id: string, contacts: Contact[]): Promise<void> {
+      const db = await openDb();
+      try {
+        await encryptPut(db, contactsId(id), contacts);
+      } finally {
+        db.close();
+      }
+    },
+
+    async deleteContacts(id: string): Promise<void> {
+      const db = await openDb();
+      try {
+        await idbDelete(db, contactsId(id));
       } finally {
         db.close();
       }

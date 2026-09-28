@@ -4,8 +4,9 @@ Trix Communicator is a Total Conversation webphone: audio, video and real-time t
 a browser tab. It talks SIP over a secure WebSocket to your own SIP provider. There is no
 Trix server and no Trix account — everything lives in your browser.
 
-This guide covers the application as shipped today (phases 0 to 4). The DTMF keypad and
-real-time text chat are in place; the chat transcript export is still to come.
+This guide covers the application as shipped today (phases 0 to 5, and presence from
+phase 6). Instant messaging, which will fill the same thread as your calls, is still to
+come.
 
 ---
 
@@ -20,7 +21,7 @@ real-time text chat are in place; the chat transcript export is still to come.
 7. [Making a call](#7-making-a-call)
 8. [During a call](#8-during-a-call)
 9. [Receiving a call](#9-receiving-a-call)
-10. [Call history](#10-call-history)
+10. [Contacts, presence and history](#10-contacts-presence-and-history)
 11. [Diagnosing a call](#11-diagnosing-a-call)
 12. [On a phone](#12-on-a-phone)
 13. [Accessibility](#13-accessibility)
@@ -133,9 +134,9 @@ The pill at the top left of the call screen always says where the phone stands:
 |---|---|
 | **Connecting…** | Opening the WebSocket to the proxy |
 | **Registering…** | REGISTER sent, waiting for the answer |
-| **Registered** (green) | Ready to call and be called; your address is shown next to it |
+| **Registered** (green) | Ready to call and be called; your address is shown next to it. On a server that handles presence, this pill becomes your **status button** instead — see [section 10](#10-contacts-presence-and-history) |
 | **Reconnecting…** | The connection dropped. Trix retries on its own — the screen offers **Try again now** if you do not want to wait |
-| **Asleep** | The device went to sleep. Registration resumes on wake, with nothing to do |
+| **Asleep** | The device went to sleep. Registration resumes on wake, with nothing to do. If your status was being shared, the pill says **Asleep — your contacts see you offline** |
 | **Registration failed** (red) | The reason is spelled out on the stage, with the raw SIP code below and two buttons: **Fix settings** and **Try again** |
 | **Signing out…** | Unregistering before returning to the home screen |
 
@@ -207,7 +208,9 @@ button.
   main button (*Start audio call* / *Start video call*), so the next call goes out the same
   way with a single click. The call only ever leaves through the main button — choosing a
   mode never dials.
-- **Clicking a history line** fills the address field, ready to call back.
+- **Unfolding a line of the Exchanges thread** fills the address field, ready to call back.
+  When the address belongs to one of your contacts, the hint under the field names them
+  and says how they are — *Bob Martin · Available*.
 
 While the call is being set up, the stage shows *Calling…* then *Ringing…* with the
 address you dialled, and you hear a ringing tone — Trix produces it locally, because a
@@ -346,24 +349,102 @@ signal.
 **One call at a time.** A second incoming call while you are busy is refused
 automatically.
 
-## 10. Call history
+## 10. Contacts, presence and history
 
-The panel keeps the last 50 calls for this account, encrypted. Each line shows the
-direction, the correspondent, a camera icon for video calls, the time (or date and time,
-past today), and how the call ended:
+Out of a call, the stage holds the **Exchanges** thread: your contacts and your calls, one
+line per correspondent. On a phone it sits under the address field.
+
+### The thread
+
+- **One line per person**, whatever form their address took — a call to `bob` and one
+  received from `sip:bob@example.com` land on the same line. Each line shows the name,
+  the contact's status and note, the last call and when it happened, and a call button.
+  The call button is filled green when the contact is available.
+- **Lines are grouped** by the last exchange: *Today*, *Yesterday*, *This week*, *Older*,
+  and *No exchange yet* for contacts you have not called.
+- **Unfold a line** to see, first, the contact's actions (add, rename, remove), then
+  their calls day by day. Each call keeps its buttons: the
+  conversation, the SIP trace and the media summary ([section 11](#11-diagnosing-a-call)).
+- **Search** filters on name or address, accents aside.
+- **Clear**, at the bottom, empties the call history — your contacts stay.
+
+A call ends in one of these outcomes:
 
 | Outcome | Meaning |
 |---|---|
 | **Answered** | Connected, with the duration and who hung up — you, the other party, or the network |
 | **Missed** | An incoming call you did not take |
+| **Declined** | An incoming call refused because you were in *Do not disturb* |
 | **Cancelled** | An outgoing call you gave up before it was answered |
 | **Failed** | The call could not be set up; the SIP cause is shown |
 | **Dropped** | The connection to the proxy was lost mid-call |
 
-Click a line to fill the address field and call back. **Clear** empties the list.
+The last 50 calls are kept for each account, encrypted. History reads in whichever language
+the interface is set to, including calls made in another one.
 
-History reads in whichever language the interface is set to, including calls made in
-another one.
+### Contacts
+
+**Add a contact** opens a small form: a name and an address (a bare name is completed
+with your domain, as when calling). A number that is not in your contacts has its own
+line; unfold it and **Add to contacts**. While you have no contact yet, the thread offers
+to add the last person you called in one click. An unfolded contact line also has
+**Rename** and **Remove from contacts**.
+
+Contacts are kept in this browser, encrypted, per account. They are not carried by an
+account sharing link.
+
+### What you see of your contacts
+
+Each contact has a glyph next to their initials, and the word always written beside it:
+
+| Status | Glyph |
+|---|---|
+| **Available** | green disc with a tick |
+| **Busy** | red disc |
+| **On the phone** | red disc with a handset |
+| **Away** | orange disc with clock hands |
+| **Do not disturb** | red disc with a bar |
+| **Offline** | empty ring |
+| **Presence unknown** | dotted ring — not answered yet, or *Waiting for their consent* |
+
+Whether you may see someone is decided by the server, not by Trix. A contact seen on
+several devices shows the most restrictive: someone on the phone at their desk is not
+*Available* because their browser is.
+
+**What you knew is not passed off as current.** While Trix is not registered (asleep,
+reconnecting, registration failed), the glyphs turn to dotted rings and each line says
+when it was last seen — *Available, seen at 14:02 — not updated*.
+
+### Your own status
+
+On a server that handles presence, the pill at the top left is your status. Click it:
+
+- **Available**, **Busy** (calls come through as usual), **Away**, **Do not disturb**
+  (incoming calls are declined without ringing, and noted as *Declined* in the history),
+  **Invisible** (you appear offline to others, but can still be called).
+- **A note** shown to your contacts next to your status.
+- **Two automatic rules**, both on by default: *On the phone* during a call, then back to
+  your chosen status; *Away* after 10 minutes without activity, only from *Available*.
+
+The menu is walked with the arrow keys and closed with <kbd>Esc</kbd>. Your status and
+note are remembered per account. While the page is asleep it unregisters, so your
+contacts see you offline whatever you chose.
+
+### When the server does not handle presence
+
+Trix finds out at each registration what your server accepts, and never asks you:
+
+- **The server shares nothing**: a banner says so once, the pill stays *Registered*, and
+  your contacts are shown without glyphs — they can still be called.
+- **The server shows you others, but does not share your status** (common with
+  Asterisk): the status menu says *This server does not share your status* at the top.
+  Your choice still counts on this side — *Do not disturb* still declines calls — but
+  your contacts do not see it.
+- **Your provider turned presence off** in its deployment settings: no banner, no
+  status, contacts without glyphs.
+- **Another domain shares nothing** — a conference bridge, a partner's server: only the
+  contacts at that domain stay on *Presence unknown*. Everyone else is unaffected, and no
+  banner is shown, since your own server does handle presence.
 
 ## 11. Diagnosing a call
 
@@ -421,8 +502,8 @@ with `?layout=mobile` in the URL, or `?layout=desktop` the other way.
 
 Switching layouts does not interrupt anything — neither the call nor the registration.
 
-Out of a call, the phone view shows the status, the address field, the split call button
-and the history. In a call, the video takes the screen, the timer is inset in the corner,
+Out of a call, the phone view shows your status, the address field, the split call
+button and, below them, the Exchanges thread. In a call, the video takes the screen, the timer is inset in the corner,
 the media controls float at the bottom of the picture and the red circle hangs up.
 
 ## 13. Accessibility
@@ -450,8 +531,13 @@ the browser itself. Nothing is sent anywhere except to the SIP proxy you configu
 |---|---|---|
 | Your account (server, address, display name, HA1 digests, ICE servers, flash setting) | Encrypted, in the browser database | **Your SIP password is never stored** — only the digests computed from it |
 | TURN password | Encrypted, same place | Stored in full, because the relay needs the secret itself |
-| Call history, with any traces and media summaries | Encrypted, same place, per account | **Clear** in the history head removes it |
+| Call history, with any traces and media summaries | Encrypted, same place, per account | **Clear**, under the thread, removes it |
+| Contacts (name and address) | Encrypted, same place, per account | Not carried by an account sharing link |
+| Your status, note and automatic rules | Browser local storage, per account | Kept outside the encrypted store so the status is back the moment the page reloads |
 | Theme, language, text size, panel width, preferred call mode, tracing on/off | Browser local storage | Plain display preferences, no personal data |
+
+Your status and note go to your SIP server, which shares them with whoever it allows to
+watch you.
 
 Clearing the site's data in your browser removes all of it, account included.
 
@@ -474,6 +560,10 @@ Clearing the site's data in your browser removes all of it, account included.
 | **The browser never asks for camera or microphone** | The page is not in a secure context. Serve it over HTTPS |
 | **No system notification while the window is hidden** | Permission was never granted, or was blocked. See [section 5](#5-alerts-display-and-diagnostics) |
 | **The screen does not flash on an incoming call** | The flash is off in your account settings, or your system asks for reduced motion — in which case it is a steady frame instead |
+| *This server does not relay presence* | The server refuses presence subscriptions. Contacts work as an address book; ask your provider whether presence can be enabled |
+| **A contact at another domain stays on “Presence unknown”** | That domain does not share presence, or asks for credentials Trix only holds for your own domain. The browser console says which (`[trix] SUBSCRIBE …`) |
+| **Contacts stay on “Waiting for their consent”** | The server asks each contact to accept being watched, and they have not yet |
+| **My contacts do not see my status** | The server does not accept status publications — the status menu says so — or you are *Invisible* |
 | **The tab says “You cannot receive calls”** | The browser has put the tab to sleep, the machine has, or the registration has dropped. Come back to the tab and Trix registers again by itself — see [staying reachable](#staying-reachable-in-a-background-tab) |
 | **Callers said it rang into the void while the tab was open in the background** | Chrome froze or discarded the tab. Pin it and add Trix to the sites that stay active, as described in [staying reachable](#staying-reachable-in-a-background-tab) |
 

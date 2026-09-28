@@ -19,6 +19,15 @@ import {
 } from "./sdp.js";
 import { traceSocket } from "./trace.js";
 import { useSha256Ha1 } from "./digest.js";
+import {
+  jssipWatcher,
+  NO_PRESENCE,
+  openPresence,
+  type OpenPresence,
+  type PresenceLink,
+  type PresenceSipEvent,
+} from "./presence.js";
+import { createPublisher, jssipPublishSend, type JsSipUa } from "./publish.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 import {
   MEDIA_ERROR_EVENTS,
@@ -477,6 +486,14 @@ export interface SipHandle {
   refresh(): boolean;
   /** INVITE sortant avec la combinaison de médias demandée. Peut lever si la cible est invalide. */
   call(target: string, media: CallMedia, send: (ev: CallSipEvent) => void): CallSession;
+  /**
+   * Ouvre le lien de présence de cet UA (ADR 0007, D12) : abonnements et
+   * publication, dont les événements vont à `send` — celui de
+   * PresenceMachine, jamais celui de PhoneMachine. Un second appel rend le
+   * même lien, rebranché sur le nouveau `send`. Après `stop()`, le lien ne
+   * fait plus rien.
+   */
+  presence(send: (ev: PresenceSipEvent) => void): PresenceLink;
 }
 
 export interface SipPort {
@@ -518,6 +535,9 @@ export function createJsSipPort(): SipPort {
             // comme détail de `reason.callFailed`.
             throw new Error("SIP UA not started (invalid proxy)");
           },
+          presence() {
+            return NO_PRESENCE;
+          },
         };
       }
 
@@ -543,8 +563,11 @@ export function createJsSipPort(): SipPort {
       ua.on("connected", () => send({ type: "sip:connected" }));
       ua.on("disconnected", () => {
         send({ type: "sip:disconnected" });
-        // UA étend EventEmitter au runtime, mais les types JsSIP ne l'exposent pas
-        if (stopped) (ua as unknown as { removeAllListeners(): void }).removeAllListeners();
+        if (stopped) {
+          releaseSha256();
+          // UA étend EventEmitter au runtime, mais les types JsSIP ne l'exposent pas
+          (ua as unknown as { removeAllListeners(): void }).removeAllListeners();
+        }
       });
       ua.on("registered", () => send({ type: "sip:registered" }));
       ua.on("unregistered", () => send({ type: "sip:unregistered" }));
@@ -581,13 +604,51 @@ export function createJsSipPort(): SipPort {
           });
         },
       );
+      // SUBSCRIBE entrant : Trix ne sert pas sa présence lui-même, c'est le
+      // serveur de présence qui répond à notre place (ADR 0007, D1). Sans
+      // cet écouteur, JsSIP répondrait 405 — « méthode inconnue », ce qui
+      // est faux ; 489 dit « paquet d'événements non pris en charge ».
+      ua.on("newSubscribe", (e) => {
+        // la déclaration de JsSIP omet reply(), que l'objet porte bien
+        (e.request as unknown as { reply(code: number): void }).reply(489);
+      });
       ua.start();
+
+      // ouvert à la demande : un serveur sans présence ne voit partir aucun
+      // SUBSCRIBE tant que PresenceMachine n'en a pas demandé
+      let presence: OpenPresence | null = null;
 
       return {
         stop() {
           stopped = true;
-          releaseSha256();
+          // avant ua.stop() : JsSIP n'envoie plus rien une fois l'UA en
+          // fermeture, alors qu'il attend les transactions déjà parties —
+          // le retrait de la publication et les désabonnements partent
+          // donc avant l'unREGISTER (ADR 0007, D2)
+          presence?.close();
+          // l'empreinte SHA-256 reste déposée jusqu'à `disconnected` : les
+          // requêtes de fin (unREGISTER, retrait, désabonnements) peuvent
+          // encore être défiées, et leur 401 arrive après ce stop()
           ua.stop();
+        },
+        presence(sendPresence) {
+          if (stopped) return NO_PRESENCE;
+          if (presence) {
+            presence.rebind(sendPresence);
+            return presence;
+          }
+          presence = openPresence({
+            watcher: jssipWatcher(ua),
+            publisher: (onSupport) =>
+              createPublisher({ send: jssipPublishSend(ua as unknown as JsSipUa), onSupport }),
+            parser: new DOMParser(),
+            entity: `sip:${cfg.username}@${cfg.domain}`,
+            // un tuple par UA : c'est lui que le serveur agrège avec ceux de
+            // nos autres terminaux (sip/pidf.ts)
+            tupleId: crypto.randomUUID(),
+            send: sendPresence,
+          });
+          return presence;
         },
         refresh() {
           if (!ua.isConnected()) return false;
