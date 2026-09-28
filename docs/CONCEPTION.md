@@ -1748,6 +1748,14 @@ tranche pour le serveur : un 2xx dit oui, 489, 405 ou 501 disent non, et plus ri
 chose pour le PUBLISH. Un 403 ou un 404, eux, parlent d'un contact, pas du serveur. Le résultat
 n'est pas gardé : le serveur de demain n'est pas forcément celui d'aujourd'hui.
 
+Seul un contact de notre propre domaine parle pour le serveur. Un 489, 405 ou 501 reçu pour un
+autre domaine (`domainOf` dans `sip/presence.ts`) — un pont de conférence, un serveur pair — ne
+retire que ce domaine : ses contacts passent en inconnu, plus aucun SUBSCRIBE n'y part jusqu'au
+prochain enregistrement, les autres abonnements ne bougent pas. De même, un 401 ou 407 sur un realm
+qui n'est pas celui du compte reste sans réponse, JsSIP n'ayant gardé que le HA1 de ce realm-là ;
+`jssipWatcher` le dit en console (`unansweredChallenge`) plutôt que de laisser le contact inconnu
+sans explication.
+
 **Une présence n'est fraîche que tant qu'on est enregistré.** Hors du couloir, les glyphes
 passent en anneau pointillé et la ligne dit l'heure de ce qu'on sait (« Disponible, vu à 14:02 —
 non actualisé ») ; en veille, la pastille dit que les contacts nous voient hors ligne. C'est la

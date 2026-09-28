@@ -362,7 +362,8 @@ line per correspondent. On a phone it sits under the address field.
   The call button is filled green when the contact is available.
 - **Lines are grouped** by the last exchange: *Today*, *Yesterday*, *This week*, *Older*,
   and *No exchange yet* for contacts you have not called.
-- **Unfold a line** to see its calls day by day. Each call keeps its buttons: the
+- **Unfold a line** to see, first, the contact's actions (add, rename, remove), then
+  their calls day by day. Each call keeps its buttons: the
   conversation, the SIP trace and the media summary ([section 11](#11-diagnosing-a-call)).
 - **Search** filters on name or address, accents aside.
 - **Clear**, at the bottom, empties the call history — your contacts stay.
@@ -441,6 +442,9 @@ Trix finds out at each registration what your server accepts, and never asks you
   your contacts do not see it.
 - **Your provider turned presence off** in its deployment settings: no banner, no
   status, contacts without glyphs.
+- **Another domain shares nothing** — a conference bridge, a partner's server: only the
+  contacts at that domain stay on *Presence unknown*. Everyone else is unaffected, and no
+  banner is shown, since your own server does handle presence.
 
 ## 11. Diagnosing a call
 
@@ -557,6 +561,7 @@ Clearing the site's data in your browser removes all of it, account included.
 | **No system notification while the window is hidden** | Permission was never granted, or was blocked. See [section 5](#5-alerts-display-and-diagnostics) |
 | **The screen does not flash on an incoming call** | The flash is off in your account settings, or your system asks for reduced motion — in which case it is a steady frame instead |
 | *This server does not relay presence* | The server refuses presence subscriptions. Contacts work as an address book; ask your provider whether presence can be enabled |
+| **A contact at another domain stays on “Presence unknown”** | That domain does not share presence, or asks for credentials Trix only holds for your own domain. The browser console says which (`[trix] SUBSCRIBE …`) |
 | **Contacts stay on “Waiting for their consent”** | The server asks each contact to accept being watched, and they have not yet |
 | **My contacts do not see my status** | The server does not accept status publications — the status menu says so — or you are *Invisible* |
 | **The tab says “You cannot receive calls”** | The browser has put the tab to sleep, the machine has, or the registration has dropped. Come back to the tab and Trix registers again by itself — see [staying reachable](#staying-reachable-in-a-background-tab) |

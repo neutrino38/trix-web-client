@@ -157,9 +157,18 @@ machine ne voit qu'un tableau de `Contact`.
 |---|---|
 | SUBSCRIBE et PUBLISH acceptés | tout |
 | SUBSCRIBE accepté, PUBLISH refusé (489, 405, 501) | glyphes des contacts ; le menu de statut ne garde que la note et les règles automatiques, avec une phrase : « Ce serveur ne diffuse pas votre statut » |
-| SUBSCRIBE refusé (489, 405) | bandeau unique, contacts sans glyphe mais appelables, pastille « Enregistré » d'avant (maquette, états limites, cas 1) |
+| SUBSCRIBE refusé (489, 405, 501) | bandeau unique, contacts sans glyphe mais appelables, pastille « Enregistré » d'avant (maquette, états limites, cas 1) |
 
 La découverte est refaite à chaque enregistrement ; son résultat n'est pas gardé.
+
+Seul un refus pour un contact de notre propre domaine vaut pour le serveur. Un 489, 405 ou 501
+pour un autre domaine (un pont de conférence, un serveur pair) dit seulement que ce domaine-là n'a
+pas de présence : ses contacts restent sans glyphe, aucun SUBSCRIBE n'y repart, les autres
+abonnements continuent.
+
+Un 401 ou 407 sur un autre realm que celui du compte reste sans réponse : JsSIP ne garde que le
+HA1 du realm du compte, pas le mot de passe. Le contact reste inconnu, et la console dit pourquoi
+(`[trix] SUBSCRIBE … : challenge 401 du realm « … » sans réponse`).
 
 `config.json` gagne une clé `presence: "no"` qui éteint tout, pour l'exploitant qui sait que son
 serveur n'en veut pas et ne souhaite pas voir partir de SUBSCRIBE (§2.1 de `CONCEPTION.md`).
@@ -266,7 +275,7 @@ traité `phone:down` à ce moment-là.
 |---|---|---|
 | `off` | pas encore enregistré depuis le chargement de la page ; rien de connu | `phone:up` → `live` |
 | `live` | enregistré ; abonnements et publication en cours | SUBSCRIBE refusé → `no_watch` ; `phone:down` → `stale` |
-| `no_watch` | enregistré, SUBSCRIBE refusé (489, 405) : plus aucun SUBSCRIBE jusqu'au prochain enregistrement | `phone:down` → `stale` |
+| `no_watch` | enregistré, SUBSCRIBE refusé (489, 405, 501) : plus aucun SUBSCRIBE jusqu'au prochain enregistrement | `phone:down` → `stale` |
 | `stale` | états connus gardés, marqués périmés (D9) | `phone:up` → `live` |
 | `disabled` | `presence: "no"` dans `config.json` (D8) | aucune |
 
@@ -362,7 +371,8 @@ c'est tout ce qu'une version de JsSIP qui les intègre ferait remplacer.
 ## 5. Validation
 
 Tests automatiques (`npm test`) : PIDF dans les deux sens, cycle ETag, agrégation, péremption à
-chaque sortie du couloir, refus en Ne pas déranger, découverte des trois niveaux.
+chaque sortie du couloir, refus en Ne pas déranger, découverte des trois niveaux, refus d'un
+autre domaine limité à ce domaine.
 
 En réel, trois serveurs :
 

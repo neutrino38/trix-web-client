@@ -1,9 +1,9 @@
 # Spécification — Trix Communicator (Webphone conversation totale)
 
-**Statut :** phases 0 à 3 livrées, phase 4 à faire
+**Statut :** phases 0 à 4bis livrées, présence (phase 6) livrée, messagerie à faire
 **Propriétaire :** Emmanuel Buu / IVèS
 **Créée le :** 2026-08-15
-**Dernière mise à jour :** 2026-08-21 (relecture ligne à ligne contre le code)
+**Dernière mise à jour :** 2026-09-29 (plan d'implémentation : deuxième compte, partage, présence)
 
 ## Vue d'ensemble
 
@@ -425,12 +425,30 @@ clignotant de l'alerte, qui reste le signal principal.
 
 ### Phase 4bis : deuxième compte SIP
 
-- [ ] Coffre en liste : `Vault { accounts, activeId }` en un enregistrement chiffré, historique
+- [x] Coffre en liste : `Vault { accounts, activeId }` en un enregistrement chiffré, historique
       nommé par l'identifiant du compte, migration du compte existant (CONCEPTION §6, ADR 0002)
-- [ ] `PhoneMachine` multi-comptes : compte actif, compte édité (`ctx.editing`), bascule,
+- [x] `PhoneMachine` multi-comptes : compte actif, compte édité (`ctx.editing`), bascule,
       suppression d'un compte avec son historique
-- [ ] Écrans : liste à l'accueil (deux comptes au plus), formulaire création/modification
+- [x] Écrans : liste à l'accueil (deux comptes au plus), formulaire création/modification
       avec suppression, bouton de bascule dans l'en-tête — grisé pendant l'appel
+
+- [x] Partage d'un compte par lien : le compte entier dans une URL, créé sur l'autre appareil
+      après confirmation, jamais l'historique (ADR 0004)
+
+### Phase 6 : présence et fil Échanges
+- [x] Contacts chiffrés avec le compte, ajoutés depuis l'historique ou à la main (ADR 0007, D7)
+- [x] Présence des contacts : SUBSCRIBE/NOTIFY (RFC 6665, RFC 3856), PIDF + RPID lus par un
+      seul module (`sip/pidf.ts`), cinq états et un « inconnu », glyphe toujours doublé du mot
+- [x] Statut publié par PUBLISH greffé sur JsSIP (RFC 3903) : Disponible, Occupé, Absent,
+      Ne pas déranger (appels refusés et notés « Refusé »), Invisible ; note ; deux règles
+      automatiques (En communication, Absent après 10 min d'inactivité)
+- [x] Prise en charge découverte à chaque enregistrement, jamais configurée : tout, abonnements
+      seuls, rien (bandeau) ; un refus venu d'un autre domaine ne vaut que pour ce domaine ;
+      `presence: "no"` dans `config.json` éteint tout
+- [x] Présence périmée hors enregistrement : anneau pointillé, heure de la dernière nouvelle
+- [x] Fil **Échanges** : un correspondant par ligne, présence et dernier événement, dépliable
+      sur ses appels, bureau et mobile
+- [ ] Messagerie instantanée (SIP MESSAGE, RFC 3428) dans le même fil — ADR à venir
 
 ### Hors phase — livré en cours de route
 - [x] Internationalisation : anglais / français / québécois / japonais / chinois simplifié /
@@ -440,6 +458,8 @@ clignotant de l'alerte, qui reste le signal principal.
 - [x] Trace SIP en console, carnet de l'appel dans l'historique
 - [x] Statistiques média en direct et bilan de l'appel terminé
 - [x] Journalisation des défauts de machines sur la console (`ui/diagnostics.ts`)
+- [x] Partage d'écran en cours d'appel (ADR 0005)
+- [x] Endormissement de la page : désenregistrement et réveil, onglet en arrière-plan (ADR 0006)
 
 ### Phase 5 (future) : Tauri
 - [ ] Option d'embarquement Tauri + paquet Ubuntu — **reportée**, contraintes en `CONCEPTION.md` §8

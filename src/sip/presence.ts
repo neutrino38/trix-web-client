@@ -18,6 +18,11 @@
  * `sip:presenceSupport`. Any other refusal (403, 404…) is about that one
  * contact, not about the server.
  *
+ * Only a refusal for a contact of our own domain speaks for the server.
+ * One for another domain (a conference bridge, a peer server) says that
+ * domain has no presence: its contacts read `unknown`, no SUBSCRIBE goes
+ * there again, and the others are left alone.
+ *
  * ## How a subscription ends (RFC 6665 §4.1.3)
  *
  * - `rejected`, `noresource`, `invariant`, or a 4xx other than the
@@ -129,6 +134,12 @@ const REFUSED = new Set([405, 489, 501]);
 const FINAL_REASONS = new Set(["rejected", "noresource", "invariant"]);
 const AT_ONCE_REASONS = new Set(["deactivated", "timeout"]);
 
+/** The host part of a SIP URI, lowercased; null when there is none. */
+export function domainOf(uri: string): string | null {
+  const m = /^sips?:(?:[^@;?]*@)?(\[[^\]]*\]|[^:;?>]+)/i.exec(uri.trim());
+  return m ? m[1]!.toLowerCase() : null;
+}
+
 interface Entry {
   sub: { terminate(): void } | null;
   /** Identifies the subscription in progress (see `start`). */
@@ -145,6 +156,9 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
   const watched = new Map<string, Entry>();
   let closed = false;
   let subscribeRefused = false;
+  const ownDomain = domainOf(deps.entity);
+  /** Other domains that refused SUBSCRIBE itself. */
+  const refusedDomains = new Set<string>();
   const said = new Set<"subscribe" | "publish">();
   let publisher: Publisher | null = null;
 
@@ -203,7 +217,9 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
     switch (end.kind) {
       case "refused":
         if (REFUSED.has(end.status)) {
-          refuseAll();
+          const domain = domainOf(uri);
+          if (domain === null || domain === ownDomain) refuseAll();
+          else refuseDomain(domain);
           return;
         }
         if (end.status >= 500 || end.status === 408) {
@@ -255,9 +271,25 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
     support("subscribe", false);
   };
 
+  /** Another domain said no to SUBSCRIBE: its contacts are not watched. */
+  const refuseDomain = (domain: string) => {
+    refusedDomains.add(domain);
+    for (const [uri, entry] of watched) {
+      if (domainOf(uri) !== domain) continue;
+      watched.delete(uri);
+      drop(entry);
+      presence(uri, UNKNOWN);
+    }
+  };
+
   return {
     watch(uri) {
       if (closed || subscribeRefused || watched.has(uri) || watched.size >= maxWatched) return;
+      const domain = domainOf(uri);
+      if (domain !== null && refusedDomains.has(domain)) {
+        presence(uri, UNKNOWN);
+        return;
+      }
       const entry: Entry = { sub: null, token: null, timer: null, failures: 0 };
       watched.set(uri, entry);
       start(uri, entry);
@@ -314,7 +346,49 @@ interface JsSipSubscriber {
   on(event: "terminated", fn: (code: number, reason: string | undefined, retryAfter: number | undefined) => void): void;
   subscribe(): void;
   terminate(): void;
-  _receiveSubscribeResponse(response: { status_code: number }): void;
+  _receiveSubscribeResponse(response: JsSipResponse): void;
+}
+
+/** The part of a JsSIP `IncomingResponse` we read. */
+interface JsSipResponse {
+  status_code: number;
+  parseHeader?(name: string): unknown;
+}
+
+/**
+ * Why a 401/407 reached the subscriber instead of being answered, as a
+ * console line. JsSIP answers a challenge by itself and passes one on only
+ * when it cannot: once the REGISTER has authenticated, it keeps the HA1 of
+ * the account's realm and drops the password, so a challenge on another
+ * realm — a conference domain, say — is beyond it. It says so at debug
+ * level only; the contact then reads `unknown` with no word as to why.
+ */
+export function unansweredChallenge(
+  uri: string,
+  status: number,
+  challengeRealm: string | null,
+  accountRealm: string | null,
+): string | null {
+  if (status !== 401 && status !== 407) return null;
+  const head = `[trix] SUBSCRIBE ${uri} : challenge ${status}`;
+  if (challengeRealm !== null && accountRealm !== null && challengeRealm !== accountRealm) {
+    return (
+      `${head} du realm « ${challengeRealm} » sans réponse — le compte est ` +
+      `authentifié sur « ${accountRealm} » et ne garde pas son mot de passe`
+    );
+  }
+  return `${head}${challengeRealm !== null ? ` du realm « ${challengeRealm} »` : ""} : identifiants refusés`;
+}
+
+/** The `realm` of the challenge a 401/407 carries; null when unreadable. */
+function challengeRealmOf(response: JsSipResponse): string | null {
+  const name = response.status_code === 407 ? "proxy-authenticate" : "www-authenticate";
+  try {
+    const challenge = response.parseHeader?.(name) as { realm?: unknown } | undefined;
+    return typeof challenge?.realm === "string" ? challenge.realm : null;
+  } catch {
+    return null;
+  }
 }
 
 /** `Subscriber.C` termination codes (JsSIP 3.13). */
@@ -342,6 +416,9 @@ export function jssipWatcher(ua: UA): Watcher {
     const receive = sub._receiveSubscribeResponse.bind(sub);
     sub._receiveSubscribeResponse = (response) => {
       status = response.status_code;
+      const accountRealm = ua.get("realm") as string | null | undefined;
+      const why = unansweredChallenge(uri, status, challengeRealmOf(response), accountRealm ?? null);
+      if (why !== null) console.warn(why);
       receive(response);
     };
 

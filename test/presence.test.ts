@@ -10,6 +10,7 @@ import { UNKNOWN, type XmlParser } from "../src/sip/pidf.js";
 import type { Publisher } from "../src/sip/publish.js";
 import {
   openPresence,
+  unansweredChallenge,
   type PresenceSipEvent,
   type WatchEnd,
   type WatchHandlers,
@@ -253,6 +254,23 @@ describe("discovery (D8)", () => {
     expect(t.subs).toHaveLength(2);
   });
 
+  it.each([489, 405, 501])("a %i from another domain only drops that domain", (status) => {
+    const t = setup();
+    const ROOM = "sip:9876@conf.example.com";
+    t.link.watch(ROOM);
+    t.link.watch("sip:4321@Conf.Example.com;transport=ws");
+    t.link.watch(BOB);
+    end(t.subs[0], { kind: "refused", status });
+    expect(t.support()).toEqual([]);
+    expect(t.presenceOf(ROOM)).toMatchObject({ info: UNKNOWN });
+    expect(t.subs[1]!.terminated).toBe(true);
+    expect(t.subs[2]!.terminated).toBe(false);
+    t.link.watch("sip:1111@conf.example.com");
+    t.link.watch(CAROL);
+    expect(t.subs.map((s) => s.uri)).toEqual([ROOM, "sip:4321@Conf.Example.com;transport=ws", BOB, CAROL]);
+    expect(t.presenceOf("sip:1111@conf.example.com")).toMatchObject({ info: UNKNOWN });
+  });
+
   it("the publisher's verdict is said once, as publish support", () => {
     const t = setup();
     t.link.publish({ state: "busy", note: null, since: null });
@@ -308,5 +326,25 @@ describe("close", () => {
     t.subs[0]!.on.accepted();
     expect(t.events).toEqual([]);
     expect(other).toHaveLength(1);
+  });
+});
+
+describe("unanswered challenge", () => {
+  const ROOM = "sip:9876@conf.example.com";
+
+  it("names both realms when the challenge is on another one", () => {
+    const why = unansweredChallenge(ROOM, 401, "conf.example.com", "example.com");
+    expect(why).toContain(ROOM);
+    expect(why).toContain("« conf.example.com »");
+    expect(why).toContain("« example.com »");
+  });
+
+  it("says the credentials were refused when the realm is the account's", () => {
+    expect(unansweredChallenge(ROOM, 407, "example.com", "example.com")).toContain("identifiants refusés");
+  });
+
+  it("stays quiet on anything but a challenge", () => {
+    expect(unansweredChallenge(ROOM, 404, null, "example.com")).toBeNull();
+    expect(unansweredChallenge(ROOM, 200, null, null)).toBeNull();
   });
 });

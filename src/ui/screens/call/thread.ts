@@ -171,7 +171,8 @@ function body(thread: Thread, now: number): string {
            <button type="button" class="linkbtn" data-act="thread-remove" data-id="${esc(c.id)}">${esc(t("thread.remove"))}</button>
          </div>`
     : "";
-  return `<div class="thread-body">${calls}${actions}</div>`;
+  // the contact's actions come first: after a long history they would be out of sight
+  return `<div class="thread-body">${actions}${calls}</div>`;
 }
 
 function row(thread: Thread, presence: PresenceInstance | null, ready: boolean, now: number): string {

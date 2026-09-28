@@ -54,10 +54,27 @@ otherwise —, the writing direction comes from the tag, and the build fails if 
 from the French reference is missing. Nothing else to register. See
 [docs/CONCEPTION.md §4.7](docs/CONCEPTION.md).
 
+## Presence
+
+Presence is implemented. Trix watches your contacts over SIP (SUBSCRIBE/NOTIFY, PIDF and
+RPID) and publishes your own status (PUBLISH): *Available*, *Busy*, *Away*, *Do not
+disturb* — incoming calls are declined and noted — and *Invisible*, with a note and two
+automatic rules (*On the phone* during a call, *Away* after 10 minutes idle). Contacts and
+calls meet in the **Exchanges thread**, one line per correspondent, on desktop and mobile.
+
+Nothing to configure: what the server supports — everything, your contacts' presence but
+not yours, or nothing — is discovered at each registration, and a refusal from another
+domain (a conference bridge, a peer server) only affects that domain. An operator who wants no SUBSCRIBE at all
+sets `"presence": "no"` in `config.json`. Instant messaging (SIP MESSAGE), which will fill
+the same thread, is still to come. See the [user guide, section
+10](USERGUIDE.md#10-contacts-presence-and-history) and
+[ADR 0007](docs/architecture/0007-presence.md).
+
 ## Documentation
 
 **[USERGUIDE.md](USERGUIDE.md) — the user guide (in English).** Setting up a SIP account,
-placing and receiving calls, the deaf-accessible alert, call history, the built-in
+placing and receiving calls, the deaf-accessible alert, contacts, presence and call
+history, the built-in
 diagnostics, what is stored and where, and a troubleshooting table. Start here if you want
 to *use* Trix rather than build on it.
 
@@ -122,7 +139,7 @@ Full steps, required modules and per-distribution paths:
       tone feedback, and an on-screen echo of the tones that actually went out
       (RFC 4733: a DTMF is neither heard here nor carried by any SIP packet)
 - [x] Phase 4 (chat) — chat over the WebRTC data channel, total conversation
-      experience (adding / removing audioi or video from a call)
+      experience (adding / removing audio or video from a call)
 - [x] Phase 5 (accounts) — deployment configuration through `config.json`, two SIP
       accounts with one registered at a time, and **account sharing by link**: a whole
       account travels in a single URL, created on the other device after a confirmation
