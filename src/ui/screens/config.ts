@@ -135,10 +135,26 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    * fournis ensemble par l'opérateur, et n'en imposer qu'un laisserait une
    * demi-section à remplir. Le déploiement qui en parle les prend donc tous
    * les deux, et la section s'en va (src/deployment.ts).
+   *
+   * Laissée à l'opérateur, elle reste repliée derrière la case « avancé » :
+   * la plupart des comptes n'en ont pas besoin. Elle s'ouvre d'elle-même
+   * quand le compte s'en sert déjà, ou quand c'est elle que la machine
+   * vient de refuser — un réglage en vigueur ou fautif ne se cache pas.
+   * Repliée, elle part quand même avec le formulaire : masquer n'est pas
+   * effacer.
    */
+  const advancedOpen =
+    cfg?.ice.stun != null || turn !== null || suspect === "stun" || suspect === "turn";
   const natSection = dep.ice
     ? ""
-    : `          <h3>${esc(t("config.section.nat"))}</h3>
+    : `          <div class="field">
+            <label class="checkline" for="f-advanced">
+              <input type="checkbox" id="f-advanced" ${advancedOpen ? "checked" : ""}>
+              <span>${esc(t("config.advanced"))}</span>
+            </label>
+          </div>
+          <div data-ref="advanced"${advancedOpen ? "" : " hidden"}>
+          <h3>${esc(t("config.section.nat"))}</h3>
           <p class="section-hint">${esc(t("config.natHint"))}</p>
           <div class="field">
             <label for="f-stun">${esc(t("config.stun"))}</label>
@@ -171,7 +187,8 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
             </label>
             <span class="hint">${esc(t("config.turnTlsHint"))}</span>
           </div>
-          <div class="note">${esc(t("config.turnNote"))}</div>`;
+          <div class="note">${esc(t("config.turnNote"))}</div>
+          </div>`;
 
   /**
    * Le transport du texte : imposé, il n'y a plus de choix à offrir — et
@@ -250,7 +267,6 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
                  placeholder="${cfg ? esc(t("config.passwordSet")) : ""}" ${cfg ? "" : "required"}${inv("credentials")}>
           ${cfg ? `<span class="hint">${esc(t("config.passwordKeep"))}</span>` : ""}
         </div>
-        <div class="note">${esc(t("config.ha1Note"))}</div>
         ${
           // Partager, c'est partager de quoi s'authentifier : le lien porte
           // le HA1, et le mot de passe TURN s'il y en a un. L'avertissement
@@ -387,6 +403,8 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
     form.querySelector<HTMLInputElement>("#f-turn-tls"),
   ];
   const turnTls = turnDeps[2];
+  const advancedToggle = form.querySelector<HTMLInputElement>("#f-advanced");
+  const advancedBlock = form.querySelector<HTMLElement>('[data-ref="advanced"]');
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -428,7 +446,16 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
     for (const field of form.querySelectorAll<HTMLElement>("[data-suspect]")) {
       field.classList.toggle("invalid", field.dataset.suspect === bad);
     }
+    // un champ refusé dans la partie repliée doit se voir pour se corriger
+    if ((bad === "stun" || bad === "turn") && advancedToggle && advancedBlock) {
+      advancedToggle.checked = true;
+      advancedBlock.hidden = false;
+    }
   }
+
+  advancedToggle?.addEventListener("change", () => {
+    if (advancedBlock) advancedBlock.hidden = !advancedToggle.checked;
+  });
 
   turnInput?.addEventListener("input", () => {
     const off = turnInput.value.trim() === "";

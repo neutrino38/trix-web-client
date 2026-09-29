@@ -88,15 +88,14 @@ const messages: Translation = {
   "config.password": "Mot de passe",
   "config.passwordSet": "•••••• (déjà défini)",
   "config.passwordKeep": "Laissez vide pour garder le mot de passe actuel.",
-  "config.ha1Note":
-    "Le mot de passe n'est pas gardé : seules ses empreintes (HA1 MD5 et SHA-256) sont stockées, chiffrées, dans ce navigateur.",
   "config.share": "Partage du compte",
   "config.shareCopy": "Copier le lien de partage",
   "config.shareWarn":
-    "Ce lien-là contient de quoi s'authentifier sur le compte : il vaut le mot de passe. Envoie-le juste à qui doit s'en servir, et par un moyen sûr.",
+    "Utiliser ce lien pour migrer ton compte vers un autre appareil.",
   "config.shareCopied": "Lien de partage copié",
   "config.shareManual": "Lien de partage, à copier",
 
+  "config.advanced": "Réglages avancés",
   "config.section.nat": "Traversée de NAT",
   "config.natHint":
     "Des serveurs fournis par votre fournisseur SIP. Sans eux, un appel entre deux réseaux privés peut aboutir sans qu'on s'entende pantoute.",

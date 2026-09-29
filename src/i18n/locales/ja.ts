@@ -80,15 +80,14 @@ const messages: Translation = {
   "config.password": "パスワード",
   "config.passwordSet": "••••••（設定済み）",
   "config.passwordKeep": "現在のパスワードを保つには、空のままにしてください。",
-  "config.ha1Note":
-    "パスワードそのものは保存されません。暗号化されたダイジェスト（MD5 と SHA-256 の HA1）だけが、このブラウザーに残ります。",
   "config.share": "アカウントの共有",
   "config.shareCopy": "共有リンクをコピー",
   "config.shareWarn":
-    "このリンクには、このアカウントで認証するのに必要なものが入っています。パスワードと同じ重みがあります。使う必要のある相手にだけ、安全な手段で渡してください。",
+    "このリンクを使って、アカウントを別の端末に移行できます。",
   "config.shareCopied": "共有リンクをコピーしました",
   "config.shareManual": "共有リンク（コピー用）",
 
+  "config.advanced": "詳細設定",
   "config.section.nat": "NAT 越え",
   "config.natHint":
     "SIP 事業者から提供されるサーバーです。これがないと、プライベートネットワーク同士の通話は、つながっても音声が届かないことがあります。",

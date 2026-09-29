@@ -84,13 +84,13 @@ const messages: Translation = {
   "config.password": "密码",
   "config.passwordSet": "••••••（已设置）",
   "config.passwordKeep": "留空则保留当前密码。",
-  "config.ha1Note": "密码本身不会保存，只有加密后的摘要（MD5 与 SHA-256 的 HA1）留在此浏览器中。",
   "config.share": "账号共享",
   "config.shareCopy": "复制共享链接",
-  "config.shareWarn": "该链接包含在此账号上完成认证所需的一切，等同于密码。只发给确实需要使用它的人，并通过安全的渠道。",
+  "config.shareWarn": "使用此链接将您的账号迁移到另一台设备。",
   "config.shareCopied": "已复制共享链接",
   "config.shareManual": "共享链接，供复制",
 
+  "config.advanced": "高级设置",
   "config.section.nat": "NAT 穿越",
   "config.natHint":
     "由您的 SIP 运营商提供的服务器。没有它们，两个专用网络之间的通话可能接通了却听不到声音。",

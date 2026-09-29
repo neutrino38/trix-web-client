@@ -297,7 +297,6 @@ Boutons : « Enregistrer et se connecter » (primaire), « Annuler » (retour ac
 sur un compte existant — **« Supprimer ce compte »**, qui efface son enregistrement chiffré
 **et son historique d'appels**, conversations comprises. La suppression demande confirmation
 et n'est proposée que là : l'UA y est déjà arrêté.
-Note visible : « Le mot de passe n'est pas conservé ; seules ses empreintes (HA1 MD5 et SHA-256) sont stockées chiffrées. »
 
 ### Écran 3 — Appel (vue bureau)
 

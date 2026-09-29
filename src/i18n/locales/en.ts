@@ -73,15 +73,14 @@ const messages: Translation = {
   "config.password": "Password",
   "config.passwordSet": "•••••• (already set)",
   "config.passwordKeep": "Leave blank to keep the current password.",
-  "config.ha1Note":
-    "The password itself is never stored — only its digests (HA1 in MD5 and SHA-256), encrypted, in this browser.",
   "config.share": "Account sharing",
   "config.shareCopy": "Copy sharing link",
   "config.shareWarn":
-    "This link carries everything needed to authenticate on this account: it is worth the password. Only pass it to whoever must use it, and over a safe channel.",
+    "Use this link to move your account to another device.",
   "config.shareCopied": "Sharing link copied",
   "config.shareManual": "Sharing link, to copy",
 
+  "config.advanced": "Advanced settings",
   "config.section.nat": "NAT traversal",
   "config.natHint":
     "Servers supplied by your SIP provider. Without them, a call between two private networks can connect perfectly well while nobody hears a thing.",
