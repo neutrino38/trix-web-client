@@ -95,6 +95,8 @@ export interface MessagingCtx {
   now: () => number;
 
   accountId: string | null;
+  /** The account's vault has been read (or failed to be): what follows is news. */
+  loaded: boolean;
   /** In the order they were filed; the thread sorts by `at`. */
   messages: MessageEntry[];
   contacts: Contact[];
@@ -210,6 +212,7 @@ function account(ev: Ev<"phone:account">, ctx: MessagingCtx, fx: MFx) {
   ctx.contacts = ev.contacts;
   if (ev.accountId === ctx.accountId) return stay("same account");
   ctx.accountId = ev.accountId;
+  ctx.loaded = false;
   ctx.messages = [];
   ctx.inFlight = [];
   ctx.quarantine = [];
@@ -231,7 +234,9 @@ function account(ev: Ev<"phone:account">, ctx: MessagingCtx, fx: MFx) {
  * so one that was — a window of a few seconds — may arrive twice.
  */
 function loaded(ev: Ev<"task:loadMessages">, ctx: MessagingCtx) {
-  if (!ev.ok || ev.value.accountId !== ctx.accountId) return stay("messages not for us");
+  if (ev.ok && ev.value.accountId !== ctx.accountId) return stay("messages not for us");
+  ctx.loaded = true;
+  if (!ev.ok) return stay("vault unreadable");
   const ids = new Set(ev.value.messages.map((m) => m.id));
   ctx.messages = [...ev.value.messages, ...ctx.messages.filter((m) => !ids.has(m.id))];
   flush(ctx);
@@ -433,6 +438,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
     enabled: true,
     now: Date.now,
     accountId: null,
+    loaded: false,
     messages: [],
     contacts: [],
     link: null,

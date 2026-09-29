@@ -8,6 +8,8 @@ import { linkMessaging } from "./machines/messagingsignals.js";
 import { bindPresence } from "./ui/presence.js";
 import { bindMessaging } from "./ui/messaging.js";
 import { syncStrangerPrompt } from "./ui/strangerprompt.js";
+import { watchMessageAlerts } from "./ui/messagealerts.js";
+import { openThreadKey } from "./ui/screens/call/thread.js";
 import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
@@ -144,6 +146,8 @@ bindMessaging(messaging);
 messaging.subscribe(scheduleRender);
 // la fenêtre d'un inconnu suit la machine, hors du rendu des écrans (D5)
 messaging.subscribe(() => syncStrangerPrompt(phone, messaging));
+// titre, icône, notification, annonce, pastille d'appel (D10, D11)
+watchMessageAlerts(phone, messaging, openThreadKey);
 renderApp(root, phone);
 
 // bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé

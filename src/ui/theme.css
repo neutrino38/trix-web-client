@@ -1141,6 +1141,16 @@ fieldset.field { border: none; }
 }
 .trace-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
 
+/* Pastille de l'écran d'appel (ADR 0008, D10) : en haut, au milieu,
+   au-dessus de la vidéo ; elle n'ouvre rien. */
+.msg-badge {
+  position: fixed; top: 0.6rem; left: 50%; transform: translateX(-50%); z-index: 50;
+  background: var(--accent); color: #fff; font-size: 0.85rem; font-weight: 600;
+  padding: 0.35rem 0.9rem; border-radius: 999px; box-shadow: var(--shadow);
+  max-width: calc(100vw - 2rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Message d'une adresse inconnue (ADR 0008, D5) : l'adresse d'abord, les
    messages tels quels, trois réponses. */
 .stranger-dialog {

@@ -518,6 +518,11 @@ function redraw(m: Mounted): void {
   if (back instanceof HTMLTextAreaElement) back.setSelectionRange(back.value.length, back.value.length);
 }
 
+/** The line unfolded on the thread, if any: a message there is announced (ADR 0008, D11). */
+export function openThreadKey(): string | null {
+  return mounted?.node.isConnected ? openKey : null;
+}
+
 /**
  * The open line's messages are read once it shows in a visible tab
  * (ADR 0008, D11). The machine changes nothing when nothing is unread,

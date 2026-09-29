@@ -41,6 +41,11 @@ let base: string | null = null;
 let baseRead = false;
 let state: string | null = null;
 let override: string | null = null;
+/**
+ * Unread messages (ADR 0008, D11): the lowest layer. Being unreachable
+ * says more than a message waiting, and an alert more than both.
+ */
+let unread: string | null = null;
 
 function apply(): void {
   const node = link();
@@ -48,7 +53,7 @@ function apply(): void {
     base = node.getAttribute("href");
     baseRead = true;
   }
-  const color = override ?? state;
+  const color = override ?? state ?? unread;
   if (color !== null) {
     node.href = dotUri(color);
     return;
@@ -62,6 +67,12 @@ function apply(): void {
 /** Pastille durable dérivée de l'état (joignabilité) ; `null` rend la main. */
 export function setFaviconState(color: string | null): void {
   state = color;
+  apply();
+}
+
+/** Messages non lus : la couche la plus basse ; `null` l'efface. */
+export function setFaviconUnread(color: string | null): void {
+  unread = color;
   apply();
 }
 

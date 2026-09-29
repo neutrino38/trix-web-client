@@ -18,9 +18,17 @@ const BASE = "Trix Communicator";
 
 let state = BASE;
 let override: string | null = null;
+/** Unread messages (ADR 0008, D11): a "(3) " before the state, never over an alert. */
+let unread = 0;
 
 function apply(): void {
-  document.title = override ?? state;
+  document.title = override ?? (unread > 0 ? `(${unread}) ${state}` : state);
+}
+
+/** Unread instant messages, shown before the state title; 0 hides it. */
+export function setTitleUnread(n: number): void {
+  unread = n;
+  apply();
 }
 
 /** Titre dérivé de l'état courant ; `null` remet le titre de repos. */
