@@ -1,6 +1,7 @@
 # ADR 0008 — La messagerie instantanée
 
-**Statut :** proposé — 2026-09-29
+**Statut :** accepté — 2026-09-29 · **implémenté** — 2026-09-29 (M-1 à M-10) ; validation
+réelle à faire (§5)
 **Maquette :** le segment Messages et le champ d'écriture du fil sont ceux du canevas « Trix —
 Présence » ([docs/mockups/trix-presence.html](../mockups/trix-presence.html)) ; la fenêtre
 « Message d'un inconnu », la pastille de l'écran d'appel et le menu Bloquer sont **à dessiner**

@@ -1,6 +1,6 @@
 # Spécification — Trix Communicator (Webphone conversation totale)
 
-**Statut :** phases 0 à 4bis livrées, présence (phase 6) livrée, messagerie à faire
+**Statut :** phases 0 à 4bis livrées, présence et messagerie (phase 6) livrées
 **Propriétaire :** Emmanuel Buu / IVèS
 **Créée le :** 2026-08-15
 **Dernière mise à jour :** 2026-09-29 (plan d'implémentation : deuxième compte, partage, présence)
@@ -447,7 +447,10 @@ clignotant de l'alerte, qui reste le signal principal.
 - [x] Présence périmée hors enregistrement : anneau pointillé, heure de la dernière nouvelle
 - [x] Fil **Échanges** : un correspondant par ligne, présence et dernier événement, dépliable
       sur ses appels, bureau et mobile
-- [ ] Messagerie instantanée (SIP MESSAGE, RFC 3428) dans le même fil — [ADR 0008](architecture/0008-messagerie.md), proposé
+- [x] Messagerie instantanée (SIP MESSAGE, RFC 3428) dans le même fil —
+      [ADR 0008](architecture/0008-messagerie.md) : `text/plain`, file d'envoi hors
+      enregistrement, inconnus en quarantaine (202, deux minutes à l'affichage), contacts
+      bloqués (603, appels compris), pastille en appel ; validation réelle à faire (§5)
 
 ### Hors phase — livré en cours de route
 - [x] Internationalisation : anglais / français / québécois / japonais / chinois simplifié /

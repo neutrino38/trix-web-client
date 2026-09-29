@@ -868,8 +868,8 @@ saisie, et Échap le range.
 
 Le tchat de la phase 4 est celui de **l'appel** : il naît avec le canal de données,
 vit tant que la communication dure, et disparaît de l'écran quand elle se termine. La
-messagerie hors appel — événements, messages différés — est un autre composant, à
-concevoir plus tard ; rien ici ne doit lui fermer la porte.
+messagerie hors appel — événements, messages différés — est un autre composant,
+décrit au §4.15 (ADR 0008) ; les deux ne se mélangent pas.
 
 #### Le texte est un média (ADR 0003, D1)
 
@@ -1788,6 +1788,62 @@ module `presence`, un Asterisk (le code exact qu'il rend au PUBLISH, ce qu'il me
 poste en communication), et le délai après lequel un onglet gelé passe hors ligne chez les autres
 par la seule expiration de sa publication. Ce qui a été vu tient à un faux registrar local : les
 glyphes, la péremption, le serveur qui refuse SUBSCRIBE, et `presence: "no"`.
+
+### 4.15 La messagerie instantanée (ADR 0008)
+
+Des messages entiers, par SIP MESSAGE (RFC 3428), en `text/plain` seul, hors de tout appel. Le
+tchat de l'appel reste du texte temps réel (§4.9) : un MESSAGE reçu pendant un appel va dans le
+fil, pas dans le panneau.
+
+**Trois couches, sur le modèle de la présence.**
+
+- `sip/message.ts` tient la politique sans voir JsSIP : il répond à un MESSAGE entrant **avant**
+  que quiconque le range — 415 pour un autre type ou un autre jeu de caractères, 403 pour un
+  `From` sans utilisateur, 200 pour un corps vide, 480 tant qu'aucun lien n'est ouvert —, puis
+  laisse la machine choisir. JsSIP répond 200 de lui-même à ce que personne n'a répondu, et
+  `Message.accept()` ne sait dire que 200 : la réponse part donc sur la requête, et le `Message`
+  est marqué répondu. Une machine qui n'a rien choisi vaut 480, jamais un 200 trompeur.
+- `MessagingMachine` (`machines/messaging.ts`), troisième paire, alimentée par
+  `machines/messagingsignals.ts` : `phone:account` d'abord, même hors enregistrement — ce qui
+  est écrit hors ligne attend dans le coffre —, puis `phone:up` / `phone:down`, les appels et le
+  carnet. Chaque état traite chaque événement, écrit en toutes lettres : FSL garderait pour plus
+  tard un événement qu'aucun état ne prend, et un MESSAGE doit être répondu dans le même tour.
+- L'écran : le fil (§4.14) mêle appels et messages, `ui/strangerprompt.ts` montre la fenêtre
+  d'un inconnu, `ui/messagealerts.ts` tient le titre, l'icône, la notification, les annonces et
+  la pastille de l'écran d'appel.
+
+**Qui peut écrire.** Un contact, ou quelqu'un à qui l'on a écrit depuis cet appareil : 200, et
+le message entre dans le fil. Un contact bloqué : 603, rien n'est gardé — ses appels aussi
+reçoivent 603, avant Ne pas déranger et à la place du 486 en cours d'appel. Un inconnu : **202**,
+et le message attend en mémoire, jamais dans le coffre. Garder la transaction ouverte le temps
+que l'utilisateur décide n'était pas possible : l'expéditeur abandonne une transaction
+non-INVITE à 32 s (Timer F), le proxy avant lui. La fenêtre de décision compte deux minutes à
+partir de son premier affichage dans un onglet visible et hors appel ; une minuterie qui arrive
+après la décision porte l'instant d'affichage et tombe sur rien. Au-delà de vingt inconnus en
+attente, 480.
+
+**L'envoi.** Un message écrit hors enregistrement reste `pending` et part au retour, dans
+l'ordre. Un échec garde sa raison et ne se réessaie qu'à la main : un message parti deux fois
+n'a rien, en `text/plain`, pour se dédoublonner. Pour la même raison, un message en vol quand
+l'enregistrement tombe passe en échec (« connexion perdue avant la réponse ») plutôt que de
+repartir. 405 ou 501 : le serveur ne route pas MESSAGE, l'écriture se ferme jusqu'au prochain
+enregistrement. Le corps est plafonné à 1 000 octets UTF-8 (RFC 3428 §8 plafonne la requête à
+1 300).
+
+**`Allow` et `Accept`.** JsSIP annonce MESSAGE dans `Allow` quoi qu'il arrive, et son 415 ne
+cite que `application/sdp`. `announceMessaging()` réécrit les deux constantes de JsSIP : MESSAGE
+et `text/plain` quand la messagerie est allumée, rien de tout cela avec `"messaging": "no"` — le
+405 dit alors vrai.
+
+**Ce qui est nouveau n'est pas ce qui est relu.** `ui/messagealerts.ts` ne tient pour nouvelle
+qu'une entrée qu'il n'avait pas vue une fois le coffre du compte lu (`ctx.loaded`) : les non-lus
+d'hier ne déclenchent pas de notification au rechargement.
+
+**Reste à valider en réel** (ADR 0008, §5) : Kamailio avec `msilo` (ce qu'il pose dans `Date`,
+la remise au réveil d'un onglet gelé), un autre client (Linphone) dans les deux sens, et un
+serveur qui ne route pas MESSAGE. Ce qui a été vu tient aux tests et à l'écran, avec des
+messages placés en mémoire : le fil, les états, le compteur, la fenêtre d'un inconnu, la
+pastille d'appel, le mobile à 400 px.
 
 ## 5. Intégration JsSIP
 

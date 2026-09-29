@@ -21,7 +21,7 @@ come.
 7. [Making a call](#7-making-a-call)
 8. [During a call](#8-during-a-call)
 9. [Receiving a call](#9-receiving-a-call)
-10. [Contacts, presence and history](#10-contacts-presence-and-history)
+10. [Contacts, messages, presence and history](#10-contacts-messages-presence-and-history)
 11. [Diagnosing a call](#11-diagnosing-a-call)
 12. [On a phone](#12-on-a-phone)
 13. [Accessibility](#13-accessibility)
@@ -134,7 +134,7 @@ The pill at the top left of the call screen always says where the phone stands:
 |---|---|
 | **Connecting…** | Opening the WebSocket to the proxy |
 | **Registering…** | REGISTER sent, waiting for the answer |
-| **Registered** (green) | Ready to call and be called; your address is shown next to it. On a server that handles presence, this pill becomes your **status button** instead — see [section 10](#10-contacts-presence-and-history) |
+| **Registered** (green) | Ready to call and be called; your address is shown next to it. On a server that handles presence, this pill becomes your **status button** instead — see [section 10](#10-contacts-messages-presence-and-history) |
 | **Reconnecting…** | The connection dropped. Trix retries on its own — the screen offers **Try again now** if you do not want to wait |
 | **Asleep** | The device went to sleep. Registration resumes on wake, with nothing to do. If your status was being shared, the pill says **Asleep — your contacts see you offline** |
 | **Registration failed** (red) | The reason is spelled out on the stage, with the raw SIP code below and two buttons: **Fix settings** and **Try again** |
@@ -349,23 +349,25 @@ signal.
 **One call at a time.** A second incoming call while you are busy is refused
 automatically.
 
-## 10. Contacts, presence and history
+## 10. Contacts, messages, presence and history
 
-Out of a call, the stage holds the **Exchanges** thread: your contacts and your calls, one
-line per correspondent. On a phone it sits under the address field.
+Out of a call, the stage holds the **Exchanges** thread: your contacts, your calls and your
+messages, one line per correspondent. On a phone it sits under the address field.
 
 ### The thread
 
 - **One line per person**, whatever form their address took — a call to `bob` and one
   received from `sip:bob@example.com` land on the same line. Each line shows the name,
-  the contact's status and note, the last call and when it happened, and a call button.
-  The call button is filled green when the contact is available.
+  the contact's status and note, the last call or message and when it happened, the number
+  of unread messages, and a call button. The call button is filled green when the contact
+  is available.
 - **Lines are grouped** by the last exchange: *Today*, *Yesterday*, *This week*, *Older*,
   and *No exchange yet* for contacts you have not called.
-- **Unfold a line** to see, first, the contact's actions (add, rename, remove), then
-  their calls day by day. Each call keeps its buttons: the
+- **Unfold a line** to see, first, the contact's actions (add, rename, remove, block), then
+  their calls and messages day by day, oldest first, and the field to write. *All*,
+  *Calls* and *Messages* filter what is listed. Each call keeps its buttons: the
   conversation, the SIP trace and the media summary ([section 11](#11-diagnosing-a-call)).
-- **Search** filters on name or address, accents aside.
+- **Search** filters on name, address or the text of a message, accents aside.
 - **Clear**, at the bottom, empties the call history — your contacts stay.
 
 A call ends in one of these outcomes:
@@ -392,6 +394,55 @@ to add the last person you called in one click. An unfolded contact line also ha
 
 Contacts are kept in this browser, encrypted, per account. They are not carried by an
 account sharing link.
+
+### Messages
+
+Unfold a line and write in the field at the bottom: <kbd>Enter</kbd> sends,
+<kbd>Shift</kbd>+<kbd>Enter</kbd> goes to the next line. A message holds up to 1000 bytes —
+about 1000 letters, fewer with accents or other scripts; a counter shows when you get close.
+
+Each message you send says where it is:
+
+| Shown | Meaning |
+|---|---|
+| nothing | Delivered to the server. Trix cannot tell whether it was read. |
+| **Waiting** | Not sent yet: you are not registered. It leaves as soon as you are. |
+| **Not delivered**, and why | The server or the other side refused it, or nobody answered. **Retry** sends it again. |
+
+Opening a line reads its messages. Unread messages show on the line, before the tab title and
+as a dot on the tab icon; with the tab in the background, a system notification tells who wrote.
+**During a call**, messages never interrupt: a badge at the top of the screen says how many
+arrived and from whom, and you read them after hanging up.
+
+Things to know:
+
+- **Your server must keep messages** while Trix is asleep in a background tab — most do,
+  some don't. Ask your provider if messages go missing.
+- **Messages sent from your other devices do not appear here**: you may see someone's answer
+  without the question you asked from your phone. SIP has no way to copy them across.
+- If your server does not carry messages at all, a banner says so and the field closes
+  until the next connection.
+
+### Messages from unknown addresses
+
+A message from someone who is not in your contacts, and whom you have not written to, is not
+put in the thread. A window shows it first, with the **address** it came from — the name the
+sender gives is only shown in brackets, since anyone can pick it:
+
+- **Add to contacts**: the sender joins your contacts, and their messages the thread.
+- **Refuse** (or <kbd>Esc</kbd>): the messages are erased. The sender is not told.
+- **Block**: erased, and the address is blocked.
+
+Without an answer, the window closes after two minutes and the messages are erased. The two
+minutes only start once the window is on screen: not while the tab is in the background, not
+during a call — the window waits for you to hang up. Nothing of these messages is saved until
+you accept them.
+
+### Blocking
+
+**Block**, in an unfolded line, refuses that address's calls and messages: calls never ring
+and are not listed in the history, messages are dropped, and you stop seeing their status. The
+line stays, marked *Blocked*, with **Unblock**.
 
 ### What you see of your contacts
 
@@ -532,7 +583,8 @@ the browser itself. Nothing is sent anywhere except to the SIP proxy you configu
 | Your account (server, address, display name, HA1 digests, ICE servers, flash setting) | Encrypted, in the browser database | **Your SIP password is never stored** — only the digests computed from it |
 | TURN password | Encrypted, same place | Stored in full, because the relay needs the secret itself |
 | Call history, with any traces and media summaries | Encrypted, same place, per account | **Clear**, under the thread, removes it |
-| Contacts (name and address) | Encrypted, same place, per account | Not carried by an account sharing link |
+| Contacts (name, address, blocked or not) | Encrypted, same place, per account | Not carried by an account sharing link |
+| Messages (text, time, state, read or not) | Encrypted, same place, per account | The 1000 most recent per correspondent. Not carried by an account sharing link. Messages from unknown addresses are never saved until you accept them |
 | Your status, note and automatic rules | Browser local storage, per account | Kept outside the encrypted store so the status is back the moment the page reloads |
 | Theme, language, text size, panel width, preferred call mode, tracing on/off | Browser local storage | Plain display preferences, no personal data |
 

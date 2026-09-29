@@ -65,10 +65,15 @@ calls meet in the **Exchanges thread**, one line per correspondent, on desktop a
 Nothing to configure: what the server supports — everything, your contacts' presence but
 not yours, or nothing — is discovered at each registration, and a refusal from another
 domain (a conference bridge, a peer server) only affects that domain. An operator who wants no SUBSCRIBE at all
-sets `"presence": "no"` in `config.json`. Instant messaging (SIP MESSAGE), which will fill
-the same thread, is still to come. See the [user guide, section
-10](USERGUIDE.md#10-contacts-presence-and-history) and
-[ADR 0007](docs/architecture/0007-presence.md).
+sets `"presence": "no"` in `config.json`.
+
+Instant messages (SIP MESSAGE, in plain text) fill the same thread: written offline, they
+leave at the next registration; a message from an unknown address waits for you to accept
+it; blocking a contact refuses their calls and messages alike. The SIP server must keep
+messages while the page sleeps. `"messaging": "no"` turns it all off. See the [user guide,
+section 10](USERGUIDE.md#10-contacts-messages-presence-and-history),
+[ADR 0007](docs/architecture/0007-presence.md) and
+[ADR 0008](docs/architecture/0008-messagerie.md).
 
 ## Documentation
 
@@ -150,7 +155,11 @@ Full steps, required modules and per-distribution paths:
       rules, and the **Exchanges thread**: contacts and calls, one line per correspondent,
       on desktop and mobile. Whatever the server supports is discovered at each
       registration (see [ADR 0007](docs/architecture/0007-presence.md))
-- [ ] Phase 6 (messaging) — instant messaging (SIP MESSAGE) in the same thread
+- [x] Phase 6 (messaging) — instant messaging (SIP MESSAGE, text/plain) in the same
+      thread: messages written offline leave at the next registration, unknown senders
+      wait for your answer, contacts can be blocked, and a badge tells about messages
+      during a call. The server must keep messages while the page sleeps (see
+      [ADR 0008](docs/architecture/0008-messagerie.md))
 
 ## Observability
 
