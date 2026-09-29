@@ -124,8 +124,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
               <span><b>${esc(t("config.turnTlsLabel"))}</b>${esc(t("config.turnTlsDesc"))}</span>
             </label>
             <span class="hint">${esc(t("config.turnTlsHint"))}</span>
-          </div>
-          <div class="note">${esc(t("config.turnNote"))}</div>`;
+          </div>`;
 
   /**
    * Ce dont la plupart des comptes se passent — un identifiant

@@ -83,14 +83,14 @@ const messages: Translation = {
   "config.advanced": "Advanced settings",
   "config.section.nat": "NAT traversal",
   "config.natHint":
-    "Servers supplied by your SIP provider. Without them, a call between two private networks can connect perfectly well while nobody hears a thing.",
+    "Servers that let calls go through when you call from a private network connected to the Internet through a NAT.",
   "config.stun": "STUN server",
   "config.stunPlaceholder": "stun.example.com:3478",
   "config.stunHint": "Optional. Host on its own or host:port — with no port, 3478 is used.",
   "config.turn": "TURN server",
   "config.turnPlaceholder": "turn.example.com:3478",
   "config.turnHint":
-    "Optional — relays the media streams when a direct connection fails. Leave blank if you have none.",
+    "Relays the media streams when a direct connection fails. Leave blank if you have none.",
   "config.turnUser": "TURN username",
   "config.turnPass": "TURN password",
   "config.turnPassKeep": "Leave blank to keep the current password.",
@@ -98,8 +98,6 @@ const messages: Translation = {
   "config.turnTlsDesc":
     " — encrypted relay (“turns:”), which still gets through where only TLS traffic is allowed",
   "config.turnTlsHint": "With no port given, 5349 is then used instead of 3478.",
-  "config.turnNote":
-    "The TURN password, by contrast, is stored (encrypted): the relay asks for the secret itself on every call, so a digest would not do.",
 
   "config.section.rtt": "Real-time text",
   "config.rttHint":

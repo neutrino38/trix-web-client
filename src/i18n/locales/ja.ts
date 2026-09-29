@@ -90,7 +90,7 @@ const messages: Translation = {
   "config.advanced": "詳細設定",
   "config.section.nat": "NAT 越え",
   "config.natHint":
-    "SIP 事業者から提供されるサーバーです。これがないと、プライベートネットワーク同士の通話は、つながっても音声が届かないことがあります。",
+    "NAT 経由でインターネットに接続したプライベートネットワークから発信するときに、通話を確立できるようにするサーバーです。",
   "config.stun": "STUN サーバー",
   "config.stunPlaceholder": "stun.example.jp:3478",
   "config.stunHint":
@@ -98,7 +98,7 @@ const messages: Translation = {
   "config.turn": "TURN サーバー",
   "config.turnPlaceholder": "turn.example.jp:3478",
   "config.turnHint":
-    "任意 — 直接接続できないときにメディアを中継します。使わない場合は空のままにしてください。",
+    "直接接続できないときにメディアを中継します。使わない場合は空のままにしてください。",
   "config.turnUser": "TURN ユーザー名",
   "config.turnPass": "TURN パスワード",
   "config.turnPassKeep": "現在のパスワードを保つには、空のままにしてください。",
@@ -106,8 +106,6 @@ const messages: Translation = {
   "config.turnTlsDesc":
     " — 暗号化された中継（「turns:」）。TLS の通信しか許されない場所でも通ります",
   "config.turnTlsHint": "ポートを指定しない場合は、3478 ではなく 5349 が使われます。",
-  "config.turnNote":
-    "TURN のパスワードは、これだけは（暗号化して）保存されます。中継は通話のたびに秘密そのものを求めるため、ダイジェストでは足りません。",
 
   "config.section.rtt": "リアルタイム文字",
   "config.rttHint":

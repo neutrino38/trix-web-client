@@ -93,21 +93,19 @@ const messages: Translation = {
   "config.advanced": "高级设置",
   "config.section.nat": "NAT 穿越",
   "config.natHint":
-    "由您的 SIP 运营商提供的服务器。没有它们，两个专用网络之间的通话可能接通了却听不到声音。",
+    "当您从经 NAT 连接互联网的专用网络发起呼叫时，用于建立通话的服务器。",
   "config.stun": "STUN 服务器",
   "config.stunPlaceholder": "stun.example.com:3478",
   "config.stunHint": "可选。只填主机，或填主机:端口 — 不填端口则使用 3478。",
   "config.turn": "TURN 服务器",
   "config.turnPlaceholder": "turn.example.com:3478",
-  "config.turnHint": "可选 — 直连失败时中继媒体流。不使用则留空。",
+  "config.turnHint": "直连失败时中继媒体流。不使用则留空。",
   "config.turnUser": "TURN 用户名",
   "config.turnPass": "TURN 密码",
   "config.turnPassKeep": "留空则保留当前密码。",
   "config.turnTlsLabel": "基于 TLS 的 TURN",
   "config.turnTlsDesc": " — 加密中继（“turns:”），在只允许 TLS 流量的网络中依然通得过",
   "config.turnTlsHint": "未指定端口时，将使用 5349 而不是 3478。",
-  "config.turnNote":
-    "TURN 密码则会（加密）保存：中继在每次通话时都要求密码本身，摘要不够用。",
 
   "config.section.rtt": "实时文字",
   "config.rttHint": "通话过程中，文字逐字发出、逐字读到。走哪条路，取决于您呼叫的平台。",

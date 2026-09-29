@@ -82,14 +82,14 @@ const messages = {
   "config.advanced": "Réglages avancés",
   "config.section.nat": "Traversée de NAT",
   "config.natHint":
-    "Serveurs fournis par votre opérateur SIP. Sans eux, un appel entre deux réseaux privés peut aboutir sans qu'aucun son ne passe.",
+    "Serveurs permettant l'établissement des communications quand on appelle depuis un réseau privé relié à Internet via un NAT.",
   "config.stun": "Serveur STUN",
   "config.stunPlaceholder": "stun.example.fr:3478",
   "config.stunHint": "Facultatif. Hôte seul ou hôte:port — sans port, 3478 est utilisé.",
   "config.turn": "Serveur TURN",
   "config.turnPlaceholder": "turn.example.fr:3478",
   "config.turnHint":
-    "Facultatif — relais des flux média quand la connexion directe échoue. Laisser vide pour ne pas en utiliser.",
+    "Relais des flux média quand la connexion directe échoue. Laisser vide pour ne pas en utiliser.",
   "config.turnUser": "Identifiant TURN",
   "config.turnPass": "Mot de passe TURN",
   "config.turnPassKeep": "Laisser vide pour conserver le mot de passe actuel.",
@@ -97,8 +97,6 @@ const messages = {
   "config.turnTlsDesc":
     " — relais chiffré (« turns: »), qui passe là où seul le trafic TLS est autorisé",
   "config.turnTlsHint": "Sans port explicite, 5349 est alors utilisé au lieu de 3478.",
-  "config.turnNote":
-    "Le mot de passe TURN, lui, est conservé (chiffré) : le relais réclame le secret lui-même à chaque appel, une empreinte n'y suffirait pas.",
 
   "config.section.rtt": "Texte en temps réel",
   "config.rttHint":

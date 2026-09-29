@@ -97,22 +97,20 @@ const messages: Translation = {
   "config.advanced": "إعدادات متقدّمة",
   "config.section.nat": "اجتياز NAT",
   "config.natHint":
-    "خوادم يوفّرها مشغّل SIP لديك. من دونها قد تنجح مكالمة بين شبكتين خاصّتين من دون أن يمرّ أيّ صوت.",
+    "خوادم تتيح إجراء الاتصالات عند الاتصال من شبكة خاصّة موصولة بالإنترنت عبر NAT.",
   "config.stun": "خادم STUN",
   "config.stunPlaceholder": "stun.example.fr:3478",
   "config.stunHint": "اختياري. المضيف وحده أو المضيف:المنفذ — وبلا منفذ يُستخدم 3478.",
   "config.turn": "خادم TURN",
   "config.turnPlaceholder": "turn.example.fr:3478",
   "config.turnHint":
-    "اختياري — لترحيل تدفّقات الوسائط عند تعذّر الاتصال المباشر. اتركه فارغًا لعدم استخدام أيّ مُرحِّل.",
+    "لترحيل تدفّقات الوسائط عند تعذّر الاتصال المباشر. اتركه فارغًا لعدم استخدام أيّ مُرحِّل.",
   "config.turnUser": "معرّف TURN",
   "config.turnPass": "كلمة مرور TURN",
   "config.turnPassKeep": "اتركها فارغة للإبقاء على كلمة المرور الحالية.",
   "config.turnTlsLabel": "TURN عبر TLS",
   "config.turnTlsDesc": " — ترحيل مشفَّر («turns:») يمرّ حيث لا يُسمح إلا بحركة TLS",
   "config.turnTlsHint": "ومن دون منفذ صريح، يُستخدم عندئذٍ 5349 بدل 3478.",
-  "config.turnNote":
-    "أما كلمة مرور TURN فتُحفَظ (مشفَّرة): إذ يطلب المُرحِّل السرّ نفسه في كل مكالمة، ولا تكفيه بصمة.",
 
   "config.section.rtt": "النصّ في الزمن الحقيقي",
   "config.rttHint":

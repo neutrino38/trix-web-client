@@ -192,8 +192,8 @@
 
           <section class="config-col">
           <h3>Traversée de NAT</h3>
-          <p class="section-hint">Serveurs fournis par votre opérateur SIP. Sans eux, un appel
-            entre deux réseaux privés peut aboutir sans qu'aucun son ne passe.</p>
+          <p class="section-hint">Serveurs permettant l'établissement des communications quand on
+            appelle depuis un réseau privé relié à Internet via un NAT.</p>
           <div class="field">
             <label for="f-stun">Serveur STUN</label>
             <input id="f-stun" value="stun.example.fr:3478">
@@ -202,7 +202,7 @@
           <div class="field">
             <label for="f-turn">Serveur TURN</label>
             <input id="f-turn" value="turn.example.fr">
-            <span class="hint">Facultatif — relais des flux média quand la connexion directe
+            <span class="hint">Relais des flux média quand la connexion directe
               échoue. Laisser vide pour ne pas en utiliser.</span>
           </div>
           <div class="field">
@@ -222,8 +222,6 @@
             </label>
             <span class="hint">Sans port explicite, 5349 est alors utilisé au lieu de 3478.</span>
           </div>
-          <div class="note">Le mot de passe TURN, lui, est conservé (chiffré) : le relais réclame
-            le secret lui-même à chaque appel, une empreinte n'y suffirait pas.</div>
           </section>
 
           <section class="config-col">
