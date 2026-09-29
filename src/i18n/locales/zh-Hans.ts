@@ -121,7 +121,6 @@ const messages: Translation = {
   "config.rttNote": "随账号保存。拿不准就保留“无”：提出文字会改变您每一次呼叫的提议，不预期它的服务器可能因此出错。",
 
   "config.section.alerts": "提醒与显示",
-  "config.alertsHint": "这些设置立即生效，无需等待注册 — 闪烁提醒除外，它随账号保存。",
   "config.flashLabel": "来电时闪烁屏幕",
   "config.flashDesc": " — 振铃期间屏幕闪烁，即使关掉声音也能察觉来电",
   "config.flashHint": "随账号保存，换一台设备也会跟着您。",

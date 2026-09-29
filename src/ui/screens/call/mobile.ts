@@ -110,6 +110,8 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
             : ""
         }
         ${switchButton(phone, view !== null)}
+        <button class="iconbtn ${view ? "inactive" : ""}" data-act="prefs" ${view ? "disabled" : ""}
+                aria-label="${esc(t("config.section.alerts"))}">${ICONS.prefs}</button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
                 aria-label="${esc(t("action.settings"))}">${ICONS.settings}</button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="logout" ${view ? "disabled" : ""}

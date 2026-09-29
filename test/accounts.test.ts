@@ -52,7 +52,6 @@ function form(over: Partial<ConfigForm> = {}): ConfigForm {
     displayName: ALICE.displayName,
     authUsername: null,
     password: null,
-    flashAlert: true,
     stun: "",
     turn: "",
     turnUsername: "",

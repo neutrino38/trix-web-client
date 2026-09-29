@@ -117,8 +117,6 @@ const messages: Translation = {
     "Saved with the account. When in doubt, leave it on “None”: offering text changes the offer of every call you make, and a server that is not expecting it may take it badly.",
 
   "config.section.alerts": "Alerts and display",
-  "config.alertsHint":
-    "These settings take effect straight away, without waiting for registration — except the flash, which follows the account.",
   "config.flashLabel": "Visual flash on incoming call",
   "config.flashDesc":
     " — the screen flashes while ringing, so you are alerted with the sound off",

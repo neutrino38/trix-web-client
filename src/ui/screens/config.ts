@@ -1,58 +1,15 @@
 import { editedAccount, type PhoneInstance } from "../../machines/phone.js";
 import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
-import { alertPermission, requestAlertPermission } from "../alert.js";
-import {
-  reachAlertEnabled,
-  setReachAlertEnabled,
-  setTheme,
-  themeChoice,
-  type ThemeChoice,
-} from "../prefs.js";
 import { setSipTrace, sipTraceEnabled } from "../../sip/trace.js";
 import type { SuspectField } from "../../machines/events.js";
-import { langPicker, wireLangPicker } from "../langpicker.js";
 import { t } from "../../i18n/index.js";
-import type { Msg, MsgKey } from "../../i18n/types.js";
+import type { Msg } from "../../i18n/types.js";
 import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
 import { deployment } from "../../deployment.js";
 import { shareUrl } from "../../share/link.js";
 import { showToast } from "../toast.js";
-import { showSelfTestDialog } from "../selftest.js";
 import { RTT_LABELS } from "../rttlabels.js";
-
-/**
- * État de la permission de notification — le seul canal d'alerte qui traverse
- * une fenêtre masquée. On dit toujours où il en est : une permission refusée
- * qu'on ne signale pas laisse croire à une alerte qui ne viendra jamais.
- */
-function notificationRow(): string {
-  switch (alertPermission()) {
-    case "default":
-      return `<button class="btn" type="button" data-act="enable-alerts">${esc(
-        t("config.notifEnable"),
-      )}</button>
-              <span class="hint">${esc(t("config.notifHint"))}</span>`;
-    case "granted":
-      return `<span class="setting-state ok">${esc(t("config.notifOn"))}</span>`;
-    case "denied":
-      return `<span class="setting-state ko">${esc(t("config.notifBlocked"))}</span>
-              <span class="hint">${esc(t("config.notifBlockedHint"))}</span>`;
-    default:
-      return ""; // navigateur sans Notification : rien à proposer
-  }
-}
-
-/** Le bloc « Notifications système » en entier — réécrit sur place après la demande. */
-function notificationField(): string {
-  return `<span class="field-title">${esc(t("config.notifications"))}</span>${notificationRow()}`;
-}
-
-const THEMES: { id: ThemeChoice; label: MsgKey }[] = [
-  { id: "system", label: "theme.system" },
-  { id: "light", label: "theme.light" },
-  { id: "dark", label: "theme.dark" },
-];
 
 /**
  * Le bandeau d'erreur du formulaire et son code technique, réécrits sur
@@ -292,62 +249,8 @@ ${natSection}
         </section>
 
         <section class="config-col">${advancedSection}${rttSection}
-        </section>
-
-        <section class="config-col">
-        <h3>${esc(t("config.section.alerts"))}</h3>
-        <p class="section-hint">${esc(t("config.alertsHint"))}</p>
-        <div class="field">
-          <label class="checkline" for="f-flash">
-            <input type="checkbox" id="f-flash" name="flashAlert"
-                   ${cfg?.flashAlert === false ? "" : "checked"}>
-            <span><b>${esc(t("config.flashLabel"))}</b>${esc(t("config.flashDesc"))}</span>
-          </label>
-          <span class="hint">${esc(t("config.flashHint"))}</span>
-        </div>
-        <div class="field">
-          ${notificationField()}
-        </div>
-        <!-- Même autorisation que les appels entrants, réglage distinct
-             (ADR 0006, D2) : être prévenu qu'on vous appelle n'est pas être
-             prévenu que vous ne pouvez plus l'être. Réglage du navigateur,
-             donc hors formulaire — pas d'attribut « name », effet immédiat. -->
-        <div class="field">
-          <label class="checkline" for="f-reach">
-            <input type="checkbox" id="f-reach" ${reachAlertEnabled() ? "checked" : ""}>
-            <span><b>${esc(t("config.reachLabel"))}</b>${esc(t("config.reachDesc"))}</span>
-          </label>
-          <span class="hint">${esc(t("config.reachHint"))}</span>
-        </div>
-        <fieldset class="field">
-          <legend class="field-title">${esc(t("config.theme"))}</legend>
-          <div class="radio-row">
-            ${THEMES.map(
-              (theme) => `<label class="radio">
-                        <input type="radio" name="theme" value="${theme.id}"
-                               ${themeChoice() === theme.id ? "checked" : ""}>
-                        <span>${esc(t(theme.label))}</span>
-                      </label>`,
-            ).join("")}
-          </div>
-          <span class="hint">${esc(t("config.themeHint"))}</span>
-        </fieldset>
-        <!-- L'autotest hors appel (F.703 §4.4 note) : il ne s'enregistre
-             pas, ne concerne pas le compte, et n'a donc rien à faire dans
-             le formulaire — un bouton, et une modale qui rend les
-             périphériques en partant (ui/selftest.ts). -->
-        <h3>${esc(t("selftest.section"))}</h3>
-        <p class="section-hint">${esc(t("selftest.sectionHint"))}</p>
-        <div class="field">
-          <button class="btn" type="button" data-act="selftest">${esc(t("selftest.open"))}</button>
-        </div>
-        <!-- La langue est aussi offerte à l'accueil, qu'on ne revoit plus
-             une fois le compte enregistré : c'est ici qu'on la retrouve. -->
-        ${langPicker()}
-        <span class="hint">${esc(t("lang.hint"))}</span>
-
         ${
-          // Le diagnostic ferme la colonne des réglages locaux : il n'a rien
+          // Le diagnostic ferme la colonne du milieu : il n'a rien
           // à voir avec le compte, ne s'enregistre pas, et n'intéresse qu'un
           // dépannage en cours. Le déploiement peut le retirer d'un mot
           // (`debug_activated: "no"`) : la trace est alors éteinte pour de
@@ -364,6 +267,7 @@ ${natSection}
             : ""
         }
         </section>
+
         </div>
         <div class="form-actions">
           <button class="btn primary" type="submit" ${saving ? "disabled" : ""}>
@@ -391,7 +295,6 @@ ${natSection}
   const form = node.querySelector("form")!;
   const authToggle = form.querySelector("#f-auth-toggle") as HTMLInputElement;
   const authInput = form.querySelector("#f-auth") as HTMLInputElement;
-  const flashToggle = form.querySelector("#f-flash") as HTMLInputElement;
   // Champs que le déploiement peut avoir emportés : ils se cherchent, ils
   // ne s'affirment pas. `null` ici n'est pas un écran cassé, c'est un
   // réglage qui ne se discute plus.
@@ -424,7 +327,6 @@ ${natSection}
         displayName: v("displayName"),
         authUsername: authUsername === "" ? null : authUsername,
         password: password === "" ? null : password,
-        flashAlert: flashToggle.checked,
         stun: v("stun"),
         turn: v("turn"),
         turnUsername: v("turnUsername"),
@@ -467,35 +369,13 @@ ${natSection}
     if (authToggle.checked) authInput.focus();
   });
 
-  // --- réglages du navigateur : effet immédiat, hors soumission du formulaire ---
-
-  // la permission ne peut être demandée que depuis un geste utilisateur ;
-  // la ligne se réécrit sur place avec le nouvel état, quel qu'il soit
-  node.querySelector('[data-act="enable-alerts"]')?.addEventListener("click", (e) => {
-    const row = (e.currentTarget as HTMLElement).parentElement!;
-    void requestAlertPermission().then(() => {
-      row.innerHTML = notificationField();
-    });
-  });
-
-  // l'avertissement d'injoignabilité : lu par `ui/reachability.ts` au moment
-  // où il poserait la notification, donc rien à propager ici
-  const reachToggle = node.querySelector<HTMLInputElement>("#f-reach");
-  reachToggle?.addEventListener("change", () => setReachAlertEnabled(reachToggle.checked));
-
-  for (const radio of node.querySelectorAll<HTMLInputElement>('input[name="theme"]')) {
-    radio.addEventListener("change", () => setTheme(radio.value as ThemeChoice));
-  }
+  // --- réglage du navigateur : effet immédiat, hors soumission du formulaire ---
 
   // la trace n'est pas un champ du formulaire : elle ne part pas chez le
   // registrar et ne doit pas attendre l'enregistrement pour s'allumer —
   // le socket relit ce réglage à chaque paquet
   const traceToggle = node.querySelector<HTMLInputElement>("#f-siptrace");
   traceToggle?.addEventListener("change", () => setSipTrace(traceToggle.checked));
-
-  // le test ouvre le micro et la caméra : il part d'un geste utilisateur,
-  // sans quoi le navigateur refuserait la demande de permission
-  node.querySelector('[data-act="selftest"]')?.addEventListener("click", () => showSelfTestDialog());
 
   // la mention « si différent de … » suit le userpart de l'URI en cours de saisie
   const uriInput = form.querySelector("#f-uri") as HTMLInputElement;
@@ -557,7 +437,6 @@ ${natSection}
   });
   deleteBtn?.addEventListener("blur", disarm);
 
-  wireLangPicker(node);
   // le surlignage s'efface dès que l'utilisateur corrige le champ — et il
   // peut revenir à la soumission suivante, d'où l'écoute permanente
   for (const input of node.querySelectorAll("[data-suspect]")) {

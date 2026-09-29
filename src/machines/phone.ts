@@ -332,6 +332,21 @@ function addContact(ev: Extract<PhoneEvent, { type: "ui:addContact" }>, ctx: Pho
   return stay("contact ajouté");
 }
 
+/**
+ * Flash d'appel entrant, pour le compte actif : effet immédiat, sans
+ * repasser par le formulaire ni par l'enregistrement SIP. Le coffre est
+ * réécrit en arrière-plan, comme le carnet — un échec d'écriture laisse
+ * le réglage en vigueur jusqu'au prochain chargement.
+ */
+function setFlashAlert(ev: Extract<PhoneEvent, { type: "ui:setFlashAlert" }>, ctx: PhoneCtx) {
+  const account = activeAccount(ctx);
+  if (!account) return stay("aucun compte actif");
+  if (account.flashAlert === ev.on) return stay("flash inchangé");
+  ctx.accounts = ctx.accounts.map((a) => (a.id === account.id ? { ...a, flashAlert: ev.on } : a));
+  void ctx.store.save(vaultOf(ctx)).catch(() => {});
+  return stay("flash d'appel entrant réglé");
+}
+
 function renameContact(ev: Extract<PhoneEvent, { type: "ui:renameContact" }>, ctx: PhoneCtx) {
   const name = ev.name.trim();
   if (!name || !ctx.contacts.some((c) => c.id === ev.id)) return stay("renommage ignoré");
@@ -465,7 +480,9 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     username,
     authUsername,
     ...fingerprints,
-    flashAlert: f.flashAlert,
+    // hors du formulaire (ui:setFlashAlert) : un compte modifié garde le
+    // sien, un compte neuf part avec le flash
+    flashAlert: edited?.flashAlert ?? true,
     ice,
     // rien à valider : le choix vient d'un bouton radio, et une valeur
     // inconnue (compte migré, formulaire trafiqué) retombe sur le défaut
@@ -947,6 +964,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:setFlashAlert": setFlashAlert,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         // réveil détecté : la WSS peut être morte sans que le navigateur le
         // sache. Un REGISTER sur le transport existant tranche — même Call-ID,
@@ -1010,6 +1028,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:setFlashAlert": setFlashAlert,
         "ui:backToSettings": (_ev, ctx) => {
           ctx.autoReconnect = false;
           ctx.editing = ctx.activeId;
@@ -1051,6 +1070,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:setFlashAlert": setFlashAlert,
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
         "sip:incoming": refuseIncoming("timeout"),
@@ -1078,6 +1098,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:setFlashAlert": setFlashAlert,
         "ui:switchAccount": switchAccount,
         // le compte dont l'enregistrement vient d'échouer : c'est celui-là
         // qu'il faut corriger, et l'erreur reste affichée sur son formulaire

@@ -38,6 +38,7 @@ import { wireDtmf } from "./dtmf.js";
 import { wireChat } from "./chat.js";
 import { wireShareStage } from "./share.js";
 import { LENS_ICON, startMediaStats } from "./stats.js";
+import { showPrefsDialog } from "../../prefsdialog.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
 
@@ -135,6 +136,8 @@ export function callLabel(state: CallView["state"]): string {
 }
 
 export const ICONS = {
+  // cloche : la fenêtre « Alertes et affichage » (ui/prefsdialog.ts)
+  prefs: `<svg class="icon" viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>`,
   settings: `<svg class="icon" viewBox="0 0 24 24"><path d="M4 6h10v2H4zM17 6h3v2h-3zM13 5h2v4h-2zM4 16h3v2H4zM10 16h10v2H10zM7 15h2v4H7zM4 11h14v2H4zM19 10h1v4h-1z"/></svg>`,
   logout: `<svg class="icon" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v3H3v4h7v3zM13 3h6c1.1 0 2 .9 2 2v14c0 1.1-.9 2-2 2h-6v-2h6V5h-6V3z"/></svg>`,
   cam: `<svg class="icon" viewBox="0 0 24 24"><path d="M17 10.5V7c0-.6-.4-1-1-1H4c-.6 0-1 .4-1 1v10c0 .6.4 1 1 1h12c.6 0 1-.4 1-1v-3.5l4 4v-11l-4 4z"/></svg>`,
@@ -569,6 +572,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   };
 
   // --- barre d'en-tête ----------------------------------------------------
+  on('[data-act="prefs"]', () => showPrefsDialog(phone));
   on('[data-act="settings"]', () => phone.send({ type: "ui:backToSettings" }));
   on('[data-act="logout"]', () => phone.send({ type: "ui:logout" }));
   on('[data-act="switch"]', (btn) =>

@@ -58,6 +58,8 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* le reset emporte la marge automatique qui centre un <dialog> modal : on la rend */
+dialog:modal { margin: auto; }
 
 /* destiné aux seuls lecteurs d'écran (voir ui/announce.ts) : retiré de
    l'affichage sans être retiré de l'arbre d'accessibilité — ni `display:none`
@@ -168,26 +170,24 @@ a.btn { text-decoration: none; }
    centrage strict tronque le début du formulaire, hors d'atteinte du
    défilement, dès qu'il dépasse la hauteur du cadre */
 .screen-config { height: 100%; display: flex; align-items: safe center; justify-content: center; overflow-y: auto; }
-.screen-config form { width: min(1180px, 94vw); display: flex; flex-direction: column; gap: 0.9rem; padding: 2rem 0; }
+.screen-config form { width: min(800px, 92vw); display: flex; flex-direction: column; gap: 0.9rem; padding: 2rem 0; }
 
-/* Trois colonnes, une par domaine : le compte, la traversée de NAT, les
-   réglages du navigateur. Chaque colonne est un conteneur explicite plutôt
+/* Deux colonnes : le compte, puis ce qui l'entoure — réglages avancés,
+   transport du texte, diagnostic. Les réglages du navigateur ont quitté
+   l'écran pour la fenêtre « Alertes et affichage » (ui/prefsdialog.ts).
+   Chaque colonne est un conteneur explicite plutôt
    qu'une coupure dans un flux multi-colonnes : ce flux répartissait sur la
    hauteur disponible et poussait hors écran, sans défilement possible, tout
    ce qui n'y tenait pas. */
-.config-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6rem 2.4rem; align-items: start; }
+.config-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.6rem 2.4rem; align-items: start; }
 /* min-width: 0 — sans quoi un placeholder large élargit sa colonne */
 .config-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
 /* La partie « avancée » garde l'espacement de sa colonne ; `hidden` doit
    l'emporter sur ce `display` pour qu'elle se replie vraiment. */
 .config-advanced { display: flex; flex-direction: column; gap: 0.9rem; }
 .config-advanced[hidden] { display: none; }
-/* deux colonnes quand trois seraient étriquées, puis une seule : des
-   colonnes de 300 px seraient pires qu'un formulaire long */
-@media (max-width: 1100px) {
-  .config-cols { grid-template-columns: repeat(2, 1fr); }
-  .screen-config form { width: min(800px, 92vw); }
-}
+/* une seule colonne quand deux seraient étriquées : des colonnes de
+   300 px seraient pires qu'un formulaire long */
 @media (max-width: 800px) {
   .config-cols { grid-template-columns: 1fr; }
   .screen-config form { width: min(400px, 90vw); }
@@ -200,7 +200,7 @@ a.btn { text-decoration: none; }
 .error-slot { display: contents; }
 /* deux sections : le compte (chiffré, appliqué à la validation) et les
    réglages locaux (immédiats) — la colonne suffit à les séparer */
-.screen-config h3 {
+.screen-config h3, .prefs-dialog h3 {
   font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--ink-soft);
 }
@@ -1067,6 +1067,11 @@ fieldset.field { border: none; }
 .stats-head h2 { font-size: 0.95rem; overflow-wrap: anywhere; }
 .stats-sub { font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
 .stats-actions { flex: none; display: flex; gap: 0.9rem; }
+/* « Alertes et affichage » (ui/prefsdialog.ts) : le cadre du bilan média,
+   les champs du formulaire de configuration, et de quoi défiler sur un
+   petit écran */
+.prefs-dialog { max-height: 88vh; overflow-y: auto; }
+.prefs-body { display: flex; flex-direction: column; gap: 0.9rem; padding: 1rem; }
 /* ---------------------------------------------------------------------------
    Autotest micro / caméra (ui/selftest.ts) : même cadre que le bilan média,
    une scène vidéo et une barre de niveau horizontale.

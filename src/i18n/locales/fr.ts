@@ -117,8 +117,6 @@ const messages = {
     "Enregistré avec le compte. Dans le doute, laissez « Aucun » : proposer du texte modifie l'offre de tous vos appels, et un serveur qui ne l'attend pas peut mal le prendre.",
 
   "config.section.alerts": "Alertes et affichage",
-  "config.alertsHint":
-    "Ces réglages prennent effet immédiatement, sans attendre l'enregistrement — sauf le flash, qui suit le compte.",
   "config.flashLabel": "Flash visuel à l'appel entrant",
   "config.flashDesc":
     " — l'écran clignote pendant la sonnerie, pour être alerté sans le son",

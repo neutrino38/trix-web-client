@@ -93,7 +93,7 @@ function deviceLine(kind: MsgKey, track: MediaStreamTrack | undefined): string {
  * bilan média : Échap, piège à focus, inertie du fond et retour du focus
  * sont acquis, et il n'y a rien à réimplémenter de travers.
  */
-export function showSelfTestDialog(): void {
+export function showSelfTestDialog(): HTMLDialogElement {
   const dlg = document.createElement("dialog");
   dlg.className = "selftest-dialog";
   dlg.innerHTML = `<div class="stats-head">
@@ -181,4 +181,6 @@ export function showSelfTestDialog(): void {
   });
   document.body.appendChild(dlg);
   dlg.showModal();
+  // rendu à qui l'ouvre : la fenêtre des réglages le referme si un appel arrive
+  return dlg;
 }

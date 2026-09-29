@@ -140,6 +140,11 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
              réglages, elle change d'identité (ADR 0002, décision 4). Absente
              tant qu'il n'y a qu'un compte. -->
         ${switchButton(phone, view !== null)}
+        <button class="iconbtn ${view ? "inactive" : ""}" data-act="prefs" ${view ? "disabled" : ""}
+                title="${esc(t("config.section.alerts") + (view ? t("action.unavailableInCall") : ""))}"
+                aria-label="${esc(t("config.section.alerts"))}">
+          ${ICONS.prefs}
+        </button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
                 title="${esc(t("action.settings") + (view ? t("action.unavailableInCall") : ""))}"
                 aria-label="${esc(t("action.settings"))}">

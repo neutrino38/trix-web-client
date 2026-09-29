@@ -284,7 +284,6 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
     displayName: CFG.displayName,
     authUsername: null,
     password: "secret123",
-    flashAlert: true,
     stun: "stun.saisi.fr",
     turn: "",
     turnUsername: "",
@@ -372,7 +371,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: "secret123",
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -398,7 +396,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: "secret123",
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -422,7 +419,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: "",
         authUsername: null,
         password: "secret123",
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -446,7 +442,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: "alice-auth",
         password: "secret123",
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -474,7 +469,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: "",
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -498,7 +492,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -523,7 +516,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -547,7 +539,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: "alice-auth",
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -571,7 +562,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "stun.example.fr:3478",
         turn: "turn.example.fr:5349",
         turnUsername: "alice",
@@ -599,7 +589,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "stun.example.fr/ws",
         turn: "",
         turnUsername: "",
@@ -614,8 +603,16 @@ describe("PhoneMachine — configuration", () => {
     expect(box.saved).toEqual(CFG); // rien n'a été enregistré
   });
 
-  it("flash d'appel entrant désactivé : réglage persisté avec le compte", async () => {
-    const { phone, box } = await bootTo("home", CFG);
+  it("flash d'appel entrant désactivé : persisté sans réenregistrement", async () => {
+    const { phone, box } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:setFlashAlert", on: false });
+    expect(phone.state).toBe("ready");
+    expect(activeCfg(phone)!.flashAlert).toBe(false);
+    await vi.waitFor(() => expect(box.saved!.flashAlert).toBe(false));
+  });
+
+  it("flash d'appel entrant : le formulaire du compte ne le remet pas", async () => {
+    const { phone, box } = await bootTo("home", { ...CFG, flashAlert: false });
     phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
     phone.send({
       type: "ui:saveConfig",
@@ -625,7 +622,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: false,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -636,7 +632,6 @@ describe("PhoneMachine — configuration", () => {
     });
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
     expect(box.saved!.flashAlert).toBe(false);
-    expect(activeCfg(phone)!.flashAlert).toBe(false);
   });
 
   it("transport du texte en temps réel : persisté avec le compte", async () => {
@@ -650,7 +645,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -675,7 +669,6 @@ describe("PhoneMachine — configuration", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",
@@ -1535,7 +1528,6 @@ describe("PhoneMachine — sorties", () => {
         displayName: CFG.displayName,
         authUsername: null,
         password: null,
-        flashAlert: true,
         stun: "",
         turn: "",
         turnUsername: "",

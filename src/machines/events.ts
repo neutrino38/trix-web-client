@@ -25,8 +25,6 @@ export interface ConfigForm {
   /** Identifiant d'authentification si différent du userpart de l'URI, sinon null. */
   authUsername: string | null;
   password: string | null;
-  /** Flash visuel à l'appel entrant (accessibilité sourds), réglage du compte. */
-  flashAlert: boolean;
   /** Serveur STUN (`hôte[:port]`) ; vide = aucun. */
   stun: string;
   /** Serveur TURN (`hôte[:port]`) ; vide = aucun, les trois champs suivants sont alors ignorés. */
@@ -273,6 +271,12 @@ export type PhoneEvent =
   | { type: "ui:addContact"; name: string; uri: string }
   | { type: "ui:renameContact"; id: string; name: string }
   | { type: "ui:removeContact"; id: string }
+  /**
+   * Flash visuel à l'appel entrant (accessibilité sourds) : réglage du
+   * compte actif, changé depuis la fenêtre « Alertes et affichage » de
+   * l'écran principal plutôt que par le formulaire du compte.
+   */
+  | { type: "ui:setFlashAlert"; on: boolean }
   /**
    * Endormissement / réveil, machine **ou** page (ADR 0006, `ui/lifecycle.ts`) :
    * veille de l'ordinateur constatée au saut d'horloge, gel de l'onglet par
