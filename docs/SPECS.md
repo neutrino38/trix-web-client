@@ -472,6 +472,7 @@ Vitest, exécution par `npm test`. Couverture actuelle (`test/`) :
 | `phone.test.ts`, `call.test.ts`, `answer.test.ts` | machines FSL, avec pile SIP factice |
 | `store.test.ts`, `ha1.test.ts` | stockage chiffré (fake-indexeddb) et calcul des HA1 |
 | `digest.test.ts` | réponse à un défi Digest SHA-256, et refus dit quand l'empreinte manque |
+| `allow.test.ts` | en-tête `Allow` réduit aux méthodes servies, jusque dans le 405 |
 | `sdp.test.ts`, `ice.test.ts` | analyse de l'offre SDP, normalisation STUN/TURN |
 | `trace.test.ts`, `record.test.ts`, `tracedialog.test.ts` | trace SIP, carnet d'appel, dialogue de relecture |
 | `stats.test.ts` | fenêtre glissante et bilan média |
