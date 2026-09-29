@@ -500,6 +500,22 @@ export interface SipPort {
   start(cfg: AccountConfig, send: (ev: SipEvent) => void): SipHandle;
 }
 
+/**
+ * Les méthodes que Trix annonce dans l'en-tête `Allow` de chaque requête,
+ * et de la réponse à OPTIONS ou à une méthode refusée.
+ *
+ * Celles de JsSIP comptent MESSAGE, alors qu'un MESSAGE entrant reçoit
+ * 405 tant que personne n'écoute `newMessage` : le 405 porterait lui-même
+ * un `Allow` qui contredit le refus, et un correspondant qui se fie à
+ * l'annonce croirait pouvoir écrire. Trix ne reçoit pas encore de
+ * messages : MESSAGE sort de la liste, et y reviendra avec la messagerie.
+ */
+export const ALLOWED_METHODS = "INVITE,ACK,CANCEL,BYE,UPDATE,OPTIONS,REFER,INFO,NOTIFY,SUBSCRIBE";
+
+// même objet que celui qu'importe `SIPMessage` (voir `sip/digest.ts` pour
+// l'identité des modules internes sur les trois chemins de construction)
+(JsSIP.C as { ALLOWED_METHODS: string }).ALLOWED_METHODS = ALLOWED_METHODS;
+
 export function createJsSipPort(): SipPort {
   return {
     start(cfg, send) {
