@@ -145,11 +145,6 @@ const messages: Translation = {
   "config.notifBlocked": "Notifications bloquées par le navigateur",
   "config.notifBlockedHint":
     "À rétablir dans les réglages de site du navigateur : Trix ne peut pas redemander l'autorisation lui-même.",
-  "config.reachLabel": "Prévenir quand vous devenez injoignable",
-  "config.reachDesc":
-    " — une notification système quand le navigateur endort l'onglet ou que l'enregistrement tombe, et une autre quand tout est rétabli",
-  "config.reachHint":
-    "Même autorisation que les appels entrants, réglage distinct : être prévenu qu'on vous appelle n'est pas être prévenu que vous ne pouvez plus l'être.",
   "config.theme": "Thème",
   "config.themeHint": "« Système » suit le réglage clair/sombre de votre appareil.",
   "theme.system": "Système",

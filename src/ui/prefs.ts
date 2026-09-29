@@ -111,28 +111,6 @@ export function setPanelCollapsed(collapsed: boolean): void {
   localStorage.setItem(PANEL_KEY, collapsed ? "collapsed" : "expanded");
 }
 
-// ---------------------------------------------------------------------------
-// Avertissement système d'injoignabilité (ADR 0006, D2 et SC-8)
-// ---------------------------------------------------------------------------
-//
-// Même permission que l'alerte d'appel entrant, réglage distinct : accepter
-// d'être prévenu qu'on vous appelle n'est pas accepter d'être prévenu que
-// vous ne pouvez plus l'être. Réglage du navigateur et non du compte — il
-// parle de cet onglet, sur cette machine, et de ce que ce navigateur-là
-// décide d'en faire.
-
-const REACH_NOTIFY_KEY = "trix-reach-notify";
-
-/** Actif par défaut : l'injoignabilité silencieuse est le défaut du navigateur, pas le nôtre. */
-export function reachAlertEnabled(): boolean {
-  return localStorage.getItem(REACH_NOTIFY_KEY) !== "off";
-}
-
-export function setReachAlertEnabled(on: boolean): void {
-  if (on) localStorage.removeItem(REACH_NOTIFY_KEY);
-  else localStorage.setItem(REACH_NOTIFY_KEY, "off");
-}
-
 export function bumpFont(delta: 1 | -1): void {
   const cur = Number(localStorage.getItem(FONT_KEY)) || FONT_DEFAULT;
   const next = Math.min(FONT_MAX, Math.max(FONT_MIN, cur + delta));

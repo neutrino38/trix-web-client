@@ -42,7 +42,6 @@ import { alertPermission } from "./alert.js";
 import { clearNotice, showNotice } from "./notify.js";
 import { setFaviconState } from "./favicon.js";
 import { setTitleOverride } from "./title.js";
-import { reachAlertEnabled } from "./prefs.js";
 import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
 
@@ -284,10 +283,9 @@ function post(title: MsgKey, body: MsgKey, keep: boolean): Notification | null {
 function notifyAway(): void {
   if (notifyTimer !== null) clearTimeout(notifyTimer);
   notifyTimer = null;
-  // Ces trois sorties sont des décisions, pas des pannes — mais une alerte
+  // Ces deux sorties sont des décisions, pas des pannes — mais une alerte
   // qui ne part pas ne se constate depuis aucun écran, et la console est
   // le seul endroit où la différence se lise. Elle survit au gel.
-  if (!reachAlertEnabled()) return console.debug("[trix] alerte d'absence coupée dans les réglages");
   if (document.visibilityState === "visible") return console.debug("[trix] onglet visible : l'écran le dit déjà");
   if (alertPosted()) return console.debug("[trix] alerte d'absence déjà posée");
   notification = post("reach.notifTitle", NOTIF_BODY[episodeReason], true);

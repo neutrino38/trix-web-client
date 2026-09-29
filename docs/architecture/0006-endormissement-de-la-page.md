@@ -334,6 +334,8 @@ l'une manque.
 **SC-8 — Réglage (D2).** Une ligne dans les paramètres pour couper l'avertissement système, à côté
 de la permission de notification déjà demandée pour les appels entrants : même permission, réglages
 distincts.
+*Retiré le 2026-09-29 : l'avertissement est toujours actif, sans réglage pour le couper. Il ne
+dépend plus que de la permission de notification.*
 
 **SC-9 — Documentation.** `docs/CONCEPTION.md` §4.1 (le cycle de vie complet, en remplacement du
 paragraphe sur le seul réveil) et un §4.13 pour la joignabilité ; `USERGUIDE.md` : ce que fait le

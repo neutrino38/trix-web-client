@@ -130,10 +130,6 @@ const messages: Translation = {
   "config.notifOn": "通知已启用",
   "config.notifBlocked": "浏览器已阻止通知",
   "config.notifBlockedHint": "请在浏览器的网站设置中重新允许，Trix 无法自行再次请求授权。",
-  "config.reachLabel": "无法接听来电时提醒我",
-  "config.reachDesc": " — 浏览器让标签页休眠或注册中断时发出系统通知，恢复后再发一条",
-  "config.reachHint":
-    "与来电通知使用同一项授权，但设置相互独立：被告知有人来电，不等于被告知已经没人能打给您。",
   "config.theme": "主题",
   "config.themeHint": "“系统”跟随设备的浅色/深色设置。",
   "theme.system": "系统",

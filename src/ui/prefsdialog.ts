@@ -21,13 +21,7 @@ import type { MsgKey } from "../i18n/types.js";
 import { alertPermission, requestAlertPermission } from "./alert.js";
 import { esc } from "./el.js";
 import { langPicker, wireLangPicker } from "./langpicker.js";
-import {
-  reachAlertEnabled,
-  setReachAlertEnabled,
-  setTheme,
-  themeChoice,
-  type ThemeChoice,
-} from "./prefs.js";
+import { setTheme, themeChoice, type ThemeChoice } from "./prefs.js";
 import { showSelfTestDialog } from "./selftest.js";
 
 const THEMES: { id: ThemeChoice; label: MsgKey }[] = [
@@ -82,15 +76,6 @@ function prefsHtml(flash: boolean): string {
         <span class="hint">${esc(t("config.flashHint"))}</span>
       </div>
       <div class="field" data-ref="notif">${notificationField()}</div>
-      <!-- Same permission as incoming calls, distinct setting (ADR 0006,
-           D2): being told someone calls is not being told nobody can. -->
-      <div class="field">
-        <label class="checkline" for="p-reach">
-          <input type="checkbox" id="p-reach" ${reachAlertEnabled() ? "checked" : ""}>
-          <span><b>${esc(t("config.reachLabel"))}</b>${esc(t("config.reachDesc"))}</span>
-        </label>
-        <span class="hint">${esc(t("config.reachHint"))}</span>
-      </div>
       <fieldset class="field">
         <legend class="field-title">${esc(t("config.theme"))}</legend>
         <div class="radio-row">
@@ -142,9 +127,6 @@ export function showPrefsDialog(phone: PhoneInstance): void {
             notificationField();
         });
       });
-    // read by `ui/reachability.ts` when it would raise the notification
-    const reach = dlg.querySelector<HTMLInputElement>("#p-reach")!;
-    reach.addEventListener("change", () => setReachAlertEnabled(reach.checked));
     for (const radio of dlg.querySelectorAll<HTMLInputElement>(
       'input[name="p-theme"]',
     )) {

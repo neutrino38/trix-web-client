@@ -136,11 +136,6 @@ const messages: Translation = {
   "config.notifBlocked": "ブラウザーが通知をブロックしています",
   "config.notifBlockedHint":
     "ブラウザーのサイト設定で許可し直してください。Trix から改めて許可を求めることはできません。",
-  "config.reachLabel": "着信を受けられなくなったら知らせる",
-  "config.reachDesc":
-    " — ブラウザーがタブをスリープさせたときや登録が切れたときにシステム通知を出し、復旧したときにもう一度知らせます",
-  "config.reachHint":
-    "着信通知と同じ許可ですが、設定は別です。着信を知らせることと、もう着信できないと知らせることは別のことだからです。",
   "config.theme": "テーマ",
   "config.themeHint": "「システム」は端末のライト／ダークの設定に従います。",
   "theme.system": "システム",

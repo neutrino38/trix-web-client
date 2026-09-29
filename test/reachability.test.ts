@@ -275,7 +275,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     expect(posted).toHaveLength(0);
   });
 
-  it("n'alerte pas quand le réglage est coupé", async () => {
+  it("alerte toujours, même si une ancienne version avait coupé le réglage", async () => {
     stubBrowser({
       visible: false,
       stored: { "trix-resume": "acc-1", "trix-reach-notify": "off" },
@@ -283,7 +283,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     const { watchReachability } = await loadModule();
     watchReachability(fakePhone("sleeping") as never);
     vi.advanceTimersByTime(60_000);
-    expect(posted).toHaveLength(0);
+    expect(posted).toHaveLength(1);
   });
 });
 

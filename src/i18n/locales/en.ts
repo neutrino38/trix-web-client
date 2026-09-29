@@ -129,11 +129,6 @@ const messages: Translation = {
   "config.notifBlocked": "Notifications blocked by the browser",
   "config.notifBlockedHint":
     "Re-enable them in the browser's site settings — Trix cannot ask for permission again itself.",
-  "config.reachLabel": "Warn me when I become unreachable",
-  "config.reachDesc":
-    " — a system notification when the browser puts the tab to sleep or the registration drops, and another once everything is back",
-  "config.reachHint":
-    "Same permission as incoming calls, separate setting: being told someone is calling you is not being told that nobody can any more.",
   "config.theme": "Theme",
   "config.themeHint": "“System” follows your device's light/dark setting.",
   "theme.system": "System",
