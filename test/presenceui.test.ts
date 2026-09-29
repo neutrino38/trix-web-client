@@ -10,6 +10,7 @@ import { PresenceMachine, type PresenceInstance } from "../src/machines/presence
 import type { PhoneInstance } from "../src/machines/phone.js";
 import type { SipHandle } from "../src/sip/port.js";
 import { NO_PRESENCE } from "../src/sip/presence.js";
+import { NO_MESSAGING } from "../src/sip/message.js";
 import {
   GLYPH_LABEL,
   bindPresence,
@@ -30,7 +31,7 @@ const phoneIn = (state: string) => ({ state }) as unknown as PhoneInstance;
 
 function presenceLive(): PresenceInstance {
   const presence = PresenceMachine.start();
-  const handle = { presence: () => NO_PRESENCE } as unknown as SipHandle;
+  const handle = { presence: () => NO_PRESENCE, messaging: () => NO_MESSAGING } as unknown as SipHandle;
   presence.send({ type: "phone:up", handle, accountId: "acc", uris: [] });
   return presence;
 }

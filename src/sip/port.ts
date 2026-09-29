@@ -28,6 +28,16 @@ import {
   type PresenceSipEvent,
 } from "./presence.js";
 import { createPublisher, jssipPublishSend, type JsSipUa } from "./publish.js";
+import {
+  jssipIncoming,
+  jssipSender,
+  NO_MESSAGING,
+  openMessaging,
+  type JsSipMessageEvent,
+  type MessagingLink,
+  type MessagingSipEvent,
+  type OpenMessaging,
+} from "./message.js";
 import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
 import {
   MEDIA_ERROR_EVENTS,
@@ -494,6 +504,13 @@ export interface SipHandle {
    * fait plus rien.
    */
   presence(send: (ev: PresenceSipEvent) => void): PresenceLink;
+  /**
+   * Opens this UA's messaging link (ADR 0008, D12): its events go to
+   * `send` — MessagingMachine's, never PhoneMachine's. A second call
+   * returns the same link, rebound to the new `send`. After `stop()`, or
+   * with messaging turned off, the link does nothing.
+   */
+  messaging(send: (ev: MessagingSipEvent) => void): MessagingLink;
 }
 
 export interface SipPort {
@@ -504,19 +521,44 @@ export interface SipPort {
  * Les méthodes que Trix annonce dans l'en-tête `Allow` de chaque requête,
  * et de la réponse à OPTIONS ou à une méthode refusée.
  *
- * Celles de JsSIP comptent MESSAGE, alors qu'un MESSAGE entrant reçoit
- * 405 tant que personne n'écoute `newMessage` : le 405 porterait lui-même
- * un `Allow` qui contredit le refus, et un correspondant qui se fie à
- * l'annonce croirait pouvoir écrire. Trix ne reçoit pas encore de
- * messages : MESSAGE sort de la liste, et y reviendra avec la messagerie.
+ * MESSAGE n'y figure que si la messagerie est allumée (ADR 0008, D13) :
+ * éteinte, personne n'écoute `newMessage`, un MESSAGE entrant reçoit 405,
+ * et ce 405 porterait lui-même un `Allow` qui contredit le refus si la
+ * liste de JsSIP restait telle quelle.
  */
 export const ALLOWED_METHODS = "INVITE,ACK,CANCEL,BYE,UPDATE,OPTIONS,REFER,INFO,NOTIFY,SUBSCRIBE";
+export const ALLOWED_METHODS_WITH_MESSAGE = `${ALLOWED_METHODS},MESSAGE`;
 
-// même objet que celui qu'importe `SIPMessage` (voir `sip/digest.ts` pour
-// l'identité des modules internes sur les trois chemins de construction)
-(JsSIP.C as { ALLOWED_METHODS: string }).ALLOWED_METHODS = ALLOWED_METHODS;
+/**
+ * Les types de corps annoncés dans `Accept` (réponse à OPTIONS, et 415).
+ * Ceux de JsSIP, plus `text/plain` quand la messagerie est allumée : c'est
+ * ce que dit le 415 opposé à un MESSAGE d'un autre type (ADR 0008, D1).
+ */
+export const ACCEPTED_BODY_TYPES = "application/sdp, application/dtmf-relay";
+export const ACCEPTED_BODY_TYPES_WITH_TEXT = `${ACCEPTED_BODY_TYPES}, text/plain`;
 
-export function createJsSipPort(): SipPort {
+/**
+ * Écrit les deux listes dans les constantes de JsSIP — le même objet que
+ * celui qu'importe `SIPMessage` (voir `sip/digest.ts` pour l'identité des
+ * modules internes sur les trois chemins de construction).
+ */
+export function announceMessaging(on: boolean): void {
+  const c = JsSIP.C as { ALLOWED_METHODS: string; ACCEPTED_BODY_TYPES: string };
+  c.ALLOWED_METHODS = on ? ALLOWED_METHODS_WITH_MESSAGE : ALLOWED_METHODS;
+  c.ACCEPTED_BODY_TYPES = on ? ACCEPTED_BODY_TYPES_WITH_TEXT : ACCEPTED_BODY_TYPES;
+}
+
+// éteinte tant qu'aucun port ne dit le contraire
+announceMessaging(false);
+
+export interface PortOptions {
+  /** False for `"messaging": "no"` in `config.json` (ADR 0008, D13). */
+  messaging?: boolean;
+}
+
+export function createJsSipPort(opts: PortOptions = {}): SipPort {
+  const messagingOn = opts.messaging ?? true;
+  announceMessaging(messagingOn);
   return {
     start(cfg, send) {
       let ua: JsSIP.UA;
@@ -553,6 +595,9 @@ export function createJsSipPort(): SipPort {
           },
           presence() {
             return NO_PRESENCE;
+          },
+          messaging() {
+            return NO_MESSAGING;
           },
         };
       }
@@ -628,6 +673,19 @@ export function createJsSipPort(): SipPort {
         // la déclaration de JsSIP omet reply(), que l'objet porte bien
         (e.request as unknown as { reply(code: number): void }).reply(489);
       });
+      // ouvert à la demande, comme la présence
+      let messaging: OpenMessaging | null = null;
+      // MESSAGE entrant (ADR 0008) : écouté dès le départ, pour qu'un
+      // message arrivé avant l'ouverture du lien reçoive 480 et non le 200
+      // que JsSIP donnerait de lui-même. Messagerie éteinte : pas
+      // d'écouteur, JsSIP répond 405, et `Allow` ne dit plus MESSAGE.
+      if (messagingOn) {
+        ua.on("newMessage", (e: unknown) => {
+          const ev = e as unknown as JsSipMessageEvent;
+          if (ev.originator !== "remote") return;
+          (messaging ?? NO_MESSAGING).receive(jssipIncoming(ev));
+        });
+      }
       ua.start();
 
       // ouvert à la demande : un serveur sans présence ne voit partir aucun
@@ -642,6 +700,7 @@ export function createJsSipPort(): SipPort {
           // le retrait de la publication et les désabonnements partent
           // donc avant l'unREGISTER (ADR 0007, D2)
           presence?.close();
+          messaging?.close();
           // l'empreinte SHA-256 reste déposée jusqu'à `disconnected` : les
           // requêtes de fin (unREGISTER, retrait, désabonnements) peuvent
           // encore être défiées, et leur 401 arrive après ce stop()
@@ -665,6 +724,15 @@ export function createJsSipPort(): SipPort {
             send: sendPresence,
           });
           return presence;
+        },
+        messaging(sendMessaging) {
+          if (stopped || !messagingOn) return NO_MESSAGING;
+          if (messaging) {
+            messaging.rebind(sendMessaging);
+            return messaging;
+          }
+          messaging = openMessaging({ sender: jssipSender(ua), send: sendMessaging });
+          return messaging;
         },
         refresh() {
           if (!ua.isConnected()) return false;

@@ -1,49 +1,81 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import Constants from "jssip/lib/Constants.js";
 // @ts-expect-error — JsSIP internal module, no type declarations
 import Parser from "jssip/lib/Parser.js";
-import { ALLOWED_METHODS } from "../src/sip/port.js";
+import {
+  ACCEPTED_BODY_TYPES,
+  ACCEPTED_BODY_TYPES_WITH_TEXT,
+  ALLOWED_METHODS,
+  ALLOWED_METHODS_WITH_MESSAGE,
+  announceMessaging,
+  createJsSipPort,
+} from "../src/sip/port.js";
 
 /**
- * The `Allow` header must not announce MESSAGE while an incoming MESSAGE
- * is answered 405: a 405 whose own `Allow` lists the refused method
- * contradicts itself.
+ * What Trix announces in `Allow` and `Accept` follows whether messaging is
+ * on (ADR 0008, D13): off, an incoming MESSAGE is answered 405, and a 405
+ * whose own `Allow` lists the refused method would contradict itself.
  */
-describe("Allow header", () => {
-  it("leaves MESSAGE out of what Trix announces", () => {
-    const methods = ALLOWED_METHODS.split(",");
-    expect(methods).not.toContain("MESSAGE");
-    expect(methods).toContain("INVITE");
-  });
 
-  it("reaches the constants JsSIP writes its headers from", () => {
+const MESSAGE = (contentType: string) =>
+  [
+    "MESSAGE sip:alice@example.org SIP/2.0",
+    "Via: SIP/2.0/WSS proxy.example.org;branch=z9hG4bK776asdhds",
+    "Max-Forwards: 70",
+    "To: <sip:alice@example.org>",
+    "From: <sip:bob@example.org>;tag=49583",
+    "Call-ID: a84b4c76e66710",
+    "CSeq: 1 MESSAGE",
+    `Content-Type: ${contentType}`,
+    "Content-Length: 5",
+    "",
+    "Hello",
+  ].join("\r\n");
+
+/** The response JsSIP writes for `code`, headers split into lines. */
+function replyTo(raw: string, code: number): string[] {
+  const request = Parser.parseMessage(raw, { configuration: {} });
+  let sent = "";
+  request.server_transaction = {
+    receiveResponse: (_code: number, response: string) => {
+      sent = response;
+    },
+  };
+  request.reply(code);
+  return sent.split("\r\n");
+}
+
+afterEach(() => announceMessaging(false));
+
+describe("Allow header, messaging off", () => {
+  it("leaves MESSAGE out until a port says otherwise", () => {
+    expect(ALLOWED_METHODS.split(",")).not.toContain("MESSAGE");
     expect(Constants.ALLOWED_METHODS).toBe(ALLOWED_METHODS);
   });
 
   it("goes out on the 405 answering a MESSAGE", () => {
-    const raw = [
-      "MESSAGE sip:alice@example.org SIP/2.0",
-      "Via: SIP/2.0/WSS proxy.example.org;branch=z9hG4bK776asdhds",
-      "Max-Forwards: 70",
-      "To: <sip:alice@example.org>",
-      "From: <sip:bob@example.org>;tag=49583",
-      "Call-ID: a84b4c76e66710",
-      "CSeq: 1 MESSAGE",
-      "Content-Type: text/plain",
-      "Content-Length: 5",
-      "",
-      "Hello",
-    ].join("\r\n");
-    const ua = { configuration: {} };
-    const request = Parser.parseMessage(raw, ua);
-    let sent = "";
-    request.server_transaction = {
-      receiveResponse: (_code: number, response: string) => {
-        sent = response;
-      },
-    };
-    request.reply(405);
-    expect(sent.startsWith("SIP/2.0 405 ")).toBe(true);
-    expect(sent.split("\r\n")).toContain(`Allow: ${ALLOWED_METHODS}`);
+    createJsSipPort({ messaging: false });
+    const lines = replyTo(MESSAGE("text/plain"), 405);
+    expect(lines[0]).toMatch(/^SIP\/2\.0 405 /);
+    expect(lines).toContain(`Allow: ${ALLOWED_METHODS}`);
+  });
+
+  it("keeps JsSIP's own Accept", () => {
+    createJsSipPort({ messaging: false });
+    expect(Constants.ACCEPTED_BODY_TYPES).toBe(ACCEPTED_BODY_TYPES);
+  });
+});
+
+describe("Allow header, messaging on", () => {
+  it("announces MESSAGE", () => {
+    createJsSipPort();
+    expect(Constants.ALLOWED_METHODS).toBe(ALLOWED_METHODS_WITH_MESSAGE);
+    expect(ALLOWED_METHODS_WITH_MESSAGE.split(",")).toContain("MESSAGE");
+  });
+
+  it("names text/plain in the 415 refusing another body type", () => {
+    createJsSipPort({ messaging: true });
+    const lines = replyTo(MESSAGE("message/cpim"), 415);
+    expect(lines).toContain(`Accept: ${ACCEPTED_BODY_TYPES_WITH_TEXT}`);
   });
 });

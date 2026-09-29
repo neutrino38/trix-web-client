@@ -131,6 +131,13 @@ describe("parseDeployment — real-time text and the SIP trace", () => {
     expect(parseDeployment({}).debug).toBe(true);
   });
 
+  it('only "no" turns messaging off', () => {
+    expect(parseDeployment({ messaging: "no" }).messaging).toBe(false);
+    expect(parseDeployment({ messaging: " NO " }).messaging).toBe(false);
+    expect(parseDeployment({ messaging: "yes" }).messaging).toBe(true);
+    expect(parseDeployment({}).messaging).toBe(true);
+  });
+
   it('only "no" turns presence off', () => {
     expect(parseDeployment({ presence: "no" }).presence).toBe(false);
     expect(parseDeployment({ presence: " No " }).presence).toBe(false);
@@ -187,6 +194,7 @@ describe("pinAccount", () => {
     rtt: "datachannel",
     debug: false,
     presence: false,
+    messaging: true,
   };
 
   it("realigns a stored account on what the deployment pins", () => {

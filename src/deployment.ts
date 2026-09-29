@@ -54,6 +54,11 @@ export interface Deployment {
    * operator does not want to see them tried at every registration.
    */
   presence: boolean;
+  /**
+   * False only for `"messaging": "no"` (ADR 0008, D13): no MESSAGE sent,
+   * none taken — they get 405, and `Allow` no longer lists the method.
+   */
+  messaging: boolean;
 }
 
 /** No file, or nothing usable in it: Trix as it is without deployment configuration. */
@@ -64,6 +69,7 @@ export const OPEN_DEPLOYMENT: Deployment = {
   rtt: null,
   debug: true,
   presence: true,
+  messaging: true,
 };
 
 /** Where the file is looked for, relative to wherever Trix is served from. */
@@ -150,6 +156,7 @@ export function parseDeployment(raw: unknown): Deployment {
     debug: text(obj, "debug_activated")?.toLowerCase() !== "no",
     // same reading: only "no" turns it off, and discovery (D8) does the rest
     presence: text(obj, "presence")?.toLowerCase() !== "no",
+    messaging: text(obj, "messaging")?.toLowerCase() !== "no",
   };
 }
 

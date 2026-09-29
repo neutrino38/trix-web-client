@@ -28,6 +28,7 @@ import type {
 } from "../src/sip/port.js";
 import { NO_MEDIA } from "../src/sip/port.js";
 import { NO_PRESENCE } from "../src/sip/presence.js";
+import { NO_MESSAGING } from "../src/sip/message.js";
 import type { TraceLine } from "../src/sip/record.js";
 import type { MediaStats } from "../src/sip/stats.js";
 import type { ChatItem } from "../src/sip/transcript.js";
@@ -184,6 +185,7 @@ class FakeSip implements SipPort {
         this.stopped++;
       },
       presence: () => NO_PRESENCE,
+      messaging: () => NO_MESSAGING,
       refresh: () => {
         this.refreshed++;
         return this.connected;
@@ -300,6 +302,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       rtt: "datachannel",
       debug: true,
       presence: true,
+      messaging: true,
     });
     const { phone, sip } = await bootTo("connecting", CFG);
     expect(activeCfg(phone)).toEqual({
@@ -343,6 +346,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       rtt: "datachannel",
       debug: true,
       presence: true,
+      messaging: true,
     });
     const { phone, box } = await bootTo("home", null);
     phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });

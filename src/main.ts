@@ -65,7 +65,9 @@ const phone = PhoneMachine.start({
   logger: machineLogger(() => started),
   args: {
     store: createBrowserStore(),
-    sip: createJsSipPort(),
+    // `"messaging": "no"` dans config.json (ADR 0008, D13) : ni écouteur,
+    // ni MESSAGE dans `Allow`
+    sip: createJsSipPort({ messaging: deployment().messaging }),
     // la conversation de l'appel qui se termine, lue au panneau au moment
     // où la machine range sa ligne d'historique (§4.9) : c'est ici, et
     // nulle part ailleurs, que l'écran et la machine se rencontrent
