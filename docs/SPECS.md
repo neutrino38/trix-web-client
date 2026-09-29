@@ -447,7 +447,7 @@ clignotant de l'alerte, qui reste le signal principal.
 - [x] Présence périmée hors enregistrement : anneau pointillé, heure de la dernière nouvelle
 - [x] Fil **Échanges** : un correspondant par ligne, présence et dernier événement, dépliable
       sur ses appels, bureau et mobile
-- [ ] Messagerie instantanée (SIP MESSAGE, RFC 3428) dans le même fil — ADR à venir
+- [ ] Messagerie instantanée (SIP MESSAGE, RFC 3428) dans le même fil — [ADR 0008](architecture/0008-messagerie.md), proposé
 
 ### Hors phase — livré en cours de route
 - [x] Internationalisation : anglais / français / québécois / japonais / chinois simplifié /
