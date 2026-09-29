@@ -133,6 +133,10 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    * compte s'en sert déjà, ou quand c'est lui que la machine vient de
    * refuser : un réglage en vigueur ou fautif ne se cache pas. Replié, il
    * part quand même avec le formulaire — masquer n'est pas effacer.
+   *
+   * La case reste en tête de la deuxième colonne ; ce qu'elle déplie
+   * prend une colonne à lui, à droite, plutôt que de repousser vers le
+   * bas le transport du texte et le diagnostic.
    */
   const advancedOpen =
     cfg?.authUsername != null ||
@@ -140,13 +144,14 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
     turn !== null ||
     suspect === "stun" ||
     suspect === "turn";
-  const advancedSection = `          <div class="field">
+  const advancedToggleField = `          <div class="field">
             <label class="checkline" for="f-advanced">
               <input type="checkbox" id="f-advanced" ${advancedOpen ? "checked" : ""}>
               <span>${esc(t("config.advanced"))}</span>
             </label>
-          </div>
-          <div class="config-advanced" data-ref="advanced"${advancedOpen ? "" : " hidden"}>
+          </div>`;
+  const advancedSection = `<section class="config-col config-advanced" data-ref="advanced"${advancedOpen ? "" : " hidden"}>
+          <h3>${esc(t("config.advanced"))}</h3>
           <div class="field">
             <label class="checkline" for="f-auth-toggle">
               <input type="checkbox" id="f-auth-toggle" ${cfg?.authUsername ? "checked" : ""}>
@@ -161,7 +166,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
                    ${cfg?.authUsername ? "" : "disabled"}${inv("credentials")}>
           </div>
 ${natSection}
-          </div>`;
+        </section>`;
 
   /**
    * Le transport du texte : imposé, il n'y a plus de choix à offrir — et
@@ -247,7 +252,7 @@ ${natSection}
 
         </section>
 
-        <section class="config-col">${advancedSection}${rttSection}
+        <section class="config-col">${advancedToggleField}${rttSection}
         ${
           // Le diagnostic ferme la colonne du milieu : il n'a rien
           // à voir avec le compte, ne s'enregistre pas, et n'intéresse qu'un
@@ -266,6 +271,8 @@ ${natSection}
             : ""
         }
         </section>
+
+        ${advancedSection}
 
         </div>
         <div class="form-actions">

@@ -182,15 +182,23 @@ a.btn { text-decoration: none; }
 .config-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.6rem 2.4rem; align-items: start; }
 /* min-width: 0 — sans quoi un placeholder large élargit sa colonne */
 .config-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
-/* La partie « avancée » garde l'espacement de sa colonne ; `hidden` doit
-   l'emporter sur ce `display` pour qu'elle se replie vraiment. */
-.config-advanced { display: flex; flex-direction: column; gap: 0.9rem; }
+/* Dépliée, la partie « avancée » ouvre une troisième colonne plutôt que de
+   repousser la deuxième vers le bas, et le formulaire s'élargit avec elle.
+   `hidden` doit l'emporter sur le `display` de .config-col pour qu'elle se
+   replie vraiment. */
 .config-advanced[hidden] { display: none; }
-/* une seule colonne quand deux seraient étriquées : des colonnes de
-   300 px seraient pires qu'un formulaire long */
+.config-cols:has(> .config-advanced:not([hidden])) { grid-template-columns: repeat(3, 1fr); }
+.screen-config form:has(.config-advanced:not([hidden])) { width: min(1180px, 94vw); }
+/* moins de colonnes quand elles seraient étriquées : des colonnes de
+   300 px seraient pires qu'un formulaire long — la partie avancée passe
+   alors sous les deux autres, puis tout tient sur une seule */
+@media (max-width: 1100px) {
+  .config-cols:has(> .config-advanced:not([hidden])) { grid-template-columns: repeat(2, 1fr); }
+  .screen-config form:has(.config-advanced:not([hidden])) { width: min(800px, 92vw); }
+}
 @media (max-width: 800px) {
-  .config-cols { grid-template-columns: 1fr; }
-  .screen-config form { width: min(400px, 90vw); }
+  .config-cols, .config-cols:has(> .config-advanced:not([hidden])) { grid-template-columns: 1fr; }
+  .screen-config form, .screen-config form:has(.config-advanced:not([hidden])) { width: min(400px, 90vw); }
 }
 .screen-config h2 { font-size: 1.15rem; font-weight: 600; }
 /* Emplacement du bandeau d'erreur, réécrit sur place à chaque validation
