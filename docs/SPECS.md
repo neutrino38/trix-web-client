@@ -475,6 +475,7 @@ Vitest, exécution par `npm test`. Couverture actuelle (`test/`) :
 | `allow.test.ts` | `Allow` et `Accept` selon que la messagerie est allumée, jusque dans le 405 et le 415 |
 | `message.test.ts` | lien de messagerie : réponses aux MESSAGE entrants, issues d'envoi, plafond (ADR 0008) |
 | `messaging.test.ts` | MessagingMachine : réponse par expéditeur, quarantaine et son délai, file d'envoi, signaux du téléphone (ADR 0008) |
+| `strangerprompt.test.ts` | fenêtre d'un inconnu : l'adresse avant le nom affiché, messages échappés, trois réponses (ADR 0008) |
 | `sdp.test.ts`, `ice.test.ts` | analyse de l'offre SDP, normalisation STUN/TURN |
 | `trace.test.ts`, `record.test.ts`, `tracedialog.test.ts` | trace SIP, carnet d'appel, dialogue de relecture |
 | `stats.test.ts` | fenêtre glissante et bilan média |

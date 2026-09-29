@@ -7,6 +7,7 @@ import { MessagingMachine } from "./machines/messaging.js";
 import { linkMessaging } from "./machines/messagingsignals.js";
 import { bindPresence } from "./ui/presence.js";
 import { bindMessaging } from "./ui/messaging.js";
+import { syncStrangerPrompt } from "./ui/strangerprompt.js";
 import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
@@ -141,6 +142,8 @@ presence.subscribe(scheduleRender);
 // les messages arrivent sans que le téléphone bouge : le fil suit
 bindMessaging(messaging);
 messaging.subscribe(scheduleRender);
+// la fenêtre d'un inconnu suit la machine, hors du rendu des écrans (D5)
+messaging.subscribe(() => syncStrangerPrompt(phone, messaging));
 renderApp(root, phone);
 
 // bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé

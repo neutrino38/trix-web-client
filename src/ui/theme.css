@@ -1140,6 +1140,26 @@ fieldset.field { border: none; }
   display: flex; flex-direction: column; overflow: hidden;
 }
 .trace-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
+
+/* Message d'une adresse inconnue (ADR 0008, D5) : l'adresse d'abord, les
+   messages tels quels, trois réponses. */
+.stranger-dialog {
+  width: min(30rem, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: 16px;
+  background: var(--panel); color: var(--ink); padding: 1.2rem 1.3rem; box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 0.7rem;
+}
+.stranger-dialog:not([open]) { display: none; }
+.stranger-dialog::backdrop { background: rgba(13, 10, 18, 0.55); }
+.stranger-dialog h2 { font-size: 1.05rem; }
+.stranger-messages {
+  display: flex; flex-direction: column; gap: 0.35rem; max-height: 14rem; overflow-y: auto;
+}
+.stranger-messages p {
+  background: var(--panel-2); border-radius: 12px; padding: 0.45rem 0.75rem;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem;
+}
+.stranger-expiry { font-size: 0.8rem; color: var(--ink-soft); }
+.stranger-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .trace-head {
   flex: none; display: flex; align-items: flex-start; justify-content: space-between;
   gap: 1rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border);
