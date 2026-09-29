@@ -586,6 +586,16 @@ const messages: Translation = {
   "reason.offerUnsupported": "{detail} のないメディアオファー：WebRTC 非対応",
   "reason.callFailed": "発信できませんでした：{detail}",
   "reason.sip": "{cause}（SIP {code}）",
+  "message.reason.noAnswer": "応答なし",
+  "message.reason.notFound": "不明なアドレス",
+  "message.reason.unreachable": "連絡がつきません",
+  "message.reason.refused": "拒否されました",
+  "message.reason.format": "形式が拒否されました",
+  "message.reason.unsupported": "サーバーがメッセージを転送しません",
+  "message.reason.failed": "失敗（SIP {code}）",
+  "message.reason.tooLong": "メッセージが長すぎます",
+  "message.reason.invalid": "無効なアドレス",
+  "message.reason.interrupted": "応答前に接続が切れました",
 
   // ---------------------------------------------------------------------
   // アカウント共有ページ（share_account.html）

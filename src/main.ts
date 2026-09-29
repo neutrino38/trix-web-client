@@ -3,6 +3,8 @@ import { PhoneMachine, type PhoneInstance } from "./machines/phone.js";
 import { CallBlock } from "./machines/call.js";
 import { PresenceMachine } from "./machines/presence.js";
 import { linkPresence } from "./machines/presencesignals.js";
+import { MessagingMachine } from "./machines/messaging.js";
+import { linkMessaging } from "./machines/messagingsignals.js";
 import { bindPresence } from "./ui/presence.js";
 import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
@@ -58,13 +60,29 @@ const presence = PresenceMachine.start({
   },
 });
 
+// Un seul coffre pour les deux machines qui y écrivent : PhoneMachine
+// (comptes, historique, contacts) et MessagingMachine (messages).
+const store = createBrowserStore();
+
+// La messagerie (ADR 0008, D12) : une troisième paire, sur le modèle de la
+// présence. Elle ne lit du téléphone que ses transitions (`linkMessaging`).
+const messaging = MessagingMachine.start({
+  debug: true,
+  args: {
+    store,
+    // `"messaging": "no"` dans config.json (D13)
+    enabled: deployment().messaging,
+    visible: document.visibilityState === "visible",
+  },
+});
+
 const phone = PhoneMachine.start({
   debug: true,
   // les transitions restent en console.debug ; ce que le moteur signale
   // lui-même (exception dans un état, goto inconnu…) ressort en console.error
   logger: machineLogger(() => started),
   args: {
-    store: createBrowserStore(),
+    store,
     // `"messaging": "no"` dans config.json (ADR 0008, D13) : ni écouteur,
     // ni MESSAGE dans `Allow`
     sip: createJsSipPort({ messaging: deployment().messaging }),
@@ -86,6 +104,8 @@ watchMachine(phone);
 // du téléphone vers la présence : enregistré, désenregistré, en appel,
 // carnet modifié (machines/presencesignals.ts)
 linkPresence(phone, presence);
+// et vers la messagerie : compte choisi, enregistré, en appel, carnet
+linkMessaging(phone, messaging);
 
 // états et transitions de l'appel, dans le même flux que les paquets SIP et
 // sous le même réglage : c'est de leur juxtaposition qu'on lit un échange
@@ -117,6 +137,7 @@ phone.subscribe(scheduleRender);
 // l'en-tête suit — `renderApp` ne reconstruit que si ce qu'il en montre a changé
 bindPresence(presence);
 presence.subscribe(scheduleRender);
+messaging.subscribe(scheduleRender);
 renderApp(root, phone);
 
 // bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé
@@ -162,6 +183,12 @@ watchSystemLifecycle({
 // Personne au clavier depuis dix minutes : Disponible devient Absent pour
 // les autres, et revient au premier geste (ADR 0007, D5, règle 2). La
 // présence seule en décide ; le téléphone n'en sait rien.
+// La fenêtre d'un inconnu ne compte ses deux minutes que dans un onglet
+// visible (ADR 0008, D5).
+document.addEventListener("visibilitychange", () =>
+  messaging.send({ type: "sys:visible", visible: document.visibilityState === "visible" }),
+);
+
 watchActivity({
   onIdle: () => presence.send({ type: "sys:idle" }),
   onActive: () => presence.send({ type: "sys:active" }),
@@ -174,6 +201,7 @@ declare global {
     trix: {
       phone: typeof phone;
       presence: typeof presence;
+      messaging: typeof messaging;
       mermaid: () => string;
       dump: () => string;
     };
@@ -182,8 +210,9 @@ declare global {
 window.trix = {
   phone,
   presence,
+  messaging,
   mermaid: () =>
-    `${PhoneMachine.toMermaid()}\n${CallBlock.toMermaid()}\n${PresenceMachine.toMermaid()}`,
+    [PhoneMachine, CallBlock, PresenceMachine, MessagingMachine].map((m) => m.toMermaid()).join("\n"),
   // à copier dans un rapport de bug : les dernières transitions, en clair
   dump: () => formatLog(phone.log),
 };

@@ -66,7 +66,8 @@ bloc.
 
 ${section("../src/machines/phone.ts")}
 ${section("../src/machines/call.ts")}
-${section("../src/machines/presence.ts")}`;
+${section("../src/machines/presence.ts")}
+${section("../src/machines/messaging.ts")}`;
 }
 
 describe("observabilité — diagrammes", () => {

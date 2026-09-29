@@ -596,6 +596,16 @@ const messages: Translation = {
   "reason.offerUnsupported": "Offre média sans {detail} : incompatible avec WebRTC",
   "reason.callFailed": "Appel impossible : {detail}",
   "reason.sip": "{cause} (SIP {code})",
+  "message.reason.noAnswer": "Aucune réponse",
+  "message.reason.notFound": "Adresse inconnue",
+  "message.reason.unreachable": "Injoignable",
+  "message.reason.refused": "Refusé",
+  "message.reason.format": "Format refusé",
+  "message.reason.unsupported": "Le serveur ne transmet pas les messages",
+  "message.reason.failed": "Échec (SIP {code})",
+  "message.reason.tooLong": "Message trop long",
+  "message.reason.invalid": "Adresse invalide",
+  "message.reason.interrupted": "Connexion perdue avant la réponse",
 
   // ---------------------------------------------------------------------
   // Page de partage d'un compte (share_account.html)

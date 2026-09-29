@@ -638,6 +638,18 @@ const messages = {
   /** Cause SIP brute assortie de son code — les deux restent en clair. */
   "reason.sip": "{cause} (SIP {code})",
 
+  /** Messagerie instantanée : pourquoi un message n'est pas parti (ADR 0008, D3) */
+  "message.reason.noAnswer": "Pas de réponse",
+  "message.reason.notFound": "Adresse inconnue",
+  "message.reason.unreachable": "Injoignable",
+  "message.reason.refused": "Refusé",
+  "message.reason.format": "Format refusé",
+  "message.reason.unsupported": "Le serveur ne transmet pas les messages",
+  "message.reason.failed": "Échec (SIP {code})",
+  "message.reason.tooLong": "Message trop long",
+  "message.reason.invalid": "Adresse invalide",
+  "message.reason.interrupted": "Connexion perdue avant la réponse",
+
   /**
    * Texte technique qui n'a pas de traduction (cause JsSIP, historique
    * enregistré avant l'i18n) : rendu tel quel, sans être perdu.

@@ -576,6 +576,16 @@ const messages: Translation = {
   "reason.offerUnsupported": "媒体提议缺少 {detail}：与 WebRTC 不兼容",
   "reason.callFailed": "无法呼叫：{detail}",
   "reason.sip": "{cause}（SIP {code}）",
+  "message.reason.noAnswer": "无应答",
+  "message.reason.notFound": "地址未知",
+  "message.reason.unreachable": "无法联系",
+  "message.reason.refused": "被拒绝",
+  "message.reason.format": "格式被拒绝",
+  "message.reason.unsupported": "服务器不转发消息",
+  "message.reason.failed": "失败（SIP {code}）",
+  "message.reason.tooLong": "消息过长",
+  "message.reason.invalid": "地址无效",
+  "message.reason.interrupted": "收到答复前连接已断开",
 
   // ---------------------------------------------------------------------
   // 账号共享页面（share_account.html）

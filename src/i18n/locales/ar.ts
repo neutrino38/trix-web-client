@@ -612,6 +612,16 @@ const messages: Translation = {
   "reason.offerUnsupported": "عرض وسائط بدون {detail}: غير متوافق مع WebRTC",
   "reason.callFailed": "تعذّر إجراء المكالمة: {detail}",
   "reason.sip": "{cause} (SIP {code})",
+  "message.reason.noAnswer": "لا ردّ",
+  "message.reason.notFound": "عنوان غير معروف",
+  "message.reason.unreachable": "تعذّر الوصول",
+  "message.reason.refused": "مرفوض",
+  "message.reason.format": "صيغة مرفوضة",
+  "message.reason.unsupported": "الخادم لا ينقل الرسائل",
+  "message.reason.failed": "فشل (SIP {code})",
+  "message.reason.tooLong": "الرسالة طويلة جدًا",
+  "message.reason.invalid": "عنوان غير صالح",
+  "message.reason.interrupted": "انقطع الاتصال قبل الردّ",
 
   // ---------------------------------------------------------------------
   // صفحة مشاركة الحساب (share_account.html)
