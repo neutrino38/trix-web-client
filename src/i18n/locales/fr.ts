@@ -99,20 +99,14 @@ const messages = {
   "config.turnTlsHint": "Sans port explicite, 5349 est alors utilisé au lieu de 3478.",
 
   "config.section.rtt": "Texte en temps réel",
-  "config.rttHint":
-    "Le texte s'écrit et se lit caractère par caractère pendant l'appel. Le chemin qu'il emprunte dépend de la plateforme que vous appelez.",
+  "config.rttHint": "Le texte s'écrit et se lit caractère par caractère pendant l'appel.",
   "config.rttTransport": "Transport",
   "config.rttNone": "Aucun",
-  "config.rttNoneDesc":
-    " — l'appel se passe comme avant : rien n'est ajouté à ce qui est négocié",
+  "config.rttNoneDesc": " — texte en temps réel désactivé",
   "config.rttWs": "Sur WebSocket",
-  "config.rttWsDesc":
-    " — le format non standard des passerelles déjà déployées : c'est ce que comprennent les services en place",
+  "config.rttWsDesc": " — le texte en temps réel est échangé sur une WebSocket (non standard)",
   "config.rttDc": "Sur canal de données",
-  "config.rttDcDesc":
-    " — la norme (RFC 8865), à choisir pour parler à un client de texte en temps réel standard",
-  "config.rttNote":
-    "Enregistré avec le compte. Dans le doute, laissez « Aucun » : proposer du texte modifie l'offre de tous vos appels, et un serveur qui ne l'attend pas peut mal le prendre.",
+  "config.rttDcDesc": " — texte en temps réel au standard RFC 8865",
 
   "config.section.alerts": "Alertes et affichage",
   "config.flashLabel": "Flash visuel à l'appel entrant",

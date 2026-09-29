@@ -99,20 +99,15 @@ const messages: Translation = {
     " — encrypted relay (“turns:”), which still gets through where only TLS traffic is allowed",
   "config.turnTlsHint": "With no port given, 5349 is then used instead of 3478.",
 
-  "config.section.rtt": "Real-time text",
-  "config.rttHint":
-    "Text is written and read character by character during the call. Which path it takes depends on the platform you are calling.",
+  "config.section.rtt": "Realtime text",
+  "config.rttHint": "Text is written and read character by character during the call.",
   "config.rttTransport": "Transport",
   "config.rttNone": "None",
-  "config.rttNoneDesc": " — the call goes as before: nothing is added to what is negotiated",
+  "config.rttNoneDesc": " — realtime text deactivated",
   "config.rttWs": "Over WebSocket",
-  "config.rttWsDesc":
-    " — the non-standard format of gateways already deployed: what services in place understand",
+  "config.rttWsDesc": " — realtime text is exchanged over a WebSocket (non-standard)",
   "config.rttDc": "Over data channel",
-  "config.rttDcDesc":
-    " — the standard (RFC 8865), the one to pick when talking to a standard real-time text client",
-  "config.rttNote":
-    "Saved with the account. When in doubt, leave it on “None”: offering text changes the offer of every call you make, and a server that is not expecting it may take it badly.",
+  "config.rttDcDesc": " — realtime text to the RFC 8865 standard",
 
   "config.section.alerts": "Alerts and display",
   "config.flashLabel": "Visual flash on incoming call",
@@ -262,9 +257,9 @@ const messages: Translation = {
   "mode.text.label": "Text call",
   "mode.text.button": "Start text call",
   "chat.strip": "Chat opens with the call",
-  "chat.stripRefused": "Real-time text not accepted by the correspondent",
+  "chat.stripRefused": "Realtime text not accepted by the correspondent",
   // ---------------------------------------------------------------------
-  // Real-time text chat (T.140)
+  // Realtime text chat (T.140)
   // ---------------------------------------------------------------------
   "chat.tab": "Chat",
   "chat.aria": "Conversation with {peer}",
@@ -273,22 +268,22 @@ const messages: Translation = {
   "chat.announce": "{who}: {text}",
   "chat.jump.one": "Jump down — {n} message",
   "chat.jump.other": "Jump down — {n} messages",
-  "chat.composerAria": "Real-time text message",
+  "chat.composerAria": "Realtime text message",
   "chat.placeholder": "Type — the text leaves as you write",
   "chat.placeholderClosed": "Text unavailable on this call",
   "chat.placeholderEarly": "Read-only until the call is answered",
   "chat.enterHint": "Enter freezes the bubble",
   "chat.state.open": "Leaving as you type",
-  "chat.state.connecting": "Opening real-time text…",
+  "chat.state.connecting": "Opening realtime text…",
   "chat.state.lost": "Link broken — recovering",
-  "chat.state.closed": "Real-time text closed",
-  "chat.state.refused": "This correspondent does not take real-time text",
+  "chat.state.closed": "Realtime text closed",
+  "chat.state.refused": "This correspondent does not take realtime text",
   "chat.state.pending": "Correction in {s} s",
-  "chat.note.opened": "Real-time text open",
+  "chat.note.opened": "Realtime text open",
   "chat.note.lost": "Text lost during the outage",
   "chat.note.broken": "Text link broken — recovering",
-  "chat.note.closed": "Real-time text closed",
-  "chat.note.refused": "This correspondent does not take real-time text",
+  "chat.note.closed": "Realtime text closed",
+  "chat.note.refused": "This correspondent does not take realtime text",
   "chat.note.alert": "Alert received",
 
   /** Reading a past conversation back from the call log (§4.9). */
@@ -353,7 +348,7 @@ const messages: Translation = {
   "ctrl.chat.aria": "Chat",
   "ctrl.chat.show": "Show chat",
   "ctrl.chat.hide": "Hide chat",
-  "ctrl.chat.unavailable": "Real-time text not accepted by the correspondent",
+  "ctrl.chat.unavailable": "Realtime text not accepted by the correspondent",
   "ctrl.fullscreen": "Full screen",
   "ctrl.hangup": "Hang up",
   "ctrl.pause": "Pause",
@@ -598,7 +593,7 @@ const messages: Translation = {
   "share.proxy": "SIP server",
   "share.authUsername": "Authentication username",
   "share.ice": "NAT traversal",
-  "share.rtt": "Real-time text",
+  "share.rtt": "Realtime text",
   "share.none": "None",
   "share.warn":
     "This link carries everything needed to authenticate on this account. Once the account is created, do not keep it and do not pass it on.",

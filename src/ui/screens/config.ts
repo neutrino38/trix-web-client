@@ -191,7 +191,6 @@ ${natSection}
                         </label>`,
               ).join("")}
             </div>
-            <span class="hint">${esc(t("config.rttNote"))}</span>
           </fieldset>`;
 
   const node = el(`

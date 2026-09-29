@@ -108,19 +108,14 @@ const messages: Translation = {
   "config.turnTlsHint": "ポートを指定しない場合は、3478 ではなく 5349 が使われます。",
 
   "config.section.rtt": "リアルタイム文字",
-  "config.rttHint":
-    "文字は通話中に一文字ずつ書かれ、読まれます。どの経路を通るかは、発信先のプラットフォームによって決まります。",
+  "config.rttHint": "文字は通話中に一文字ずつ書かれ、読まれます。",
   "config.rttTransport": "転送方式",
   "config.rttNone": "なし",
-  "config.rttNoneDesc": " — 通話はこれまでどおり。ネゴシエーションに何も加えません",
+  "config.rttNoneDesc": " — リアルタイムテキストは無効",
   "config.rttWs": "WebSocket 経由",
-  "config.rttWsDesc":
-    " — すでに配備されているゲートウェイの非標準の形式。稼働中のサービスが理解できるのはこちらです",
+  "config.rttWsDesc": " — リアルタイムテキストを WebSocket でやり取りします（非標準）",
   "config.rttDc": "データチャネル経由",
-  "config.rttDcDesc":
-    " — 標準（RFC 8865）。標準的なリアルタイム文字クライアントと話すならこちらです",
-  "config.rttNote":
-    "アカウントとともに保存されます。迷ったら「なし」のままに。文字を申し出ると発信するすべての通話のオファーが変わり、それを想定していないサーバーでは不調の原因になります。",
+  "config.rttDcDesc": " — RFC 8865 標準のリアルタイムテキスト",
 
   "config.section.alerts": "通知と表示",
   "config.flashLabel": "着信時に画面をフラッシュ",
