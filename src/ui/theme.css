@@ -176,14 +176,12 @@ a.btn { text-decoration: none; }
    hauteur disponible et poussait hors écran, sans défilement possible, tout
    ce qui n'y tenait pas. */
 .config-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6rem 2.4rem; align-items: start; }
-/* Deux colonnes quand le déploiement a emporté celle du milieu — traversée
-   de NAT et transport du texte imposés (src/deployment.ts). Le formulaire se
-   resserre avec elle : trois gouttières pour deux colonnes laisseraient un
-   vide à droite plutôt qu'une mise en page. */
-.config-cols.cols-2 { grid-template-columns: repeat(2, 1fr); }
-.screen-config form:has(.cols-2) { width: min(800px, 92vw); }
 /* min-width: 0 — sans quoi un placeholder large élargit sa colonne */
 .config-col { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+/* La partie « avancée » garde l'espacement de sa colonne ; `hidden` doit
+   l'emporter sur ce `display` pour qu'elle se replie vraiment. */
+.config-advanced { display: flex; flex-direction: column; gap: 0.9rem; }
+.config-advanced[hidden] { display: none; }
 /* deux colonnes quand trois seraient étriquées, puis une seule : des
    colonnes de 300 px seraient pires qu'un formulaire long */
 @media (max-width: 1100px) {
@@ -191,8 +189,8 @@ a.btn { text-decoration: none; }
   .screen-config form { width: min(800px, 92vw); }
 }
 @media (max-width: 800px) {
-  .config-cols, .config-cols.cols-2 { grid-template-columns: 1fr; }
-  .screen-config form, .screen-config form:has(.cols-2) { width: min(400px, 90vw); }
+  .config-cols { grid-template-columns: 1fr; }
+  .screen-config form { width: min(400px, 90vw); }
 }
 .screen-config h2 { font-size: 1.15rem; font-weight: 600; }
 /* Emplacement du bandeau d'erreur, réécrit sur place à chaque validation

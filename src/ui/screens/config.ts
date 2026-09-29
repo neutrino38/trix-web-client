@@ -120,9 +120,6 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    * est de l'affichage, pas de la sécurité (machines/phone.ts).
    */
   const dep = deployment();
-  // La colonne du milieu porte deux sections indépendantes ; elle ne
-  // disparaît que lorsque le déploiement les a prises toutes les deux.
-  const natCol = dep.ice === null || dep.rtt === null;
   const uriValue = cfg
     ? `${cfg.username}@${cfg.domain}`
     : dep.domain
@@ -135,26 +132,10 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    * fournis ensemble par l'opérateur, et n'en imposer qu'un laisserait une
    * demi-section à remplir. Le déploiement qui en parle les prend donc tous
    * les deux, et la section s'en va (src/deployment.ts).
-   *
-   * Laissée à l'opérateur, elle reste repliée derrière la case « avancé » :
-   * la plupart des comptes n'en ont pas besoin. Elle s'ouvre d'elle-même
-   * quand le compte s'en sert déjà, ou quand c'est elle que la machine
-   * vient de refuser — un réglage en vigueur ou fautif ne se cache pas.
-   * Repliée, elle part quand même avec le formulaire : masquer n'est pas
-   * effacer.
    */
-  const advancedOpen =
-    cfg?.ice.stun != null || turn !== null || suspect === "stun" || suspect === "turn";
   const natSection = dep.ice
     ? ""
-    : `          <div class="field">
-            <label class="checkline" for="f-advanced">
-              <input type="checkbox" id="f-advanced" ${advancedOpen ? "checked" : ""}>
-              <span>${esc(t("config.advanced"))}</span>
-            </label>
-          </div>
-          <div data-ref="advanced"${advancedOpen ? "" : " hidden"}>
-          <h3>${esc(t("config.section.nat"))}</h3>
+    : `          <h3>${esc(t("config.section.nat"))}</h3>
           <p class="section-hint">${esc(t("config.natHint"))}</p>
           <div class="field">
             <label for="f-stun">${esc(t("config.stun"))}</label>
@@ -187,7 +168,43 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
             </label>
             <span class="hint">${esc(t("config.turnTlsHint"))}</span>
           </div>
-          <div class="note">${esc(t("config.turnNote"))}</div>
+          <div class="note">${esc(t("config.turnNote"))}</div>`;
+
+  /**
+   * Ce dont la plupart des comptes se passent — un identifiant
+   * d'authentification distinct du userpart, la traversée de NAT — reste
+   * replié derrière la case « avancé ». Il s'ouvre de lui-même quand le
+   * compte s'en sert déjà, ou quand c'est lui que la machine vient de
+   * refuser : un réglage en vigueur ou fautif ne se cache pas. Replié, il
+   * part quand même avec le formulaire — masquer n'est pas effacer.
+   */
+  const advancedOpen =
+    cfg?.authUsername != null ||
+    cfg?.ice.stun != null ||
+    turn !== null ||
+    suspect === "stun" ||
+    suspect === "turn";
+  const advancedSection = `          <div class="field">
+            <label class="checkline" for="f-advanced">
+              <input type="checkbox" id="f-advanced" ${advancedOpen ? "checked" : ""}>
+              <span>${esc(t("config.advanced"))}</span>
+            </label>
+          </div>
+          <div class="config-advanced" data-ref="advanced"${advancedOpen ? "" : " hidden"}>
+          <div class="field">
+            <label class="checkline" for="f-auth-toggle">
+              <input type="checkbox" id="f-auth-toggle" ${cfg?.authUsername ? "checked" : ""}>
+              <span>${t("config.authToggle", {
+                // le userpart est un fragment HTML : il se met à jour tout seul
+                // à la saisie de l'adresse, sans réécrire la phrase autour
+                user: `<b data-ref="userpart">${esc(uriUser)}</b>`,
+              })}</span>
+            </label>
+            <input id="f-auth" name="authUsername" autocomplete="off"
+                   value="${cfg?.authUsername ? esc(cfg.authUsername) : ""}"
+                   ${cfg?.authUsername ? "" : "disabled"}${inv("credentials")}>
+          </div>
+${natSection}
           </div>`;
 
   /**
@@ -221,7 +238,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
       <form novalidate>
         <h2>${esc(t(cfg ? "config.title" : "config.titleNew"))}</h2>
         <div class="error-slot" data-ref="errslot">${errorSlot(err, errCode)}</div>
-        <div class="config-cols${natCol ? "" : " cols-2"}">
+        <div class="config-cols">
         <section class="config-col">
         <h3>${esc(t("config.section.account"))}</h3>
         ${
@@ -249,19 +266,6 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
           <input id="f-display" name="displayName" value="${cfg ? esc(cfg.displayName) : ""}">
         </div>
         <div class="field">
-          <label class="checkline" for="f-auth-toggle">
-            <input type="checkbox" id="f-auth-toggle" ${cfg?.authUsername ? "checked" : ""}>
-            <span>${t("config.authToggle", {
-              // le userpart est un fragment HTML : il se met à jour tout seul
-              // à la saisie de l'adresse, sans réécrire la phrase autour
-              user: `<b data-ref="userpart">${esc(uriUser)}</b>`,
-            })}</span>
-          </label>
-          <input id="f-auth" name="authUsername" autocomplete="off"
-                 value="${cfg?.authUsername ? esc(cfg.authUsername) : ""}"
-                 ${cfg?.authUsername ? "" : "disabled"}${inv("credentials")}>
-        </div>
-        <div class="field">
           <label for="f-pass">${esc(t("config.password"))}</label>
           <input id="f-pass" name="password" type="password" autocomplete="current-password"
                  placeholder="${cfg ? esc(t("config.passwordSet")) : ""}" ${cfg ? "" : "required"}${inv("credentials")}>
@@ -287,12 +291,8 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
 
         </section>
 
-        ${
-          // les deux sections de cette colonne peuvent partir séparément ;
-          // la colonne elle-même ne disparaît que quand il ne reste rien
-          natCol ? `<section class="config-col">${natSection}${rttSection}
-        </section>` : ""
-        }
+        <section class="config-col">${advancedSection}${rttSection}
+        </section>
 
         <section class="config-col">
         <h3>${esc(t("config.section.alerts"))}</h3>
