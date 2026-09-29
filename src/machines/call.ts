@@ -39,9 +39,10 @@ import type {
   SipOriginator,
 } from "../sip/port.js";
 import { MEDIA_KINDS, NO_MEDIA, anyMedia, isLastMedia, mergeMedia, sameMedia } from "../sip/port.js";
-import type { CallDirection } from "../storage/store.js";
+import type { CallDirection, Contact } from "../storage/store.js";
 import { msg, rawMsg, type Msg, type MsgKey } from "../i18n/types.js";
 import type { CallNotice, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
+import { isBlocked } from "./contacts.js";
 
 /**
  * Ce que le bloc exige de trouver chez son hôte — la plus petite forme
@@ -58,6 +59,8 @@ export interface CallHost {
   suspectFields: SuspectField | null;
   /** Veille demandée pendant l'appel : l'hôte ira dormir au retour. */
   sleepRequested: boolean;
+  /** Le carnet, lu seulement : un second INVITE d'un bloqué reçoit 603 (ADR 0008, D7). */
+  contacts: readonly Contact[];
 }
 
 /** La sandbox du bloc : son état de travail, invisible de l'hôte. */
@@ -347,9 +350,10 @@ function interruptions(ending: Ending): CallOn {
       ctx.suspectFields = "credentials";
       return undefined;
     },
-    // deuxième INVITE pendant un appel : occupé (pas de double appel)
-    "sip:incoming": (ev) => {
-      ev.call.reject("busy");
+    // deuxième INVITE pendant un appel : occupé (pas de double appel) —
+    // sauf un contact bloqué, 603 comme partout (ADR 0008, D7)
+    "sip:incoming": (ev, ctx) => {
+      ev.call.reject(isBlocked(ctx.contacts, ev.call.from) ? "declined" : "busy");
     },
     /**
      * Média négocié avant que l'appel ne soit établi (la réponse SDP
@@ -1337,8 +1341,8 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
           ctx.sleepRequested = true;
           return undefined;
         },
-        "sip:incoming": (ev) => {
-          ev.call.reject("busy");
+        "sip:incoming": (ev, ctx) => {
+          ev.call.reject(isBlocked(ctx.contacts, ev.call.from) ? "declined" : "busy");
         },
         // le média n'a plus d'intérêt : l'appel se referme. Une offre en
         // vol, elle, mérite encore sa réponse — sans quoi l'appelant

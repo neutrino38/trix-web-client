@@ -1358,6 +1358,47 @@ describe("PhoneMachine — Ne pas déranger (ADR 0007, D6)", () => {
   });
 });
 
+describe("PhoneMachine — contacts bloqués (ADR 0008, D7)", () => {
+  it("bloquer une adresse hors carnet crée un contact bloqué ; débloquer le garde", async () => {
+    const { phone, box } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:blockContact", uri: "mallory", name: "" });
+    const [mallory] = phone.context.contacts;
+    expect(mallory).toMatchObject({ name: "mallory@example.fr", uri: "sip:mallory@example.fr", blocked: true });
+    phone.send({ type: "ui:unblockContact", id: mallory!.id });
+    expect(phone.context.contacts).toEqual([{ ...mallory, blocked: false }]);
+    await vi.waitFor(() => expect(box.contacts.get(SEED_ID)?.[0]?.blocked).toBe(false));
+  });
+
+  it("bloquer un contact du carnet le marque, sans le dupliquer", async () => {
+    const { phone } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:addContact", name: "Bob", uri: "bob" });
+    phone.send({ type: "ui:blockContact", uri: "sip:bob@example.fr", name: "autre nom" });
+    expect(phone.context.contacts).toEqual([expect.objectContaining({ name: "Bob", blocked: true })]);
+  });
+
+  it("son INVITE reçoit 603, avant Ne pas déranger, sans sonner ni historique", async () => {
+    const { phone, sip } = await bootTo("ready", CFG, [], () => [], () => true);
+    phone.send({ type: "ui:blockContact", uri: "bob", name: "" });
+    const { call, box: incoming } = fakeIncoming();
+    sip.send({ type: "sip:incoming", call });
+    expect(incoming.rejected).toEqual(["declined"]);
+    expect(phone.state).toBe("ready");
+    expect(phone.context.history).toEqual([]);
+  });
+
+  it("pendant un appel, son second INVITE reçoit 603 et non 486", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    phone.send({ type: "ui:blockContact", uri: "bob", name: "" });
+    const first = fakeIncoming();
+    first.call.from = "sip:carol@example.fr";
+    sip.send({ type: "sip:incoming", call: first.call });
+    expect(phone.state).toBe("in_call");
+    const second = fakeIncoming();
+    sip.send({ type: "sip:incoming", call: second.call });
+    expect(second.box.rejected).toEqual(["declined"]);
+  });
+});
+
 describe("PhoneMachine — perte du proxy et veille", () => {
   it("proxy perdu hors appel : reconnecting, appel impossible, retry auto après 10 s", async () => {
     vi.useFakeTimers();

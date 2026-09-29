@@ -181,6 +181,7 @@ function hostOf(args: Partial<CallData>, handle: SipHandle | null) {
       lastErrorCode: null,
       suspectFields: null,
       sleepRequested: false,
+      contacts: [],
       outcomes: [],
     }),
     states: {

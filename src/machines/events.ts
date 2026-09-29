@@ -272,6 +272,12 @@ export type PhoneEvent =
   | { type: "ui:renameContact"; id: string; name: string }
   | { type: "ui:removeContact"; id: string }
   /**
+   * Block an address (ADR 0008, D7): the contact is marked, or created
+   * blocked when it was not in the book, named `name` or its address.
+   */
+  | { type: "ui:blockContact"; uri: string; name: string }
+  | { type: "ui:unblockContact"; id: string }
+  /**
    * Flash visuel à l'appel entrant (accessibilité sourds) : réglage du
    * compte actif, changé depuis la fenêtre « Alertes et affichage » de
    * l'écran principal plutôt que par le formulaire du compte.

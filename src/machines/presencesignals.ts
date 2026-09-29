@@ -31,7 +31,8 @@ export interface PhoneView {
 
 const CORRIDOR = new Set(["ready", "in_call"]);
 
-const urisOf = (contacts: Contact[]): string[] => contacts.map((c) => c.uri);
+/** The addresses to watch: a blocked contact is not (ADR 0008, D7). */
+const urisOf = (contacts: Contact[]): string[] => contacts.filter((c) => !c.blocked).map((c) => c.uri);
 
 /** The signals between two successive views of the phone, in order. */
 export function presenceSignals(before: PhoneView | null, after: PhoneView): PhoneSignal[] {

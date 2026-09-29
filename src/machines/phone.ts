@@ -33,6 +33,7 @@ import type { ChatItem } from "../sip/transcript.js";
 import { computeHa1, computeHa1Sha256 } from "../storage/ha1.js";
 import { addressKey, normalizeTarget, parseSipUri } from "../sip/uri.js";
 import { CallBlock } from "./call.js";
+import { isBlocked } from "./contacts.js";
 import type { AccountData, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { parseIceForm } from "../sip/ice.js";
 import { parseRttTransport } from "../sip/rtt.js";
@@ -355,6 +356,33 @@ function renameContact(ev: Extract<PhoneEvent, { type: "ui:renameContact" }>, ct
   return stay("contact renommé");
 }
 
+/**
+ * Blocage (ADR 0008, D7) : le contact est marqué, ou créé bloqué s'il n'était
+ * pas au carnet. Ses appels et ses messages sont refusés en 603, et la
+ * présence cesse de le suivre (`presencesignals.ts`).
+ */
+function blockContact(ev: Extract<PhoneEvent, { type: "ui:blockContact" }>, ctx: PhoneCtx) {
+  const account = activeAccount(ctx);
+  if (!account) return stay("aucun compte actif");
+  const uri = normalizeTarget(ev.uri, account.domain);
+  const key = uri ? addressKey(uri) : null;
+  if (!uri || !key) return stay("adresse à bloquer invalide");
+  const known = ctx.contacts.find((c) => addressKey(c.uri) === key);
+  if (known?.blocked) return stay("déjà bloqué");
+  ctx.contacts = known
+    ? ctx.contacts.map((c) => (c === known ? { ...c, blocked: true } : c))
+    : [...ctx.contacts, { id: newAccountId(), name: ev.name.trim() || key, uri, addedAt: Date.now(), blocked: true }];
+  saveContacts(ctx);
+  return stay("contact bloqué");
+}
+
+function unblockContact(ev: Extract<PhoneEvent, { type: "ui:unblockContact" }>, ctx: PhoneCtx) {
+  if (!ctx.contacts.some((c) => c.id === ev.id && c.blocked)) return stay("rien à débloquer");
+  ctx.contacts = ctx.contacts.map((c) => (c.id === ev.id ? { ...c, blocked: false } : c));
+  saveContacts(ctx);
+  return stay("contact débloqué");
+}
+
 function removeContact(ev: Extract<PhoneEvent, { type: "ui:removeContact" }>, ctx: PhoneCtx) {
   if (!ctx.contacts.some((c) => c.id === ev.id)) return stay("contact inconnu");
   ctx.contacts = ctx.contacts.filter((c) => c.id !== ev.id);
@@ -365,11 +393,12 @@ function removeContact(ev: Extract<PhoneEvent, { type: "ui:removeContact" }>, ct
 /**
  * Un appel à la fois : tout INVITE arrivant hors de `ready` est refusé sur
  * place (486 en communication, 480 sinon — l'UA est en train de tomber ou
- * de se rétablir). L'événement est consommé sans changer d'état.
+ * de se rétablir), sauf celui d'un contact bloqué, qui reçoit 603 partout
+ * (ADR 0008, D7). L'événement est consommé sans changer d'état.
  */
 function refuseIncoming(reason: RejectReason) {
-  return (ev: Extract<PhoneEvent, { type: "sip:incoming" }>): void => {
-    ev.call.reject(reason);
+  return (ev: Extract<PhoneEvent, { type: "sip:incoming" }>, ctx: PhoneCtx): void => {
+    ev.call.reject(isBlocked(ctx.contacts, ev.call.from) ? "declined" : reason);
   };
 }
 
@@ -906,6 +935,12 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // INVITE entrant : même écran d'appel, le bloc démarre en sonnerie —
         // sauf en Ne pas déranger, où rien ne sonne (ADR 0007, D6)
         "sip:incoming": (ev, ctx) => {
+          // un contact bloqué passe avant Ne pas déranger : 603, sans
+          // sonnerie ni ligne d'historique (ADR 0008, D7)
+          if (isBlocked(ctx.contacts, ev.call.from)) {
+            ev.call.reject("declined");
+            return stay("contact bloqué : 603");
+          }
           if (ctx.doNotDisturb()) {
             declineIncoming(ctx, ev.call);
             return stay("ne pas déranger : 486");
@@ -970,6 +1005,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:blockContact": blockContact,
+        "ui:unblockContact": unblockContact,
         "ui:setFlashAlert": setFlashAlert,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         // réveil détecté : la WSS peut être morte sans que le navigateur le
@@ -1034,6 +1071,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:blockContact": blockContact,
+        "ui:unblockContact": unblockContact,
         "ui:setFlashAlert": setFlashAlert,
         "ui:backToSettings": (_ev, ctx) => {
           ctx.autoReconnect = false;
@@ -1076,6 +1115,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:blockContact": blockContact,
+        "ui:unblockContact": unblockContact,
         "ui:setFlashAlert": setFlashAlert,
         "sip:disconnected": () => undefined,
         "sip:unregistered": () => undefined,
@@ -1104,6 +1145,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:addContact": addContact,
         "ui:renameContact": renameContact,
         "ui:removeContact": removeContact,
+        "ui:blockContact": blockContact,
+        "ui:unblockContact": unblockContact,
         "ui:setFlashAlert": setFlashAlert,
         "ui:switchAccount": switchAccount,
         // le compte dont l'enregistrement vient d'échouer : c'est celui-là

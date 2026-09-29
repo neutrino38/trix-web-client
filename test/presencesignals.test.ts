@@ -27,6 +27,16 @@ describe("presenceSignals", () => {
     ]);
   });
 
+  it("a blocked contact is not watched, and blocking one unwatches it (ADR 0008, D7)", () => {
+    const blocked = { ...BOB, id: "c2", uri: "sip:mallory@example.com", blocked: true };
+    expect(presenceSignals(view("registering"), view("ready", { contacts: [BOB, blocked] }))).toEqual([
+      { type: "phone:up", handle, accountId: "acc", uris: ["sip:bob@example.com"] },
+    ]);
+    expect(presenceSignals(view("ready"), view("ready", { contacts: [{ ...BOB, blocked: true }] }))).toEqual([
+      { type: "phone:contacts", uris: [] },
+    ]);
+  });
+
   it("the first view already in ready is an up", () => {
     expect(presenceSignals(null, view("ready"))[0]!.type).toBe("phone:up");
   });
