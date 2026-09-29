@@ -90,7 +90,8 @@ Un gabarit complet est fourni : [`config/config.json.example`](../../config/conf
   "turn_tls": true,
   "realtime_text": "user_choice",
   "debug_activated": "yes",
-  "presence": "yes"
+  "presence": "yes",
+  "messaging": "yes"
 }
 ```
 
@@ -102,6 +103,7 @@ Un gabarit complet est fourni : [`config/config.json.example`](../../config/conf
 | `turn_server`, `turn_username`, `turn_password`, `turn_tls` | Le relais TURN. Sans identifiant **et** mot de passe, le relais est ignoré : TURN n'a pas de mode anonyme. |
 | `realtime_text` | `"none"`, `"websocket"`, `"datachannel"` ou `"user_choice"`. Les trois premières valeurs imposent le transport et retirent le menu ; `"user_choice"` le laisse. Avec `"none"`, toute mention du tchat quitte l'interface. |
 | `debug_activated` | `"no"` retire la case « Trace SIP » et éteint la trace, y compris pour qui l'avait laissée allumée. Toute autre valeur, ou l'absence de clé, laisse la case. |
+| `messaging` | `"no"` éteint la messagerie instantanée : aucun MESSAGE ne part, ceux qui arrivent reçoivent 405, et l'en-tête `Allow` ne cite plus la méthode. Le fil ne montre plus que les appels. Toute autre valeur, ou l'absence de clé, l'allume. |
 | `presence` | `"no"` éteint la présence : aucun SUBSCRIBE ni PUBLISH ne part, le menu de statut disparaît et la pastille reste « Enregistré ». Les contacts restent affichés et appelables, sans glyphe. Toute autre valeur, ou l'absence de clé, laisse Trix découvrir ce que le serveur accepte. |
 
 Quelques conséquences à connaître :
@@ -121,6 +123,9 @@ Quelques conséquences à connaître :
   l'exploitant qui sait que son serveur n'en veut pas et ne souhaite voir partir aucune
   de ces requêtes. Ne pas déranger est éteint avec le reste : aucun appel n'est refusé
   à cause d'un statut choisi auparavant.
+- **La messagerie non plus n'a pas besoin de cette clé pour s'adapter.** Si le proxy
+  répond 405 ou 501 à un MESSAGE, Trix affiche un bandeau et ferme l'écriture jusqu'au
+  prochain enregistrement. `"messaging": "no"` sert à ne rien essayer du tout.
 - **Le mot de passe TURN y est en clair**, comme dans toute configuration WebRTC servie
   à un navigateur. Ce fichier est public : n'y mettez aucun secret que vous ne
   distribueriez pas à vos utilisateurs.
@@ -135,6 +140,61 @@ sudo vi /var/www/trix/config.json
 ```
 
 `deploy.sh` ne le transfère pas et ne le supprime pas, `--delete` compris.
+
+## Messagerie instantanée : ce que le serveur SIP doit faire
+
+Trix envoie et reçoit des SIP MESSAGE (RFC 3428) en `text/plain`
+([ADR 0008](../architecture/0008-messagerie.md)). Le proxy doit :
+
+1. **router MESSAGE** vers les contacts enregistrés du destinataire, comme un INVITE ;
+2. **garder les messages d'un destinataire désinscrit** et les lui remettre à son
+   prochain REGISTER. C'est une **exigence** : quand le navigateur endort l'onglet, Trix
+   se désinscrit (ADR 0006), et sans ce stockage tout message écrit pendant ce temps est
+   refusé (480) à l'expéditeur, et Trix ne le voit jamais.
+
+Avec Kamailio, c'est le module `msilo`. L'extrait suivant montre la forme à donner à la
+route ; il est **à adapter** à votre configuration et n'a pas encore été validé en réel
+avec Trix :
+
+```
+loadmodule "msilo.so"
+modparam("msilo", "db_url", DBURL)
+modparam("msilo", "from_address", "sip:registrar@example.com")
+# pas de « [Offline message - …] » en tête du texte : Trix date le message lui-même
+modparam("msilo", "add_date", 0)
+
+request_route {
+    # …
+    if (is_method("REGISTER")) {
+        if (!save("location")) sl_reply_error();
+        # remet ce qui attendait ce destinataire
+        m_dump();
+        exit;
+    }
+    if (is_method("MESSAGE")) {
+        if (!lookup("location")) {
+            # désinscrit : gardé, et « accepté » pour l'expéditeur
+            if (m_store("$ru")) send_reply("202", "Accepted");
+            else send_reply("503", "Service Unavailable");
+            exit;
+        }
+        t_relay();
+        exit;
+    }
+    # …
+}
+```
+
+Trix range un message remis en différé à la date de son en-tête `Date` quand il en
+porte un, et à l'heure de réception sinon. Vérifiez ce que votre version de `msilo`
+pose dans les messages qu'elle remet.
+
+Asterisk (PJSIP) route MESSAGE par le plan de numérotation (`MessageSend`) mais ne garde
+rien : les messages envoyés à un Trix endormi y sont perdus.
+
+Ce que Trix ne fait pas, et qu'aucune configuration ne changera : un message **envoyé**
+depuis un autre appareil du même compte n'apparaît pas dans Trix. SIP n'a pas
+l'équivalent des copies de XMPP.
 
 ## Déployer avec `deploy.sh`
 
