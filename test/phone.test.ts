@@ -66,12 +66,18 @@ const SEED_ID = "acc-seed";
 function activeCfg(phone: PhoneInstance): AccountConfig | null {
   const account = activeAccount(phone.context);
   if (!account) return null;
-  const { id: _id, ...cfg } = account;
+  // l'identifiant d'instance désigne l'appareil, pas la configuration
+  const { id: _id, instanceId: _instanceId, ...cfg } = account;
   return cfg;
 }
 
+const SEED_INSTANCE = "a11ce000-0000-4000-8000-000000000001";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[] = []) {
-  const seed: StoredAccount | null = initial ? { ...initial, id: SEED_ID } : null;
+  const seed: StoredAccount | null = initial
+    ? { ...initial, id: SEED_ID, instanceId: SEED_INSTANCE }
+    : null;
   const box = {
     vault: {
       accounts: seed ? [seed] : [],
@@ -84,7 +90,7 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
     get saved(): AccountConfig | null {
       const account = this.vault.accounts.find((a) => a.id === this.vault.activeId);
       if (!account) return null;
-      const { id: _id, ...cfg } = account;
+      const { id: _id, instanceId: _instanceId, ...cfg } = account;
       return cfg;
     },
   };
@@ -177,7 +183,7 @@ class FakeCallSession {
 }
 
 class FakeSip implements SipPort {
-  started: AccountConfig[] = [];
+  started: StoredAccount[] = [];
   stopped = 0;
   refreshed = 0;
   /** Transport encore ouvert : pilote la valeur rendue par refresh(). */
@@ -186,7 +192,7 @@ class FakeSip implements SipPort {
   session = new FakeCallSession();
   send: (ev: SipEvent) => void = () => {};
   sendCall: (ev: CallSipEvent) => void = () => {};
-  start(cfg: AccountConfig, send: (ev: SipEvent) => void) {
+  start(cfg: StoredAccount, send: (ev: SipEvent) => void) {
     this.started.push(cfg);
     this.send = send;
     return {
@@ -395,6 +401,11 @@ describe("PhoneMachine — configuration", () => {
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
     expect(box.saved).toEqual(CFG); // ha1 calculé, jamais de champ password
     expect(sip.started).toHaveLength(1);
+    // un compte neuf tire l'identifiant d'instance de cet appareil, et c'est
+    // lui que l'UA pose en +sip.instance
+    const instanceId = box.vault.accounts[0]!.instanceId;
+    expect(instanceId).toMatch(UUID);
+    expect(sip.started[0]!.instanceId).toBe(instanceId);
     expect(sip.started[0]!.ha1).toBe(CFG.ha1);
   });
 
@@ -516,6 +527,30 @@ describe("PhoneMachine — configuration", () => {
     await vi.waitFor(() => expect(phone.state).toBe("connecting"));
     expect(box.saved!.ha1).toBe(CFG.ha1);
     expect(box.saved!.proxy).toBe("wss://autre.example.fr/ws");
+  });
+
+  it("un compte corrigé garde son identifiant d'instance : le registrar y voit le même appareil", async () => {
+    const { phone, sip, box } = await bootTo("home", CFG);
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
+    phone.send({
+      type: "ui:saveConfig",
+      form: {
+        proxy: "wss://autre.example.fr/ws",
+        uri: `${CFG.username}@${CFG.domain}`,
+        displayName: "Alice M.",
+        authUsername: null,
+        password: null,
+        stun: "",
+        turn: "",
+        turnUsername: "",
+        turnPassword: null,
+        turnTls: false,
+        rtt: "websocket",
+      },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("connecting"));
+    expect(box.vault.accounts[0]!.instanceId).toBe(SEED_INSTANCE);
+    expect(sip.started.at(-1)!.instanceId).toBe(SEED_INSTANCE);
   });
 
   it("changement d'identité sans nouveau mot de passe : refusé (le HA1 en dépend)", async () => {
@@ -1306,7 +1341,7 @@ describe("PhoneMachine — carnet de contacts (ADR 0007, D7)", () => {
 
   it("le carnet est relu avec le compte, et ne suit pas une bascule", async () => {
     const { store, box } = fakeStore(CFG);
-    const other: StoredAccount = { ...CFG, id: "acc-other", username: "zoe" };
+    const other: StoredAccount = { ...CFG, id: "acc-other", instanceId: "b0b00000-0000-4000-8000-000000000002", username: "zoe" };
     box.vault = { accounts: [...box.vault.accounts, other], activeId: SEED_ID };
     const bob: Contact = { id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1, blocked: false };
     box.contacts.set(SEED_ID, [bob]);

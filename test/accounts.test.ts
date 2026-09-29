@@ -25,6 +25,7 @@ import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
 
 const ALICE: StoredAccount = {
   id: "id-alice",
+  instanceId: "a11ce000-0000-4000-8000-000000000001",
   proxy: "wss://sip.example.fr:8443/ws",
   domain: "example.fr",
   displayName: "Alice Martin",
@@ -40,6 +41,7 @@ const ALICE: StoredAccount = {
 const BOB: StoredAccount = {
   ...ALICE,
   id: "id-bob",
+  instanceId: "b0b00000-0000-4000-8000-000000000002",
   displayName: "Bob Durand",
   username: "bob",
   ha1: computeHa1("bob", "example.fr", "secret-bob"),

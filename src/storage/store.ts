@@ -79,6 +79,26 @@ export interface AccountConfig {
  */
 export interface StoredAccount extends AccountConfig {
   id: string;
+  /**
+   * L'identifiant d'instance de ce compte **sur cet appareil** : le
+   * `+sip.instance` que JsSIP pose sur le Contact de chaque REGISTER
+   * (RFC 5626 §4.1). Un UUID tiré une fois, à la création du compte ou à
+   * la première relecture d'un compte plus ancien, puis gardé.
+   *
+   * Laissé à JsSIP, il était tiré à chaque démarrage de l'UA — chaque
+   * chargement de page, chaque réveil d'onglet (ADR 0006). Pour le
+   * serveur, chaque réveil était alors un appareil neuf : un stockage de
+   * messages qui distribue par appareil (le Silo de kelixip) remettait
+   * tout ce qu'il gardait encore, à chaque réveil, à un client qui n'a
+   * rien pour dédoublonner (ADR 0008, D3). La RFC le veut persistant pour
+   * cette raison-là.
+   *
+   * Pas dans `AccountConfig` : il désigne l'appareil, pas le compte. Un
+   * lien de partage (`share/link.ts`) ne l'emporte pas, et le compte
+   * ouvert ailleurs tire le sien — deux appareils sous un même instance
+   * se remplaceraient l'un l'autre chez le registrar.
+   */
+  instanceId: string;
 }
 
 /**
@@ -104,6 +124,24 @@ export function newAccountId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/**
+ * Un identifiant d'instance : toujours un UUID au format RFC 4122, parce
+ * que JsSIP **ignore sans rien dire** un `instance_id` qui n'en est pas un
+ * et en tire un au hasard — exactement le défaut que ce champ corrige. Le
+ * repli de `newAccountId` (32 chiffres hexadécimaux) ne conviendrait donc
+ * pas : celui-ci pose les tirets, la version 4 et la variante.
+ */
+export function newInstanceId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const hex = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type CallDirection = "outgoing" | "incoming";
 /**
@@ -447,15 +485,20 @@ export function migrateAccount(cfg: AccountConfig): AccountConfig {
  * blanc — mais un `activeId` qui pointe dans le vide enverrait la machine
  * s'enregistrer sur rien, et c'est cela qu'on refuse ici.
  */
-function normalizeVault(raw: unknown): Vault {
-  if (typeof raw !== "object" || raw === null) return { ...EMPTY_VAULT };
+function normalizeVault(raw: unknown): { vault: Vault; drawn: boolean } {
+  if (typeof raw !== "object" || raw === null) return { vault: { ...EMPTY_VAULT }, drawn: false };
   const { accounts, activeId } = raw as Partial<Vault>;
-  if (!Array.isArray(accounts)) return { ...EMPTY_VAULT };
+  if (!Array.isArray(accounts)) return { vault: { ...EMPTY_VAULT }, drawn: false };
+  let drawn = false;
   const kept = accounts
     .filter((a): a is StoredAccount => typeof a?.id === "string" && a.id !== "")
-    .map((a) => ({ ...migrateAccount(a), id: a.id }));
+    .map((a) => {
+      const valid = typeof a.instanceId === "string" && UUID.test(a.instanceId);
+      if (!valid) drawn = true;
+      return { ...migrateAccount(a), id: a.id, instanceId: valid ? a.instanceId : newInstanceId() };
+    });
   const active = kept.some((a) => a.id === activeId) ? activeId! : null;
-  return { accounts: kept, activeId: active };
+  return { vault: { accounts: kept, activeId: active }, drawn };
 }
 
 /**
@@ -475,7 +518,11 @@ function normalizeVault(raw: unknown): Vault {
 async function migrateLegacy(db: IDBDatabase): Promise<Vault> {
   const legacy = (await decryptGet(db, LEGACY_ID)) as AccountConfig | null;
   if (!legacy) return { ...EMPTY_VAULT };
-  const account: StoredAccount = { ...migrateAccount(legacy), id: newAccountId() };
+  const account: StoredAccount = {
+    ...migrateAccount(legacy),
+    id: newAccountId(),
+    instanceId: newInstanceId(),
+  };
   const oldKey = `${legacy.username}@${legacy.domain}`;
   const entries = (await decryptGet(db, historyId(oldKey))) as CallLogEntry[] | null;
   if (Array.isArray(entries)) await encryptPut(db, historyId(account.id), entries);
@@ -504,7 +551,13 @@ export function createBrowserStore(): SecureStore {
         // Le coffre absent est le seul cas où l'on regarde l'ancienne clé :
         // la migration est ainsi idempotente sans avoir à se souvenir
         // qu'elle a eu lieu.
-        return raw === null ? await migrateLegacy(db) : normalizeVault(raw);
+        if (raw === null) return await migrateLegacy(db);
+        const { vault, drawn } = normalizeVault(raw);
+        // Un identifiant d'instance tiré à la relecture est écrit tout de
+        // suite : gardé en mémoire seulement, il serait retiré au
+        // chargement suivant, et c'est précisément ce qu'il doit éviter.
+        if (drawn) await encryptPut(db, VAULT_ID, vault);
+        return vault;
       } finally {
         db.close();
       }

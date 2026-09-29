@@ -6,7 +6,7 @@
  */
 
 import JsSIP from "jssip";
-import type { AccountConfig } from "../storage/store.js";
+import type { AccountConfig, StoredAccount } from "../storage/store.js";
 import { iceServers } from "./ice.js";
 import {
   answeredMedia,
@@ -514,7 +514,11 @@ export interface SipHandle {
 }
 
 export interface SipPort {
-  start(cfg: AccountConfig, send: (ev: SipEvent) => void): SipHandle;
+  /**
+   * Un compte **du coffre**, pas une configuration seule : son
+   * `instanceId` est le `+sip.instance` de l'appareil (`storage/store.ts`).
+   */
+  start(cfg: StoredAccount, send: (ev: SipEvent) => void): SipHandle;
 }
 
 /**
@@ -574,6 +578,10 @@ export function createJsSipPort(opts: PortOptions = {}): SipPort {
           realm: cfg.domain,
           ha1: cfg.ha1,
           register: true,
+          // le même d'un démarrage à l'autre (RFC 5626 §4.1) : sans lui,
+          // JsSIP en tire un neuf et chaque réveil passe pour un appareil
+          // nouveau (StoredAccount.instanceId)
+          instance_id: cfg.instanceId,
           ...(cfg.authUsername ? { authorization_user: cfg.authUsername } : {}),
         });
       } catch (e) {

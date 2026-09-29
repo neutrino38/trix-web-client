@@ -197,6 +197,11 @@ configuration Kamailio `msilo`.
   du corps, à désactiver dans la configuration conseillée). Trix range le message à la date de
   `Date` quand elle existe et qu'elle n'est pas dans le futur ; sinon à l'heure de réception.
 - Un inconnu dont le message est remis au réveil passe par la quarantaine comme les autres (D5).
+- **Le même appareil d'un réveil à l'autre.** Le `+sip.instance` du Contact (RFC 5626 §4.1) est
+  tiré une fois par compte et par appareil, puis gardé dans le coffre (`StoredAccount.instanceId`) ;
+  JsSIP en tirait un neuf à chaque démarrage de l'UA. Un serveur qui distribue par appareil — le
+  Silo de kelixip — prenait chaque réveil pour un appareil nouveau et remettait de nouveau tout ce
+  qu'il gardait, que Trix n'a rien pour dédoublonner (D3).
 - Sans stockage côté serveur, l'expéditeur reçoit 480 pendant la veille, et son client le lui dit.
   Trix ne le verra jamais ; `deploiement.md` le dit aussi.
 

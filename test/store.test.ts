@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   capMessages,
   createBrowserStore,
+  newInstanceId,
   type AccountConfig,
   type CallLogEntry,
   type Contact,
@@ -28,10 +29,13 @@ const CFG: AccountConfig = {
   rtt: "websocket",
 };
 
-const ALICE: StoredAccount = { ...CFG, id: "id-alice" };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const ALICE: StoredAccount = { ...CFG, id: "id-alice", instanceId: "a11ce000-0000-4000-8000-000000000001" };
 const BOB: StoredAccount = {
   ...CFG,
   id: "id-bob",
+  instanceId: "b0b00000-0000-4000-8000-000000000002",
   displayName: "Bob Durand",
   username: "bob",
   ha1: "0f0e0d0c0b0a09080706050403020100",
@@ -223,6 +227,28 @@ describe("browserStore — coffre à liste", () => {
     expect(account.ha1).toBe(ALICE.ha1);
   });
 
+  it("compte écrit avant l'identifiant d'instance : un UUID tiré une fois, et écrit", async () => {
+    const store = createBrowserStore();
+    const legacy = { ...ALICE } as Partial<StoredAccount>;
+    delete legacy.instanceId;
+    await store.save({ accounts: [legacy as StoredAccount], activeId: ALICE.id });
+    const first = (await store.load()).accounts[0]!.instanceId;
+    expect(first).toMatch(UUID);
+    // relu une seconde fois — un rechargement, un réveil d'onglet — le
+    // même : c'est tout ce que ce champ doit garantir (RFC 5626 §4.1)
+    expect((await store.load()).accounts[0]!.instanceId).toBe(first);
+  });
+
+  it("un identifiant d'instance qui n'est pas un UUID est remplacé, un valide est gardé", async () => {
+    const store = createBrowserStore();
+    // JsSIP ignorerait le premier sans rien dire et en tirerait un à chaque démarrage
+    await store.save({ accounts: [{ ...ALICE, instanceId: "pas-un-uuid" }, BOB], activeId: ALICE.id });
+    const [alice, bob] = (await store.load()).accounts;
+    expect(alice!.instanceId).toMatch(UUID);
+    expect(alice!.instanceId).not.toBe("pas-un-uuid");
+    expect(bob!.instanceId).toBe(BOB.instanceId);
+  });
+
   it("un compte sans identifiant est écarté, les autres restent", async () => {
     const store = createBrowserStore();
     const orphan = { ...BOB } as Partial<StoredAccount>;
@@ -339,6 +365,23 @@ describe("browserStore — messages par compte (ADR 0008, D6)", () => {
   });
 });
 
+describe("newInstanceId", () => {
+  it("un UUID, avec ou sans crypto.randomUUID : JsSIP ignore tout le reste", () => {
+    expect(newInstanceId()).toMatch(UUID);
+    const randomUUID = crypto.randomUUID;
+    try {
+      // hors contexte sécurisé, la fonction manque
+      (crypto as { randomUUID?: unknown }).randomUUID = undefined;
+      const id = newInstanceId();
+      expect(id).toMatch(UUID);
+      expect(id[14]).toBe("4"); // version 4
+      expect("89ab").toContain(id[19]); // variante RFC 4122
+    } finally {
+      (crypto as { randomUUID?: unknown }).randomUUID = randomUUID;
+    }
+  });
+});
+
 describe("capMessages", () => {
   const at = (key: string, n: number, state: MessageEntry["state"] = "received"): MessageEntry => ({
     id: `${key}${n}`,
@@ -424,6 +467,7 @@ describe("browserStore — migration du compte unique (ADR 0002)", () => {
     expect(vault.accounts[0]).toMatchObject(CFG);
     expect(vault.activeId).toBe(vault.accounts[0]!.id);
     expect(vault.accounts[0]!.id).toBeTruthy();
+    expect(vault.accounts[0]!.instanceId).toMatch(UUID);
   });
 
   it("son historique suit, sous le nouvel identifiant", async () => {

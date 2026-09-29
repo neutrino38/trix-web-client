@@ -16,6 +16,7 @@
 import { defineMachine, goto, stay, type Fx } from "finite-state-language";
 import {
   newAccountId,
+  newInstanceId,
   type AccountConfig,
   type CallDirection,
   type CallLogEntry,
@@ -503,6 +504,9 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     // un compte modifié garde son identifiant, donc son historique — c'est
     // tout l'intérêt de ne pas le nommer par son adresse
     id: edited?.id ?? newAccountId(),
+    // l'appareil ne change pas quand le compte est corrigé : le registrar
+    // doit y voir le même, et le stockage de messages aussi
+    instanceId: edited?.instanceId ?? newInstanceId(),
     proxy: dep.proxy ?? f.proxy,
     domain,
     displayName: f.displayName,
@@ -683,7 +687,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           const vault = ev.ok ? ev.value.vault : null;
           ctx.accounts = (vault?.accounts ?? []).flatMap((a) => {
             const pinned = pinAccount(a);
-            return pinned ? [{ ...pinned, id: a.id }] : [];
+            return pinned ? [{ ...pinned, id: a.id, instanceId: a.instanceId }] : [];
           });
           const wanted = ev.ok ? ev.value.activeId : null;
           ctx.activeId = ctx.accounts.some((a) => a.id === wanted) ? wanted : null;

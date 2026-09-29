@@ -34,6 +34,7 @@ import { langPicker, wireLangPicker } from "../ui/langpicker.js";
 import {
   createBrowserStore,
   newAccountId,
+  newInstanceId,
   type AccountConfig,
   type StoredAccount,
 } from "../storage/store.js";
@@ -133,7 +134,10 @@ async function create(cfg: AccountConfig): Promise<void> {
   const vault = await store.load();
   if (findByAddress(vault.accounts, addressOf(cfg))) return; // ajouté entre-temps
   if (vault.accounts.length >= MAX_ACCOUNTS) throw new Error("vault full");
-  const account: StoredAccount = { ...cfg, id: newAccountId() };
+  // l'identifiant d'instance est celui de cet appareil : le lien ne l'a pas
+  // apporté, et reprendre celui de l'expéditeur ferait passer deux appareils pour
+  // un seul
+  const account: StoredAccount = { ...cfg, id: newAccountId(), instanceId: newInstanceId() };
   await store.save({
     accounts: [...vault.accounts, account],
     // premier compte de l'appareil : il devient l'actif, sans quoi l'accueil
