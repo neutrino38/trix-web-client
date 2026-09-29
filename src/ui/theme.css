@@ -1731,6 +1731,8 @@ fieldset.field { border: none; }
 .screen-call.mobile .thread-sub { display: none; }
 .screen-call.mobile .thread-search { order: 3; flex: 1 1 100%; min-width: 0; }
 .screen-call.mobile .thread-search input { font-size: 1rem; }
+/* sous 16 px, iOS zoome la page au focus : même règle que la recherche */
+.screen-call.mobile .thread-compose textarea { font-size: 1rem; }
 .screen-call.mobile .thread-list { padding: 0 0.5rem 0.75rem; }
 .screen-call.mobile .thread-toggle {
   grid-template-columns: 16px 38px minmax(0, 1fr) auto; column-gap: 0.6rem; padding: 0.5rem 0.4rem;
