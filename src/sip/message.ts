@@ -1,6 +1,6 @@
 /**
  * The messaging link: SIP MESSAGE out of any call (RFC 3428), in
- * `text/plain` only (ADR 0008, D1).
+ * `text/plain`, bare or wrapped in CPIM (ADR 0008, D1; ADR 0009).
  *
  * `openMessaging` holds the policy and never sees JsSIP: it is handed a
  * `MessageSender`, and the port feeds it each incoming request as an
@@ -12,10 +12,14 @@
  * ## What an incoming MESSAGE gets
  *
  * - an empty body: **200**, and nothing more (D1);
+ * - a `message/cpim` body is opened first (`sip/cpim.ts`): **400** when it
+ *   cannot be read, **200** and nothing more for an IMDN notification or
+ *   an empty part; what follows applies to the part inside, and its
+ *   `DateTime` and `imdn.Message-ID` go with the event (ADR 0009);
  * - a body type other than `text/plain`, or a charset other than UTF-8 or
  *   US-ASCII: **415**, before anyone sees it. JsSIP writes the `Accept`
  *   header of a 415 from `C.ACCEPTED_BODY_TYPES`, which the port extends
- *   with `text/plain` (`sip/port.ts`);
+ *   with `text/plain` and `message/cpim` (`sip/port.ts`);
  * - a `From` with no user part: **403** — there is no address to file it
  *   under, nor to answer;
  * - no link open yet, or closed: **480**;
@@ -28,17 +32,26 @@
  * ## What a sent MESSAGE reports
  *
  * One `sip:messageSent` per `send()`, with the final status, or `null`
- * when no answer came (timeout, transport). The body is capped at
+ * when no answer came (timeout, transport). The text leaves in CPIM, with
+ * the caller's id as `imdn.Message-ID`; a correspondent who answers 415
+ * gets it again in bare `text/plain`, and so does everything sent to them
+ * while this link lives (ADR 0009). The text is capped at
  * `MAX_MESSAGE_BYTES` (D2); the caller checks first, and `send()` throws
  * past it, as it does for a target JsSIP cannot parse.
  */
 
 import type { UA } from "jssip";
 import { normalizeTarget } from "jssip/lib/Utils.js";
+import { buildCpim, CPIM_CONTENT_TYPE, IMDN_CONTENT_TYPE, isCpim, parseCpim } from "./cpim.js";
+import { addressKey } from "./uri.js";
 
 export const MESSAGE_CONTENT_TYPE = "text/plain;charset=UTF-8";
 
-/** D2: RFC 3428 §8 caps the whole request at 1300 bytes; this leaves room for headers. */
+/**
+ * D2: RFC 3428 §8 caps the whole request at 1300 bytes; this leaves room
+ * for headers. It caps the text: CPIM adds some 200 bytes around it, and
+ * the request may then pass 1300 (ADR 0009).
+ */
 export const MAX_MESSAGE_BYTES = 1000;
 
 /** A clock skew we tolerate before calling a `Date` header "in the future". */
@@ -55,8 +68,13 @@ export type MessagingSipEvent =
       /** The display name of the `From`, if any. */
       name: string | null;
       text: string;
-      /** The `Date` header, when present, readable and not in the future (D8). */
+      /**
+       * When it was written: the CPIM `DateTime`, else the `Date` header —
+       * when present, readable and not in the future (D8, ADR 0009).
+       */
       date: number | null;
+      /** The CPIM `imdn.Message-ID`, the same on each delivery of one message; null in bare text. */
+      messageId: string | null;
       /** Must be called before the event handler returns. Only the first call counts. */
       answer(code: MessageAnswer): void;
     }
@@ -98,10 +116,17 @@ export interface IncomingView {
 }
 
 /** Sends one MESSAGE; `done` gets its final status, or null for no answer. */
-export type MessageSender = (uri: string, text: string, done: (status: number | null) => void) => void;
+export type MessageSender = (
+  uri: string,
+  body: string,
+  contentType: string,
+  done: (status: number | null) => void,
+) => void;
 
 export interface MessagingDeps {
   sender: MessageSender;
+  /** Our own address, `sip:user@domain`: the CPIM `From`. */
+  self: string;
   send: (ev: MessagingSipEvent) => void;
   now?: () => number;
 }
@@ -126,14 +151,24 @@ export function readableType(contentType: string | null): boolean {
 /** The `Date` header as epoch ms; null when absent, unreadable, or in the future. */
 export function readDate(header: string | null, now: number): number | null {
   if (header === null) return null;
-  const at = Date.parse(header);
-  if (Number.isNaN(at) || at > now + DATE_SKEW_MS) return null;
+  return notFuture(Date.parse(header), now);
+}
+
+function notFuture(at: number | null, now: number): number | null {
+  if (at === null || Number.isNaN(at) || at > now + DATE_SKEW_MS) return null;
   return at;
+}
+
+/** Is this body type IMDN's? An IMDN notification is taken and dropped (ADR 0009). */
+function isImdn(contentType: string | null): boolean {
+  return contentType?.split(";")[0]!.trim().toLowerCase() === IMDN_CONTENT_TYPE;
 }
 
 export function openMessaging(deps: MessagingDeps): OpenMessaging {
   let send: ((ev: MessagingSipEvent) => void) | null = deps.send;
   const now = deps.now ?? Date.now;
+  /** Correspondents who refused CPIM with 415: bare text from then on. */
+  const plainOnly = new Set<string>();
 
   return {
     send(id, uri, text) {
@@ -141,7 +176,21 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
         throw new RangeError(`message of ${utf8Length(text)} bytes, over ${MAX_MESSAGE_BYTES}`);
       }
       if (send === null) return;
-      deps.sender(uri, text, (status) => send?.({ type: "sip:messageSent", id, status }));
+      const report = (status: number | null) => send?.({ type: "sip:messageSent", id, status });
+      const key = addressKey(uri) ?? uri;
+      const plain = () => deps.sender(uri, text, MESSAGE_CONTENT_TYPE, report);
+      if (plainOnly.has(key)) {
+        plain();
+        return;
+      }
+      const cpim = buildCpim({ from: deps.self, to: uri, at: now(), messageId: id, text });
+      deps.sender(uri, cpim, CPIM_CONTENT_TYPE, (status) => {
+        // refused before anyone read it: sending again cannot make it arrive twice
+        if (status === 415 && send !== null) {
+          plainOnly.add(key);
+          plain();
+        } else report(status);
+      });
     },
 
     receive(req) {
@@ -149,7 +198,26 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
         req.reply(200);
         return;
       }
-      if (!readableType(req.contentType)) {
+      let contentType = req.contentType;
+      let body = req.body;
+      let date = readDate(req.date, now());
+      let messageId: string | null = null;
+      if (isCpim(contentType)) {
+        const cpim = parseCpim(body);
+        if (cpim === null) {
+          req.reply(400);
+          return;
+        }
+        if (isImdn(cpim.contentType) || cpim.body.trim() === "") {
+          req.reply(200);
+          return;
+        }
+        contentType = cpim.contentType;
+        body = cpim.body;
+        date = notFuture(cpim.dateTime, now()) ?? date;
+        messageId = cpim.messageId;
+      }
+      if (!readableType(contentType)) {
         req.reply(415);
         return;
       }
@@ -167,8 +235,9 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
         type: "sip:message",
         from,
         name: req.name,
-        text: req.body,
-        date: readDate(req.date, now()),
+        text: body,
+        date,
+        messageId,
         answer(code) {
           if (answered) return;
           answered = true;
@@ -242,12 +311,12 @@ export function jssipIncoming(e: JsSipMessageEvent): IncomingView {
 
 /** The `MessageSender` of a live UA. */
 export function jssipSender(ua: UA): MessageSender {
-  return (uri, text, done) => {
+  return (uri, body, contentType, done) => {
     // JsSIP would send `MESSAGE undefined` rather than refuse
     if (!normalizeTarget(uri)) throw new TypeError(`invalid SIP target: ${uri}`);
     type Outcome = { response?: { status_code?: number } | null };
-    ua.sendMessage(uri, text, {
-      contentType: MESSAGE_CONTENT_TYPE,
+    ua.sendMessage(uri, body, {
+      contentType,
       eventHandlers: {
         succeeded: (e: Outcome) => done(e.response?.status_code ?? 200),
         // a local failure (timeout, transport) carries no response

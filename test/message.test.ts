@@ -39,9 +39,10 @@ function incoming(over: Partial<IncomingView> = {}) {
 
 function setup(choose?: (ev: Extract<MessagingSipEvent, { type: "sip:message" }>) => void) {
   const events: MessagingSipEvent[] = [];
-  const sent: { uri: string; text: string; done: (status: number | null) => void }[] = [];
+  const sent: { uri: string; body: string; contentType: string; done: (status: number | null) => void }[] = [];
   const link = openMessaging({
-    sender: (uri, text, done) => sent.push({ uri, text, done }),
+    sender: (uri, body, contentType, done) => sent.push({ uri, body, contentType, done }),
+    self: "sip:alice@example.org",
     send: (ev) => {
       events.push(ev);
       if (ev.type === "sip:message") choose?.(ev);
@@ -121,7 +122,7 @@ describe("incoming MESSAGE", () => {
 
   it("refuses another body type with 415, unseen", () => {
     const { link, events } = setup((ev) => ev.answer(200));
-    const { view, replies } = incoming({ contentType: "message/cpim" });
+    const { view, replies } = incoming({ contentType: "text/html" });
     link.receive(view);
     expect(replies).toEqual([415]);
     expect(events).toEqual([]);
@@ -168,6 +169,80 @@ describe("incoming MESSAGE", () => {
   });
 });
 
+describe("incoming MESSAGE in CPIM (ADR 0009)", () => {
+  const cpim = (over: { dateTime?: string; inner?: string; body?: string } = {}) =>
+    [
+      "From: <sip:bob@example.org>",
+      "To: <sip:alice@example.org>",
+      ...(over.dateTime === undefined ? ["DateTime: 2026-09-29T09:00:00Z"] : over.dateTime ? [`DateTime: ${over.dateTime}`] : []),
+      "NS: imdn <urn:ietf:params:imdn>",
+      "imdn.Message-ID: KfMgJ0nhBx",
+      "imdn.Disposition-Notification: positive-delivery, display",
+      "",
+      `Content-Type: ${over.inner ?? "text/plain; charset=UTF-8"}`,
+      "",
+      over.body ?? "Bonjour",
+    ].join("\r\n");
+
+  it("hands the inner text to the machine, with DateTime and imdn.Message-ID", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const { view, replies } = incoming({ contentType: "message/cpim", body: cpim() });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        text: "Bonjour",
+        date: Date.parse("2026-09-29T09:00:00Z"),
+        messageId: "KfMgJ0nhBx",
+      }),
+    ]);
+  });
+
+  it("prefers DateTime to the Date header, and falls back to it", () => {
+    const date = "Tue, 29 Sep 2026 09:30:00 GMT";
+    const { link, events } = setup((ev) => ev.answer(200));
+    link.receive(incoming({ contentType: "message/cpim", body: cpim(), date }).view);
+    link.receive(incoming({ contentType: "message/cpim", body: cpim({ dateTime: "" }), date }).view);
+    link.receive(incoming({ contentType: "message/cpim", body: cpim({ dateTime: "2026-09-29T11:00:00Z" }), date }).view);
+    expect(events.map((e) => e.type === "sip:message" && e.date)).toEqual([
+      Date.parse("2026-09-29T09:00:00Z"),
+      Date.parse("2026-09-29T09:30:00Z"),
+      Date.parse("2026-09-29T09:30:00Z"),
+    ]);
+  });
+
+  it("takes an IMDN notification with 200, and shows nothing", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const { view, replies } = incoming({ contentType: "message/cpim", body: cpim({ inner: "message/imdn+xml", body: "<imdn/>" }) });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([]);
+  });
+
+  it("refuses another inner type with 415 — a file transfer, say", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const inner = "application/vnd.gsma.rcs-ft-http+xml";
+    const { view, replies } = incoming({ contentType: "message/cpim", body: cpim({ inner, body: "<file/>" }) });
+    link.receive(view);
+    expect(replies).toEqual([415]);
+    expect(events).toEqual([]);
+  });
+
+  it("refuses a CPIM body it cannot read with 400", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const { view, replies } = incoming({ contentType: "message/cpim", body: "Bonjour" });
+    link.receive(view);
+    expect(replies).toEqual([400]);
+    expect(events).toEqual([]);
+  });
+
+  it("gives bare text no Message-ID", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    link.receive(incoming().view);
+    expect(events).toEqual([expect.objectContaining({ messageId: null })]);
+  });
+});
+
 describe("sent MESSAGE", () => {
   it("reports the final status under the caller's id", () => {
     const { link, events, sent } = setup();
@@ -179,6 +254,38 @@ describe("sent MESSAGE", () => {
       { type: "sip:messageSent", id: "m2", status: 404 },
       { type: "sip:messageSent", id: "m1", status: 200 },
     ]);
+  });
+
+  it("leaves in CPIM, dated, with the caller's id as imdn.Message-ID", () => {
+    const { link, sent } = setup();
+    link.send("m1", "sip:bob@example.org", "Bonjour");
+    expect(sent[0]!.contentType).toBe("message/cpim");
+    expect(sent[0]!.body).toContain("From: <sip:alice@example.org>\r\nTo: <sip:bob@example.org>\r\n");
+    expect(sent[0]!.body).toContain("DateTime: 2026-09-29T10:00:00Z\r\n");
+    expect(sent[0]!.body).toContain("imdn.Message-ID: m1\r\n");
+    expect(sent[0]!.body.endsWith("\r\n\r\nBonjour")).toBe(true);
+  });
+
+  it("a 415 to CPIM sends it again in bare text, and so everything after to that correspondent", () => {
+    const { link, events, sent } = setup();
+    link.send("m1", "sip:bob@example.org", "Bonjour");
+    sent[0]!.done(415);
+    expect(events).toEqual([]);
+    expect(sent[1]).toMatchObject({ contentType: "text/plain;charset=UTF-8", body: "Bonjour" });
+    sent[1]!.done(200);
+    expect(events).toEqual([{ type: "sip:messageSent", id: "m1", status: 200 }]);
+    link.send("m2", "sip:bob@Example.org", "Encore");
+    link.send("m3", "sip:carol@example.org", "Salut");
+    expect(sent.slice(2).map((s) => s.contentType)).toEqual(["text/plain;charset=UTF-8", "message/cpim"]);
+  });
+
+  it("a 415 to bare text is a failure", () => {
+    const { link, events, sent } = setup();
+    link.send("m1", "sip:bob@example.org", "Bonjour");
+    sent[0]!.done(415);
+    sent[1]!.done(415);
+    expect(sent).toHaveLength(2);
+    expect(events).toEqual([{ type: "sip:messageSent", id: "m1", status: 415 }]);
   });
 
   it("reports no answer as null", () => {

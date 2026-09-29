@@ -52,9 +52,14 @@ function fakeHandle(opts: { throws?: Error } = {}) {
     },
   } as unknown as SipHandle;
   /** A MESSAGE arriving; returns what it was answered. */
-  const deliver = (from: string, text: string, date: number | null = null): MessageAnswer | null => {
+  const deliver = (
+    from: string,
+    text: string,
+    date: number | null = null,
+    messageId: string | null = null,
+  ): MessageAnswer | null => {
     let answer: MessageAnswer | null = null;
-    send!({ type: "sip:message", from, name: null, text, date, answer: (c) => (answer ??= c) });
+    send!({ type: "sip:message", from, name: null, text, date, messageId, answer: (c) => (answer ??= c) });
     return answer;
   };
   const outcome = (id: string, status: number | null) => send!({ type: "sip:messageSent", id, status });
@@ -131,6 +136,68 @@ describe("who gets which answer (D4)", () => {
     const h = up(t);
     h.deliver(BOB.uri, "Parti pendant la veille", 42);
     expect(t.m.context.messages[0]!.at).toBe(42);
+  });
+});
+
+describe("delivered twice, filed once (ADR 0009)", () => {
+  it("a contact's message with a known imdn.Message-ID: 200 again, filed once", async () => {
+    const t = await start();
+    const h = up(t);
+    expect(h.deliver(BOB.uri, "Salut", null, "KfMgJ0nhBx")).toBe(200);
+    expect(h.deliver(BOB.uri, "Salut", null, "KfMgJ0nhBx")).toBe(200);
+    expect(t.m.context.messages).toEqual([expect.objectContaining({ text: "Salut", messageId: "KfMgJ0nhBx" })]);
+  });
+
+  it("the same id from another correspondent is another message", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Salut", null, "same");
+    t.send({ type: "ui:send", uri: CARLA, text: "Bonjour Carla" });
+    h.deliver(CARLA, "Salut", null, "same");
+    expect(t.m.context.messages.filter((m) => m.direction === "incoming")).toHaveLength(2);
+  });
+
+  it("bare text has no id, and is filed each time", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Salut");
+    h.deliver(BOB.uri, "Salut");
+    expect(t.m.context.messages).toHaveLength(2);
+  });
+
+  it("an unknown sender's message held already: 202 again, held once, and filed with its id", async () => {
+    const t = await start();
+    const h = up(t);
+    expect(h.deliver(CARLA, "Bonjour", null, "c1")).toBe(202);
+    expect(h.deliver(CARLA, "Bonjour", null, "c1")).toBe(202);
+    expect(t.m.context.quarantine[0]!.messages).toHaveLength(1);
+    t.send({ type: "ui:acceptSender", key: "carla@example.org" });
+    expect(t.m.context.messages).toEqual([expect.objectContaining({ text: "Bonjour", messageId: "c1" })]);
+    expect(h.deliver(CARLA, "Bonjour", null, "c1")).toBe(200);
+    expect(t.m.context.messages).toHaveLength(1);
+  });
+
+  it("a message filed while the vault was read, and already in it, is kept once", async () => {
+    const stored: MessageEntry = {
+      id: "old",
+      key: "bob@example.org",
+      uri: BOB.uri,
+      direction: "incoming",
+      text: "Salut",
+      at: 1,
+      messageId: "KfMgJ0nhBx",
+      state: "received",
+      reason: null,
+      read: true,
+    };
+    const store = fakeStore([stored]);
+    const m = MessagingMachine.start({ args: { store: store.store, enabled: true, now: () => clock } });
+    m.send({ type: "phone:account", accountId: "acc", contacts: [BOB] });
+    const h = fakeHandle();
+    m.send({ type: "phone:up", handle: h.handle });
+    expect(h.deliver(BOB.uri, "Salut", null, "KfMgJ0nhBx")).toBe(200);
+    await vi.waitFor(() => expect(m.context.loaded).toBe(true));
+    expect(m.context.messages).toEqual([stored]);
   });
 });
 

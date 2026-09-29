@@ -1791,7 +1791,8 @@ glyphes, la péremption, le serveur qui refuse SUBSCRIBE, et `presence: "no"`.
 
 ### 4.15 La messagerie instantanée (ADR 0008)
 
-Des messages entiers, par SIP MESSAGE (RFC 3428), en `text/plain` seul, hors de tout appel. Le
+Des messages entiers, par SIP MESSAGE (RFC 3428), en `text/plain`, nu ou enveloppé dans CPIM
+(ADR 0009), hors de tout appel. Le
 tchat de l'appel reste du texte temps réel (§4.9) : un MESSAGE reçu pendant un appel va dans le
 fil, pas dans le panneau.
 
@@ -1830,9 +1831,19 @@ repartir. 405 ou 501 : le serveur ne route pas MESSAGE, l'écriture se ferme jus
 enregistrement. Le corps est plafonné à 1 000 octets UTF-8 (RFC 3428 §8 plafonne la requête à
 1 300).
 
+**CPIM (ADR 0009).** Linphone écrit en `message/cpim`. `sip/cpim.ts` ouvre l'enveloppe et en
+lit deux en-têtes : `DateTime`, qui date le message avant l'en-tête SIP `Date`, et
+`imdn.Message-ID`. La partie intérieure suit les règles du texte brut ; un accusé IMDN est pris
+(200) et jeté, un fichier refusé (415), une enveloppe illisible refusée (400). Le `From` CPIM
+n'est pas lu : l'expéditeur reste le `From` SIP. `MessagingMachine` range une fois un message
+dont le couple (correspondant, `imdn.Message-ID`) est déjà dans le fil ou en quarantaine, et
+lui répond comme à la première remise. À l'envoi, tout part en CPIM, avec l'`id` de l'entrée
+pour `imdn.Message-ID` ; un 415 fait repartir le message en texte brut, et le correspondant
+reste en texte brut tant que le lien vit. Aucun accusé n'est demandé ni envoyé.
+
 **`Allow` et `Accept`.** JsSIP annonce MESSAGE dans `Allow` quoi qu'il arrive, et son 415 ne
-cite que `application/sdp`. `announceMessaging()` réécrit les deux constantes de JsSIP : MESSAGE
-et `text/plain` quand la messagerie est allumée, rien de tout cela avec `"messaging": "no"` — le
+cite que `application/sdp`. `announceMessaging()` réécrit les deux constantes de JsSIP : MESSAGE,
+`text/plain` et `message/cpim` quand la messagerie est allumée, rien de tout cela avec `"messaging": "no"` — le
 405 dit alors vrai.
 
 **Ce qui est nouveau n'est pas ce qui est relu.** `ui/messagealerts.ts` ne tient pour nouvelle

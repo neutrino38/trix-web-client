@@ -29,6 +29,14 @@
  * answered 202 and held in memory, never in the vault, until the user
  * accepts, refuses, or two minutes pass from when the prompt was first
  * shown in a visible tab and out of a call.
+ *
+ * ## Delivered twice, filed once (ADR 0009)
+ *
+ * A message in CPIM carries an `imdn.Message-ID`. One already filed, or
+ * already held, under the same correspondent is answered as the first
+ * delivery was — 200 or 202 — and kept once: a sender that resends after
+ * a lost answer, or a server that delivers again after a wake-up, does
+ * not double it. Bare `text/plain` has no such id, and is filed each time.
  */
 
 import { defineMachine, goto, stay, type Fx, type TaskResult } from "finite-state-language";
@@ -81,7 +89,7 @@ export interface Quarantined {
   key: string;
   uri: string;
   name: string | null;
-  messages: { text: string; at: number }[];
+  messages: { text: string; at: number; messageId?: string }[];
   /** When the prompt was first shown; null while it waits its turn. */
   shownAt: number | null;
 }
@@ -154,6 +162,16 @@ function save(ctx: MessagingCtx): void {
 
 function contactOf(ctx: MessagingCtx, key: string): Contact | undefined {
   return ctx.contacts.find((c) => addressKey(c.uri) === key);
+}
+
+/** A message of this correspondent with this `imdn.Message-ID` is already filed. */
+function filed(ctx: MessagingCtx, key: string, messageId: string): boolean {
+  return ctx.messages.some((m) => m.key === key && m.messageId === messageId);
+}
+
+/** Same, among the messages held for an unknown sender. */
+function held(ctx: MessagingCtx, key: string, messageId: string): boolean {
+  return ctx.quarantine.some((q) => q.key === key && q.messages.some((m) => m.messageId === messageId));
 }
 
 /** Someone whose messages go straight to the thread. */
@@ -238,7 +256,10 @@ function loaded(ev: Ev<"task:loadMessages">, ctx: MessagingCtx) {
   ctx.loaded = true;
   if (!ev.ok) return stay("vault unreadable");
   const ids = new Set(ev.value.messages.map((m) => m.id));
-  ctx.messages = [...ev.value.messages, ...ctx.messages.filter((m) => !ids.has(m.id))];
+  const delivered = new Set(ev.value.messages.flatMap((m) => (m.messageId ? [`${m.key} ${m.messageId}`] : [])));
+  // filed while the vault was read, and already in it: delivered twice (ADR 0009)
+  const fresh = ctx.messages.filter((m) => !ids.has(m.id) && !(m.messageId && delivered.has(`${m.key} ${m.messageId}`)));
+  ctx.messages = [...ev.value.messages, ...fresh];
   flush(ctx);
   return stay("messages loaded");
 }
@@ -287,6 +308,7 @@ function fileAll(ctx: MessagingCtx, q: Quarantined): void {
         direction: "incoming",
         text: m.text,
         at: m.at,
+        ...(m.messageId ? { messageId: m.messageId } : {}),
         state: "received",
         reason: null,
         read: false,
@@ -308,6 +330,16 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
     ev.answer(603);
     return stay("blocked sender");
   }
+  const messageId = ev.messageId ?? undefined;
+  if (messageId !== undefined && filed(ctx, key, messageId)) {
+    ev.answer(200);
+    return stay("message already filed");
+  }
+  if (messageId !== undefined && held(ctx, key, messageId)) {
+    ev.answer(202);
+    return stay("message already held");
+  }
+  const one = { text: ev.text, at, ...(messageId !== undefined ? { messageId } : {}) };
   if (known(ctx, key)) {
     ev.answer(200);
     const entry: MessageEntry = {
@@ -317,6 +349,7 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
       direction: "incoming",
       text: ev.text,
       at,
+      ...(messageId !== undefined ? { messageId } : {}),
       state: "received",
       reason: null,
       read: false,
@@ -325,12 +358,10 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
     save(ctx);
     return stay("message filed");
   }
-  const held = ctx.quarantine.find((q) => q.key === key);
-  if (held) {
+  const holding = ctx.quarantine.find((q) => q.key === key);
+  if (holding) {
     ev.answer(202);
-    ctx.quarantine = ctx.quarantine.map((q) =>
-      q === held ? { ...q, messages: [...q.messages, { text: ev.text, at }] } : q,
-    );
+    ctx.quarantine = ctx.quarantine.map((q) => (q === holding ? { ...q, messages: [...q.messages, one] } : q));
     return stay("more from a held sender");
   }
   if (ctx.quarantine.length >= MAX_QUARANTINED) {
@@ -338,7 +369,7 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
     return stay("quarantine full");
   }
   ev.answer(202);
-  ctx.quarantine = [...ctx.quarantine, { key, uri: ev.from, name: ev.name, messages: [{ text: ev.text, at }], shownAt: null }];
+  ctx.quarantine = [...ctx.quarantine, { key, uri: ev.from, name: ev.name, messages: [one], shownAt: null }];
   showNext(ctx, fx);
   return stay("unknown sender held");
 }

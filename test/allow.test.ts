@@ -73,9 +73,10 @@ describe("Allow header, messaging on", () => {
     expect(ALLOWED_METHODS_WITH_MESSAGE.split(",")).toContain("MESSAGE");
   });
 
-  it("names text/plain in the 415 refusing another body type", () => {
+  it("names text/plain and message/cpim in the 415 refusing another body type", () => {
     createJsSipPort({ messaging: true });
-    const lines = replyTo(MESSAGE("message/cpim"), 415);
+    const lines = replyTo(MESSAGE("text/html"), 415);
     expect(lines).toContain(`Accept: ${ACCEPTED_BODY_TYPES_WITH_TEXT}`);
+    expect(ACCEPTED_BODY_TYPES_WITH_TEXT).toContain("message/cpim");
   });
 });

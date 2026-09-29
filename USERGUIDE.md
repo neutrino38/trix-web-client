@@ -422,6 +422,9 @@ Things to know:
   without the question you asked from your phone. SIP has no way to copy them across.
 - If your server does not carry messages at all, a banner says so and the field closes
   until the next connection.
+- Trix writes messages the way Linphone and similar apps do. A message the server or the
+  sender delivers twice shows only once. Trix sends no read receipts: people who write to
+  you see their messages as delivered, never as read.
 
 ### Messages from unknown addresses
 

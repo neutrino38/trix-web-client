@@ -143,8 +143,9 @@ sudo vi /var/www/trix/config.json
 
 ## Messagerie instantanée : ce que le serveur SIP doit faire
 
-Trix envoie et reçoit des SIP MESSAGE (RFC 3428) en `text/plain`
-([ADR 0008](../architecture/0008-messagerie.md)). Le proxy doit :
+Trix envoie et reçoit des SIP MESSAGE (RFC 3428) en `text/plain`, enveloppé dans CPIM
+comme chez Linphone ([ADR 0008](../architecture/0008-messagerie.md),
+[ADR 0009](../architecture/0009-cpim.md)). Le proxy doit :
 
 1. **router MESSAGE** vers les contacts enregistrés du destinataire, comme un INVITE ;
 2. **garder les messages d'un destinataire désinscrit** et les lui remettre à son
@@ -185,8 +186,10 @@ request_route {
 }
 ```
 
-Trix range un message remis en différé à la date de son en-tête `Date` quand il en
-porte un, et à l'heure de réception sinon. Vérifiez ce que votre version de `msilo`
+Trix range un message remis en différé à la date de son en-tête CPIM `DateTime`, ou de
+son en-tête SIP `Date`, quand il en porte un, et à l'heure de réception sinon. Un message
+CPIM remis deux fois (même `imdn.Message-ID`) n'est rangé qu'une fois ; un message en texte
+brut remis deux fois apparaît deux fois. Vérifiez ce que votre version de `msilo`
 pose dans les messages qu'elle remet.
 
 Asterisk (PJSIP) route MESSAGE par le plan de numérotation (`MessageSend`) mais ne garde

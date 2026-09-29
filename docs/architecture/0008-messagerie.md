@@ -12,8 +12,8 @@ avant M-6 et M-7.
 `ui/title.ts`, `ui/favicon.ts`, `ui/announce.ts`, `deployment.ts`, `i18n/locales/*`,
 `docs/CONCEPTION.md`, `docs/utilisation/deploiement.md`, `USERGUIDE.md`
 **Hors périmètre :** CPIM (RFC 3862) et les accusés IMDN (RFC 5438), qui viendront dans un second
-temps (D1) ; les conversations de groupe (MSRP, RFC 4975, et les conférences) ; les fichiers et
-images ; la synchronisation entre appareils (D9).
+temps (D1) — CPIM est venu avec l'[ADR 0009](0009-cpim.md), les accusés restent à faire ;
+les conversations de groupe (MSRP, RFC 4975, et les conférences) ; les fichiers et images ; la synchronisation entre appareils (D9).
 **Références normatives :** RFC 3428 (SIP MESSAGE), RFC 3261 (transactions non-INVITE, §17),
 RFC 4320 (réponses provisoires aux non-INVITE), RGAA 3.1
 
@@ -55,6 +55,10 @@ Kamailio le fait avec le module `msilo` ; Asterisk (PJSIP) route MESSAGE par le 
 ## 2. Décisions
 
 ### D1 — `text/plain` seul, CPIM et IMDN plus tard
+
+> **Complété par l'[ADR 0009](0009-cpim.md) :** Trix envoie et reçoit aussi du `text/plain`
+> enveloppé dans CPIM, comme Linphone ; `DateTime` date le message et `imdn.Message-ID` le
+> dédoublonne. Les accusés IMDN restent hors périmètre.
 
 Trix envoie et reçoit `text/plain; charset=UTF-8`. Une réponse 2xx dit **« remis au serveur »**,
 et l'écran ne dit rien de plus : ni distribué, ni lu. CPIM et IMDN viendront dans un ADR suivant,
@@ -270,7 +274,8 @@ les voir, et l'écran lit la machine directement.
 ## 3. Écarts assumés
 
 - Pas de CPIM ni d'IMDN : « remis au serveur » est le seul accusé (D1). Viendront plus tard.
-- Pas de dédoublonnage : un expéditeur qui renvoie après un 408 fera deux messages (D3).
+- Pas de dédoublonnage : un expéditeur qui renvoie après un 408 fera deux messages (D3). Levé
+  pour les messages en CPIM par l'ADR 0009, D2.
 - Pas de copie des messages envoyés ailleurs (D9).
 - La quarantaine est en mémoire : un rechargement de page la perd, et l'expéditeur a reçu 202 (D5).
 - Un inconnu refusé ne le sait pas (D5).

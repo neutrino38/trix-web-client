@@ -235,8 +235,17 @@ export interface MessageEntry {
   uri: string;
   direction: CallDirection;
   text: string;
-  /** Epoch ms: the `Date` header when there was one (D8), else reception or writing. */
+  /**
+   * Epoch ms: the CPIM `DateTime` or the `Date` header when there was one
+   * (D8, ADR 0009), else reception or writing.
+   */
   at: number;
+  /**
+   * Incoming, in CPIM: the sender's `imdn.Message-ID`, which files a
+   * message delivered twice only once (ADR 0009). An outgoing message's
+   * `imdn.Message-ID` is its `id`.
+   */
+  messageId?: string;
   state: MessageState;
   /** Why a send failed, as a deferred message. */
   reason: Msg | null;
@@ -402,7 +411,11 @@ function normalizeMessages(raw: unknown): MessageEntry[] {
       typeof m.at === "number" &&
       MESSAGE_STATES.has(m.state) &&
       typeof m.read === "boolean",
-  ).map((m) => ({ ...m, reason: m.reason ?? null }));
+  ).map((m) => {
+    const entry: MessageEntry = { ...m, reason: m.reason ?? null };
+    if (typeof entry.messageId !== "string") delete entry.messageId;
+    return entry;
+  });
 }
 
 /**

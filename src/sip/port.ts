@@ -535,11 +535,12 @@ export const ALLOWED_METHODS_WITH_MESSAGE = `${ALLOWED_METHODS},MESSAGE`;
 
 /**
  * Les types de corps annoncés dans `Accept` (réponse à OPTIONS, et 415).
- * Ceux de JsSIP, plus `text/plain` quand la messagerie est allumée : c'est
- * ce que dit le 415 opposé à un MESSAGE d'un autre type (ADR 0008, D1).
+ * Ceux de JsSIP, plus `text/plain` et `message/cpim` quand la messagerie
+ * est allumée : c'est ce que dit le 415 opposé à un MESSAGE d'un autre
+ * type (ADR 0008, D1 ; ADR 0009).
  */
 export const ACCEPTED_BODY_TYPES = "application/sdp, application/dtmf-relay";
-export const ACCEPTED_BODY_TYPES_WITH_TEXT = `${ACCEPTED_BODY_TYPES}, text/plain`;
+export const ACCEPTED_BODY_TYPES_WITH_TEXT = `${ACCEPTED_BODY_TYPES}, text/plain, message/cpim`;
 
 /**
  * Écrit les deux listes dans les constantes de JsSIP — le même objet que
@@ -739,7 +740,11 @@ export function createJsSipPort(opts: PortOptions = {}): SipPort {
             messaging.rebind(sendMessaging);
             return messaging;
           }
-          messaging = openMessaging({ sender: jssipSender(ua), send: sendMessaging });
+          messaging = openMessaging({
+            sender: jssipSender(ua),
+            self: `sip:${cfg.username}@${cfg.domain}`,
+            send: sendMessaging,
+          });
           return messaging;
         },
         refresh() {
