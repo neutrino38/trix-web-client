@@ -6,6 +6,7 @@ import { linkPresence } from "./machines/presencesignals.js";
 import { MessagingMachine } from "./machines/messaging.js";
 import { linkMessaging } from "./machines/messagingsignals.js";
 import { bindPresence } from "./ui/presence.js";
+import { bindMessaging } from "./ui/messaging.js";
 import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
@@ -137,6 +138,8 @@ phone.subscribe(scheduleRender);
 // l'en-tête suit — `renderApp` ne reconstruit que si ce qu'il en montre a changé
 bindPresence(presence);
 presence.subscribe(scheduleRender);
+// les messages arrivent sans que le téléphone bouge : le fil suit
+bindMessaging(messaging);
 messaging.subscribe(scheduleRender);
 renderApp(root, phone);
 

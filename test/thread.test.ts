@@ -9,10 +9,12 @@ import {
   contactFor,
   groupOf,
   initials,
+  lastEvent,
   lastStranger,
+  threadEvents,
   threadSections,
 } from "../src/ui/thread.js";
-import type { CallLogEntry, Contact } from "../src/storage/store.js";
+import type { CallLogEntry, Contact, MessageEntry } from "../src/storage/store.js";
 
 const NOW = new Date(2026, 8, 27, 15, 0).getTime();
 const H = 3600_000;
@@ -37,6 +39,60 @@ describe("buildThreads", () => {
       ["Bob Martin", "c1"],
       ["+33612345678@example.fr", null],
     ]);
+  });
+});
+
+const message = (key: string, at: number, over: Partial<MessageEntry> = {}): MessageEntry => ({
+  id: `${key}-${at}`, key, uri: `sip:${key}`, direction: "incoming", text: "Bonjour",
+  at, state: "received", reason: null, read: true, ...over,
+});
+
+describe("buildThreads — messages (ADR 0008)", () => {
+  it("a contact's messages join its line, and the latest exchange wins", () => {
+    const [bob] = buildThreads(
+      [BOB],
+      [call("bob@example.fr", NOW - 2 * H)],
+      {},
+      [message("bob@example.fr", NOW - H, { read: false }), message("bob@example.fr", NOW - 3 * H)],
+    );
+    expect(bob!.messages.map((m) => m.at)).toEqual([NOW - 3 * H, NOW - H]);
+    expect(bob!.unread).toBe(1);
+    expect(bob!.last).toBe(NOW - H);
+  });
+
+  it("a stranger who only wrote gets a line", () => {
+    const threads = buildThreads([BOB], [], {}, [message("carla@example.org", NOW)]);
+    expect(threads.map((t) => [t.name, t.contact])).toEqual([
+      ["Bob Martin", BOB],
+      ["carla@example.org", null],
+    ]);
+  });
+
+  it("a blocked contact's line says so", () => {
+    const [mallory] = buildThreads([{ ...BOB, blocked: true }], [], {});
+    expect(mallory!.blocked).toBe(true);
+  });
+
+  it("events mix calls and messages oldest first, and segments filter them", () => {
+    const [bob] = buildThreads(
+      [BOB],
+      [call("bob@example.fr", NOW - 2 * H)],
+      {},
+      [message("bob@example.fr", NOW - H), message("bob@example.fr", NOW - 3 * H)],
+    );
+    expect(threadEvents(bob!, "all").map((e) => [e.kind, e.at])).toEqual([
+      ["message", NOW - 3 * H],
+      ["call", NOW - 2 * H],
+      ["message", NOW - H],
+    ]);
+    expect(threadEvents(bob!, "calls").map((e) => e.kind)).toEqual(["call"]);
+    expect(threadEvents(bob!, "messages").map((e) => e.kind)).toEqual(["message", "message"]);
+    expect(lastEvent(bob!)?.kind).toBe("message");
+  });
+
+  it("the search reads the messages too", () => {
+    const threads = buildThreads([ZOE, BOB], [], {}, [message("bob@example.fr", NOW, { text: "Rendez-vous à la gare" })]);
+    expect(threadSections(threads, "gare", NOW)[0]!.threads.map((t) => t.name)).toEqual(["Bob Martin"]);
   });
 });
 

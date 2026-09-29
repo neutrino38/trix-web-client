@@ -9,12 +9,16 @@
  * A number that is not in the book gets its own line, offered to be added.
  * A contact nobody called yet sits in "Sans échange".
  *
+ * Instant messages (ADR 0008) fill the same lines: a line's last exchange
+ * is its last call or its last message, whichever came later, and its
+ * unfolded body mixes both, oldest first, filtered by segment.
+ *
  * Pure: the screen renders what this returns, the tests read it.
  */
 
 import type { ContactPresence } from "../machines/presence.js";
 import { addressKey } from "../sip/uri.js";
-import type { CallLogEntry, Contact } from "../storage/store.js";
+import type { CallLogEntry, Contact, MessageEntry } from "../storage/store.js";
 
 export type ThreadGroup = "today" | "yesterday" | "week" | "older" | "none";
 
@@ -36,9 +40,23 @@ export interface Thread {
   presence: ContactPresence | null;
   /** Most recent first. */
   calls: ThreadCall[];
-  /** Start of the last call, or null for a contact nobody called yet. */
+  /** Oldest first, as a conversation reads. */
+  messages: MessageEntry[];
+  /** Incoming messages not read yet. */
+  unread: number;
+  /** A blocked contact (ADR 0008, D7): no call button, no writing field. */
+  blocked: boolean;
+  /** Time of the last call or message, or null for a line with neither. */
   last: number | null;
 }
+
+/** What an unfolded line shows (ADR 0007, D10). */
+export type Segment = "all" | "calls" | "messages";
+
+/** One event of an unfolded line: a call or a message. */
+export type ThreadEvent =
+  | { kind: "call"; at: number; call: ThreadCall }
+  | { kind: "message"; at: number; message: MessageEntry };
 
 export interface ThreadSection {
   group: ThreadGroup;
@@ -68,6 +86,7 @@ export function buildThreads(
   contacts: readonly Contact[],
   history: readonly CallLogEntry[],
   presence: Readonly<Record<string, ContactPresence>>,
+  messages: readonly MessageEntry[] = [],
 ): Thread[] {
   const byKey = new Map<string, Thread>();
   for (const contact of contacts) {
@@ -80,6 +99,9 @@ export function buildThreads(
       contact,
       presence: presence[contact.uri] ?? null,
       calls: [],
+      messages: [],
+      unread: 0,
+      blocked: contact.blocked,
       last: null,
     });
   }
@@ -88,23 +110,72 @@ export function buildThreads(
     if (!key) return;
     let thread = byKey.get(key);
     if (!thread) {
-      thread = { key, target: entry.target, name: entry.target, contact: null, presence: null, calls: [], last: null };
+      thread = stranger(key, entry.target);
       byKey.set(key, thread);
     }
     thread.calls.push({ entry, index });
   });
+  for (const message of messages) {
+    let thread = byKey.get(message.key);
+    if (!thread) {
+      thread = stranger(message.key, message.uri.replace(/^sips?:/i, ""));
+      byKey.set(message.key, thread);
+    }
+    thread.messages.push(message);
+    if (!message.read) thread.unread++;
+  }
   for (const thread of byKey.values()) {
     thread.calls.sort((a, b) => b.entry.startedAt - a.entry.startedAt);
-    thread.last = thread.calls[0]?.entry.startedAt ?? null;
+    thread.messages.sort((a, b) => a.at - b.at);
+    const lastCall = thread.calls[0]?.entry.startedAt ?? null;
+    const lastMessage = thread.messages.at(-1)?.at ?? null;
+    thread.last = lastCall === null ? lastMessage : lastMessage === null ? lastCall : Math.max(lastCall, lastMessage);
   }
   return [...byKey.values()];
 }
 
-/** Does this line answer the search? Name or address, case and accents aside. */
+/** A line for an address outside the book. */
+function stranger(key: string, target: string): Thread {
+  return {
+    key,
+    target,
+    name: target,
+    contact: null,
+    presence: null,
+    calls: [],
+    messages: [],
+    unread: 0,
+    blocked: false,
+    last: null,
+  };
+}
+
+/** The events of a line for a segment, oldest first: what its unfolded body lists. */
+export function threadEvents(thread: Thread, segment: Segment): ThreadEvent[] {
+  const events: ThreadEvent[] = [];
+  if (segment !== "messages") {
+    for (const call of thread.calls) events.push({ kind: "call", at: call.entry.startedAt, call });
+  }
+  if (segment !== "calls") {
+    for (const message of thread.messages) events.push({ kind: "message", at: message.at, message });
+  }
+  return events.sort((a, b) => a.at - b.at);
+}
+
+/** The line's most recent event, the one its summary shows. */
+export function lastEvent(thread: Thread): ThreadEvent | null {
+  return threadEvents(thread, "all").at(-1) ?? null;
+}
+
+/** Does this line answer the search? Name, address or a message, case and accents aside. */
 export function matches(thread: Thread, query: string): boolean {
   const q = fold(query.trim());
   if (!q) return true;
-  return fold(thread.name).includes(q) || fold(thread.key).includes(q);
+  return (
+    fold(thread.name).includes(q) ||
+    fold(thread.key).includes(q) ||
+    thread.messages.some((m) => fold(m.text).includes(q))
+  );
 }
 
 function fold(s: string): string {

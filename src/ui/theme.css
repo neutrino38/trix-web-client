@@ -1602,7 +1602,16 @@ fieldset.field { border: none; }
 }
 .thread-last span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-last .icon.dir { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
-.thread-toggle .when { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+.thread-toggle .when {
+  font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem;
+}
+/* non-lus (ADR 0008, D11) : le nombre se voit, le lecteur d'écran lit la phrase */
+.thread-toggle .unread {
+  min-width: 1.4rem; height: 1.4rem; padding: 0 0.35rem; border-radius: 0.7rem;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 0.72rem;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .thread-call {
   width: 44px; height: 44px; border-radius: 50%; flex: none; cursor: pointer;
   border: 1px solid var(--border); background: var(--panel); color: var(--ink);
@@ -1617,6 +1626,47 @@ fieldset.field { border: none; }
 .thread-day { display: flex; align-items: center; gap: 0.6rem; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); }
 .thread-day::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .thread-calls { display: flex; flex-direction: column; gap: 0.35rem; }
+
+/* Messagerie (ADR 0008) : appels et messages mêlés, du plus ancien au plus
+   récent ; la liste défile seule, pour que le champ d'écriture reste en vue. */
+.thread-events {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  max-height: 24rem; overflow-y: auto; padding-inline-end: 0.25rem;
+}
+.thread-segments { display: flex; gap: 0.25rem; }
+.thread-segments .seg {
+  font: inherit; font-size: 0.8rem; color: var(--ink-soft); cursor: pointer;
+  background: none; border: 1px solid var(--border); border-radius: 999px; padding: 0.25rem 0.8rem;
+  min-height: 32px;
+}
+.thread-segments .seg[aria-pressed="true"] { background: var(--panel-2); color: var(--ink); font-weight: 600; border-color: var(--accent-soft); }
+.thread-segments .seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.msg {
+  max-width: min(32rem, 85%); padding: 0.45rem 0.75rem; border-radius: 14px;
+  background: var(--panel-2); align-self: flex-start;
+}
+.msg.out { align-self: flex-end; background: var(--accent-soft); }
+.msg p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem; }
+.msg-meta { display: block; font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
+/* --ink-soft sur --accent-soft tombe sous 4,5:1 dans les deux thèmes */
+.msg.out .msg-meta { color: var(--ink); }
+/* ni la couleur seule ni l'opacité seule : l'état est écrit dans la méta */
+.msg.pending { opacity: 0.8; }
+.msg.failed { border: 1px dashed var(--red); }
+.msg.failed .msg-meta { color: var(--ink); }
+.thread-compose {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.5rem; align-items: end;
+}
+.thread-compose textarea {
+  font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--ground); resize: vertical;
+  border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem 0.7rem; min-height: 44px; max-height: 12rem;
+}
+.thread-compose textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.thread-compose textarea[aria-invalid="true"] { border-color: var(--red); }
+.thread-compose .compose-count, .thread-compose .compose-hint {
+  grid-column: 1 / -1; font-size: 0.75rem; color: var(--ink-soft);
+}
+.thread-compose .compose-count.over { color: var(--red); font-weight: 600; }
 .thread-actions { display: flex; gap: 1rem; }
 .thread-rename { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .thread-rename input, .thread-addform input {
