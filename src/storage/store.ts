@@ -174,7 +174,40 @@ export interface Contact {
   name: string;
   uri: string;
   addedAt: number; // epoch ms
+  /**
+   * Blocked (ADR 0008, D7): calls and messages refused 603, no presence
+   * subscription. Read as false from a book written before it.
+   */
+  blocked: boolean;
 }
+
+/** State of a message (ADR 0008, D3); `received` for every incoming one. */
+export type MessageState = "pending" | "sent" | "failed" | "received";
+
+/**
+ * One instant message (ADR 0008, D6), kept encrypted per account next to
+ * the call history. The thread groups them with calls by `key`.
+ */
+export interface MessageEntry {
+  /** Local and stable; also what the link reports a send's outcome under. */
+  id: string;
+  /** `addressKey` of the correspondent (`sip/uri.ts`). */
+  key: string;
+  /** The address as it came in or went out. */
+  uri: string;
+  direction: CallDirection;
+  text: string;
+  /** Epoch ms: the `Date` header when there was one (D8), else reception or writing. */
+  at: number;
+  state: MessageState;
+  /** Why a send failed, as a deferred message. */
+  reason: Msg | null;
+  /** Incoming messages only; always true for outgoing ones. */
+  read: boolean;
+}
+
+/** D6: past this, a correspondent's oldest messages go. */
+export const MAX_MESSAGES_PER_PEER = 1000;
 
 export interface SecureStore {
   /** Le coffre entier, migré depuis le format à compte unique s'il le faut. */
@@ -192,6 +225,11 @@ export interface SecureStore {
   saveContacts(id: string, contacts: Contact[]): Promise<void>;
   /** Supprime le carnet d'un compte, avec le compte. */
   deleteContacts(id: string): Promise<void>;
+  /** An account's messages (ADR 0008, D6), encrypted like the vault. */
+  loadMessages(id: string): Promise<MessageEntry[]>;
+  saveMessages(id: string, messages: MessageEntry[]): Promise<void>;
+  /** Deletes an account's messages, with the account. */
+  deleteMessages(id: string): Promise<void>;
 }
 
 const DB_NAME = "trix";
@@ -283,6 +321,7 @@ async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
 
 const historyId = (id: string): string => `history:${id}`;
 const contactsId = (id: string): string => `contacts:${id}`;
+const messagesId = (id: string): string => `messages:${id}`;
 
 /**
  * Un carnet relu : ce qui n'a pas la forme d'un contact est écarté plutôt
@@ -291,15 +330,65 @@ const contactsId = (id: string): string => `contacts:${id}`;
  */
 function normalizeContacts(raw: unknown): Contact[] {
   if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (c): c is Contact =>
+        typeof c === "object" &&
+        c !== null &&
+        typeof c.id === "string" &&
+        typeof c.name === "string" &&
+        typeof c.uri === "string" &&
+        typeof c.addedAt === "number",
+    )
+    // `blocked` appeared with ADR 0008: absent means not blocked
+    .map((c) => ({ ...c, blocked: c.blocked === true }));
+}
+
+const MESSAGE_STATES: ReadonlySet<string> = new Set(["pending", "sent", "failed", "received"]);
+
+/**
+ * Messages read back: whatever does not have the shape of one is dropped,
+ * like a damaged contact — one bad record must not cost the others.
+ */
+function normalizeMessages(raw: unknown): MessageEntry[] {
+  if (!Array.isArray(raw)) return [];
   return raw.filter(
-    (c): c is Contact =>
-      typeof c === "object" &&
-      c !== null &&
-      typeof c.id === "string" &&
-      typeof c.name === "string" &&
-      typeof c.uri === "string" &&
-      typeof c.addedAt === "number",
-  );
+    (m): m is MessageEntry =>
+      typeof m === "object" &&
+      m !== null &&
+      typeof m.id === "string" &&
+      typeof m.key === "string" &&
+      typeof m.uri === "string" &&
+      (m.direction === "outgoing" || m.direction === "incoming") &&
+      typeof m.text === "string" &&
+      typeof m.at === "number" &&
+      MESSAGE_STATES.has(m.state) &&
+      typeof m.read === "boolean",
+  ).map((m) => ({ ...m, reason: m.reason ?? null }));
+}
+
+/**
+ * Keeps the `max` most recent messages of each correspondent (D6), in
+ * the order given. Pending ones are never dropped: they have not left.
+ * Applied by MessagingMachine before it saves; the store writes what it
+ * is given, like the history.
+ */
+export function capMessages(messages: MessageEntry[], max = MAX_MESSAGES_PER_PEER): MessageEntry[] {
+  const count = new Map<string, number>();
+  for (const m of messages) if (m.state !== "pending") count.set(m.key, (count.get(m.key) ?? 0) + 1);
+  const excess = new Map<string, number>();
+  for (const [key, n] of count) if (n > max) excess.set(key, n - max);
+  if (excess.size === 0) return messages;
+  // the oldest go first, whatever order the list is kept in
+  const oldestFirst = [...messages].sort((a, b) => a.at - b.at);
+  const dropped = new Set<MessageEntry>();
+  for (const m of oldestFirst) {
+    const left = excess.get(m.key) ?? 0;
+    if (left === 0 || m.state === "pending") continue;
+    dropped.add(m);
+    excess.set(m.key, left - 1);
+  }
+  return messages.filter((m) => !dropped.has(m));
 }
 
 /**
@@ -481,6 +570,33 @@ export function createBrowserStore(): SecureStore {
       const db = await openDb();
       try {
         await idbDelete(db, contactsId(id));
+      } finally {
+        db.close();
+      }
+    },
+
+    async loadMessages(id: string): Promise<MessageEntry[]> {
+      const db = await openDb();
+      try {
+        return normalizeMessages(await decryptGet(db, messagesId(id)));
+      } finally {
+        db.close();
+      }
+    },
+
+    async saveMessages(id: string, messages: MessageEntry[]): Promise<void> {
+      const db = await openDb();
+      try {
+        await encryptPut(db, messagesId(id), messages);
+      } finally {
+        db.close();
+      }
+    },
+
+    async deleteMessages(id: string): Promise<void> {
+      const db = await openDb();
+      try {
+        await idbDelete(db, messagesId(id));
       } finally {
         db.close();
       }

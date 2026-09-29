@@ -9,7 +9,7 @@ import type { SipHandle } from "../src/sip/port.js";
 import type { Contact } from "../src/storage/store.js";
 
 const handle = { name: "handle" } as unknown as SipHandle;
-const BOB: Contact = { id: "c1", name: "Bob", uri: "sip:bob@example.com", addedAt: 1 };
+const BOB: Contact = { id: "c1", name: "Bob", uri: "sip:bob@example.com", addedAt: 1, blocked: false };
 const book = [BOB];
 
 const view = (state: string, over: Partial<PhoneView> = {}): PhoneView => ({

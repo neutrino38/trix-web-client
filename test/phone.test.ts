@@ -16,6 +16,7 @@ import type {
   SecureStore,
   StoredAccount,
   Vault,
+  MessageEntry,
 } from "../src/storage/store.js";
 import type {
   CallMedia,
@@ -88,6 +89,7 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
     },
   };
   if (seed) box.history.set(seed.id, history);
+  const messages = new Map<string, MessageEntry[]>();
   const store: SecureStore = {
     load: async () => box.vault,
     save: async (vault) => {
@@ -111,8 +113,15 @@ function fakeStore(initial: AccountConfig | null = null, history: CallLogEntry[]
     deleteContacts: async (id) => {
       box.contacts.delete(id);
     },
+    loadMessages: async (id) => messages.get(id) ?? [],
+    saveMessages: async (id, list) => {
+      messages.set(id, list);
+    },
+    deleteMessages: async (id) => {
+      messages.delete(id);
+    },
   };
-  return { store, box };
+  return { store, box, messages };
 }
 
 class FakeCallSession {
@@ -1299,7 +1308,7 @@ describe("PhoneMachine — carnet de contacts (ADR 0007, D7)", () => {
     const { store, box } = fakeStore(CFG);
     const other: StoredAccount = { ...CFG, id: "acc-other", username: "zoe" };
     box.vault = { accounts: [...box.vault.accounts, other], activeId: SEED_ID };
-    const bob: Contact = { id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1 };
+    const bob: Contact = { id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1, blocked: false };
     box.contacts.set(SEED_ID, [bob]);
     const sip = new FakeSip();
     const phone = PhoneMachine.start({ args: { store, sip } });
@@ -1312,7 +1321,7 @@ describe("PhoneMachine — carnet de contacts (ADR 0007, D7)", () => {
 
   it("supprimer le compte efface son carnet", async () => {
     const { phone, box } = await bootTo("home", CFG);
-    box.contacts.set(SEED_ID, [{ id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1 }]);
+    box.contacts.set(SEED_ID, [{ id: "c1", name: "Bob", uri: "sip:bob@example.fr", addedAt: 1, blocked: false }]);
     phone.send({ type: "ui:configure", id: SEED_ID });
     phone.send({ type: "ui:deleteAccount" });
     await vi.waitFor(() => expect(phone.state).toBe("home"));

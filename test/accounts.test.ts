@@ -13,6 +13,7 @@ import type {
   SecureStore,
   StoredAccount,
   Vault,
+  MessageEntry,
 } from "../src/storage/store.js";
 import type { CallMedia, SipEvent, SipPort } from "../src/sip/port.js";
 import { NO_PRESENCE } from "../src/sip/presence.js";
@@ -70,6 +71,7 @@ function fakeStore(vault: Vault, histories: Record<string, CallLogEntry[]> = {})
     dropped: [] as string[],
   };
   const contacts = new Map<string, Contact[]>();
+  const messages = new Map<string, MessageEntry[]>();
   const store: SecureStore = {
     load: async () => box.vault,
     save: async (v) => {
@@ -93,8 +95,15 @@ function fakeStore(vault: Vault, histories: Record<string, CallLogEntry[]> = {})
     deleteContacts: async (id) => {
       contacts.delete(id);
     },
+    loadMessages: async (id) => messages.get(id) ?? [],
+    saveMessages: async (id, list) => {
+      messages.set(id, list);
+    },
+    deleteMessages: async (id) => {
+      messages.delete(id);
+    },
   };
-  return { store, box };
+  return { store, box, messages };
 }
 
 class FakeSip implements SipPort {
@@ -136,11 +145,11 @@ class FakeSip implements SipPort {
 
 /** Démarre la machine et attend l'accueil. */
 async function boot(vault: Vault, histories: Record<string, CallLogEntry[]> = {}) {
-  const { store, box } = fakeStore(vault, histories);
+  const { store, box, messages } = fakeStore(vault, histories);
   const sip = new FakeSip();
   const phone = PhoneMachine.start({ args: { store, sip, transcript: () => [] } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
-  return { phone, sip, box };
+  return { phone, sip, box, messages };
 }
 
 /** Amène la machine en `ready` sur le compte demandé. */
@@ -316,12 +325,16 @@ describe("deux comptes — bascule", () => {
 
 describe("deux comptes — suppression", () => {
   it("le compte et son historique disparaissent, l'autre reste", async () => {
-    const { phone, box } = await boot({ accounts: [ALICE, BOB], activeId: ALICE.id });
+    const { phone, box, messages } = await boot({ accounts: [ALICE, BOB], activeId: ALICE.id });
+    messages.set(ALICE.id, []);
+    messages.set(BOB.id, []);
     phone.send({ type: "ui:configure", id: BOB.id });
     phone.send({ type: "ui:deleteAccount" });
     await vi.waitFor(() => expect(phone.state).toBe("home"));
     expect(box.vault.accounts.map((a) => a.id)).toEqual([ALICE.id]);
     expect(box.dropped).toEqual([BOB.id]);
+    // ses messages avec lui (ADR 0008, D6)
+    await vi.waitFor(() => expect([...messages.keys()]).toEqual([ALICE.id]));
     // l'actif n'était pas celui-là : il ne bouge pas
     expect(box.vault.activeId).toBe(ALICE.id);
   });

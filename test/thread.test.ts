@@ -16,8 +16,8 @@ import type { CallLogEntry, Contact } from "../src/storage/store.js";
 
 const NOW = new Date(2026, 8, 27, 15, 0).getTime();
 const H = 3600_000;
-const BOB: Contact = { id: "c1", name: "Bob Martin", uri: "sip:bob@example.fr", addedAt: 1 };
-const ZOE: Contact = { id: "c2", name: "Zoé Durand", uri: "sip:zoe@example.fr", addedAt: 1 };
+const BOB: Contact = { id: "c1", name: "Bob Martin", uri: "sip:bob@example.fr", addedAt: 1, blocked: false };
+const ZOE: Contact = { id: "c2", name: "Zoé Durand", uri: "sip:zoe@example.fr", addedAt: 1, blocked: false };
 
 const call = (target: string, startedAt: number): CallLogEntry => ({
   target, direction: "outgoing", outcome: "answered", media: { audio: true, video: false, text: false },

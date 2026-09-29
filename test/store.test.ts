@@ -5,10 +5,12 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  capMessages,
   createBrowserStore,
   type AccountConfig,
   type CallLogEntry,
   type Contact,
+  type MessageEntry,
   type StoredAccount,
 } from "../src/storage/store.js";
 import { NO_ICE } from "../src/sip/ice.js";
@@ -291,9 +293,84 @@ describe("browserStore — historique par compte", () => {
   });
 });
 
+describe("browserStore — messages par compte (ADR 0008, D6)", () => {
+  const message = (over: Partial<MessageEntry> = {}): MessageEntry => ({
+    id: "m1",
+    key: "carol@example.fr",
+    uri: "sip:carol@example.fr",
+    direction: "incoming",
+    text: "Bonjour",
+    at: 1_700_000_000_000,
+    state: "received",
+    reason: null,
+    read: false,
+    ...over,
+  });
+
+  it("round-trip, sous l'identifiant du compte, et à part des autres", async () => {
+    const store = createBrowserStore();
+    const sent = message({
+      id: "m2",
+      direction: "outgoing",
+      state: "failed",
+      reason: { key: "misc.raw", vars: { text: "404" } },
+      read: true,
+    });
+    await store.saveMessages(ALICE.id, [message(), sent]);
+    expect(await store.loadMessages(ALICE.id)).toEqual([message(), sent]);
+    expect(await store.loadMessages(BOB.id)).toEqual([]);
+    expect(await store.loadHistory(ALICE.id)).toEqual([]);
+  });
+
+  it("deleteMessages efface ceux d'un compte, et eux seuls", async () => {
+    const store = createBrowserStore();
+    await store.saveMessages(ALICE.id, [message()]);
+    await store.saveMessages(BOB.id, [message({ id: "m9" })]);
+    await store.deleteMessages(ALICE.id);
+    expect(await store.loadMessages(ALICE.id)).toEqual([]);
+    expect(await store.loadMessages(BOB.id)).toHaveLength(1);
+  });
+
+  it("un enregistrement abîmé ne coûte pas les autres", async () => {
+    const store = createBrowserStore();
+    const broken = [message(), { id: "m2", text: 3 }, null, { ...message({ id: "m3" }), state: "lost" }];
+    await store.saveMessages(ALICE.id, broken as unknown as MessageEntry[]);
+    expect(await store.loadMessages(ALICE.id)).toEqual([message()]);
+  });
+});
+
+describe("capMessages", () => {
+  const at = (key: string, n: number, state: MessageEntry["state"] = "received"): MessageEntry => ({
+    id: `${key}${n}`,
+    key,
+    uri: `sip:${key}`,
+    direction: "incoming",
+    text: String(n),
+    at: n,
+    state,
+    reason: null,
+    read: true,
+  });
+
+  it("drops each correspondent's oldest past the cap, and no one else's", () => {
+    const list = [at("a", 3), at("b", 1), at("a", 1), at("a", 2)];
+    expect(capMessages(list, 2).map((m) => m.id)).toEqual(["a3", "b1", "a2"]);
+  });
+
+  it("never drops a message still pending", () => {
+    const list = [at("a", 1, "pending"), at("a", 2), at("a", 3)];
+    expect(capMessages(list, 1).map((m) => m.id)).toEqual(["a1", "a3"]);
+  });
+
+  it("leaves a list under the cap untouched", () => {
+    const list = [at("a", 1), at("a", 2)];
+    expect(capMessages(list, 2)).toBe(list);
+  });
+});
+
 describe("browserStore — carnet de contacts par compte (ADR 0007, D7)", () => {
-  const CAROL: Contact = { id: "c1", name: "Carol", uri: "sip:carol@example.fr", addedAt: 1_700_000_000_000 };
-  const DAVE: Contact = { id: "c2", name: "Dave", uri: "sip:dave@example.fr", addedAt: 1_700_000_100_000 };
+  const CAROL: Contact = { id: "c1", name: "Carol", uri: "sip:carol@example.fr", addedAt: 1_700_000_000_000, blocked: false };
+  const DAVE: Contact = { id: "c2", name: "Dave", uri: "sip:dave@example.fr", addedAt: 1_700_000_100_000, blocked: false };
 
   it("round-trip, dans l'ordre, sous l'identifiant du compte", async () => {
     const store = createBrowserStore();
@@ -314,6 +391,13 @@ describe("browserStore — carnet de contacts par compte (ADR 0007, D7)", () => 
     await store.deleteContacts(ALICE.id);
     expect(await store.loadContacts(ALICE.id)).toEqual([]);
     expect(await store.loadContacts(BOB.id)).toEqual([DAVE]);
+  });
+
+  it("un carnet d'avant l'ADR 0008 se relit sans contact bloqué", async () => {
+    const store = createBrowserStore();
+    const { blocked: _, ...old } = CAROL;
+    await store.saveContacts(ALICE.id, [old as Contact, { ...DAVE, blocked: true }]);
+    expect(await store.loadContacts(ALICE.id)).toEqual([CAROL, { ...DAVE, blocked: true }]);
   });
 
   it("un enregistrement abîmé ne coûte pas les autres", async () => {

@@ -327,7 +327,7 @@ function addContact(ev: Extract<PhoneEvent, { type: "ui:addContact" }>, ctx: Pho
   ctx.contactError = null;
   if (ctx.contacts.some((c) => addressKey(c.uri) === key)) return stay("déjà au carnet");
   const name = ev.name.trim() || key.slice(0, key.indexOf("@"));
-  ctx.contacts = [...ctx.contacts, { id: newAccountId(), name, uri, addedAt: Date.now() }];
+  ctx.contacts = [...ctx.contacts, { id: newAccountId(), name, uri, addedAt: Date.now(), blocked: false }];
   saveContacts(ctx);
   return stay("contact ajouté");
 }
@@ -803,7 +803,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         fx.task(
           ctx.store
             .save(vaultOf(ctx))
-            .then(() => Promise.all([ctx.store.deleteHistory(id), ctx.store.deleteContacts(id)])),
+            .then(() =>
+              Promise.all([
+                ctx.store.deleteHistory(id),
+                ctx.store.deleteContacts(id),
+                ctx.store.deleteMessages(id),
+              ]),
+            ),
           "deleteAccount",
           { timeout: 3000 },
         );
