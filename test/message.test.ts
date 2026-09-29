@@ -4,6 +4,7 @@
  * reports.
  */
 
+import { DOMParser } from "@xmldom/xmldom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error — JsSIP internal module, no type declarations
 import Parser from "jssip/lib/Parser.js";
@@ -43,6 +44,8 @@ function setup(choose?: (ev: Extract<MessagingSipEvent, { type: "sip:message" }>
   const link = openMessaging({
     sender: (uri, body, contentType, done) => sent.push({ uri, body, contentType, done }),
     self: "sip:alice@example.org",
+    parser: new DOMParser() as never,
+    newId: () => "r1",
     send: (ev) => {
       events.push(ev);
       if (ev.type === "sip:message") choose?.(ev);
@@ -240,6 +243,104 @@ describe("incoming MESSAGE in CPIM (ADR 0009)", () => {
     const { link, events } = setup((ev) => ev.answer(200));
     link.receive(incoming().view);
     expect(events).toEqual([expect.objectContaining({ messageId: null })]);
+  });
+});
+
+describe("receipts (ADR 0010)", () => {
+  const imdn = (status: "delivered" | "displayed", id = "m1") =>
+    `<?xml version="1.0" encoding="UTF-8"?><imdn xmlns="urn:ietf:params:xml:ns:imdn"><message-id>${id}</message-id>` +
+    `<datetime>2026-09-29T09:00:00Z</datetime>${
+      status === "delivered"
+        ? "<delivery-notification><status><delivered/></status></delivery-notification>"
+        : "<display-notification><status><displayed/></status></display-notification>"
+    }</imdn>`;
+  const wrap = (inner: string, type = "message/imdn+xml") =>
+    [
+      "From: <sip:bob@example.org>",
+      "To: <sip:alice@example.org>",
+      "NS: imdn <urn:ietf:params:imdn>",
+      "imdn.Message-ID: r9",
+      "",
+      `Content-Type: ${type}`,
+      "Content-Disposition: notification",
+      "",
+      inner,
+    ].join("\r\n");
+
+  it("a receipt: 200, and a sip:receipt from its sender, never a message", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const { view, replies } = incoming({ contentType: "message/cpim", body: wrap(imdn("displayed")) });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([{ type: "sip:receipt", from: "sip:bob@example.org", messageId: "m1", status: "displayed" }]);
+  });
+
+  it("several gathered in a multipart/mixed: one event each", () => {
+    const { link, events } = setup();
+    const body = ["--b", "Content-Type: message/imdn+xml", "", imdn("delivered", "m1"), "--b", "Content-Type: message/imdn+xml", "", imdn("delivered", "m2"), "--b--"].join("\r\n");
+    const { view, replies } = incoming({ contentType: "message/cpim", body: wrap(body, "multipart/mixed;boundary=b") });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events.map((e) => e.type === "sip:receipt" && e.messageId)).toEqual(["m1", "m2"]);
+  });
+
+  it("a negative receipt: 200, and nothing", () => {
+    const { link, events } = setup();
+    const { view, replies } = incoming({ contentType: "message/cpim", body: wrap(imdn("delivered").replace("<delivered/>", "<failed/>")) });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([]);
+  });
+
+  it("a receipt with no link open: 480", () => {
+    const { link, events } = setup();
+    link.close();
+    const { view, replies } = incoming({ contentType: "message/cpim", body: wrap(imdn("delivered")) });
+    link.receive(view);
+    expect(replies).toEqual([480]);
+    expect(events).toEqual([]);
+  });
+
+  it("an incoming message says which receipts it asks for — none without a Message-ID", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const cpim = (headers: string[]) =>
+      ["From: <sip:bob@example.org>", ...headers, "", "Content-Type: text/plain", "", "Bonjour"].join("\r\n");
+    const asks = "imdn.Disposition-Notification: positive-delivery, display";
+    link.receive(incoming({ contentType: "message/cpim", body: cpim(["imdn.Message-ID: a", asks]) }).view);
+    link.receive(incoming({ contentType: "message/cpim", body: cpim(["imdn.Message-ID: b"]) }).view);
+    link.receive(incoming({ contentType: "message/cpim", body: cpim([asks]) }).view);
+    link.receive(incoming().view);
+    expect(events.map((e) => e.type === "sip:message" && e.wants)).toEqual([
+      { delivery: true, display: true },
+      { delivery: false, display: false },
+      { delivery: false, display: false },
+      { delivery: false, display: false },
+    ]);
+  });
+
+  it("receipt() sends an IMDN in CPIM, about the message and its date, and reports nothing", () => {
+    const { link, events, sent } = setup();
+    link.receipt("sip:bob@example.org", "KfMgJ0nhBx", Date.parse("2026-09-29T09:00:00Z"), "displayed");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.contentType).toBe("message/cpim");
+    expect(sent[0]!.body).toContain("imdn.Message-ID: r1\r\n");
+    expect(sent[0]!.body).not.toContain("Disposition-Notification");
+    expect(sent[0]!.body).toContain("<message-id>KfMgJ0nhBx</message-id>");
+    expect(sent[0]!.body).toContain("<datetime>2026-09-29T09:00:00Z</datetime>");
+    expect(sent[0]!.body).toContain("<displayed/>");
+    sent[0]!.done(200);
+    expect(events).toEqual([]);
+  });
+
+  it("no receipt to a correspondent who refused CPIM, nor once closed", () => {
+    const { link, sent } = setup();
+    link.send("m1", "sip:bob@example.org", "Bonjour");
+    sent[0]!.done(415);
+    link.receipt("sip:bob@example.org", "x", 0, "delivered");
+    expect(sent).toHaveLength(2);
+    link.close();
+    link.receipt("sip:carol@example.org", "x", 0, "delivered");
+    expect(sent).toHaveLength(2);
   });
 });
 

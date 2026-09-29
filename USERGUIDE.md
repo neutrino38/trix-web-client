@@ -405,7 +405,9 @@ Each message you send says where it is:
 
 | Shown | Meaning |
 |---|---|
-| nothing | Delivered to the server. Trix cannot tell whether it was read. |
+| nothing | Delivered to the server. |
+| **Delivered** | The other side's app received it. |
+| **Read** | The other side opened it. |
 | **Waiting** | Not sent yet: you are not registered. It leaves as soon as you are. |
 | **Not delivered**, and why | The server or the other side refused it, or nobody answered. **Retry** sends it again. |
 
@@ -423,8 +425,11 @@ Things to know:
 - If your server does not carry messages at all, a banner says so and the field closes
   until the next connection.
 - Trix writes messages the way Linphone and similar apps do. A message the server or the
-  sender delivers twice shows only once. Trix sends no read receipts: people who write to
-  you see their messages as delivered, never as read.
+  sender delivers twice shows only once. **Delivered** and **Read** only show when the other
+  side's app sends receipts.
+- Trix tells your **contacts** when you have read their messages — as soon as you open their
+  line. People who are not in your contacts only learn that their message was delivered, and
+  someone waiting in the unknown-sender window learns nothing until you accept them.
 
 ### Messages from unknown addresses
 

@@ -1834,12 +1834,22 @@ enregistrement. Le corps est plafonné à 1 000 octets UTF-8 (RFC 3428 §8 plafo
 **CPIM (ADR 0009).** Linphone écrit en `message/cpim`. `sip/cpim.ts` ouvre l'enveloppe et en
 lit deux en-têtes : `DateTime`, qui date le message avant l'en-tête SIP `Date`, et
 `imdn.Message-ID`. La partie intérieure suit les règles du texte brut ; un accusé IMDN est pris
-(200) et jeté, un fichier refusé (415), une enveloppe illisible refusée (400). Le `From` CPIM
+(200) et traité à part (ci-dessous), un fichier refusé (415), une enveloppe illisible refusée (400). Le `From` CPIM
 n'est pas lu : l'expéditeur reste le `From` SIP. `MessagingMachine` range une fois un message
 dont le couple (correspondant, `imdn.Message-ID`) est déjà dans le fil ou en quarantaine, et
 lui répond comme à la première remise. À l'envoi, tout part en CPIM, avec l'`id` de l'entrée
 pour `imdn.Message-ID` ; un 415 fait repartir le message en texte brut, et le correspondant
-reste en texte brut tant que le lien vit. Aucun accusé n'est demandé ni envoyé.
+reste en texte brut tant que le lien vit.
+
+**Les accusés (ADR 0010).** Nos messages CPIM demandent « distribué » et « lu »
+(`imdn.Disposition-Notification`). Un accusé reçu (`sip/imdn.ts`, seul ou en `multipart/mixed`)
+ne compte que venant de celui à qui l'on a écrit, et pour un message qu'on lui a écrit ; il fait
+avancer `MessageEntry.receipt`, jamais reculer, et repasse en « envoyé » un message tombé en
+échec faute de réponse. Dans l'autre sens, un message rangé doit l'accusé de distribution qu'il
+demande, et celui d'un contact du carnet doit aussi l'accusé de lecture, quand la ligne est lue.
+Un inconnu en quarantaine ne reçoit rien avant d'être accepté ; un bloqué, jamais. Les dettes
+(`deliveryOwed`, `displayWanted`) vivent dans le coffre ; `settleReceipts` les solde dès qu'un
+lien est ouvert, et abandonne un accusé de lecture qui n'est plus dû au moment de la lecture.
 
 **`Allow` et `Accept`.** JsSIP annonce MESSAGE dans `Allow` quoi qu'il arrive, et son 415 ne
 cite que `application/sdp`. `announceMessaging()` réécrit les deux constantes de JsSIP : MESSAGE,

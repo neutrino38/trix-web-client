@@ -743,6 +743,7 @@ export function createJsSipPort(opts: PortOptions = {}): SipPort {
           messaging = openMessaging({
             sender: jssipSender(ua),
             self: `sip:${cfg.username}@${cfg.domain}`,
+            parser: new DOMParser(),
             send: sendMessaging,
           });
           return messaging;

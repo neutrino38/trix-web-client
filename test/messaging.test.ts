@@ -18,6 +18,7 @@ import {
 import { messagingSignals } from "../src/machines/messagingsignals.js";
 import type { PhoneView } from "../src/machines/presencesignals.js";
 import type { MessageAnswer, MessagingLink, MessagingSipEvent } from "../src/sip/message.js";
+import { NOTHING_WANTED, type ImdnStatus, type Wanted } from "../src/sip/imdn.js";
 import type { SipHandle } from "../src/sip/port.js";
 import type { Contact, MessageEntry, SecureStore } from "../src/storage/store.js";
 
@@ -38,11 +39,15 @@ function fakeStore(initial: MessageEntry[] = []) {
 
 function fakeHandle(opts: { throws?: Error } = {}) {
   const sent: { id: string; uri: string; text: string }[] = [];
+  const receipts: { uri: string; messageId: string; at: number; status: ImdnStatus }[] = [];
   let send: ((ev: MessagingSipEvent) => void) | null = null;
   const link: MessagingLink = {
     send(id, uri, text) {
       if (opts.throws) throw opts.throws;
       sent.push({ id, uri, text });
+    },
+    receipt(uri, messageId, at, status) {
+      receipts.push({ uri, messageId, at, status });
     },
   };
   const handle = {
@@ -57,13 +62,16 @@ function fakeHandle(opts: { throws?: Error } = {}) {
     text: string,
     date: number | null = null,
     messageId: string | null = null,
+    wants: Wanted = NOTHING_WANTED,
   ): MessageAnswer | null => {
     let answer: MessageAnswer | null = null;
-    send!({ type: "sip:message", from, name: null, text, date, messageId, answer: (c) => (answer ??= c) });
+    send!({ type: "sip:message", from, name: null, text, date, messageId, wants, answer: (c) => (answer ??= c) });
     return answer;
   };
   const outcome = (id: string, status: number | null) => send!({ type: "sip:messageSent", id, status });
-  return { handle, sent, deliver, outcome };
+  const receipt = (from: string, messageId: string, status: ImdnStatus) =>
+    send!({ type: "sip:receipt", from, messageId, status });
+  return { handle, sent, receipts, deliver, outcome, receipt };
 }
 
 let clock = 1_000_000;
@@ -198,6 +206,132 @@ describe("delivered twice, filed once (ADR 0009)", () => {
     expect(h.deliver(BOB.uri, "Salut", null, "KfMgJ0nhBx")).toBe(200);
     await vi.waitFor(() => expect(m.context.loaded).toBe(true));
     expect(m.context.messages).toEqual([stored]);
+  });
+});
+
+describe("receipts we owe (ADR 0010)", () => {
+  const BOTH: Wanted = { delivery: true, display: true };
+  const DAN = "sip:dan@example.org";
+
+  it("a contact: delivered at once, displayed once the line is read, each once", async () => {
+    const t = await start();
+    const h = up(t);
+    clock = 5_000;
+    h.deliver(BOB.uri, "Salut", 4_000, "b1", BOTH);
+    expect(h.receipts).toEqual([{ uri: BOB.uri, messageId: "b1", at: 4_000, status: "delivered" }]);
+    t.send({ type: "ui:read", key: "bob@example.org" });
+    t.send({ type: "ui:read", key: "bob@example.org" });
+    expect(h.receipts.map((r) => r.status)).toEqual(["delivered", "displayed"]);
+    expect(t.m.context.messages[0]).not.toHaveProperty("displayWanted");
+    expect(t.m.context.messages[0]).not.toHaveProperty("deliveryOwed");
+  });
+
+  it("nothing the sender did not ask for", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Salut", null, "b1", { delivery: false, display: true });
+    expect(h.receipts).toEqual([]);
+    h.deliver(BOB.uri, "Encore", null, "b2", { delivery: true, display: false });
+    t.send({ type: "ui:read", key: "bob@example.org" });
+    expect(h.receipts.map((r) => [r.messageId, r.status])).toEqual([
+      ["b2", "delivered"],
+      ["b1", "displayed"],
+    ]);
+  });
+
+  it("someone we wrote to, not a contact: delivered, never displayed", async () => {
+    const t = await start();
+    const h = up(t);
+    t.send({ type: "ui:send", uri: DAN, text: "Bonjour Dan" });
+    h.deliver(DAN, "Bonjour", null, "d1", BOTH);
+    t.send({ type: "ui:read", key: "dan@example.org" });
+    expect(h.receipts.map((r) => r.status)).toEqual(["delivered"]);
+    expect(t.m.context.messages.find((m) => m.messageId === "d1")).not.toHaveProperty("displayWanted");
+  });
+
+  it("an unknown sender: nothing while held, delivered once accepted, displayed once a contact reads", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(CARLA, "Bonjour", null, "c1", BOTH);
+    expect(h.receipts).toEqual([]);
+    t.send({ type: "ui:acceptSender", key: "carla@example.org" });
+    expect(h.receipts.map((r) => r.status)).toEqual(["delivered"]);
+    const carla: Contact = { id: "c3", name: "Carla", uri: CARLA, addedAt: 2, blocked: false };
+    t.send({ type: "phone:contacts", contacts: [BOB, MALLORY, carla] });
+    t.send({ type: "ui:read", key: "carla@example.org" });
+    expect(h.receipts.map((r) => r.status)).toEqual(["delivered", "displayed"]);
+  });
+
+  it("an unknown sender refused: nothing, ever", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(CARLA, "Bonjour", null, "c1", BOTH);
+    t.send({ type: "ui:refuseSender", key: "carla@example.org" });
+    expect(h.receipts).toEqual([]);
+  });
+
+  it("read while unregistered: the read receipt waits in the vault, and leaves at the next registration", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Salut", null, "b1", BOTH);
+    t.send({ type: "phone:down" });
+    t.send({ type: "ui:read", key: "bob@example.org" });
+    await vi.waitFor(() => expect(t.saved.get("acc")?.[0]).toMatchObject({ read: true, displayWanted: true }));
+    const again = up(t);
+    expect(again.receipts.map((r) => [r.messageId, r.status])).toEqual([["b1", "displayed"]]);
+    expect(t.m.context.messages[0]).not.toHaveProperty("displayWanted");
+  });
+
+  it("a contact blocked before the line is read is owed nothing more", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Salut", null, "b1", BOTH);
+    t.send({ type: "phone:contacts", contacts: [{ ...BOB, blocked: true }, MALLORY] });
+    t.send({ type: "ui:read", key: "bob@example.org" });
+    expect(h.receipts.map((r) => r.status)).toEqual(["delivered"]);
+    expect(t.m.context.messages[0]).not.toHaveProperty("displayWanted");
+  });
+});
+
+describe("receipts that come back (ADR 0010)", () => {
+  async function sentToBob() {
+    const t = await start();
+    const h = up(t);
+    t.send({ type: "ui:send", uri: BOB.uri, text: "Bonjour" });
+    const id = h.sent[0]!.id;
+    return { t, h, id, entry: () => t.m.context.messages.find((m) => m.id === id)! };
+  }
+
+  it("delivered, then displayed — never backwards", async () => {
+    const { h, id, entry } = await sentToBob();
+    h.outcome(id, 200);
+    h.receipt(BOB.uri, id, "delivered");
+    expect(entry()).toMatchObject({ state: "sent", receipt: "delivered" });
+    h.receipt(BOB.uri, id, "displayed");
+    h.receipt(BOB.uri, id, "delivered");
+    expect(entry().receipt).toBe("displayed");
+  });
+
+  it("only from the one we wrote to", async () => {
+    const { h, id, entry } = await sentToBob();
+    h.outcome(id, 200);
+    h.receipt(CARLA, id, "displayed");
+    expect(entry()).not.toHaveProperty("receipt");
+  });
+
+  it("a receipt says it arrived, whatever the answer said", async () => {
+    const { h, id, entry } = await sentToBob();
+    h.receipt(BOB.uri, id, "delivered");
+    h.outcome(id, null);
+    expect(entry()).toMatchObject({ state: "sent", reason: null, receipt: "delivered" });
+  });
+
+  it("a message failed for want of an answer is sent after all when its receipt comes", async () => {
+    const { h, id, entry } = await sentToBob();
+    h.outcome(id, 408);
+    expect(entry().state).toBe("failed");
+    h.receipt(BOB.uri, id, "delivered");
+    expect(entry()).toMatchObject({ state: "sent", reason: null, receipt: "delivered" });
   });
 });
 

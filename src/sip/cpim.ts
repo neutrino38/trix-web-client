@@ -15,11 +15,11 @@
  * Bonjour
  * ```
  *
- * Two headers are read, and nothing else: `DateTime`, the time the sender
- * wrote the message, and `imdn.Message-ID`, which lets a message delivered
- * twice be filed once. The CPIM `From` is not: the sender is the SIP
- * `From`, the one the proxy authenticated. A disposition request
- * (`imdn.Disposition-Notification`) is not honoured, and none is made.
+ * Three headers are read, and nothing else: `DateTime`, the time the sender
+ * wrote the message; `imdn.Message-ID`, which lets a message delivered
+ * twice be filed once; and `imdn.Disposition-Notification`, the receipts
+ * the sender asks for (ADR 0010). The CPIM `From` is not: the sender is
+ * the SIP `From`, the one the proxy authenticated.
  */
 
 export const CPIM_CONTENT_TYPE = "message/cpim";
@@ -34,6 +34,8 @@ export interface CpimMessage {
   dateTime: number | null;
   /** `imdn.Message-ID`; null when absent or unusable. */
   messageId: string | null;
+  /** `imdn.Disposition-Notification`, as written; null when absent. */
+  disposition: string | null;
   /** The inner part's `Content-Type`; null when it has none. */
   contentType: string | null;
   body: string;
@@ -110,16 +112,16 @@ export function parseCpim(body: string): CpimMessage | null {
   const cpim = headers(cpimBlock);
   const dateTime = cpim.has("DateTime") ? parseDateTime(cpim.get("DateTime")!) : null;
   let messageId: string | null = null;
+  let disposition: string | null = null;
   for (const prefix of imdnPrefixes(cpimBlock)) {
     const id = cpim.get(`${prefix}.Message-ID`);
-    if (id && id.length <= MAX_MESSAGE_ID_LENGTH) {
-      messageId = id;
-      break;
-    }
+    if (messageId === null && id && id.length <= MAX_MESSAGE_ID_LENGTH) messageId = id;
+    disposition ??= cpim.get(`${prefix}.Disposition-Notification`) ?? null;
   }
   return {
     dateTime,
     messageId,
+    disposition,
     contentType: mimeHeaders(mimeBlock).get("content-type") ?? null,
     body: content,
   };
@@ -130,17 +132,51 @@ export function formatDateTime(at: number): string {
   return new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** A `text/plain` message wrapped in CPIM, with its `imdn.Message-ID`. */
-export function buildCpim(opts: { from: string; to: string; at: number; messageId: string; text: string }): string {
+/** What every envelope says of itself. */
+interface Envelope {
+  from: string;
+  to: string;
+  at: number;
+  messageId: string;
+}
+
+function envelope(e: Envelope, cpimExtra: string[], mime: string[], body: string): string {
   return [
-    `From: <${opts.from}>`,
-    `To: <${opts.to}>`,
-    `DateTime: ${formatDateTime(opts.at)}`,
+    `From: <${e.from}>`,
+    `To: <${e.to}>`,
+    `DateTime: ${formatDateTime(e.at)}`,
     `NS: imdn <${IMDN_NS}>`,
-    `imdn.Message-ID: ${opts.messageId}`,
+    `imdn.Message-ID: ${e.messageId}`,
+    ...cpimExtra,
     "",
-    "Content-Type: text/plain;charset=UTF-8",
+    ...mime,
     "",
-    opts.text,
+    body,
   ].join("\r\n");
+}
+
+/** What we ask of every message we send (ADR 0010). */
+export const DISPOSITION_REQUEST = "positive-delivery, display";
+
+/** A `text/plain` message wrapped in CPIM, with its `imdn.Message-ID` and a request for receipts. */
+export function buildCpim(opts: Envelope & { text: string }): string {
+  return envelope(
+    opts,
+    [`imdn.Disposition-Notification: ${DISPOSITION_REQUEST}`],
+    ["Content-Type: text/plain;charset=UTF-8"],
+    opts.text,
+  );
+}
+
+/**
+ * An IMDN (RFC 5438 §7.1.1.2) wrapped in CPIM: `Content-Disposition:
+ * notification`, and no disposition request — a receipt never asks for one.
+ */
+export function buildImdnCpim(opts: Envelope & { xml: string }): string {
+  return envelope(
+    opts,
+    [],
+    [`Content-Type: ${IMDN_CONTENT_TYPE}`, "Content-Disposition: notification"],
+    opts.xml,
+  );
 }

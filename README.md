@@ -156,11 +156,13 @@ Full steps, required modules and per-distribution paths:
       on desktop and mobile. Whatever the server supports is discovered at each
       registration (see [ADR 0007](docs/architecture/0007-presence.md))
 - [x] Phase 6 (messaging) — instant messaging (SIP MESSAGE, text/plain or CPIM as Linphone
-      writes it) in the same thread: messages written offline leave at the next
-      registration, unknown senders wait for your answer, contacts can be blocked, and a
-      badge tells about messages during a call. The server must keep messages while the
-      page sleeps (see [ADR 0008](docs/architecture/0008-messagerie.md),
-      [ADR 0009](docs/architecture/0009-cpim.md))
+      writes it, with delivery and read receipts) in the same thread: messages written
+      offline leave at the next registration, unknown senders wait for your answer,
+      contacts can be blocked, and a badge tells about messages during a call. The server
+      must keep messages while the page sleeps (see
+      [ADR 0008](docs/architecture/0008-messagerie.md),
+      [ADR 0009](docs/architecture/0009-cpim.md),
+      [ADR 0010](docs/architecture/0010-accuses-imdn.md))
 
 ## Observability
 

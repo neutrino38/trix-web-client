@@ -177,7 +177,8 @@ function messageState(m: MessageEntry): string {
     case "failed":
       return t("message.state.failed", { reason: m.reason ? t(m.reason) : "" });
     case "sent":
-      return "";
+      // ADR 0010: what the correspondent's receipts told, else nothing — the normal state
+      return m.receipt ? t(m.receipt === "displayed" ? "message.state.displayed" : "message.state.delivered") : "";
     case "received":
       return "";
   }
@@ -192,7 +193,7 @@ function messageRow(m: MessageEntry, thread: Thread): string {
     <span class="sr-only">${esc(who)}</span>
     <p dir="auto">${esc(m.text)}</p>
     <span class="msg-meta">${esc(formatTime(m.at))}${state ? ` · ${esc(state)}` : ""}${
-      m.state === "sent" ? `<span class="sr-only"> · ${esc(t("message.state.sent"))}</span>` : ""
+      m.state === "sent" && !m.receipt ? `<span class="sr-only"> · ${esc(t("message.state.sent"))}</span>` : ""
     }${
       m.state === "failed"
         ? ` <button type="button" class="linkbtn" data-act="thread-retry" data-id="${esc(m.id)}">${esc(

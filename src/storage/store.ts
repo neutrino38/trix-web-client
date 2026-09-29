@@ -247,6 +247,15 @@ export interface MessageEntry {
    */
   messageId?: string;
   state: MessageState;
+  /**
+   * Outgoing, `sent`: the furthest receipt the correspondent returned
+   * (ADR 0010). Absent: delivered to the server, and nothing more known.
+   */
+  receipt?: "delivered" | "displayed";
+  /** Incoming: a delivery receipt is owed, and has not left yet (ADR 0010). */
+  deliveryOwed?: true;
+  /** Incoming: the sender asked for a read receipt, not sent yet (ADR 0010). */
+  displayWanted?: true;
   /** Why a send failed, as a deferred message. */
   reason: Msg | null;
   /** Incoming messages only; always true for outgoing ones. */
@@ -414,6 +423,9 @@ function normalizeMessages(raw: unknown): MessageEntry[] {
   ).map((m) => {
     const entry: MessageEntry = { ...m, reason: m.reason ?? null };
     if (typeof entry.messageId !== "string") delete entry.messageId;
+    if (entry.receipt !== "delivered" && entry.receipt !== "displayed") delete entry.receipt;
+    if (entry.deliveryOwed !== true) delete entry.deliveryOwed;
+    if (entry.displayWanted !== true) delete entry.displayWanted;
     return entry;
   });
 }

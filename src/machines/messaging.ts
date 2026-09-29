@@ -37,11 +37,22 @@
  * delivery was — 200 or 202 — and kept once: a sender that resends after
  * a lost answer, or a server that delivers again after a wake-up, does
  * not double it. Bare `text/plain` has no such id, and is filed each time.
+ *
+ * ## Receipts (ADR 0010)
+ *
+ * A message filed in the thread owes the delivery receipt its sender asked
+ * for; one held in quarantine owes nothing until it is accepted. A read
+ * receipt is owed to a contact of the book only, once the line is read. A
+ * blocked sender is owed nothing. What is owed while unregistered waits in
+ * the vault (`deliveryOwed`, `displayWanted`) and leaves at the next
+ * registration. The receipts that come back move our message from
+ * "delivered to the server" to "delivered", then "read", never backwards.
  */
 
 import { defineMachine, goto, stay, type Fx, type TaskResult } from "finite-state-language";
 import { msg, type Msg } from "../i18n/types.js";
 import type { MessagingLink, MessagingSipEvent } from "../sip/message.js";
+import type { ImdnStatus, Wanted } from "../sip/imdn.js";
 import type { SipHandle } from "../sip/port.js";
 import { addressKey } from "../sip/uri.js";
 import {
@@ -84,12 +95,15 @@ export type MessagingEvent =
   | { type: "quarantine:expire"; key: string; shownAt: number }
   | TaskResult<"loadMessages", { accountId: string; messages: MessageEntry[] }>;
 
+/** One message held for an unknown sender, with the receipts it will owe once accepted. */
+export type HeldMessage = Pick<MessageEntry, "text" | "at" | "messageId" | "deliveryOwed" | "displayWanted">;
+
 /** An unknown sender and what they wrote, held until the user decides (D5). */
 export interface Quarantined {
   key: string;
   uri: string;
   name: string | null;
-  messages: { text: string; at: number; messageId?: string }[];
+  messages: HeldMessage[];
   /** When the prompt was first shown; null while it waits its turn. */
   shownAt: number | null;
 }
@@ -172,6 +186,42 @@ function filed(ctx: MessagingCtx, key: string, messageId: string): boolean {
 /** Same, among the messages held for an unknown sender. */
 function held(ctx: MessagingCtx, key: string, messageId: string): boolean {
   return ctx.quarantine.some((q) => q.key === key && q.messages.some((m) => m.messageId === messageId));
+}
+
+/** The receipts an incoming message will owe (ADR 0010). */
+function owed(wants: Wanted): Pick<MessageEntry, "deliveryOwed" | "displayWanted"> {
+  return { ...(wants.delivery ? { deliveryOwed: true } : {}), ...(wants.display ? { displayWanted: true } : {}) };
+}
+
+/**
+ * Sends what is owed and can leave (ADR 0010): delivery receipts to
+ * whoever's message is in the thread, read receipts to contacts once
+ * read. A blocked sender's debts are forgiven, and so is a read receipt
+ * to a correspondent who is not a contact when the line is read. Without
+ * a link, everything waits.
+ */
+function settleReceipts(ctx: MessagingCtx): void {
+  const link = ctx.link;
+  ctx.messages = ctx.messages.map((m) => {
+    if (m.direction !== "incoming" || (!m.deliveryOwed && !m.displayWanted)) return m;
+    const { deliveryOwed, displayWanted, ...rest } = m;
+    const contact = contactOf(ctx, m.key);
+    if (!m.messageId || contact?.blocked) return rest;
+    let delivery = deliveryOwed;
+    let display = displayWanted;
+    if (delivery && link) {
+      link.receipt(m.uri, m.messageId, m.at, "delivered");
+      delivery = undefined;
+    }
+    if (display && m.read) {
+      if (!contact) display = undefined;
+      else if (link) {
+        link.receipt(m.uri, m.messageId, m.at, "displayed");
+        display = undefined;
+      }
+    }
+    return { ...rest, ...(delivery ? { deliveryOwed: true } : {}), ...(display ? { displayWanted: true } : {}) };
+  });
 }
 
 /** Someone whose messages go straight to the thread. */
@@ -260,6 +310,7 @@ function loaded(ev: Ev<"task:loadMessages">, ctx: MessagingCtx) {
   // filed while the vault was read, and already in it: delivered twice (ADR 0009)
   const fresh = ctx.messages.filter((m) => !ids.has(m.id) && !(m.messageId && delivered.has(`${m.key} ${m.messageId}`)));
   ctx.messages = [...ev.value.messages, ...fresh];
+  settleReceipts(ctx);
   flush(ctx);
   return stay("messages loaded");
 }
@@ -269,6 +320,7 @@ function up(ev: Ev<"phone:up">, ctx: MessagingCtx, fx: MFx) {
   ctx.unsupported = false;
   ctx.inFlight = [];
   ctx.link = ev.handle.messaging((e) => fx.send(e));
+  settleReceipts(ctx);
   flush(ctx);
   return goto("online", "registered");
 }
@@ -291,6 +343,7 @@ function contactsChanged(ev: Ev<"phone:contacts">, ctx: MessagingCtx, fx: MFx) {
     dropQuarantined(ctx, q.key);
     if (!c.blocked) fileAll(ctx, q);
   }
+  settleReceipts(ctx);
   save(ctx);
   showNext(ctx, fx);
   return stay("contacts changed");
@@ -309,6 +362,8 @@ function fileAll(ctx: MessagingCtx, q: Quarantined): void {
         text: m.text,
         at: m.at,
         ...(m.messageId ? { messageId: m.messageId } : {}),
+        ...(m.deliveryOwed ? { deliveryOwed: true } : {}),
+        ...(m.displayWanted ? { displayWanted: true } : {}),
         state: "received",
         reason: null,
         read: false,
@@ -339,7 +394,7 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
     ev.answer(202);
     return stay("message already held");
   }
-  const one = { text: ev.text, at, ...(messageId !== undefined ? { messageId } : {}) };
+  const one: HeldMessage = { text: ev.text, at, ...(messageId !== undefined ? { messageId } : {}), ...owed(ev.wants) };
   if (known(ctx, key)) {
     ev.answer(200);
     const entry: MessageEntry = {
@@ -350,11 +405,13 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
       text: ev.text,
       at,
       ...(messageId !== undefined ? { messageId } : {}),
+      ...owed(ev.wants),
       state: "received",
       reason: null,
       read: false,
     };
     ctx.messages = [...ctx.messages, entry];
+    settleReceipts(ctx);
     save(ctx);
     return stay("message filed");
   }
@@ -377,11 +434,26 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
 function sent(ev: Ev<"sip:messageSent">, ctx: MessagingCtx) {
   if (!ctx.inFlight.includes(ev.id)) return stay("outcome of a message no longer in flight");
   ctx.inFlight = ctx.inFlight.filter((id) => id !== ev.id);
-  const ok = ev.status !== null && ev.status >= 200 && ev.status < 300;
+  // a receipt that came first says it arrived, whatever the answer says
+  const ok = (ev.status !== null && ev.status >= 200 && ev.status < 300) || !!ctx.messages.find((m) => m.id === ev.id)?.receipt;
   update(ctx, ev.id, ok ? { state: "sent", reason: null } : { state: "failed", reason: failureReason(ev.status) });
   if (ev.status === 405 || ev.status === 501) ctx.unsupported = true;
   save(ctx);
   return stay(ok ? "message sent" : "message failed");
+}
+
+const RECEIPT_RANK: Record<ImdnStatus, number> = { delivered: 1, displayed: 2 };
+
+/** A receipt counts only from the one we wrote to, about what we wrote them (ADR 0010). */
+function receiptCame(ev: Ev<"sip:receipt">, ctx: MessagingCtx) {
+  const key = addressKey(ev.from);
+  const m = ctx.messages.find((x) => x.id === ev.messageId && x.direction === "outgoing" && x.key === key);
+  if (!m) return stay("receipt for nothing of ours");
+  if (m.receipt && RECEIPT_RANK[m.receipt] >= RECEIPT_RANK[ev.status]) return stay("receipt already known");
+  // it arrived: a failure said otherwise only for want of an answer
+  update(ctx, m.id, m.state === "failed" ? { receipt: ev.status, state: "sent", reason: null } : { receipt: ev.status });
+  save(ctx);
+  return stay(ev.status === "displayed" ? "message read" : "message delivered");
 }
 
 function write(ev: Ev<"ui:send">, ctx: MessagingCtx) {
@@ -418,6 +490,7 @@ function retry(ev: Ev<"ui:retry">, ctx: MessagingCtx) {
 function markRead(ev: Ev<"ui:read">, ctx: MessagingCtx) {
   if (!ctx.messages.some((m) => m.key === ev.key && !m.read)) return stay("nothing unread");
   ctx.messages = ctx.messages.map((m) => (m.key === ev.key && !m.read ? { ...m, read: true } : m));
+  settleReceipts(ctx);
   save(ctx);
   return stay("messages read");
 }
@@ -425,6 +498,7 @@ function markRead(ev: Ev<"ui:read">, ctx: MessagingCtx) {
 function accept(ev: Ev<"ui:acceptSender">, ctx: MessagingCtx, fx: MFx) {
   const held = dropQuarantined(ctx, ev.key);
   if (held) fileAll(ctx, held);
+  settleReceipts(ctx);
   save(ctx);
   showNext(ctx, fx);
   return stay("sender accepted");
@@ -496,6 +570,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "phone:callEnded": callEnded,
         "sip:message": received,
         "sip:messageSent": sent,
+        "sip:receipt": receiptCame,
         "task:loadMessages": loaded,
         "ui:send": write,
         "ui:retry": retry,
@@ -517,6 +592,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "phone:callEnded": callEnded,
         "sip:message": received,
         "sip:messageSent": sent,
+        "sip:receipt": receiptCame,
         "task:loadMessages": loaded,
         "ui:send": write,
         "ui:retry": retry,
@@ -538,6 +614,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "phone:callEnded": callEnded,
         "sip:message": received,
         "sip:messageSent": sent,
+        "sip:receipt": receiptCame,
         "task:loadMessages": loaded,
         "ui:send": write,
         "ui:retry": retry,
@@ -565,6 +642,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
           return stay("messaging off");
         },
         "sip:messageSent": () => stay("messaging off"),
+        "sip:receipt": () => stay("messaging off"),
         "task:loadMessages": () => stay("messaging off"),
         "ui:send": () => stay("messaging off"),
         "ui:retry": () => stay("messaging off"),

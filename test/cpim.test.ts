@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildCpim, formatDateTime, isCpim, parseCpim, parseDateTime } from "../src/sip/cpim.js";
+import { buildCpim, buildImdnCpim, formatDateTime, isCpim, parseCpim, parseDateTime } from "../src/sip/cpim.js";
 
 /** A message as Linphone sends it, disposition request included. */
 const LINPHONE = [
@@ -34,6 +34,7 @@ describe("parseCpim", () => {
     expect(parseCpim(LINPHONE)).toEqual({
       dateTime: Date.parse("2026-09-29T09:30:00Z"),
       messageId: "KfMgJ0nhBx",
+      disposition: "positive-delivery, display",
       contentType: "text/plain; charset=UTF-8",
       body: "Bonjour Alice",
     });
@@ -55,7 +56,13 @@ describe("parseCpim", () => {
 
   it("does without DateTime or Message-ID", () => {
     const body = ["From: <sip:bob@example.org>", "", "Content-Type: text/plain", "", "Salut"].join("\r\n");
-    expect(parseCpim(body)).toEqual({ dateTime: null, messageId: null, contentType: "text/plain", body: "Salut" });
+    expect(parseCpim(body)).toEqual({
+      dateTime: null,
+      messageId: null,
+      disposition: null,
+      contentType: "text/plain",
+      body: "Salut",
+    });
   });
 
   it("drops a Message-ID too long to be one", () => {
@@ -99,7 +106,7 @@ describe("buildCpim", () => {
     text: "Bonjour Bob",
   });
 
-  it("writes what Linphone reads, in CRLF, without a disposition request", () => {
+  it("writes what Linphone reads, in CRLF, asking for both receipts", () => {
     expect(body).toBe(
       [
         "From: <sip:alice@example.org>",
@@ -107,6 +114,7 @@ describe("buildCpim", () => {
         "DateTime: 2026-09-29T10:00:00Z",
         "NS: imdn <urn:ietf:params:imdn>",
         "imdn.Message-ID: m-1",
+        "imdn.Disposition-Notification: positive-delivery, display",
         "",
         "Content-Type: text/plain;charset=UTF-8",
         "",
@@ -124,3 +132,18 @@ describe("buildCpim", () => {
   });
 });
 
+describe("buildImdnCpim", () => {
+  it("wraps a receipt: its own Message-ID, Content-Disposition: notification, no request", () => {
+    const body = buildImdnCpim({
+      from: "sip:alice@example.org",
+      to: "sip:bob@example.org",
+      at: Date.parse("2026-09-29T10:00:00Z"),
+      messageId: "r-1",
+      xml: "<imdn/>",
+    });
+    expect(body).toContain("imdn.Message-ID: r-1\r\n");
+    expect(body).not.toContain("Disposition-Notification");
+    expect(body).toContain("\r\n\r\nContent-Type: message/imdn+xml\r\nContent-Disposition: notification\r\n\r\n<imdn/>");
+    expect(parseCpim(body)).toMatchObject({ messageId: "r-1", contentType: "message/imdn+xml", body: "<imdn/>" });
+  });
+});

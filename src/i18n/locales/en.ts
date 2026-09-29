@@ -216,6 +216,8 @@ const messages: Translation = {
   "message.count": "{n} / {max} bytes",
   "message.state.pending": "Waiting",
   "message.state.sent": "Delivered to the server",
+  "message.state.delivered": "Delivered",
+  "message.state.displayed": "Read",
   "message.state.failed": "Not delivered: {reason}",
   "message.retry": "Retry",
   "message.offline": "Offline: the message will leave at the next connection.",

@@ -227,6 +227,8 @@ const messages: Translation = {
   "message.count": "{n} / {max} بايت",
   "message.state.pending": "في الانتظار",
   "message.state.sent": "سُلّمت إلى الخادم",
+  "message.state.delivered": "تم التسليم",
+  "message.state.displayed": "مقروءة",
   "message.state.failed": "لم تُسلَّم: {reason}",
   "message.retry": "إعادة المحاولة",
   "message.offline": "غير متصل: ستُرسل الرسالة عند الاتصال التالي.",

@@ -220,6 +220,8 @@ const messages: Translation = {
   "message.count": "{n} / {max} 字节",
   "message.state.pending": "等待中",
   "message.state.sent": "已送达服务器",
+  "message.state.delivered": "已送达",
+  "message.state.displayed": "已读",
   "message.state.failed": "未送达：{reason}",
   "message.retry": "重试",
   "message.offline": "离线：消息将在下次连接时发出。",

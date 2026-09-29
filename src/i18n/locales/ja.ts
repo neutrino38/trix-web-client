@@ -223,6 +223,8 @@ const messages: Translation = {
   "message.count": "{n} / {max} バイト",
   "message.state.pending": "送信待ち",
   "message.state.sent": "サーバーに配信済み",
+  "message.state.delivered": "相手に配信済み",
+  "message.state.displayed": "既読",
   "message.state.failed": "未配信：{reason}",
   "message.retry": "再試行",
   "message.offline": "オフライン：次の接続時にメッセージが送信されます。",
