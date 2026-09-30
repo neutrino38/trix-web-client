@@ -82,6 +82,12 @@ abonnements est posé ; au-delà, les contacts restent affichés en « présence
 avec `reason=rejected` donne **inconnu** et on ne réessaie pas ; avec `retry-after`, on réessaie à
 l'échéance.
 
+Un refus opposé à un **rafraîchissement** (404, 481… sur le SUBSCRIBE envoyé dans le dialogue, à
+la Contact du serveur) ne dit rien du contact : le serveur a perdu le dialogue (redémarrage,
+abonnement expiré de son côté). On se réabonne aussitôt par un SUBSCRIBE initial, vers l'adresse du
+contact, dans un nouveau dialogue (RFC 6665 §4.1.2.2), puis avec un délai croissant si cela se
+répète ; c'est la réponse à ce SUBSCRIBE initial qui tranche.
+
 ### D4 — Un modèle à sept états, et un seul endroit qui lit le PIDF
 
 `sip/pidf.ts`, pur et sans DOM global (un `DOMParser` injecté, pour les tests), convertit dans les

@@ -31,6 +31,10 @@
  *   server moved the subscription, it did not refuse it.
  * - `probation`, `giveup`, no answer, a 5xx: subscribe again later, after
  *   `retry-after` when the server gave one.
+ * - any refusal of a *refresh* (§4.1.2.2): the server lost the dialog —
+ *   restarted, or the subscription expired on its side — not the contact.
+ *   Subscribe again at once with a new dialog, to the contact's address
+ *   and not to the server's Contact, and let that answer decide.
  * Every renewal that is not followed by a NOTIFY doubles the next delay,
  * so a server that keeps ending subscriptions is not flooded.
  */
@@ -179,10 +183,14 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
     const token = {};
     entry.token = token;
     const current = () => !closed && watched.get(uri) === entry && entry.token === token;
+    // a 2xx made a dialog: a refusal from now on is to a refresh
+    let dialog = false;
     try {
       entry.sub = deps.watcher(uri, {
         accepted() {
-          if (current()) support("subscribe", true);
+          if (!current()) return;
+          dialog = true;
+          support("subscribe", true);
         },
         pending() {
           if (current()) presence(uri, UNKNOWN, true);
@@ -197,7 +205,8 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
           if (!current()) return;
           entry.sub = null;
           entry.token = null;
-          ended(uri, entry, end);
+          if (dialog && end.kind === "refused") resubscribe(uri, entry, 0);
+          else ended(uri, entry, end);
         },
       });
     } catch {
@@ -211,6 +220,16 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
     const delay = Math.min(Math.max(floorMs, retryMs * 2 ** entry.failures), MAX_RETRY_MS);
     entry.failures += 1;
     entry.timer = setTimeout(() => start(uri, entry), delay);
+  };
+
+  /** At once the first time, then backing off (see `retry`). */
+  const resubscribe = (uri: string, entry: Entry, floorMs: number) => {
+    if (floorMs === 0 && entry.failures === 0) {
+      entry.failures = 1;
+      start(uri, entry);
+      return;
+    }
+    retry(uri, entry, floorMs);
   };
 
   const ended = (uri: string, entry: Entry, end: WatchEnd) => {
@@ -235,12 +254,8 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
           return;
         }
         const floor = end.retryAfter !== null ? end.retryAfter * 1000 : 0;
-        if (floor === 0 && entry.failures === 0 && (reason === null || AT_ONCE_REASONS.has(reason))) {
-          entry.failures = 1;
-          start(uri, entry);
-          return;
-        }
-        retry(uri, entry, floor);
+        if (reason === null || AT_ONCE_REASONS.has(reason)) resubscribe(uri, entry, floor);
+        else retry(uri, entry, floor);
         return;
       }
       case "noAnswer":

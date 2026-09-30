@@ -186,6 +186,34 @@ describe("how a subscription ends (RFC 6665 §4.1.3)", () => {
     expect(t.subs.map((sub) => sub.uri)).toEqual([BOB, BOB]);
   });
 
+  it.each([404, 481, 489])("a %i to a refresh: a new subscription at once, not unknown", (status) => {
+    const t = setup();
+    t.link.watch(BOB);
+    t.subs[0]!.on.accepted();
+    t.subs[0]!.on.notify(AVAILABLE, "application/pidf+xml");
+    end(t.subs[0], { kind: "refused", status });
+    expect(t.subs.map((sub) => sub.uri)).toEqual([BOB, BOB]);
+    expect(t.presenceOf(BOB)).not.toMatchObject({ info: UNKNOWN });
+    expect(t.support()).toEqual([{ type: "sip:presenceSupport", method: "subscribe", supported: true }]);
+  });
+
+  it("a refresh refused again and again is not flooded, and the new SUBSCRIBE decides", () => {
+    const t = setup();
+    t.link.watch(BOB);
+    t.subs[0]!.on.accepted();
+    end(t.subs[0], { kind: "refused", status: 404 });
+    t.subs[1]!.on.accepted();
+    end(t.subs[1], { kind: "refused", status: 404 });
+    expect(t.subs).toHaveLength(2);
+    vi.advanceTimersByTime(2000);
+    expect(t.subs).toHaveLength(3);
+    // an initial SUBSCRIBE refused: about the contact, as before
+    end(t.subs[2], { kind: "refused", status: 404 });
+    expect(t.presenceOf(BOB)).toMatchObject({ info: UNKNOWN });
+    vi.advanceTimersByTime(3_600_000);
+    expect(t.subs).toHaveLength(3);
+  });
+
   it("retry-after is honoured", () => {
     const t = setup();
     t.link.watch(BOB);
