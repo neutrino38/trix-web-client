@@ -173,6 +173,15 @@ interface MessageEntry {
 - **1 000 messages par correspondant** au plus ; les plus anciens tombent.
 - La suppression d'un compte supprime ses messages. Le **lien de partage** (ADR 0004) ne les
   emporte pas, comme l'historique.
+- **Effacer**, en deux clics, le second sur un libellé qui dit ce qui disparaît :
+  - dans une ligne ouverte, ce que montre son segment avec ce correspondant (Tous : appels et
+    messages ; Appels ; Messages) ;
+  - au pied du fil, tous les appels et tous les messages du compte.
+
+  Les accusés dus qui peuvent partir partent d'abord ; ceux qui attendaient un enregistrement
+  sont effacés avec le message. Un message en vol est effacé aussi : sa réponse ne tombe sur
+  rien. Un inconnu à qui l'on avait écrit redevient inconnu, et son prochain message passe par
+  la quarantaine (D5).
 - Le fil reste une vue (ADR 0007, D10) : il lit l'historique des appels **et** les messages,
   regroupés par `key`. Rien n'est dupliqué.
 

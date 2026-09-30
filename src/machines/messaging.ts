@@ -91,6 +91,8 @@ export type MessagingEvent =
   /** The prompt's answer: accepted (the contact is added by PhoneMachine), or not. */
   | { type: "ui:acceptSender"; key: string }
   | { type: "ui:refuseSender"; key: string }
+  /** Erase the messages of one correspondent, or all of them without `key`. */
+  | { type: "ui:clearMessages"; key?: string }
   | { type: "sys:visible"; visible: boolean }
   | { type: "quarantine:expire"; key: string; shownAt: number }
   | TaskResult<"loadMessages", { accountId: string; messages: MessageEntry[] }>;
@@ -495,6 +497,25 @@ function markRead(ev: Ev<"ui:read">, ctx: MessagingCtx) {
   return stay("messages read");
 }
 
+/**
+ * Erases one correspondent's messages, or all of them. What is owed and can
+ * leave now leaves first; what still waits for a registration is forgiven
+ * with the message. A message in flight is erased too: its outcome will
+ * fall on nothing. A stranger we wrote to becomes a stranger again — their
+ * next message is held (D5).
+ */
+function clearMessages(ev: Ev<"ui:clearMessages">, ctx: MessagingCtx) {
+  const key = ev.key;
+  const erased = (m: MessageEntry) => key === undefined || m.key === key;
+  if (!ctx.messages.some(erased)) return stay("nothing to clear");
+  settleReceipts(ctx);
+  const gone = new Set(ctx.messages.filter(erased).map((m) => m.id));
+  ctx.messages = ctx.messages.filter((m) => !gone.has(m.id));
+  ctx.inFlight = ctx.inFlight.filter((id) => !gone.has(id));
+  save(ctx);
+  return stay(key === undefined ? "messages cleared" : "conversation cleared");
+}
+
 function accept(ev: Ev<"ui:acceptSender">, ctx: MessagingCtx, fx: MFx) {
   const held = dropQuarantined(ctx, ev.key);
   if (held) fileAll(ctx, held);
@@ -577,6 +598,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:read": markRead,
         "ui:acceptSender": accept,
         "ui:refuseSender": refuse,
+        "ui:clearMessages": clearMessages,
         "sys:visible": visibility,
         "quarantine:expire": expire,
         "phone:up": () => stay("no account"),
@@ -599,6 +621,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:read": markRead,
         "ui:acceptSender": accept,
         "ui:refuseSender": refuse,
+        "ui:clearMessages": clearMessages,
         "sys:visible": visibility,
         "quarantine:expire": expire,
         "phone:up": up,
@@ -621,6 +644,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:read": markRead,
         "ui:acceptSender": accept,
         "ui:refuseSender": refuse,
+        "ui:clearMessages": clearMessages,
         "sys:visible": visibility,
         "quarantine:expire": expire,
         "phone:up": up,
@@ -649,6 +673,7 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:read": () => stay("messaging off"),
         "ui:acceptSender": () => stay("messaging off"),
         "ui:refuseSender": () => stay("messaging off"),
+        "ui:clearMessages": () => stay("messaging off"),
         "sys:visible": () => stay("messaging off"),
         "quarantine:expire": () => stay("messaging off"),
       },

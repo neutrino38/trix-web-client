@@ -12,6 +12,10 @@
  * visible tab reads its messages. A blocked contact keeps its line, with
  * neither call button nor writing field.
  *
+ * Erasing goes in two clicks, the second on a label that says what goes:
+ * in the open line, what its segment shows with that correspondent; at the
+ * foot, every call and message of the account.
+ *
  * An open line's conversation can take the whole stage under the title
  * ("expand", from the Messages segment): the other lines, the search and
  * the contact's actions step aside until "back to exchanges". On a phone
@@ -76,6 +80,13 @@ let noPresenceDismissed = false;
 let segment: Segment = "all";
 /** The open line's conversation fills the stage: meaningless without an open line. */
 let focused = false;
+/**
+ * The erase button waiting for its second click: the key of a line, or
+ * "all" for the foot's. A redraw keeps it; leaving the button disarms it.
+ */
+let armed: string | null = null;
+/** Set while the list is replaced: the focus lost then is not the user leaving. */
+let redrawing = false;
 /** What is being written, per line: a redraw must not lose it. */
 const drafts = new Map<string, string>();
 
@@ -254,9 +265,25 @@ function composer(thread: Thread, messaging: MessagingInstance): string {
   </form>`;
 }
 
+/** What erasing reaches in a line: what its segment shows (only calls, without messaging). */
+function lineScope(messaging: MessagingInstance | null): Segment {
+  return messagingOn(messaging) ? segment : "calls";
+}
+
+const LINE_CLEAR: Record<Segment, { label: MsgKey; confirm: MsgKey }> = {
+  all: { label: "thread.clear.all", confirm: "thread.clearConfirm.all" },
+  calls: { label: "thread.clear.calls", confirm: "thread.clearConfirm.calls" },
+  messages: { label: "thread.clear.messages", confirm: "thread.clearConfirm.messages" },
+};
+
+function lineClearLabel(thread: Thread, messaging: MessagingInstance | null): string {
+  const keys = LINE_CLEAR[lineScope(messaging)];
+  return armed === thread.key ? t(keys.confirm, { name: thread.name }) : t(keys.label);
+}
+
 function body(thread: Thread, now: number, messaging: MessagingInstance | null): string {
   const withMessages = messagingOn(messaging);
-  const events = threadEvents(thread, withMessages ? segment : "calls");
+  const events = threadEvents(thread, lineScope(messaging));
   const days: string[] = [];
   let day = "";
   for (const event of events) {
@@ -300,6 +327,12 @@ function body(thread: Thread, now: number, messaging: MessagingInstance | null):
                : ""
            }
            ${block}
+           ${
+             events.length
+               ? `<button type="button" class="linkbtn" data-act="thread-clear" data-key="${esc(thread.key)}"
+                          data-armed="${armed === thread.key ? "yes" : "no"}">${esc(lineClearLabel(thread, messaging))}</button>`
+               : ""
+           }
          </div>`;
   const write = withMessages && !thread.blocked && canWrite(messaging) ? composer(thread, messaging) : "";
   // the contact's actions come first: after a long history they would be out of sight.
@@ -452,8 +485,20 @@ function listHtml(phone: PhoneInstance, now: number): string {
  * The whole stage at rest. `notice` is what the phone has to say above the
  * thread — a failed registration, a reconnection, the page asleep.
  */
+/** The foot's erase-all: there as soon as there is a call or a message to erase. */
+function footHtml(phone: PhoneInstance): string {
+  const messaging = boundMessaging();
+  const messages = messagingOn(messaging) && messaging.context.messages.length > 0;
+  if (!messages && phone.context.history.length === 0) return "";
+  const label =
+    armed === "all" ? t(messagingOn(messaging) ? "thread.clearAllConfirm" : "thread.clearCallsConfirm") : t("history.clear");
+  return `<button type="button" class="linkbtn" data-act="thread-clear-all" data-armed="${
+    armed === "all" ? "yes" : "no"
+  }">${esc(label)}</button>`;
+}
+
 export function threadStage(phone: PhoneInstance, notice: string): string {
-  const history = phone.context.history.length > 0;
+  const foot = footHtml(phone);
   // SUBSCRIBE refused (D8): said once, above the lines that lost their glyph
   const noPresence = boundPresence()?.state === "no_watch" && !noPresenceDismissed;
   // MESSAGE refused by the server (ADR 0008, D13): said while it lasts
@@ -480,13 +525,7 @@ export function threadStage(phone: PhoneInstance, notice: string): string {
       <button type="button" class="btn small" data-act="thread-add">${PLUS}${esc(t("thread.add"))}</button>
     </div>
     <div class="thread-list" data-ref="thread-list">${list}</div>
-    ${
-      history
-        ? `<div class="thread-foot"><button type="button" class="linkbtn" data-act="thread-clear-history">${esc(
-            t("history.clear"),
-          )}</button></div>`
-        : ""
-    }
+    <div class="thread-foot" data-ref="thread-foot" ${foot ? "" : "hidden"}>${foot}</div>
   </div>`;
 }
 
@@ -541,13 +580,24 @@ function redraw(m: Mounted): void {
   const act = inside ? active.dataset.act : undefined;
   const key = inside ? (active.dataset.key ?? active.dataset.id) : undefined;
   const id = inside ? active.id : undefined;
+  const stage = list.closest(".thread-stage");
+  const foot = stage?.querySelector<HTMLElement>('[data-ref="thread-foot"]');
+  const inFoot = !!active && !!foot?.contains(active);
+  redrawing = true;
   list.innerHTML = listHtml(m.phone, Date.now());
-  list.closest(".thread-stage")?.classList.toggle("focus", focused);
+  if (foot) {
+    const html = footHtml(m.phone);
+    foot.innerHTML = html;
+    foot.hidden = !html;
+  }
+  redrawing = false;
+  stage?.classList.toggle("focus", focused);
   m.signature = signature(m.phone);
   // the conversation reads from the bottom, where the writing field is
   const events = list.querySelector<HTMLElement>('[data-ref="thread-events"]');
   if (events) events.scrollTop = events.scrollHeight;
   markRead();
+  if (inFoot) foot?.querySelector<HTMLElement>('[data-act="thread-clear-all"]')?.focus();
   if (!inside) return;
   const back = id
     ? list.querySelector<HTMLElement>(`#${CSS.escape(id)}`)
@@ -649,6 +699,29 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
     )?.focus();
   };
 
+  /** An erase button back to its first click, in place: a redraw would lose the next click's target. */
+  const disarm = () => {
+    armed = null;
+    for (const b of stage.querySelectorAll<HTMLElement>('[data-armed="yes"]')) {
+      b.dataset.armed = "no";
+      b.textContent =
+        b.dataset.act === "thread-clear-all" ? t("history.clear") : t(LINE_CLEAR[lineScope(boundMessaging())].label);
+    }
+  };
+  // leaving an armed button disarms it: a red button left armed behind is a trap
+  stage.addEventListener("focusout", (e) => {
+    if (!redrawing && armed !== null && (e.target as HTMLElement).dataset.armed === "yes") disarm();
+  });
+
+  /** After erasing, the focus goes to the line if it is still there, else to the search. */
+  const focusAfterClear = (key: string | null) => {
+    const root = mounted?.node ?? node;
+    (
+      (key ? root.querySelector<HTMLElement>(`[data-act="thread-toggle"][data-key="${CSS.escape(key)}"]`) : null) ??
+      root.querySelector<HTMLElement>('[data-ref="thread-search"]')
+    )?.focus();
+  };
+
   // Enter sends, Shift+Enter goes to the next line; Escape leaves the expanded conversation
   stage.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && focused && !e.defaultPrevented) {
@@ -668,6 +741,8 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
     const el = (e.target as Element).closest<HTMLElement>("[data-act]");
     if (!el || !stage.contains(el)) return;
     const { act, key, id, i } = el.dataset;
+    // a click elsewhere disarms too (Safari does not focus a clicked button)
+    if (armed !== null && el.dataset.armed !== "yes") disarm();
     switch (act) {
       case "thread-toggle": {
         openKey = openKey === key ? null : (key ?? null);
@@ -756,8 +831,36 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         noPresenceDismissed = true;
         el.closest(".thread-banner")?.remove();
         return;
-      case "thread-clear-history":
+      case "thread-clear": {
+        const thread = threadOf(key);
+        if (!thread) return;
+        const messaging = boundMessaging();
+        if (armed !== thread.key) {
+          armed = thread.key;
+          el.dataset.armed = "yes";
+          el.textContent = lineClearLabel(thread, messaging);
+          return;
+        }
+        armed = null;
+        const scope = lineScope(messaging);
+        if (scope !== "messages") phone.send({ type: "ui:clearHistory", key: thread.key });
+        if (scope !== "calls") messaging?.send({ type: "ui:clearMessages", key: thread.key });
+        if (mounted) redraw(mounted);
+        focusAfterClear(thread.key);
+        return;
+      }
+      case "thread-clear-all":
+        if (armed !== "all") {
+          armed = "all";
+          el.dataset.armed = "yes";
+          el.textContent = t(messagingOn(boundMessaging()) ? "thread.clearAllConfirm" : "thread.clearCallsConfirm");
+          return;
+        }
+        armed = null;
         phone.send({ type: "ui:clearHistory" });
+        boundMessaging()?.send({ type: "ui:clearMessages" });
+        if (mounted) redraw(mounted);
+        focusAfterClear(openKey);
         return;
       case "thread-trace": {
         const entry = entryAt(i);

@@ -256,6 +256,14 @@ const messages: Translation = {
   "thread.rename": "أعد التسمية",
   "thread.renameSave": "احفظ",
   "thread.remove": "احذف من جهات الاتصال",
+  "thread.clear.all": "مسح المحادثات",
+  "thread.clear.calls": "مسح المكالمات",
+  "thread.clear.messages": "مسح الرسائل",
+  "thread.clearConfirm.all": "تأكيد: مسح المحادثات مع {name}",
+  "thread.clearConfirm.calls": "تأكيد: مسح المكالمات مع {name}",
+  "thread.clearConfirm.messages": "تأكيد: مسح الرسائل مع {name}",
+  "thread.clearAllConfirm": "تأكيد: مسح كل المكالمات والرسائل",
+  "thread.clearCallsConfirm": "تأكيد: مسح كل المكالمات",
   "thread.yesterday": "أمس",
   "call.contactHint": "{name} · {status}",
 
@@ -532,7 +540,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.clear": "مسح",
+  "history.clear": "مسح الكل",
   "history.entryTitle": "{target} — {outcome}",
 
   // دفتر المكالمة: حزم SIP المحفوظة عندما كان التتبّع مُفعَّلًا

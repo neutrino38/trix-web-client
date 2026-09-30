@@ -252,6 +252,14 @@ const messages: Translation = {
   "thread.rename": "名前を変更",
   "thread.renameSave": "保存",
   "thread.remove": "連絡先から削除",
+  "thread.clear.all": "やり取りを消去",
+  "thread.clear.calls": "通話を消去",
+  "thread.clear.messages": "メッセージを消去",
+  "thread.clearConfirm.all": "確認：{name}とのやり取りを消去",
+  "thread.clearConfirm.calls": "確認：{name}との通話を消去",
+  "thread.clearConfirm.messages": "確認：{name}とのメッセージを消去",
+  "thread.clearAllConfirm": "確認：すべての通話とメッセージを消去",
+  "thread.clearCallsConfirm": "確認：すべての通話を消去",
   "thread.yesterday": "昨日",
   "call.contactHint": "{name} · {status}",
 
@@ -510,7 +518,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.clear": "消去",
+  "history.clear": "すべて消去",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active

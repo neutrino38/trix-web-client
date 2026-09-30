@@ -572,6 +572,36 @@ describe("reading, saving, accounts", () => {
     await vi.waitFor(() => expect(t.saved.get("acc")!.every((m) => m.read)).toBe(true));
   });
 
+  it("ui:clearMessages erases one correspondent's conversation, and saves", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Un");
+    t.send({ type: "ui:send", uri: CARLA, text: "Deux" });
+    t.send({ type: "ui:clearMessages", key: "bob@example.org" });
+    expect(t.m.context.messages.map((m) => m.text)).toEqual(["Deux"]);
+    await vi.waitFor(() => expect(t.saved.get("acc")!.map((m) => m.text)).toEqual(["Deux"]));
+  });
+
+  it("ui:clearMessages without a key erases them all", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Un");
+    t.send({ type: "ui:send", uri: CARLA, text: "Deux" });
+    t.send({ type: "ui:clearMessages" });
+    expect(t.m.context.messages).toEqual([]);
+    await vi.waitFor(() => expect(t.saved.get("acc")).toEqual([]));
+  });
+
+  it("an erased message in flight stays erased, and a stranger we wrote to is held again", async () => {
+    const t = await start();
+    const h = up(t);
+    t.send({ type: "ui:send", uri: CARLA, text: "Un" });
+    t.send({ type: "ui:clearMessages", key: "carla@example.org" });
+    h.outcome(h.sent[0]!.id, 200);
+    expect(t.m.context.messages).toEqual([]);
+    expect(h.deliver(CARLA, "Réponse")).toBe(202);
+  });
+
   it("another account starts from its own vault, and drops the quarantine", async () => {
     const t = await start();
     const h = up(t);

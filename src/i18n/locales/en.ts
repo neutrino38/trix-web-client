@@ -245,6 +245,14 @@ const messages: Translation = {
   "thread.rename": "Rename",
   "thread.renameSave": "Save",
   "thread.remove": "Remove from contacts",
+  "thread.clear.all": "Clear exchanges",
+  "thread.clear.calls": "Clear calls",
+  "thread.clear.messages": "Clear messages",
+  "thread.clearConfirm.all": "Confirm: clear exchanges with {name}",
+  "thread.clearConfirm.calls": "Confirm: clear calls with {name}",
+  "thread.clearConfirm.messages": "Confirm: clear messages with {name}",
+  "thread.clearAllConfirm": "Confirm: clear all calls and messages",
+  "thread.clearCallsConfirm": "Confirm: clear all calls",
   "thread.yesterday": "yesterday",
   "call.contactHint": "{name} · {status}",
 
@@ -504,7 +512,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Call history
   // ---------------------------------------------------------------------
-  "history.clear": "Clear",
+  "history.clear": "Clear all",
   "history.entryTitle": "{target} — {outcome}",
 
   // A call's notebook: the SIP packets kept while tracing was on

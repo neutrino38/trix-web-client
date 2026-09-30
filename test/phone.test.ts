@@ -1232,6 +1232,19 @@ describe("PhoneMachine — historique d'appels", () => {
     await vi.waitFor(() => expect(box.history.get(SEED_ID)).toEqual([]));
   });
 
+  it("ui:clearHistory avec une clé n'efface que les appels de ce correspondant", async () => {
+    const { phone, sip, box } = await bootTo("ready", CFG);
+    for (const target of ["sip:bob@example.fr", "sip:carol@example.fr", "sip:bob@example.fr"]) {
+      phone.send({ type: "ui:call", target, media: { audio: true, video: false, text: false } });
+      sip.sendCall({ type: "sip:accepted" });
+      sip.sendCall({ type: "sip:ended", cause: "BYE", originator: "remote" });
+    }
+    expect(phone.context.history).toHaveLength(3);
+    phone.send({ type: "ui:clearHistory", key: "bob@example.fr" });
+    expect(phone.context.history.map((e) => e.target)).toEqual(["carol@example.fr"]);
+    await vi.waitFor(() => expect(box.history.get(SEED_ID)).toHaveLength(1));
+  });
+
   it("l'historique du compte est rechargé au boot", async () => {
     const past: CallLogEntry = {
       target: "carol@example.fr",

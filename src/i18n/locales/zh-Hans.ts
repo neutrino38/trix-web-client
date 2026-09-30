@@ -249,6 +249,14 @@ const messages: Translation = {
   "thread.rename": "重命名",
   "thread.renameSave": "保存",
   "thread.remove": "从联系人中移除",
+  "thread.clear.all": "清除往来",
+  "thread.clear.calls": "清除通话",
+  "thread.clear.messages": "清除消息",
+  "thread.clearConfirm.all": "确认：清除与{name}的往来",
+  "thread.clearConfirm.calls": "确认：清除与{name}的通话",
+  "thread.clearConfirm.messages": "确认：清除与{name}的消息",
+  "thread.clearAllConfirm": "确认：清除所有通话和消息",
+  "thread.clearCallsConfirm": "确认：清除所有通话",
   "thread.yesterday": "昨天",
   "call.contactHint": "{name} · {status}",
 
@@ -501,7 +509,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.clear": "清除",
+  "history.clear": "全部清除",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active

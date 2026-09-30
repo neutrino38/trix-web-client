@@ -262,7 +262,8 @@ export type PhoneEvent =
   | { type: "ui:backToSettings" }
   | { type: "ui:logout" }
   | { type: "ui:call"; target: string; media: CallMedia }
-  | { type: "ui:clearHistory" }
+  /** Sans `key`, tout l'historique du compte ; avec, les appels d'un seul correspondant (clé `sip/uri.ts`). */
+  | { type: "ui:clearHistory"; key?: string }
   /**
    * Carnet de contacts du compte actif (ADR 0007, D7). `uri` est la saisie
    * telle quelle : la machine la normalise, et refuse ce qui n'est pas une

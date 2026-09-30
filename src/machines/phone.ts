@@ -189,11 +189,17 @@ function clearError(ctx: PhoneCtx): void {
   ctx.suspectFields = null;
 }
 
-/** Vidage de l'historique du compte courant (mémoire + persistance). */
-function clearHistory(_ev: PhoneEvent, ctx: PhoneCtx) {
-  ctx.history = [];
-  if (ctx.activeId) void ctx.store.saveHistory(ctx.activeId, []).catch(() => {});
-  return stay("historique vidé");
+/**
+ * Vidage de l'historique du compte courant (mémoire + persistance) : tout,
+ * ou les appels d'un seul correspondant — ceux dont la cible a sa clé.
+ */
+function clearHistory(ev: Extract<PhoneEvent, { type: "ui:clearHistory" }>, ctx: PhoneCtx) {
+  const key = ev.key;
+  const kept = key === undefined ? [] : ctx.history.filter((entry) => addressKey(entry.target) !== key);
+  if (kept.length === ctx.history.length) return stay("rien à effacer");
+  ctx.history = kept;
+  if (ctx.activeId) void ctx.store.saveHistory(ctx.activeId, kept).catch(() => {});
+  return stay(key === undefined ? "historique vidé" : "appels d'un correspondant effacés");
 }
 
 /**

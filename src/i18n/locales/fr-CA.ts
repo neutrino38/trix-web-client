@@ -260,6 +260,14 @@ const messages: Translation = {
   "thread.rename": "Renommer",
   "thread.renameSave": "Enregistrer",
   "thread.remove": "Retirer du carnet",
+  "thread.clear.all": "Effacer les échanges",
+  "thread.clear.calls": "Effacer les appels",
+  "thread.clear.messages": "Effacer les messages",
+  "thread.clearConfirm.all": "Confirmer : effacer les échanges avec {name}",
+  "thread.clearConfirm.calls": "Confirmer : effacer les appels avec {name}",
+  "thread.clearConfirm.messages": "Confirmer : effacer les messages avec {name}",
+  "thread.clearAllConfirm": "Confirmer : effacer tous les appels et messages",
+  "thread.clearCallsConfirm": "Confirmer : effacer tous les appels",
   "thread.yesterday": "hier",
   "call.contactHint": "{name} · {status}",
 
@@ -520,7 +528,7 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // Historique d'appels
   // ---------------------------------------------------------------------
-  "history.clear": "Effacer",
+  "history.clear": "Tout effacer",
   "history.entryTitle": "{target} — {outcome}",
 
   // Carnet d'un appel : les paquets SIP gardés quand la trace était active
