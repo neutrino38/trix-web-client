@@ -12,6 +12,12 @@
  * visible tab reads its messages. A blocked contact keeps its line, with
  * neither call button nor writing field.
  *
+ * An open line's conversation can take the whole stage under the title
+ * ("expand", from the Messages segment): the other lines, the search and
+ * the contact's actions step aside until "back to exchanges". On a phone
+ * it takes the whole screen — the correspondent's name above, the
+ * writing field below.
+ *
  * The screen is rebuilt on phone transitions only. Presence, messages and
  * the contact book change without one, so the list redraws itself
  * (`refreshThread`), keeping the search field, the address being typed,
@@ -68,6 +74,8 @@ let renaming: string | null = null;
 /** The "no presence here" banner is said once; dismissed, it stays so until reload. */
 let noPresenceDismissed = false;
 let segment: Segment = "all";
+/** The open line's conversation fills the stage: meaningless without an open line. */
+let focused = false;
 /** What is being written, per line: a redraw must not lose it. */
 const drafts = new Map<string, string>();
 
@@ -86,6 +94,8 @@ const CHEVRON = `<svg class="chev" viewBox="0 0 24 24" width="16" height="16" ar
 const PLUS = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
 const SEARCH = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
 const BUBBLE = `<svg class="icon dir" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v10H10l-4 4v-4H5z"/></svg>`;
+const EXPAND = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const COLLAPSE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M20 10h-6V4M4 14h6v6M14 10l6.5-6.5M10 14l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const DIAL = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 4h2l1.5 4-2 1.3a11 11 0 0 0 6.2 6.2L16 13.5l4 1.5v2a2 2 0 0 1-2 2A15 15 0 0 1 5 6a2 2 0 0 1 2-2z" fill="currentColor"/></svg>`;
 
 // ---- presence of a line ---------------------------------------------------
@@ -209,11 +219,20 @@ function segments(): string {
     `<button type="button" class="seg" data-act="thread-segment" data-key="${value}" aria-pressed="${
       segment === value
     }">${esc(t(key))}</button>`;
-  return `<div class="thread-segments" role="group" aria-label="${esc(t("thread.segments"))}">
-    ${button("all", "thread.segment.all")}${button("calls", "thread.segment.calls")}${button(
-      "messages",
-      "thread.segment.messages",
-    )}
+  // expanding is offered where the conversation is read: the Messages segment
+  const expand =
+    segment === "messages" && !focused
+      ? `<button type="button" class="iconbtn thread-expand" data-act="thread-expand"
+                 aria-label="${esc(t("thread.expand"))}" title="${esc(t("thread.expand"))}">${EXPAND}</button>`
+      : "";
+  return `<div class="thread-tools">
+    <div class="thread-segments" role="group" aria-label="${esc(t("thread.segments"))}">
+      ${button("all", "thread.segment.all")}${button("calls", "thread.segment.calls")}${button(
+        "messages",
+        "thread.segment.messages",
+      )}
+    </div>
+    ${expand}
   </div>`;
 }
 
@@ -283,8 +302,9 @@ function body(thread: Thread, now: number, messaging: MessagingInstance | null):
            ${block}
          </div>`;
   const write = withMessages && !thread.blocked && canWrite(messaging) ? composer(thread, messaging) : "";
-  // the contact's actions come first: after a long history they would be out of sight
-  return `<div class="thread-body">${actions}${withMessages ? segments() : ""}${list}${write}</div>`;
+  // the contact's actions come first: after a long history they would be out of sight.
+  // Expanded, the conversation alone: the actions wait for the way back.
+  return `<div class="thread-body">${focused ? "" : actions}${withMessages ? segments() : ""}${list}${write}</div>`;
 }
 
 function row(
@@ -322,6 +342,12 @@ function row(
           ? `<button type="button" class="btn small" data-act="thread-add-number" data-key="${esc(thread.key)}">${esc(
               t("thread.addToContacts"),
             )}</button>`
+          : ""
+      }
+      ${
+        open && focused
+          ? `<button type="button" class="iconbtn thread-collapse" data-act="thread-collapse"
+                aria-label="${esc(t("thread.collapse"))}" title="${esc(t("thread.collapse"))}">${COLLAPSE}</button>`
           : ""
       }
       ${
@@ -388,12 +414,24 @@ function threadsOf(phone: PhoneInstance): Thread[] {
   );
 }
 
+/** Expanded only while there is a conversation to show: the open line, with messaging on. */
+function focusOn(threads: readonly Thread[]): boolean {
+  if (focused && !(openKey && messagingOn(boundMessaging()) && threads.some((th) => th.key === openKey))) {
+    focused = false;
+  }
+  return focused;
+}
+
 function listHtml(phone: PhoneInstance, now: number): string {
   const presence = boundPresence();
   const messaging = boundMessaging();
   const threads = threadsOf(phone);
-  const sections = threadSections(threads, query, now);
   const ready = phone.state === "ready";
+  if (focusOn(threads)) {
+    const open = threads.find((th) => th.key === openKey)!;
+    return `<ul class="thread-focus">${row(open, presence, messaging, ready, now)}</ul>`;
+  }
+  const sections = threadSections(threads, query, now);
   const first = !adding && !query.trim() && phone.context.contacts.length === 0 ? firstContact(threads) : "";
   const content = sections.length
     ? sections
@@ -421,7 +459,8 @@ export function threadStage(phone: PhoneInstance, notice: string): string {
   // MESSAGE refused by the server (ADR 0008, D13): said while it lasts
   const messaging = boundMessaging();
   const noMessaging = messagingOn(messaging) && messaging.context.unsupported;
-  return `<div class="thread-stage">
+  const list = listHtml(phone, Date.now());
+  return `<div class="thread-stage ${focused ? "focus" : ""}">
     ${notice ? `<div class="thread-notice">${notice}</div>` : ""}
     ${
       noPresence
@@ -440,7 +479,7 @@ export function threadStage(phone: PhoneInstance, notice: string): string {
             value="${esc(query)}" placeholder="${esc(t("thread.search"))}" autocomplete="off"></span>
       <button type="button" class="btn small" data-act="thread-add">${PLUS}${esc(t("thread.add"))}</button>
     </div>
-    <div class="thread-list" data-ref="thread-list">${listHtml(phone, Date.now())}</div>
+    <div class="thread-list" data-ref="thread-list">${list}</div>
     ${
       history
         ? `<div class="thread-foot"><button type="button" class="linkbtn" data-act="thread-clear-history">${esc(
@@ -503,6 +542,7 @@ function redraw(m: Mounted): void {
   const key = inside ? (active.dataset.key ?? active.dataset.id) : undefined;
   const id = inside ? active.id : undefined;
   list.innerHTML = listHtml(m.phone, Date.now());
+  list.closest(".thread-stage")?.classList.toggle("focus", focused);
   m.signature = signature(m.phone);
   // the conversation reads from the bottom, where the writing field is
   const events = list.querySelector<HTMLElement>('[data-ref="thread-events"]');
@@ -597,8 +637,25 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
     }
   });
 
-  // Enter sends, Shift+Enter goes to the next line
+  const collapse = () => {
+    focused = false;
+    redraw(m);
+    // back where expanding was asked, else on the line itself
+    (
+      stage.querySelector<HTMLElement>('[data-act="thread-expand"]') ??
+      (openKey
+        ? stage.querySelector<HTMLElement>(`[data-act="thread-toggle"][data-key="${CSS.escape(openKey)}"]`)
+        : null)
+    )?.focus();
+  };
+
+  // Enter sends, Shift+Enter goes to the next line; Escape leaves the expanded conversation
   stage.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && focused && !e.defaultPrevented) {
+      e.preventDefault();
+      collapse();
+      return;
+    }
     const input = e.target as HTMLElement;
     if (input.id !== "thread-compose" || e.key !== "Enter" || e.shiftKey || e.isComposing) return;
     e.preventDefault();
@@ -615,6 +672,8 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
       case "thread-toggle": {
         openKey = openKey === key ? null : (key ?? null);
         renaming = null;
+        // folding the expanded line brings the other lines back
+        if (!openKey) focused = false;
         const thread = threadOf(key);
         if (openKey && thread && target && !target.disabled) {
           // D10: unfolding a line fills the address to dial
@@ -674,6 +733,17 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
       }
       case "thread-unblock":
         if (id) phone.send({ type: "ui:unblockContact", id });
+        return;
+      case "thread-expand":
+        focused = true;
+        redraw(m);
+        (
+          stage.querySelector<HTMLElement>("#thread-compose") ??
+          stage.querySelector<HTMLElement>('[data-act="thread-collapse"]')
+        )?.focus();
+        return;
+      case "thread-collapse":
+        collapse();
         return;
       case "thread-segment":
         segment = (key as Segment | undefined) ?? "all";

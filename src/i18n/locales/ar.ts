@@ -210,6 +210,8 @@ const messages: Translation = {
   "thread.segment.all": "الكل",
   "thread.segment.calls": "المكالمات",
   "thread.segment.messages": "الرسائل",
+  "thread.expand": "تكبير المحادثة",
+  "thread.collapse": "العودة إلى المحادثات",
   "thread.noEvents": "لا تبادل مع جهة الاتصال هذه بعد.",
   "thread.noMessages": "لا رسائل بعد.",
   "thread.unread.one": "رسالة واحدة غير مقروءة",

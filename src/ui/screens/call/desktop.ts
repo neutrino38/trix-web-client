@@ -112,10 +112,13 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         <span class="logo">${trixIcon(38)}<span>Trix</span></span>
         ${
           // enregistré, sur un serveur qui prend la présence : le statut
-          // remplace la pastille (ADR 0007, D5, D8) ; sinon, celle d'avant
-          statusButton(phone, cfg ? `${cfg.username}@${cfg.domain}` : "") ??
-          `<span class="pill"><span class="dot ${status.cls}"></span>
-            ${esc(pillLabel(phone, status.label))}${ready ? identity : ""}</span>`
+          // remplace la pastille (ADR 0007, D5, D8) ; sinon, celle d'avant.
+          // En appel, la pastille de l'appel suffit — comme sur mobile.
+          view
+            ? ""
+            : (statusButton(phone, cfg ? `${cfg.username}@${cfg.domain}` : "") ??
+              `<span class="pill"><span class="dot ${status.cls}"></span>
+                ${esc(pillLabel(phone, status.label))}${ready ? identity : ""}</span>`)
         }
         ${
           // en communication, la pastille découvre les statistiques média

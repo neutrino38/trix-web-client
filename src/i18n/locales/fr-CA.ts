@@ -214,6 +214,8 @@ const messages: Translation = {
   "thread.segment.all": "Tout",
   "thread.segment.calls": "Appels",
   "thread.segment.messages": "Messages",
+  "thread.expand": "Agrandir la conversation",
+  "thread.collapse": "Revenir aux échanges",
   "thread.noEvents": "Aucun échange avec ce contact pour l'instant.",
   "thread.noMessages": "Aucun message pour l'instant.",
   "thread.unread.one": "{n} message non lu",

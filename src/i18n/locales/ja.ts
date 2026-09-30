@@ -206,6 +206,8 @@ const messages: Translation = {
   "thread.segment.all": "すべて",
   "thread.segment.calls": "通話",
   "thread.segment.messages": "メッセージ",
+  "thread.expand": "会話を拡大",
+  "thread.collapse": "やり取りに戻る",
   "thread.noEvents": "この連絡先とのやり取りはまだありません。",
   "thread.noMessages": "メッセージはまだありません。",
   "thread.unread.one": "未読メッセージ {n} 件",

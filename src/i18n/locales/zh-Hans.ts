@@ -203,6 +203,8 @@ const messages: Translation = {
   "thread.segment.all": "全部",
   "thread.segment.calls": "通话",
   "thread.segment.messages": "消息",
+  "thread.expand": "展开对话",
+  "thread.collapse": "返回往来",
   "thread.noEvents": "尚未与此联系人交流。",
   "thread.noMessages": "尚无消息。",
   "thread.unread.one": "{n} 条未读消息",

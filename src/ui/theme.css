@@ -1663,6 +1663,10 @@ fieldset.field { border: none; }
   display: flex; flex-direction: column; gap: 0.35rem;
   max-height: 24rem; overflow-y: auto; padding-inline-end: 0.25rem;
 }
+.thread-tools { display: flex; align-items: center; gap: 0.5rem; }
+.thread-tools .thread-expand { margin-inline-start: auto; }
+.thread-expand, .thread-collapse { flex: none; width: 40px; height: 40px; color: var(--ink-soft); }
+.thread-expand svg, .thread-collapse svg { fill: none; }
 .thread-segments { display: flex; gap: 0.25rem; }
 .thread-segments .seg {
   font: inherit; font-size: 0.8rem; color: var(--ink-soft); cursor: pointer;
@@ -1719,6 +1723,23 @@ fieldset.field { border: none; }
 }
 .thread-first .thread-formbtns { flex-wrap: wrap; }
 .thread-foot { padding: 0.4rem 1.5rem 0.8rem; text-align: end; border-top: 1px solid var(--border); }
+
+/* La conversation agrandie : la ligne ouverte tient toute la scène sous
+   « Échanges » ; la liste des échanges défile seule entre l'en-tête du
+   correspondant et le champ d'écriture. */
+.thread-stage.focus .thread-bar > :not(h1) { display: none; }
+.thread-stage.focus .thread-foot { display: none; }
+.thread-stage.focus .thread-list { display: flex; flex-direction: column; overflow: hidden; padding-top: 0.25rem; }
+.thread-focus { list-style: none; flex: 1; min-height: 0; display: flex; }
+.thread-focus > .thread { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.thread-focus .thread-head { border-bottom: 1px solid var(--border); }
+.thread-focus .thread-body { flex: 1; min-height: 0; padding: 0.75rem 1rem 0.9rem; }
+.thread-focus .thread-events { flex: 1; min-height: 0; max-height: none; }
+/* peu de messages : ils se posent en bas, contre le champ d'écriture */
+.thread-focus .thread-events::before { content: ""; margin-block-start: auto; }
+.thread-focus .thread-none { flex: 1; }
+.thread-focus .thread-compose textarea { resize: none; }
+
 .field .hint.contact:empty { display: none; }
 .field .hint.contact { color: var(--ink); font-weight: 600; }
 
@@ -1745,3 +1766,17 @@ fieldset.field { border: none; }
 .screen-call.mobile .thread-head > .btn { order: 3; margin-inline-start: 4.3rem; margin-bottom: 0.4rem; }
 .screen-call.mobile .thread-body { padding: 0 0.6rem 0.8rem; }
 .screen-call.mobile .thread-foot { padding: 0.4rem 0.75rem 0.6rem; }
+/* Sur mobile, la conversation agrandie prend l'écran entier : le nom du
+   correspondant en haut, le champ d'écriture en bas. Sous les menus et
+   les modales (40 et plus) ; un appel entrant reconstruit l'écran. */
+.screen-call.mobile .thread-stage.focus {
+  position: fixed; inset: 0; z-index: 30; margin: 0; border: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.screen-call.mobile .thread-stage.focus > :not(.thread-list) { display: none; }
+.screen-call.mobile .thread-stage.focus .thread-list { padding: 0; }
+.screen-call.mobile .thread-focus > .thread { border-radius: 0; box-shadow: none; }
+.screen-call.mobile .thread-focus .thread-head { background: var(--panel); flex-wrap: nowrap; }
+.screen-call.mobile .thread-focus .thread-toggle { flex: 1 1 auto; }
+.screen-call.mobile .thread-focus .thread-head > .btn { display: none; }
+.screen-call.mobile .thread-focus .thread-body { padding: 0.5rem 0.6rem 0.6rem; }
