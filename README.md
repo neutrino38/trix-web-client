@@ -57,17 +57,13 @@ from the French reference is missing. Nothing else to register. See
 ## Presence
 
 Presence is implemented. Trix watches your contacts over SIP (SUBSCRIBE/NOTIFY, PIDF and
-RPID) and publishes your own status (PUBLISH): *Available*, *Busy*, *Away*, *Do not
-disturb* — incoming calls are declined and noted — and *Invisible*, with a note and two
-automatic rules (*On the phone* during a call, *Away* after 10 minutes idle). Contacts and
-calls meet in the **Exchanges thread**, one line per correspondent, on desktop and mobile.
+RPID) and publishes your own status. If you are in communication, it will publish 'on the
+phone'. After 10 minutes idle it will publish *Away*. 
+Contacts, chat conversation and calls history are gathered in **Exchanges thread**, one line per correspondent, on desktop and mobile.
 
-Nothing to configure: what the server supports — everything, your contacts' presence but
-not yours, or nothing — is discovered at each registration, and a refusal from another
-domain (a conference bridge, a peer server) only affects that domain. An operator who wants no SUBSCRIBE at all
-sets `"presence": "no"` in `config.json`.
+An operator who wants no SUBSCRIBE at all sets `"presence": "no"` in `config.json`.
 
-Instant messages (SIP MESSAGE, in plain text) fill the same thread: written offline, they
+Instant messages fill the same thread: written offline, they
 leave at the next registration; a message from an unknown address waits for you to accept
 it; blocking a contact refuses their calls and messages alike. The SIP server must keep
 messages while the page sleeps. `"messaging": "no"` turns it all off. See the [user guide,
@@ -146,20 +142,11 @@ Full steps, required modules and per-distribution paths:
 - [x] Phase 4 (chat) — chat over the WebRTC data channel, total conversation
       experience (adding / removing audio or video from a call)
 - [x] Phase 5 (accounts) — deployment configuration through `config.json`, two SIP
-      accounts with one registered at a time, and **account sharing by link**: a whole
-      account travels in a single URL, created on the other device after a confirmation
-      screen (call history never travels — see
-      [ADR 0004](docs/architecture/0004-partage-compte-par-lien.md))
-- [x] Phase 6 (presence) — contacts kept encrypted in the browser, SIP presence (SUBSCRIBE,
-      and PUBLISH grafted onto JsSIP), your own status with do-not-disturb and two automatic
-      rules, and the **Exchanges thread**: contacts and calls, one line per correspondent,
-      on desktop and mobile. Whatever the server supports is discovered at each
-      registration (see [ADR 0007](docs/architecture/0007-presence.md))
-- [x] Phase 6 (messaging) — instant messaging (SIP MESSAGE, text/plain or CPIM as Linphone
-      writes it, with delivery and read receipts) in the same thread: messages written
-      offline leave at the next registration, unknown senders wait for your answer,
-      contacts can be blocked, and a badge tells about messages during a call. The server
-      must keep messages while the page sleeps (see
+      accounts with one registered at a time, and **account sharing by link**.
+- [x] Phase 6 (presence) — contacts kept encrypted in the browser, SIP presence, your own   
+      status with do-not-disturb and two automatic rules, and the **Exchanges thread**
+- [x] Phase 7 (messaging) — instant messaging (SIP MESSAGE, text/plain or CPIM with delivery 
+      and read receipts) in the same thread: messages written offline leave at the next registration, unknown senders wait for your answer, contacts can be blocked, and a badge tells about messages during a call. The server  must keep messages while the page sleeps (see
       [ADR 0008](docs/architecture/0008-messagerie.md),
       [ADR 0009](docs/architecture/0009-cpim.md),
       [ADR 0010](docs/architecture/0010-accuses-imdn.md))
