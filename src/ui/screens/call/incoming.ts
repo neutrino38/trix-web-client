@@ -18,7 +18,8 @@
 
 import type { CallView } from "../../../machines/events.js";
 import { esc } from "../../el.js";
-import { ICONS, answerChoices, callProfile, callerName, displayTarget } from "./parts.js";
+import { callProfile } from "../../../core/callmodes.js";
+import { ICONS, answerChoices, callerName, displayTarget } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
 /**

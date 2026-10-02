@@ -21,9 +21,10 @@ import { watchActivity } from "./ui/activity.js";
 import { noteSleepReason, watchReachability } from "./ui/reachability.js";
 import { registerNotifier } from "./ui/notify.js";
 import { watchLayout } from "./ui/layout.js";
-import { formatLog, machineLogger, watchGlobalErrors, watchMachine } from "./ui/diagnostics.js";
+import { formatLog, machineLogger, watchMachine } from "./core/diagnostics.js";
+import { watchGlobalErrors } from "./ui/diagnostics.js";
 import { traceCallStates } from "./sip/trace.js";
-import { initI18n, onLocaleChange } from "./i18n/index.js";
+import { initI18n, onLocaleChange, translate } from "./i18n/index.js";
 import { deployment, loadDeployment } from "./deployment.js";
 
 applyPrefs();
@@ -103,7 +104,7 @@ const phone = PhoneMachine.start({
 // erreurs des automates (lastError, callError, mort de la machine, événements
 // non consommés) : l'écran en montre une phrase, la console en garde la trace
 started = phone;
-watchMachine(phone);
+watchMachine(phone, translate);
 
 // du téléphone vers la présence : enregistré, désenregistré, en appel,
 // carnet modifié (machines/presencesignals.ts)

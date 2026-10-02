@@ -30,7 +30,7 @@
  * moitié traduit.
  */
 
-import type { Locale, LocaleChoice, Msg, MsgKey, Translation, Vars } from "./types.js";
+import type { Locale, LocaleChoice, Msg, MsgKey, Translate, Translation, Vars } from "./types.js";
 
 export { msg, rawMsg } from "./types.js";
 export type { Locale, LocaleChoice, Msg, MsgKey, Translation } from "./types.js";
@@ -353,6 +353,13 @@ export function t(key: MsgKey | Msg, vars?: Vars): string {
   const template = dict?.[key];
   return template === undefined ? key : interpolate(template, vars);
 }
+
+/**
+ * `t` et la langue courante, sous la forme que le noyau reçoit (ADR 0011) :
+ * c'est ce que l'UI lui passe quand il a des mots à écrire — un fichier de
+ * sous-titres, une ligne de console.
+ */
+export const translate: Translate = { t, locale: localeTag };
 
 /**
  * Traduit un pluriel : `tn("announce.inCall", n)` choisit entre

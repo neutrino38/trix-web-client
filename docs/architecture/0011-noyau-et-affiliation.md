@@ -283,6 +283,12 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    (D4). Les points 2 à 4 du contexte ne sont pas des imports interdits mais de la logique
    absente du noyau : ce test ne les voit pas, les étapes 2 et 3 les traitent.
 2. **Les modèles purs** (D6) : déplacements sans changement de comportement, tests déplacés avec.
+   Fait le 2026-10-02 : `core/thread.ts`, `core/callmodes.ts` (la règle ; libellés et icônes
+   restent dans `parts.ts`), `core/reachability.ts` (niveau, motif, phrase ; les épisodes, leurs
+   timers et les canaux d'alerte restent dans `ui/`, avec leur état de module, jusqu'à l'étape
+   5), `core/subtitles.ts` et `core/diagnostics.ts` (`watchGlobalErrors`, qui écoute `window`,
+   reste dans `ui/`). Le noyau ne lit aucun dictionnaire : quand il a des mots à écrire, il
+   reçoit un `Translate` (`i18n/types.ts`) — celui de l'UI d'ici à D9.
 3. **La conversation** (D5) : `core/conversation.ts`, abonnement au canal par le noyau,
    transcription fournie par lui ; `chat.ts` réduit au rendu.
 4. **Les médias** (D4) : `streams()`/`onStreams()` dans le port, `session` retiré de la vue.

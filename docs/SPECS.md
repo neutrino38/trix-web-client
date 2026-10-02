@@ -418,7 +418,7 @@ clignotant de l'alerte, qui reste le signal principal.
 - [x] Historique des conversations : le fil rejoint la ligne d'appel, chiffré avec le
       compte, et se relit depuis sa bulle « T » avec « Copier » (`sip/transcript.ts`,
       `ui/chatdialog.ts`)
-- [x] Export WebVTT de la conversation (`ui/subtitles.ts`) : calé sur le début de la
+- [x] Export WebVTT de la conversation (`core/subtitles.ts`) : calé sur le début de la
       communication, une bulle figée par entrée, locuteur balisé `<v …>`, remarques du
       fil en commentaires — le fichier se pose tel quel sur un enregistrement de l'appel
 
@@ -459,7 +459,7 @@ clignotant de l'alerte, qui reste le signal principal.
 - [x] Panneau latéral repliable et redimensionnable (souris et clavier)
 - [x] Trace SIP en console, carnet de l'appel dans l'historique
 - [x] Statistiques média en direct et bilan de l'appel terminé
-- [x] Journalisation des défauts de machines sur la console (`ui/diagnostics.ts`)
+- [x] Journalisation des défauts de machines sur la console (`core/diagnostics.ts`)
 - [x] Partage d'écran en cours d'appel (ADR 0005)
 - [x] Endormissement de la page : désenregistrement et réveil, onglet en arrière-plan (ADR 0006)
 

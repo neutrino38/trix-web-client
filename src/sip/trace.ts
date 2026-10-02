@@ -62,7 +62,7 @@ export function setSipTrace(on: boolean): void {
 
 /**
  * Où partent les lignes. Injectable pour les tests, comme le puits de
- * `ui/diagnostics.ts` — on lit alors exactement ce qu'un développeur voit.
+ * `core/diagnostics.ts` — on lit alors exactement ce qu'un développeur voit.
  */
 export interface TraceSink {
   /** Entête du paquet : ouvre un groupe replié, le corps suit. */
@@ -218,7 +218,7 @@ interface Traceable extends Position {
  * Ce qui est tracé, c'est le **bloc** en cours — son entrée, ses
  * transitions internes, son retour à l'hôte : l'appel, aujourd'hui le seul
  * bloc de Trix. Les transitions du téléphone lui-même n'y sont pas ; elles
- * relèvent du diagnostic général (`ui/diagnostics.ts`), pas d'un échange
+ * relèvent du diagnostic général (`core/diagnostics.ts`), pas d'un échange
  * SIP. Rend une fonction qui débranche la trace.
  */
 export function traceCallStates(m: Traceable, sink: TraceSink = consoleTraceSink): () => void {

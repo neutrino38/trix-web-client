@@ -59,6 +59,12 @@ src/
   main.ts                 # bootstrap, détection config, start(PhoneMachine)
   deployment.ts           # config.json : ce que l'exploitant impose (§2.1)
   accounts.ts             # politique des comptes : combien, et ce qui les rend « le même »
+  core/                   # le noyau sans interface des projets affiliés (ADR 0011)
+    thread.ts             # le fil Échanges comme donnée, pur (§4.14)
+    callmodes.ts          # modes d'appel, profils F.703, réponses permises (ADR 0003)
+    reachability.ts       # niveau de joignabilité, motif, phrase — comme données (§4.13)
+    subtitles.ts          # la conversation d'un appel en WebVTT (§4.9)
+    diagnostics.ts        # traces des automates sur la console (§4.5)
   share/
     link.ts               # encodage/décodage d'un compte dans une URL (§6.1)
     page.ts               # share_account.html : le compte reçu, montré puis créé
@@ -86,10 +92,9 @@ src/
   ui/
     screens/{home,config,call}.ts
     lifecycle.ts          # gel, dégel, bfcache, veille machine → sys:sleep / sys:wake (§4.1)
-    reachability.ts       # le niveau de joignabilité et ce qu'on en dit (§4.13)
+    reachability.ts       # dire la joignabilité : phrase, onglet, notification (§4.13)
     activity.ts           # inactivité de l'utilisateur → sys:idle / sys:active (§4.14)
     presence.ts           # glyphes, bouton de statut et son menu (§4.14)
-    thread.ts             # le fil Échanges comme donnée, pur (§4.14)
     screens/call/thread.ts # le fil Échanges à l'écran (§4.14)
     notify.ts             # poser une notification par la voie qui survit au gel (§4.13)
     title.ts, favicon.ts  # propriétaires uniques de l'onglet : état + override d'alerte
@@ -705,7 +710,7 @@ entrant, pour survivre au re-rendu qui l'a déclenché.
 - `start({ debug: true, logger })` : chaque transition loggée au format Elixip
   (`sip:accepted: (calling_out) -> (connected) "200 OK"`), ring buffer `instance.log`
   consultable pour le support.
-- `ui/diagnostics.ts` porte à la console ce que les automates savent d'un incident et
+- `core/diagnostics.ts` porte à la console ce que les automates savent d'un incident et
   que l'écran résume en une phrase. Les machines n'en savent rien : le module observe
   ce qu'elles publient déjà. Quatre traces, toutes préfixées `[trix]` :
   - **erreurs métier** — une ligne par nouvelle valeur de `lastError` / `callError`,
@@ -731,7 +736,7 @@ d'arrivée : rendre sur place afficherait ce que l'état *précédent* avait pub
 « Sonnerie » pendant toute la communication, faute d'une autre notification à
 venir. La microtask s'exécute après la chaîne de transitions synchrones, `enter()`
 compris, et n'en rend que le résultat ; les rendus intermédiaires d'une même chaîne
-sont fondus en un seul. `ui/diagnostics.ts` inspecte le contexte de la même façon,
+sont fondus en un seul. `core/diagnostics.ts` inspecte le contexte de la même façon,
 pour la même raison.
 
 ### 4.7 Internationalisation
@@ -1286,10 +1291,11 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
 - `ui/chatdialog.ts` — la relecture d'une conversation passée, depuis la bulle « T »
   de sa ligne d'historique : même `<dialog>` que le carnet, et le fil rendu par le
   même code que pendant l'appel.
-- `ui/subtitles.ts` — la sérialisation WebVTT, depuis le modèle : entrées triées par
+- `core/subtitles.ts` — la sérialisation WebVTT, depuis le modèle : entrées triées par
   début (le fil, lui, est dans l'ordre des figeages), recouvrements gardés, remarques du
-  fil en `NOTE` horodatées, et `&`, `<`, `>` échappés. Le téléchargement lui-même est la
-  seule ligne qui touche le document, tout le reste se vérifie sans navigateur.
+  fil en `NOTE` horodatées, et `&`, `<`, `>` échappés. Le téléchargement lui-même
+  (`ui/subtitles.ts`) est la seule partie qui touche le document, tout le reste se vérifie
+  sans navigateur.
 
 **Pas d'émulateur de terminal.** `xterm.js` est la seule bibliothèque sérieuse du
 domaine, et elle ne convient pas : elle rend une grille monospace de dimensions fixes
@@ -1608,7 +1614,8 @@ mobile.
 
 Un téléphone qui ment sur sa joignabilité est pire qu'un téléphone éteint : l'onglet est
 toujours dans la barre, avec son titre et son icône, et plus personne ne peut vous appeler.
-`ui/reachability.ts` est le seul module qui sache si l'on est joignable, et le seul qui le dise.
+`core/reachability.ts` est le seul module qui sache si l'on est joignable, et `ui/reachability.ts`
+le seul qui le dise.
 
 **Trois niveaux, pas un booléen.** Le niveau se dérive de l'état de la machine, et de lui seul :
 
@@ -1774,7 +1781,7 @@ sur un serveur qui prend SUBSCRIBE (`ui/presence.ts`). Son menu est un dialogue 
 hors de `#app`, comme la région d'annonce, et se raccroche au bouton après chaque reconstruction :
 une reconstruction ne le ferme pas sous les doigts. Les cinq statuts y sont un vrai `role="menu"`
 de `menuitemradio`, parcouru aux flèches ; la note et les règles suivent. Au repos, le fil
-**Échanges** tient la scène (sous le champ d'adresse sur mobile) : `ui/thread.ts`, pur, bâtit une
+**Échanges** tient la scène (sous le champ d'adresse sur mobile) : `core/thread.ts`, pur, bâtit une
 ligne par correspondant à partir du carnet, de l'historique regroupé par clé d'adresse
 (`addressKey`, §7) et de la présence ; `ui/screens/call/thread.ts` le dessine. Comme la présence et
 le carnet changent sans transition de PhoneMachine, la liste se redessine seule (`refreshThread`,

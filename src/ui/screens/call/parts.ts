@@ -16,6 +16,14 @@ import { MEDIA_KINDS, type CallMedia } from "../../../sip/port.js";
 import type { RttTransport } from "../../../sip/rtt.js";
 import type { AccountConfig, StoredAccount } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
+import {
+  answerActs,
+  answerMedia,
+  callKind,
+  callModes as coreCallModes,
+  type AnswerAct,
+  type CallModeId,
+} from "../../../core/callmodes.js";
 import { el, esc } from "../../el.js";
 import { startIncomingAlert, stopIncomingAlert } from "../../alert.js";
 import { startRingback, stopRingback } from "../../ring.js";
@@ -31,8 +39,8 @@ import {
   dismissDiscardNotice,
   dismissPinHint,
   pinHintDue,
-  reachSentence,
 } from "../../reachability.js";
+import { reachSentence } from "../../../core/reachability.js";
 import { wirePanel } from "./panel.js";
 import { wireDtmf } from "./dtmf.js";
 import { wireChat } from "./chat.js";
@@ -221,7 +229,7 @@ export const ICONS_OFF = {
  * qui n'a rien à dire à un microphone.
  */
 interface CallModeDef {
-  id: string;
+  id: CallModeId;
   /** Entrée du menu (« Appel audio ») et bouton principal (« Appeler en audio »). */
   label: string;
   buttonLabel: string;
@@ -229,62 +237,19 @@ interface CallModeDef {
   media: CallMedia;
 }
 
-/**
- * Ce que chaque mode demande **de son propre chef** : le texte n'y figure
- * pas, parce qu'il n'est jamais un choix de l'appelant (ADR 0003, D2). Il
- * est là si le compte le porte, et `callModes` l'y ajoute — c'est ce qui
- * évite un menu à six entrées pour trois intentions.
- */
-const CALL_MODE_KEYS = [
-  {
-    id: "audio",
-    label: "mode.audio.label",
-    buttonLabel: "mode.audio.button",
-    icon: ICONS.phone,
-    media: { audio: true, video: false },
-  },
-  {
-    id: "video",
-    label: "mode.video.label",
-    buttonLabel: "mode.video.button",
-    icon: ICONS.cam,
-    media: { audio: true, video: true },
-  },
-  {
-    id: "text",
-    label: "mode.text.label",
-    buttonLabel: "mode.text.button",
-    icon: ICONS.chat,
-    media: { audio: false, video: false },
-  },
-] as const satisfies readonly {
-  id: string;
-  label: MsgKey;
-  buttonLabel: MsgKey;
-  icon: string;
-  media: { audio: boolean; video: boolean };
-}[];
+/** How each mode reads and looks; which modes exist is the core's rule. */
+const MODE_LOOK: Record<CallModeId, { label: MsgKey; buttonLabel: MsgKey; icon: string }> = {
+  audio: { label: "mode.audio.label", buttonLabel: "mode.audio.button", icon: ICONS.phone },
+  video: { label: "mode.video.label", buttonLabel: "mode.video.button", icon: ICONS.cam },
+  text: { label: "mode.text.label", buttonLabel: "mode.text.button", icon: ICONS.chat },
+};
 
-/**
- * Les modes proposés par le compte, libellés dans la langue courante.
- *
- * Le texte s'ajoute à **tous** les modes dès que le compte le transporte
- * (§4.9) — c'est ce qui fait passer l'appel audio du profil F.703 « — »
- * au profil 3c, et l'appel vidéo de la visiophonie (1b/1c) à la
- * conversation totale (4a/4b). L'**appel texte**, lui, n'est proposé que
- * là : sans transport, ce serait un appel sans rien.
- */
+/** The account's modes (`core/callmodes.ts`), labelled in the current language. */
 export function callModes(rtt?: RttTransport): CallModeDef[] {
-  const carriesText = rtt !== undefined && rtt !== "none";
-  return CALL_MODE_KEYS.filter((m) => m.id !== "text" || carriesText).map((m) => ({
-    id: m.id,
-    label: t(m.label),
-    buttonLabel: t(m.buttonLabel),
-    icon: m.icon,
-    // l'appel texte est le seul dont le texte est la raison d'être : il
-    // le porte par définition, les deux autres parce que le compte le porte
-    media: { ...m.media, text: m.id === "text" || carriesText },
-  }));
+  return coreCallModes(rtt).map((m) => {
+    const look = MODE_LOOK[m.id];
+    return { id: m.id, label: t(look.label), buttonLabel: t(look.buttonLabel), icon: look.icon, media: m.media };
+  });
 }
 
 export function currentMode(rtt?: RttTransport): CallModeDef {
@@ -324,94 +289,25 @@ export function displayTarget(target: string): string {
 // Appel entrant
 // ---------------------------------------------------------------------------
 
-/**
- * Le média d'un appel en un mot — l'ordre est celui de la richesse. Ce
- * n'est plus une déduction par l'absence : « texte » se lit désormais sur
- * `media.text`, comme « vidéo » se lit sur `media.video` (ADR 0003, D1).
- * Sert là où un seul mot suffit — l'icône de la sonnerie, la notification
- * système.
- */
-export type CallKind = "audio" | "video" | "text";
-
-export function callKind(media: CallMedia): CallKind {
-  return media.video ? "video" : media.audio ? "audio" : "text";
-}
-
-/**
- * Le **profil** de l'appel, au sens du tableau F.703 §7.2 : la combinaison
- * complète, et non le média dominant. C'est ce que l'écran d'appel entrant
- * annonce — dire « appel audio » d'un appel qui porte aussi le texte
- * cacherait précisément ce qui le rend accessible.
- *
- * Cinq combinaisons, les cinq que Trix propose (D2) :
- *
- * | profil | médias | F.703 §7.2 |
- * |---|---|---|
- * | `text` | T | 3a — text telephone service |
- * | `audio` | A | téléphonie (monomédia) |
- * | `audioText` | A + T | 3c — good text conversation with usable audio |
- * | `video` | A + V | 1b / 1c — videophone service |
- * | `videoText` | A + V + T | **4a / 4b — total conversation service** |
- *
- * Une vidéo sans audio se range avec la visiophonie : c'est bien l'image
- * qui domine, et le mot que l'utilisateur attend est « vidéo ».
- */
-export type CallProfile = "audio" | "audioText" | "video" | "videoText" | "text";
-
-export function callProfile(media: CallMedia): CallProfile {
-  if (media.video) return media.text ? "videoText" : "video";
-  if (media.audio) return media.text ? "audioText" : "audio";
-  return "text";
-}
-
-/**
- * Réponses proposées, dérivées des seuls médias offerts par l'INVITE
- * (docs/SPECS.md, phase 3) : vidéo proposée → réponse A/V possible ;
- * audio proposé → réponse audio seul possible. Une offre vidéo pure ne
- * laisse donc que la réponse A/V, une offre audio pure que l'audio. Une
- * offre qui ne porte ni l'un ni l'autre est un appel texte seul — le port
- * a déjà refusé celles qui n'étaient rien du tout (`unsupportedOffer`) —
- * et se répond en texte, sans micro ni caméra.
- *
- * Règle tenue ici et nulle part ailleurs : les deux gabarits déroulent
- * simplement cette liste.
- */
+/** An answer button: the core's act, labelled and with its icon. */
 export interface AnswerChoice {
-  act: "answer-av" | "answer-audio" | "answer-text";
+  act: AnswerAct;
   label: string;
   icon: string;
 }
 
-export function answerChoices(offered: CallMedia): AnswerChoice[] {
-  const choices: AnswerChoice[] = [];
-  // un choix par média offert, du plus riche au plus sobre : c'est tout le
-  // tableau de D3, et il n'y a rien de plus à dire — une offre A V T donne
-  // « A V T · A T · T », une offre V T donne « V T · T » (pas d'audio à
-  // proposer seul, puisqu'il n'est pas offert)
-  if (offered.video)
-    choices.push({ act: "answer-av", label: t("incoming.answerVideo"), icon: ICONS.cam });
-  if (offered.audio)
-    choices.push({ act: "answer-audio", label: t("incoming.answerAudio"), icon: ICONS.phone });
-  if (offered.text)
-    choices.push({ act: "answer-text", label: t("incoming.answerText"), icon: ICONS.chat });
-  return choices;
-}
+const ANSWER_LOOK: Record<AnswerAct, { label: MsgKey; icon: string }> = {
+  "answer-av": { label: "incoming.answerVideo", icon: ICONS.cam },
+  "answer-audio": { label: "incoming.answerAudio", icon: ICONS.phone },
+  "answer-text": { label: "incoming.answerText", icon: ICONS.chat },
+};
 
 /**
- * Médias de la réponse pour un choix donné. **Jamais un sur-ensemble de
- * l'offre** (F.703 §8.1, D3) : l'appelé retranche, il n'ajoute pas —
- * ajouter, cela se fait après, par re-INVITE.
- *
- * Le texte ne s'y décide pas : il suit l'offre partout où il est offert.
- * Il n'apparaît donc dans aucune ligne comme un choix — il est dans toutes
- * les réponses de la ligne, ou dans aucune.
+ * The answers on offer (`answerActs`, `core/callmodes.ts`), richest first.
+ * Both templates simply unroll this list.
  */
-function answerMedia(act: AnswerChoice["act"], offered: CallMedia): CallMedia {
-  if (act === "answer-av") return { audio: offered.audio, video: true, text: offered.text };
-  // répondre en texte, c'est n'allumer ni micro ni caméra — et ce choix
-  // n'est proposé que si le texte est offert, donc `text: true` sans risque
-  if (act === "answer-text") return { audio: false, video: false, text: true };
-  return { audio: true, video: false, text: offered.text };
+export function answerChoices(offered: CallMedia): AnswerChoice[] {
+  return answerActs(offered).map((act) => ({ act, label: t(ANSWER_LOOK[act].label), icon: ANSWER_LOOK[act].icon }));
 }
 
 /** Identité de l'appelant : nom affiché si le From en porte un, URI sinon. */

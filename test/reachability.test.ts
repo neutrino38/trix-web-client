@@ -139,6 +139,12 @@ async function loadModule() {
   return import("../src/ui/reachability.js");
 }
 
+/** Le niveau, le motif et la phrase, qui sont au noyau (ADR 0011, D6). */
+async function loadCore() {
+  vi.resetModules();
+  return import("../src/core/reachability.js");
+}
+
 /** L'onglet passe en arrière-plan, comme le ferait un changement d'onglet. */
 function hide(): void {
   (document as unknown as { visibilityState: string }).visibilityState = "hidden";
@@ -170,7 +176,7 @@ afterEach(() => {
 describe("niveaux de joignabilité (D1)", () => {
   it("seuls `ready` et `in_call` sont joignables", async () => {
     stubBrowser({});
-    const { reachabilityOf } = await loadModule();
+    const { reachabilityOf } = await loadCore();
     expect(reachabilityOf("ready")).toBe("direct");
     expect(reachabilityOf("in_call")).toBe("direct");
     for (const state of UNREACHABLE) expect(reachabilityOf(state)).toBe("none");
@@ -178,20 +184,27 @@ describe("niveaux de joignabilité (D1)", () => {
 
   it("rien ne produit `deferred` tant que le push n'existe pas", async () => {
     stubBrowser({});
-    const { reachabilityOf } = await loadModule();
+    const { reachabilityOf } = await loadCore();
     const levels = ["ready", "in_call", ...UNREACHABLE].map(reachabilityOf);
     expect(levels).not.toContain("deferred");
   });
 
   it("la phrase ne se dit que si l'on avait demandé à être joignable", async () => {
     stubBrowser({ stored: {} });
-    const { reachSentence } = await loadModule();
+    const { reachSentence } = await loadCore();
     // personne n'a demandé : l'accueil n'est pas une panne
     expect(reachSentence("reconnecting")).toBeNull();
     stubBrowser({ stored: { "trix-resume": "acc-1" } });
-    const withMarker = await loadModule();
+    const withMarker = await loadCore();
     expect(withMarker.reachSentence("reconnecting")).toBe("reach.none");
     expect(withMarker.reachSentence("ready")).toBeNull();
+  });
+
+  it("le motif : hors ligne d'abord, puis ce que le cycle de vie a dit, puis le simple constat", async () => {
+    const { unreachableReason } = await loadCore();
+    expect(unreachableReason(false, "freeze")).toBe("offline");
+    expect(unreachableReason(true, "freeze")).toBe("freeze");
+    expect(unreachableReason(true, null)).toBe("lost");
   });
 });
 

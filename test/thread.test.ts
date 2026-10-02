@@ -13,7 +13,7 @@ import {
   lastStranger,
   threadEvents,
   threadSections,
-} from "../src/ui/thread.js";
+} from "../src/core/thread.js";
 import type { CallLogEntry, Contact, MessageEntry } from "../src/storage/store.js";
 
 const NOW = new Date(2026, 8, 27, 15, 0).getTime();

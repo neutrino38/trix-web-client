@@ -53,7 +53,7 @@ import {
   type Segment,
   type Thread,
   type ThreadGroup,
-} from "../../thread.js";
+} from "../../../core/thread.js";
 import {
   HISTORY_ICONS,
   ICONS,

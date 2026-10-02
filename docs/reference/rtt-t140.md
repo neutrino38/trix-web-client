@@ -200,7 +200,7 @@ avec « Copier ».
 
 ## L'export en sous-titres
 
-La conversation se relit, se copie, et s'exporte en **WebVTT** (`ui/subtitles.ts`) depuis
+La conversation se relit, se copie, et s'exporte en **WebVTT** (`core/subtitles.ts`) depuis
 le même popup. Le zéro du fichier est le **décroché**, pas l'heure du jour : il se pose
 tel quel sur un enregistrement de l'appel. Un appel jamais établi n'a pas de
 communication à caler — son propre début fait alors office d'origine.

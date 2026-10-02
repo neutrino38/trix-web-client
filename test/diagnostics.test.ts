@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { defineMachine, goto, stay } from "finite-state-language";
-import { machineLogger, watchMachine, type Diagnosable, type Sink } from "../src/ui/diagnostics.js";
-import { useLocale } from "../src/i18n/index.js";
+import { machineLogger, watchMachine, type Diagnosable, type Sink } from "../src/core/diagnostics.js";
+import { translate, useLocale } from "../src/i18n/index.js";
 import { msg, type Msg } from "../src/i18n/types.js";
 
 // les traces sortent traduites, comme l'écran : un rapport de bug reste
@@ -73,7 +73,7 @@ describe("traces d'erreur des automates", () => {
   it("signale une erreur métier une seule fois, avec son code et son état", async () => {
     const { sink, lines } = fakeSink();
     const m = Machine.start();
-    watchMachine(m as unknown as Diagnosable, sink);
+    watchMachine(m as unknown as Diagnosable, translate, sink);
 
     m.send({ type: "fail" });
     await tick();
@@ -92,7 +92,7 @@ describe("traces d'erreur des automates", () => {
   it("signale un échec d'appel", async () => {
     const { sink, lines } = fakeSink();
     const m = Machine.start();
-    watchMachine(m as unknown as Diagnosable, sink);
+    watchMachine(m as unknown as Diagnosable, translate, sink);
 
     m.send({ type: "clear" });
     await tick();
@@ -102,7 +102,7 @@ describe("traces d'erreur des automates", () => {
   it("signale un événement resté en file d'attente", async () => {
     const { sink, lines } = fakeSink();
     const m = Machine.start();
-    watchMachine(m as unknown as Diagnosable, sink);
+    watchMachine(m as unknown as Diagnosable, translate, sink);
 
     // `again` n'est pas écouté par initial_state : il est mis en attente
     m.send({ type: "again" });
@@ -114,7 +114,7 @@ describe("traces d'erreur des automates", () => {
   it("signale la mort de la machine avec le journal des transitions", async () => {
     const { sink, lines } = fakeSink();
     const m = Machine.start();
-    watchMachine(m as unknown as Diagnosable, sink);
+    watchMachine(m as unknown as Diagnosable, translate, sink);
 
     m.send({ type: "boom" });
     await m.done;
@@ -131,7 +131,7 @@ describe("traces d'erreur des automates", () => {
   it("ne dit rien quand tout va bien", async () => {
     const { sink, lines } = fakeSink();
     const m = Machine.start();
-    watchMachine(m as unknown as Diagnosable, sink);
+    watchMachine(m as unknown as Diagnosable, translate, sink);
 
     m.send({ type: "ok" });
     await tick();

@@ -25,6 +25,9 @@
  *
  * Un seul point d'entrée, idempotent : `watchReachability`, appelé depuis
  * `main.ts` comme l'est `watchSystemLifecycle`.
+ *
+ * Le niveau, le motif et la phrase sont des données, qui appartiennent au
+ * noyau (`core/reachability.ts`, ADR 0011) ; ce module les dit.
  */
 
 import type { PhoneInstance } from "../machines/phone.js";
@@ -44,33 +47,13 @@ import { setFaviconState } from "./favicon.js";
 import { setTitleOverride } from "./title.js";
 import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
-
-/**
- * Les trois niveaux de D1 — et non un booléen.
- *
- * À l'étape 1, **rien ne produit jamais `deferred`** : aucun code ne
- * l'écrit, aucun écran ne l'affiche, et le niveau se lit comme un booléen.
- * Il figure quand même ici, parce que le jour où le push arrivera (ADR
- * 0007), « la page dort » cessera de vouloir dire « vous êtes
- * injoignable » : le prévoir coûte une branche morte, ne pas le prévoir
- * coûterait la reprise de toute la logique d'alerte et de ses six
- * traductions.
- */
-export type Reachability = "direct" | "deferred" | "none";
-
-/**
- * Pourquoi l'on n'est pas joignable — ce qui fait la phrase. Les deux
- * premiers motifs viennent de `ui/lifecycle.ts`, les autres se constatent
- * ici : le réseau sur `navigator.onLine`, le déchargement sur
- * `document.wasDiscarded` au chargement suivant, et `lost` quand rien
- * n'explique l'absence — l'enregistrement est simplement tombé, ce qui est
- * le cas le plus courant et mérite mieux qu'un motif emprunté à un autre.
- *
- * Le `leave` de `PageSleepReason` n'y figure pas, et c'est pour cela que
- * cette liste est écrite et non dérivée : une page qui s'en va n'a plus
- * personne à qui expliquer quoi que ce soit.
- */
-export type UnreachableReason = "freeze" | "system" | "offline" | "discard" | "lost";
+import {
+  reachabilityOf,
+  reachabilityWanted,
+  unreachableReason,
+  type Reachability,
+  type UnreachableReason,
+} from "../core/reachability.js";
 
 /** Sous ce seuil, ce n'est pas une absence : c'est une reconnexion (D2). */
 const NOTIFY_AFTER_MS = 10_000;
@@ -155,42 +138,6 @@ let pinHint = discarded !== null && !pinHintShown();
 if (pinHint) setPinHintShown();
 
 /**
- * Le niveau dérivé de l'état de la machine, et de lui seul (D1). `ready`
- * et `in_call` sont les deux états où le contact est vivant chez le
- * registrar ; tous les autres passent par `stopSip()`.
- */
-export function reachabilityOf(state: string): Reachability {
-  return state === "ready" || state === "in_call" ? "direct" : "none";
-}
-
-/**
- * Cette absence-là mérite-t-elle qu'on en fasse une affaire ? Seulement si
- * l'utilisateur voulait être joignable — c'est exactement ce que dit le
- * marqueur de reprise (D4). Sans lui, personne n'a demandé à être
- * enregistré : l'accueil, un formulaire ouvert ou une première connexion
- * en cours ne sont pas des pannes, et n'ont rien à annoncer.
- */
-function wanted(): boolean {
-  return resumeAccount() !== null;
-}
-
-/**
- * La phrase que la page affiche, ou `null` quand il n'y a rien à dire.
- *
- * `direct` ne se redit pas : la pastille de l'en-tête porte déjà
- * « Enregistré », et une phrase de plus pour confirmer que tout va bien
- * n'informerait personne. `deferred` n'en a pas non plus, mais pour une
- * autre raison — à l'étape 1, rien ne le produit (D1).
- *
- * Et rien ne se dit tant que personne n'a demandé à être joignable : un
- * formulaire ouvert, une première connexion en cours ou l'accueil ne sont
- * pas des pannes.
- */
-export function reachSentence(state: string): MsgKey | null {
-  return reachabilityOf(state) === "none" && wanted() ? "reach.none" : null;
-}
-
-/**
  * La période d'injoignabilité constatée au chargement, tant qu'elle n'a
  * pas été masquée. `null` quand ce chargement n'en suit aucune.
  */
@@ -223,17 +170,6 @@ export function noteSleepReason(reason: PageSleepReason): void {
   }
   leaving = false;
   noted = reason;
-}
-
-/**
- * Le motif à retenir au début d'un épisode, du plus sûr au plus vague : un
- * navigateur qui se dit hors ligne le sait mieux que nous, puis vient ce
- * que le cycle de vie a rapporté, et à défaut rien de plus que le constat —
- * l'enregistrement est tombé, et on ne sait pas de quoi.
- */
-function reasonOf(): UnreachableReason {
-  if (!navigator.onLine) return "offline";
-  return noted ?? "lost";
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +267,7 @@ function beginEpisode(): void {
   episodeSince = Date.now();
   // le motif est arrêté ici : ce qui arrivera ensuite — un retour en ligne,
   // un dégel — ne doit pas réécrire l'explication de ce qui a commencé
-  episodeReason = reasonOf();
+  episodeReason = unreachableReason(navigator.onLine, noted);
   setTitleOverride(t("reach.title"));
   setFaviconState(DOT_COLOR);
   // D6 : au premier gel constaté, et une seule fois, Trix rappelle les deux
@@ -379,7 +315,7 @@ function update(): void {
     return;
   }
   disarmStamp();
-  if (wanted()) beginEpisode();
+  if (reachabilityWanted()) beginEpisode();
 }
 
 /**

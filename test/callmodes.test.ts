@@ -10,7 +10,7 @@
  * dans toutes les réponses d'une ligne, ou dans aucune.
  */
 import { describe, expect, it } from "vitest";
-import { answerChoices, callModes, callProfile } from "../src/ui/screens/call/parts.js";
+import { answerActs, answerMedia, callModes, callProfile } from "../src/core/callmodes.js";
 import type { CallMedia } from "../src/sip/port.js";
 
 const offer = (audio: boolean, video: boolean, text: boolean): CallMedia => ({
@@ -20,9 +20,9 @@ const offer = (audio: boolean, video: boolean, text: boolean): CallMedia => ({
 });
 
 const acts = (audio: boolean, video: boolean, text = false): string[] =>
-  answerChoices(offer(audio, video, text)).map((c) => c.act);
+  answerActs(offer(audio, video, text));
 
-describe("answerChoices", () => {
+describe("answerActs", () => {
   it("vidéo proposée : réponse A/V et réponse audio seul", () => {
     expect(acts(true, true)).toEqual(["answer-av", "answer-audio"]);
   });
@@ -57,6 +57,38 @@ describe("answerChoices", () => {
     expect(acts(true, false, false)).toEqual(["answer-audio"]);
     expect(acts(false, true, false)).toEqual(["answer-av"]);
     expect(acts(false, false, true)).toEqual(["answer-text"]);
+  });
+});
+
+/**
+ * Ce que chaque réponse allume. L'appelé retranche, il n'ajoute pas : sur
+ * toutes les offres et pour chaque réponse proposée, aucun média de la
+ * réponse n'est absent de l'offre — sauf la vidéo de « answer-av », qui
+ * n'est proposée que si la vidéo est offerte.
+ */
+describe("answerMedia", () => {
+  const all = [false, true].flatMap((a) => [false, true].flatMap((v) => [false, true].map((t) => offer(a, v, t))));
+
+  it("n'est jamais un sur-ensemble de l'offre (F.703 §8.1)", () => {
+    for (const o of all) {
+      for (const act of answerActs(o)) {
+        const m = answerMedia(act, o);
+        expect(!m.audio || o.audio, `${act} sur ${JSON.stringify(o)}`).toBe(true);
+        expect(!m.video || o.video, `${act} sur ${JSON.stringify(o)}`).toBe(true);
+        expect(!m.text || o.text, `${act} sur ${JSON.stringify(o)}`).toBe(true);
+      }
+    }
+  });
+
+  it("le texte suit l'offre dans toutes les réponses de la ligne", () => {
+    const o = offer(true, true, true);
+    expect(answerActs(o).map((act) => answerMedia(act, o).text)).toEqual([true, true, true]);
+    const p = offer(true, true, false);
+    expect(answerActs(p).map((act) => answerMedia(act, p).text)).toEqual([false, false]);
+  });
+
+  it("répondre en texte n'allume ni micro ni caméra", () => {
+    expect(answerMedia("answer-text", offer(true, true, true))).toEqual({ audio: false, video: false, text: true });
   });
 });
 

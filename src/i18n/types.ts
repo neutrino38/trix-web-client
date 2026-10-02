@@ -63,6 +63,18 @@ export interface Msg {
   vars?: Vars;
 }
 
+/**
+ * La traduction telle que le noyau la reçoit (ADR 0011) : il ne lit aucun
+ * dictionnaire lui-même, l'appelant lui passe le sien et sa langue
+ * courante. Aujourd'hui celui de l'UI (`translate`, `i18n/index.ts`) ;
+ * demain le catalogue du noyau (D9).
+ */
+export interface Translate {
+  t(key: MsgKey | Msg, vars?: Vars): string;
+  /** Balise BCP-47 de la langue courante, pour les formateurs `Intl`. */
+  locale(): Locale;
+}
+
 /** Fabrique — `msg("error.proxyLost")`, `msg("error.regLost", { cause })`. */
 export function msg(key: MsgKey, vars?: Vars): Msg {
   return vars ? { key, vars } : { key };
