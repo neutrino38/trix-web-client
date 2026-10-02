@@ -31,6 +31,7 @@ stateDiagram-v2
   state ready
   state "in_call" as in_call
   state reconnecting
+  state offline
   state sleeping
   state reg_failed
   state unregistering
@@ -57,15 +58,18 @@ stateDiagram-v2
   switching --> connecting: task:saveVault (compte changé)
   deleting --> home: task:deleteAccount (compte supprimé)
   connecting --> registering: sip:connected (WebSocket ouverte)
+  connecting --> offline: sip:invalidProxy (réseau coupé), sip:disconnected (réseau coupé), sys:offline (réseau coupé), after 10 s (réseau coupé)
   connecting --> reconnecting: sip:invalidProxy (reconnexion auto), sip:disconnected (reconnexion auto), after 10 s (reconnexion auto)
   connecting --> reg_failed: sip:invalidProxy, sip:disconnected, after 10 s
   connecting --> sleeping: sys:sleep (mise en veille)
   registering --> ready: sip:registered (REGISTER OK)
+  registering --> offline: sip:registrationFailed (réseau coupé), sip:disconnected (réseau coupé), sys:offline (réseau coupé), after 30 s (réseau coupé)
   registering --> reconnecting: sip:registrationFailed (reconnexion auto), sip:disconnected (reconnexion auto), after 30 s (reconnexion auto)
   registering --> reg_failed: sip:registrationFailed, sip:disconnected, after 30 s
   registering --> sleeping: sys:sleep (mise en veille)
   ready --> ready: ui:call (cible vide), sip:incoming (contact bloqué : 603), sip:incoming (ne pas déranger : 486), sip:registered (re-REGISTER OK), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu), ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), sys:wake (réveil : REGISTER rafraîchi)
   ready --> in_call: ui:call, sip:incoming
+  ready --> offline: sip:registrationFailed (réseau coupé), sip:disconnected (réseau coupé), sys:offline (réseau coupé)
   ready --> reg_failed: sip:registrationFailed
   ready --> reconnecting: sip:registrationFailed (REGISTER sans réponse), sip:disconnected (connexion perdue)
   ready --> reconfiguring: ui:backToSettings (retour paramètres)
@@ -74,6 +78,7 @@ stateDiagram-v2
   ready --> sleeping: sys:sleep (mise en veille)
   ready --> connecting: sys:wake (réveil : transport fermé)
   in_call --> sleeping: call:answered (veille : appel raccroché), call:missed (veille : appel raccroché), call:canceled (veille : appel raccroché), call:rejected (veille : appel raccroché), call:dropped (veille : appel raccroché)
+  in_call --> offline: call:answered (réseau coupé), call:missed (réseau coupé), call:canceled (réseau coupé), call:rejected (réseau coupé), call:dropped (réseau coupé)
   in_call --> reconnecting: call:answered (proxy perdu pendant l'appel), call:missed (proxy perdu pendant l'appel), call:canceled (proxy perdu pendant l'appel), call:rejected (proxy perdu pendant l'appel), call:dropped (proxy perdu pendant l'appel)
   in_call --> reg_failed: call:answered (enregistrement perdu pendant l'appel), call:missed (enregistrement perdu pendant l'appel), call:canceled (enregistrement perdu pendant l'appel), call:rejected (enregistrement perdu pendant l'appel), call:dropped (enregistrement perdu pendant l'appel)
   in_call --> ready: call:answered (appel terminé), call:missed (appel terminé), call:canceled (appel terminé), call:rejected (appel terminé), call:dropped (appel terminé)
@@ -83,6 +88,13 @@ stateDiagram-v2
   reconnecting --> switching: ui:switchAccount (changement de compte)
   reconnecting --> home: ui:logout (déconnexion)
   reconnecting --> sleeping: sys:sleep (mise en veille)
+  reconnecting --> offline: sys:offline (réseau coupé), after 10 s (réseau coupé)
+  offline --> connecting: sys:wake (réseau revenu), ui:retry (reconnexion manuelle)
+  offline --> offline: sys:wake (toujours hors ligne), ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu)
+  offline --> sleeping: sys:sleep (mise en veille)
+  offline --> reconfiguring: ui:backToSettings (paramètres)
+  offline --> switching: ui:switchAccount (changement de compte)
+  offline --> home: ui:logout (déconnexion)
   sleeping --> connecting: sys:wake (réveil : réenregistrement)
   sleeping --> sleeping: ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu)
   sleeping --> home: ui:logout
@@ -93,6 +105,7 @@ stateDiagram-v2
   reg_failed --> switching: ui:switchAccount (changement de compte)
   reg_failed --> configuring: ui:backToSettings
   reg_failed --> home: ui:logout
+  reg_failed --> offline: sys:offline (réseau coupé)
   unregistering --> home: sip:disconnected (déconnecté), after 5 s (déconnexion forcée)
   in_call : sbb CallBlock
 ```
@@ -107,22 +120,23 @@ Blocs entrés depuis cet état (`fx.sbb`) :
 
 | État | Événements |
 | --- | --- |
-| `initial_state` | `sys:sleep`, `sys:wake` |
-| `vault_error` | `sys:sleep`, `sys:wake` |
-| `wiping_vault` | `sys:sleep`, `sys:wake` |
-| `home` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake` |
-| `configuring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake` |
-| `reconfiguring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sys:sleep`, `sys:wake` |
-| `saving` | `sys:sleep`, `sys:wake` |
-| `switching` | `sip:disconnected`, `sip:unregistered`, `sip:registrationFailed`, `sip:incoming`, `sys:sleep`, `sys:wake` |
-| `deleting` | `sys:sleep`, `sys:wake` |
+| `initial_state` | `sys:sleep`, `sys:wake`, `sys:offline` |
+| `vault_error` | `sys:sleep`, `sys:wake`, `sys:offline` |
+| `wiping_vault` | `sys:sleep`, `sys:wake`, `sys:offline` |
+| `home` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake`, `sys:offline` |
+| `configuring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake`, `sys:offline` |
+| `reconfiguring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sys:sleep`, `sys:wake`, `sys:offline` |
+| `saving` | `sys:sleep`, `sys:wake`, `sys:offline` |
+| `switching` | `sip:disconnected`, `sip:unregistered`, `sip:registrationFailed`, `sip:incoming`, `sys:sleep`, `sys:wake`, `sys:offline` |
+| `deleting` | `sys:sleep`, `sys:wake`, `sys:offline` |
 | `connecting` | `sip:incoming`, `sys:wake` |
 | `registering` | `sip:incoming`, `sys:wake` |
 | `ready` | `sip:connected`, `sip:failed`, `sip:ended` |
 | `reconnecting` | `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy` |
-| `sleeping` | `sys:sleep`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed` |
+| `offline` | `sys:offline`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy` |
+| `sleeping` | `sys:sleep`, `sys:offline`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed` |
 | `reg_failed` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy`, `sys:sleep`, `sys:wake` |
-| `unregistering` | `sip:unregistered`, `sip:registrationFailed`, `sip:incoming`, `sys:sleep`, `sys:wake` |
+| `unregistering` | `sip:unregistered`, `sip:registrationFailed`, `sip:incoming`, `sys:sleep`, `sys:wake`, `sys:offline` |
 
 ## CallBlock — bloc de service (SBB)
 
@@ -187,16 +201,16 @@ stateDiagram-v2
 
 | État | Événements |
 | --- | --- |
-| `dialing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
-| `ringing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
-| `early_media` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:progress` |
-| `ringing_in` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake` |
-| `answering` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:progress` |
-| `connected` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:offering`, `sip:sharing`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `preparing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `renegotiating` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `media_offer` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
-| `hangingup` | `sip:progress`, `sip:accepted`, `sip:confirmed`, `sys:sleep`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:dtmf`, `sip:registrationFailed`, `sip:registered`, `sip:connected`, `sys:wake`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory` |
+| `dialing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline` |
+| `ringing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline` |
+| `early_media` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `sip:progress` |
+| `ringing_in` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline` |
+| `answering` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `ui:dtmf`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `sip:progress` |
+| `connected` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:offering`, `sip:sharing`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `preparing` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `renegotiating` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `media_offer` | `sip:registrationFailed`, `sip:incoming`, `sip:mediaRefused`, `sip:offering`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `sip:sharing`, `sip:shareEnded`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `sip:confirmed`, `sip:accepted`, `sip:progress` |
+| `hangingup` | `sip:progress`, `sip:accepted`, `sip:confirmed`, `sys:sleep`, `sip:incoming`, `sip:mediaChanged`, `sip:mediaRefused`, `sip:sharing`, `sip:shareEnded`, `sip:peerSharing`, `sip:mediaOffer`, `ui:toggleMedia`, `ui:toggleShare`, `ui:acceptMedia`, `ui:rejectMedia`, `ui:togglePause`, `sip:peerPaused`, `ui:dtmf`, `sip:registrationFailed`, `sip:registered`, `sip:connected`, `sys:wake`, `sys:offline`, `ui:hangup`, `ui:backToSettings`, `ui:logout`, `ui:switchAccount`, `ui:call`, `ui:clearHistory` |
 
 ## PresenceMachine — machine
 

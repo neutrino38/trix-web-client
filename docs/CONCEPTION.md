@@ -211,6 +211,12 @@ Décisions :
 - En `ready`, l'indicateur UI suit l'état de la machine, pas un flag séparé. Une perte de
   transport (`sip:disconnected`, REGISTER resté sans réponse) part en `reconnecting` ; un refus
   du registrar (réponse SIP) part en `reg_failed`.
+- **Réseau coupé** : un réseau absent n'est pas un paramètre faux. L'événement `offline` du
+  navigateur (`sys:offline`) mène tout de suite en `offline`, et tout échec de connexion ou
+  d'enregistrement constaté pendant que `navigator.onLine` est faux y mène aussi, au lieu de
+  `reg_failed`. Rien n'y est tenté ; le retour en ligne (`sys:wake`) réenregistre, puis la
+  boucle de `reconnecting` prend le relais si le proxy reste injoignable. Un appel en cours
+  n'est pas raccroché par la coupure : s'il tombe, son retour mène en `offline`.
 - Timers : `after` de FSL (armé à l'entrée, annulé à la sortie).
 
 #### Le cycle de vie complet (ADR 0006)

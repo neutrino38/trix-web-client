@@ -1809,6 +1809,134 @@ describe("PhoneMachine — reprise de l'enregistrement (ADR 0006, D4)", () => {
  * oubli : il a passé la main à `CallBlock`, qui les traite tous les deux
  * (raccrocher, puis laisser `sleepRequested` derrière lui).
  */
+describe("PhoneMachine — network cut", () => {
+  /** The browser's view of the network, switched by the test. */
+  function network(phone: PhoneInstance): { up: boolean } {
+    const net = { up: true };
+    phone.context.online = () => net.up;
+    return net;
+  }
+
+  it("the browser says offline: offline state, no setting blamed", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const net = network(phone);
+    net.up = false;
+    phone.send({ type: "sys:offline" });
+    expect(phone.state).toBe("offline");
+    expect(sip.stopped).toBe(1);
+    expect(phone.context.lastError).toEqual({ key: "error.offline" });
+    expect(phone.context.suspectFields).toBeNull();
+  });
+
+  it("nothing is tried while offline; the return registers again", async () => {
+    vi.useFakeTimers();
+    try {
+      const { phone, sip } = await bootTo("ready", CFG);
+      const net = network(phone);
+      net.up = false;
+      phone.send({ type: "sys:offline" });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(phone.state).toBe("offline");
+      expect(sip.started).toHaveLength(1);
+
+      // a wake while still offline (tab back in front) changes nothing
+      phone.send({ type: "sys:wake" });
+      expect(phone.state).toBe("offline");
+
+      net.up = true;
+      phone.send({ type: "sys:wake" });
+      expect(phone.state).toBe("connecting");
+      expect(sip.started).toHaveLength(2);
+      sip.send({ type: "sip:connected" });
+      sip.send({ type: "sip:registered" });
+      expect(phone.state).toBe("ready");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a network back but a proxy still out of reach joins the reconnection loop", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const net = network(phone);
+    net.up = false;
+    phone.send({ type: "sys:offline" });
+    net.up = true;
+    phone.send({ type: "sys:wake" });
+    sip.send({ type: "sip:disconnected" });
+    expect(phone.state).toBe("reconnecting");
+  });
+
+  it("starting without a network: offline, not reg_failed", async () => {
+    const { phone, sip } = await bootTo("connecting", CFG);
+    network(phone).up = false;
+    sip.send({ type: "sip:disconnected" });
+    expect(phone.state).toBe("offline");
+    expect(phone.context.lastError).toEqual({ key: "error.offline" });
+  });
+
+  it("a REGISTER lost to a cut network does not blame the credentials", async () => {
+    vi.useFakeTimers();
+    try {
+      const { store } = fakeStore(CFG);
+      const sip = new FakeSip();
+      const phone = PhoneMachine.start({ args: { store, sip } });
+      await vi.advanceTimersByTimeAsync(0);
+      phone.send({ type: "ui:useAccount", id: SEED_ID });
+      await vi.advanceTimersByTimeAsync(0);
+      sip.send({ type: "sip:connected" });
+      expect(phone.state).toBe("registering");
+      network(phone).up = false;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(phone.state).toBe("offline");
+      expect(phone.context.suspectFields).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refused credentials stay refused once the network is back", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const net = network(phone);
+    net.up = false;
+    phone.send({ type: "sys:offline" });
+    net.up = true;
+    phone.send({ type: "sys:wake" });
+    sip.send({ type: "sip:connected" });
+    sip.send({ type: "sip:registrationFailed", cause: "Forbidden", statusCode: 403 });
+    expect(phone.state).toBe("reg_failed");
+  });
+
+  it("a call dropped by the cut lands in offline", async () => {
+    const { phone, sip } = await bootTo("ready", CFG);
+    const net = network(phone);
+    phone.send({ type: "ui:call", target: "sip:bob@example.fr", media: { audio: true, video: false, text: false } });
+    sip.sendCall({ type: "sip:accepted" });
+    net.up = false;
+    phone.send({ type: "sys:offline" });
+    expect(phone.state).toBe("in_call"); // a short cut may not end the call
+    sip.send({ type: "sip:disconnected" });
+    sip.sendCall({ type: "sip:ended", cause: "Connection Error", originator: "system" });
+    expect(phone.state).toBe("offline");
+    expect(phone.context.callError).toEqual({ key: "error.callDropped" });
+  });
+
+  it("every state handles sys:offline", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/machines/phone.ts", import.meta.url)),
+      "utf8",
+    );
+    const graph = machineGraphs(source, "phone.ts")[0]!;
+    for (const state of graph.states) {
+      if (state === "in_call") continue; // the block holds the mailbox
+      const events = [
+        ...graph.edges.filter((e) => e.from === state).flatMap((e) => e.labels),
+        ...(graph.consumed.find((c) => c.state === state)?.events ?? []),
+      ].map((label) => label.replace(/ \(.*\)$/, ""));
+      expect(events, `state ${state}`).toContain("sys:offline");
+    }
+  });
+});
+
 describe("PhoneMachine — l'endormissement atteint chaque état", () => {
   it("tous les états traitent sys:sleep et sys:wake", () => {
     const source = readFileSync(

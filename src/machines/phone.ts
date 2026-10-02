@@ -5,12 +5,13 @@
  *
  * Invariant : l'UA SIP ne vit que dans connecting → registering → ready
  * → in_call → unregistering. Toute sortie de ce couloir (reconnecting,
- * sleeping, reg_failed, retours paramètres) passe par stopSip().
+ * offline, sleeping, reg_failed, retours paramètres) passe par stopSip().
  *
  * Perte du proxy : hors appel, `reconnecting` retente toutes les 10 s en
  * boucle (autoReconnect) ; en appel, l'appel est raccroché avec une
- * erreur spécifique puis on rejoint la boucle. Veille machine :
- * `sleeping` raccroche et désenregistre, le réveil réenregistre.
+ * erreur spécifique puis on rejoint la boucle. Réseau coupé (le navigateur
+ * le dit) : `offline` n'essaie rien et réenregistre à son retour. Veille
+ * machine : `sleeping` raccroche et désenregistre, le réveil réenregistre.
  */
 
 import { defineMachine, goto, stay, type Fx } from "finite-state-language";
@@ -66,6 +67,13 @@ export interface PhoneCtx {
    * `main.ts` qui la branche ici — les deux machines ne se voient pas (D12).
    */
   doNotDisturb: () => boolean;
+  /**
+   * Does the browser believe it has a network (`navigator.onLine`)? Read
+   * when a connection fails, to tell a cut network from a wrong setting,
+   * and on every return, to know whether registering again is worth it.
+   * `false` is reliable; `true` only means an interface is up.
+   */
+  online: () => boolean;
   /**
    * Les comptes du coffre, dans l'ordre où ils y sont (ADR 0002). La
    * machine en manipule une liste sans savoir combien il en tient : la
@@ -184,12 +192,26 @@ function stopSip(ctx: PhoneCtx): void {
  * en réessayant).
  */
 function fail(ctx: PhoneCtx, message: Msg, code: string, fields: SuspectField) {
+  // sans réseau, ni le proxy ni les identifiants ne sont en cause
+  if (!ctx.online()) return goOffline(ctx);
   ctx.lastError = message;
   ctx.lastErrorCode = code;
   ctx.suspectFields = fields;
   if (ctx.autoReconnect && fields === "proxy") return goto("reconnecting", "reconnexion auto");
   ctx.autoReconnect = false;
   return goto("reg_failed");
+}
+
+/**
+ * The network is gone: no setting is at fault, and nothing is worth trying
+ * until it comes back. `offline` waits for that return, then registers
+ * again by itself.
+ */
+function goOffline(ctx: PhoneCtx) {
+  ctx.lastError = msg("error.offline");
+  ctx.lastErrorCode = null;
+  ctx.suspectFields = null;
+  return goto("offline", "réseau coupé");
 }
 
 /**
@@ -647,6 +669,7 @@ function back(ctx: PhoneCtx, ev: CallReturn, callError: Msg | null) {
   if (sleep) return goto("sleeping", "veille : appel raccroché");
   if (ev.type === "call:dropped") {
     ctx.callError = msg("error.callDropped");
+    if (!ctx.online()) return goOffline(ctx);
     return goto("reconnecting", "proxy perdu pendant l'appel");
   }
   return ctx.lastError
@@ -662,6 +685,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     sip: null as unknown as SipPort,
     transcript: () => [],
     doNotDisturb: () => false,
+    online: () => true,
     accounts: [],
     activeId: null,
     editing: null,
@@ -747,6 +771,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // doit pas pour autant empêcher la reprise qui suit
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "boot" },
     },
@@ -765,6 +790,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:resetVault": () => goto("wiping_vault"),
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "boot" },
     },
@@ -785,6 +811,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         },
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "boot" },
     },
@@ -809,6 +836,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:incoming": refuseIncoming("timeout"),
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "home" },
     },
@@ -825,6 +853,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:incoming": refuseIncoming("timeout"),
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "config" },
     },
@@ -842,6 +871,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:registrationFailed": () => undefined,
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "config" },
     },
@@ -857,6 +887,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         },
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "config" },
     },
@@ -893,6 +924,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:incoming": refuseIncoming("timeout"),
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "call" },
     },
@@ -933,6 +965,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         },
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       meta: { screen: "config" },
     },
@@ -952,6 +985,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           fail(ctx, msg("error.wssRefused"), "WSS_CONNECT", "proxy"),
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         "sys:wake": () => undefined,
+        "sys:offline": (_ev, ctx) => goOffline(ctx),
       },
       after: {
         delay: 10_000,
@@ -981,6 +1015,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           fail(ctx, msg("error.wssLostDuringReg"), "WSS_LOST", "proxy"),
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         "sys:wake": () => undefined,
+        "sys:offline": (_ev, ctx) => goOffline(ctx),
       },
       after: {
         delay: 30_000,
@@ -1051,6 +1086,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           // qui a changé d'algorithme depuis l'enregistrement initial :
           // le défi resté sans réponse prime alors sur « enregistrement perdu »
           const unanswered = unansweredChallenge(ev);
+          if (!unanswered && !ev.statusCode && !ctx.online()) return goOffline(ctx);
           ctx.lastError = unanswered?.error ?? msg("error.regLost", { cause: ev.cause });
           ctx.lastErrorCode =
             unanswered?.code ?? (ev.statusCode ? `SIP ${ev.statusCode}` : ev.cause);
@@ -1060,6 +1096,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
             : goto("reconnecting", "REGISTER sans réponse");
         },
         "sip:disconnected": (_ev, ctx) => {
+          if (!ctx.online()) return goOffline(ctx);
           ctx.lastError = msg("error.proxyLost");
           ctx.lastErrorCode = "WSS_LOST";
           ctx.suspectFields = "proxy";
@@ -1089,6 +1126,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "ui:unblockContact": unblockContact,
         "ui:setFlashAlert": setFlashAlert,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
+        // le navigateur dit le réseau coupé : la WSS mettrait des minutes à
+        // s'en apercevoir, et l'appel serait proposé sans pouvoir partir
+        "sys:offline": (_ev, ctx) => goOffline(ctx),
         // réveil détecté : la WSS peut être morte sans que le navigateur le
         // sache. Un REGISTER sur le transport existant tranche — même Call-ID,
         // pas de nouveau contact chez le registrar. S'il reste sans réponse,
@@ -1172,10 +1212,60 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:invalidProxy": () => undefined,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
         "sys:wake": () => goto("connecting", "réveil : réenregistrement"),
+        "sys:offline": (_ev, ctx) => goOffline(ctx),
       },
       after: {
         delay: 10_000,
-        then: () => goto("connecting", "nouvelle tentative"),
+        then: (ctx) => (ctx.online() ? goto("connecting", "nouvelle tentative") : goOffline(ctx)),
+      },
+      meta: { screen: "call" },
+    },
+
+    /**
+     * Network cut, said by the browser or seen when a connection fails
+     * while it reports offline. Nothing is tried while it lasts: the
+     * return (`sys:wake`, which `online` also sends) registers again, and
+     * the reconnection loop takes over if the proxy is still out of reach.
+     * Calling is greyed out, as in `reconnecting`.
+     */
+    offline: {
+      enter(ctx) {
+        stopSip(ctx);
+        ctx.autoReconnect = true;
+      },
+      on: {
+        "sys:wake": (_ev, ctx) =>
+          ctx.online() ? goto("connecting", "réseau revenu") : stay("toujours hors ligne"),
+        "sys:offline": () => undefined,
+        "sys:sleep": () => goto("sleeping", "mise en veille"),
+        // le navigateur peut se tromper dans les deux sens : on laisse essayer
+        "ui:retry": () => goto("connecting", "reconnexion manuelle"),
+        // bouton grisé : on consomme pour éviter un appel rejoué au retour
+        "ui:call": () => undefined,
+        "ui:clearHistory": clearHistory,
+        "ui:addContact": addContact,
+        "ui:renameContact": renameContact,
+        "ui:removeContact": removeContact,
+        "ui:blockContact": blockContact,
+        "ui:unblockContact": unblockContact,
+        "ui:setFlashAlert": setFlashAlert,
+        "ui:backToSettings": (_ev, ctx) => {
+          ctx.autoReconnect = false;
+          ctx.editing = ctx.activeId;
+          return goto("reconfiguring", "paramètres");
+        },
+        "ui:switchAccount": switchAccount,
+        "ui:logout": (_ev, ctx) => {
+          ctx.autoReconnect = false;
+          forgetResume(ctx);
+          return goto("home", "déconnexion");
+        },
+        // suites de l'arrêt de l'UA : consommées sans effet
+        "sip:disconnected": () => undefined,
+        "sip:unregistered": () => undefined,
+        "sip:incoming": refuseIncoming("timeout"),
+        "sip:registrationFailed": () => undefined,
+        "sip:invalidProxy": () => undefined,
       },
       meta: { screen: "call" },
     },
@@ -1189,6 +1279,8 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
       on: {
         "sys:wake": () => goto("connecting", "réveil : réenregistrement"),
         "sys:sleep": () => undefined,
+        // le réveil tranchera : sans réseau, la connexion échoue en offline
+        "sys:offline": () => undefined,
         // bouton grisé : on consomme pour éviter un appel rejoué à la reconnexion
         "ui:call": () => undefined,
         "ui:clearHistory": clearHistory,
@@ -1247,6 +1339,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sip:invalidProxy": () => undefined,
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": (_ev, ctx) => goOffline(ctx),
       },
       meta: { screen: "call" },
     },
@@ -1265,6 +1358,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         },
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
       },
       after: {
         delay: 5000,

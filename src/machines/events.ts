@@ -304,6 +304,12 @@ export type PhoneEvent =
    */
   | { type: "sys:sleep" }
   | { type: "sys:wake" }
+  /**
+   * The browser says the network is gone (`offline` on `window`). Its
+   * return comes as a `sys:wake`, like any other return: the machine then
+   * reads `online()` to know whether it is worth registering again.
+   */
+  | { type: "sys:offline" }
   | CallControlEvent
   | CallSipEvent
   | CallReturn

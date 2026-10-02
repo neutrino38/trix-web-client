@@ -63,6 +63,7 @@ export const STATUS: Record<string, { key: MsgKey; cls: "ok" | "warn" | "err" }>
   ready: { key: "status.ready", cls: "ok" },
   in_call: { key: "status.ready", cls: "ok" },
   reconnecting: { key: "status.reconnecting", cls: "err" },
+  offline: { key: "status.offline", cls: "err" },
   switching: { key: "status.switching", cls: "warn" },
   sleeping: { key: "status.sleeping", cls: "warn" },
   reg_failed: { key: "status.regFailed", cls: "err" },

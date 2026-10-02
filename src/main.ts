@@ -103,6 +103,8 @@ const phone = PhoneMachine.start({
     // Ne pas déranger refuse les appels (ADR 0007, D6) : le statut est tenu
     // par PresenceMachine, lu ici au moment de décider
     doNotDisturb: () => presence.state !== "disabled" && presence.context.prefs.chosen === "dnd",
+    // a cut network is not a wrong setting: the machine reads it on failure
+    online: () => navigator.onLine,
   },
 });
 
@@ -200,6 +202,7 @@ watchSystemLifecycle({
     phone.send({ type: "sys:sleep" });
   },
   onWake: () => phone.send({ type: "sys:wake" }),
+  onOffline: () => phone.send({ type: "sys:offline" }),
 });
 
 // Personne au clavier depuis dix minutes : Disponible devient Absent pour

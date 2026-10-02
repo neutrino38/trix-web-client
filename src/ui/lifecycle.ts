@@ -61,6 +61,12 @@ export interface LifecycleEvents {
    * la façon dont elle s'est terminée (D5).
    */
   onWake: () => void;
+  /**
+   * The browser lost its network. Not a sleep: the page is awake, it just
+   * cannot reach anyone — the machine says so instead of blaming the
+   * settings, and the return comes through `onWake`.
+   */
+  onOffline: () => void;
 }
 
 export function watchSystemLifecycle(ev: LifecycleEvents): () => void {
@@ -130,6 +136,7 @@ export function watchSystemLifecycle(ev: LifecycleEvents): () => void {
 
   const onOffline = (): void => {
     offline = true;
+    ev.onOffline();
   };
 
   const onOnline = (): void => {

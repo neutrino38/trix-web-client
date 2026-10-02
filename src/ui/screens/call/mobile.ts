@@ -57,6 +57,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const failed = phone.state === "reg_failed";
   const ready = phone.state === "ready";
   const reconnecting = phone.state === "reconnecting";
+  const offline = phone.state === "offline";
   const sleeping = phone.state === "sleeping";
   const connected = view?.state === "connected";
   const incoming = view?.state === "ringing_in";
@@ -207,7 +208,13 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                         <button class="btn primary" data-act="retry">${esc(t("action.retry"))}</button>
                         <button class="btn" data-act="fix-settings">${esc(t("action.settings"))}</button>
                       </div>`
-                   : ""
+                   : offline
+                     ? `${err ? `<div class="error-banner">${esc(t(err))}</div>` : ""}
+                        <span class="idle-msg">${esc(t("call.offlineWait"))}</span>
+                        <div class="error-actions">
+                          <button class="btn" data-act="retry">${esc(t("action.retryNow"))}</button>
+                        </div>`
+                     : ""
                }
                ${sleeping ? `<span class="idle-msg">${esc(t("call.sleepingShort"))}</span>` : ""}
                <div class="field">

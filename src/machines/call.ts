@@ -421,6 +421,9 @@ function interruptions(ending: Ending): CallOn {
     "sip:registered": () => undefined,
     "sip:connected": () => undefined,
     "sys:wake": () => undefined,
+    // l'appel peut survivre à une coupure brève ; s'il tombe, l'hôte lit
+    // le réseau au retour du bloc
+    "sys:offline": () => undefined,
   };
 }
 
@@ -1374,6 +1377,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
         "sip:registered": () => undefined,
         "sip:connected": () => undefined,
         "sys:wake": () => undefined,
+        "sys:offline": () => undefined,
         "ui:hangup": () => undefined,
         "ui:backToSettings": () => undefined,
         "ui:logout": () => undefined,
