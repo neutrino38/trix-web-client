@@ -13,8 +13,9 @@
  *   erases from the end, and it erases whole graphemes (§8.2).
  *
  * What this module never does is decide what the thread looks like: the
- * bubbles, the caret and the notes belong to the panel
- * (`ui/screens/call/chat.ts`), and the pipe belongs to `sip/rtt.ts`.
+ * bubbles, the caret and the notes belong to the conversation
+ * (`core/conversation.ts`) and its panel (`ui/screens/call/chat.ts`), and
+ * the pipe belongs to `sip/rtt.ts`.
  *
  * Received colours are **remapped onto the theme palette, never applied as
  * they came**. T.140 §8.8 explicitly leaves the receiver in charge, and it

@@ -13,7 +13,8 @@ import { openThreadKey } from "./ui/screens/call/thread.js";
 import { setStatusPrefs, statusPrefs } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
-import { chatTranscript } from "./ui/screens/call/chat.js";
+import { showConversation } from "./ui/screens/call/chat.js";
+import { createConversation, followCalls } from "./core/conversation.js";
 import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
 import { watchSystemLifecycle } from "./ui/lifecycle.js";
@@ -81,6 +82,10 @@ const messaging = MessagingMachine.start({
   },
 });
 
+// Le texte temps réel de l'appel en cours : créé avant le téléphone, qui
+// en lira la transcription au moment de ranger l'appel.
+const conversation = createConversation();
+
 const phone = PhoneMachine.start({
   debug: true,
   // les transitions restent en console.debug ; ce que le moteur signale
@@ -91,10 +96,10 @@ const phone = PhoneMachine.start({
     // `"messaging": "no"` dans config.json (ADR 0008, D13) : ni écouteur,
     // ni MESSAGE dans `Allow`
     sip: createJsSipPort({ messaging: deployment().messaging }),
-    // la conversation de l'appel qui se termine, lue au panneau au moment
-    // où la machine range sa ligne d'historique (§4.9) : c'est ici, et
-    // nulle part ailleurs, que l'écran et la machine se rencontrent
-    transcript: chatTranscript,
+    // la conversation de l'appel qui se termine, lue au moment où la machine
+    // range sa ligne d'historique (§4.9) — celle du noyau, que le panneau
+    // soit monté ou non (ADR 0011, D5)
+    transcript: () => conversation.transcript(),
     // Ne pas déranger refuse les appels (ADR 0007, D6) : le statut est tenu
     // par PresenceMachine, lu ici au moment de décider
     doNotDisturb: () => presence.state !== "disabled" && presence.context.prefs.chosen === "dnd",
@@ -105,6 +110,11 @@ const phone = PhoneMachine.start({
 // non consommés) : l'écran en montre une phrase, la console en garde la trace
 started = phone;
 watchMachine(phone, translate);
+
+// la conversation suit le canal texte de chaque appel dès qu'il existe, et
+// le panneau la montre (core/conversation.ts, ADR 0011, D5)
+followCalls(phone, conversation);
+showConversation(conversation);
 
 // du téléphone vers la présence : enregistré, désenregistré, en appel,
 // carnet modifié (machines/presencesignals.ts)

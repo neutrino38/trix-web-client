@@ -1,37 +1,32 @@
 /**
- * Le fil du tchat : le modèle, sans page.
+ * Le panneau du tchat : ce que le gabarit montre de la conversation.
  *
- * Tout ce qui est vérifié ici tient au **modèle** — c'est lui la source, le
- * DOM n'en est qu'une projection (§4.9). Ce qui se casse sans qu'un type
- * ne bronche : une bulle vivante par côté, un séparateur qui fige, un
- * retour arrière qui franchit ce séparateur, un correspondant qui écrit du
- * balisage dans notre fil, et la règle des deux secondes — écrire à la fin
- * part tout de suite, corriger au milieu attend.
+ * Le modèle — bulles, séparateurs, règle des deux secondes, transcription —
+ * est au noyau et se vérifie là (`test/conversation.test.ts`). Ce qui se
+ * casse ici sans qu'un type ne bronche : un correspondant qui écrit du
+ * balisage dans notre fil, une ligne d'état qui ment, un panneau qui prend
+ * la scène d'un appel vidéo ou qui s'écrit avant le décrochage.
  */
 
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   bubbleText,
   chatAvailable,
-  chatEnter,
-  chatLink,
   chatPane,
-  chatReceive,
-  chatReset,
-  chatSent,
   chatStateLine,
   chatThread,
   chatThreadHtml,
-  chatTranscript,
   chatWritable,
   chatHead,
   chatOnStage,
   chatStage,
-  chatType,
+  showConversation,
   CHAT_PANE_ID,
   type ChatBubble,
   type ChatItem,
 } from "../src/ui/screens/call/chat.js";
+import { createConversation, type Conversation } from "../src/core/conversation.js";
+import { fakeChannel, type FakeChannel } from "./fakes/rtt.js";
 import { overlayBar } from "../src/ui/screens/call/overlay.js";
 import type { CallView } from "../src/machines/events.js";
 import type { CallMedia, CallSession } from "../src/sip/port.js";
@@ -42,62 +37,25 @@ beforeAll(async () => {
   await useLocale("fr");
 });
 
+let conv: Conversation;
+let channel: FakeChannel;
+
 beforeEach(() => {
-  chatReset("Bob");
+  conv = createConversation();
+  showConversation(conv);
+  channel = fakeChannel();
+  conv.attach(channel);
 });
+
+/** Le correspondant écrit, le lien change, on tape : ce que le panneau montre ensuite. */
+const chatReceive = (chunk: string): void => channel.receive(chunk);
+const chatLink = (state: Parameters<FakeChannel["link"]>[0]): void => channel.link(state);
+const chatType = (value: string): void => conv.type(value);
 
 const bubbles = (): ChatBubble[] =>
   chatThread().filter((i: ChatItem): i is ChatBubble => i.kind === "bubble");
 
 const texts = (): string[] => bubbles().map(bubbleText);
-
-describe("le fil reçu", () => {
-  it("ouvre une bulle vivante au premier caractère", () => {
-    chatReceive("bon");
-    chatReceive("jour");
-    expect(texts()).toEqual(["bonjour"]);
-    expect(bubbles()[0]?.endedAt).toBeNull();
-  });
-
-  it("fige la bulle sur le séparateur et en ouvre une neuve", () => {
-    chatReceive(`bonjour${T140.LS}salut`);
-    expect(texts()).toEqual(["bonjour", "salut"]);
-    expect(bubbles()[0]?.endedAt).not.toBeNull();
-    expect(bubbles()[1]?.endedAt).toBeNull();
-  });
-
-  it("un séparateur reçu sur une bulle vide ne crée rien", () => {
-    chatReceive(`${T140.LS}${T140.LS}a`);
-    expect(texts()).toEqual(["a"]);
-  });
-
-  it("efface un graphème entier, émoji compris", () => {
-    chatReceive(`bravo 👍🏽${T140.BS}`);
-    expect(texts()).toEqual(["bravo "]);
-  });
-
-  it("un retour arrière sur une bulle vide refusionne la bulle figée", () => {
-    chatReceive(`bonjour${T140.LS}`);
-    chatReceive(T140.BS);
-    expect(texts()).toEqual(["bonjour"]);
-    expect(bubbles()[0]?.endedAt).toBeNull();
-    chatReceive(" Bob");
-    expect(texts()).toEqual(["bonjour Bob"]);
-  });
-
-  it("garde les attributs reçus en morceaux distincts", () => {
-    chatReceive(`au ${T140.CSI}31m12 rue des Lilas${T140.CSI}0m, bâtiment C`);
-    const runs = bubbles()[0]?.runs ?? [];
-    expect(runs.map((r) => r.text)).toEqual(["au ", "12 rue des Lilas", ", bâtiment C"]);
-    expect(runs[1]?.attrs.color).toBe("var(--red)");
-    expect(runs[2]?.attrs.color).toBeUndefined();
-  });
-
-  it("ne pose qu'un seul marqueur pour des pertes consécutives", () => {
-    chatReceive(`${T140.LOST}${T140.LOST}${T140.LOST}suite`);
-    expect(texts()).toEqual([`${T140.LOST}suite`]);
-  });
-});
 
 /**
  * **L'annonce précoce s'affiche.** Un serveur qui joue un fichier sous-titré
@@ -130,46 +88,11 @@ describe("ce que le correspondant écrit ne devient jamais du balisage", () => {
   });
 });
 
-describe("l'émission, et la règle des deux secondes", () => {
-  it("écrire à la fin part tout de suite, et se voit dans la bulle locale", () => {
-    chatType("bon");
-    chatType("bonjour");
-    expect(chatSent()).toBe("bonjour");
-    expect(texts()).toEqual(["bonjour"]);
-  });
-
-  it("effacer par la fin part tout de suite aussi", () => {
-    chatType("bonjour");
-    chatType("bon");
-    expect(chatSent()).toBe("bon");
-    expect(texts()).toEqual(["bon"]);
-  });
-
-  it("corriger au milieu attend : la bulle locale montre ce qui est parti", () => {
+describe("la ligne d'état", () => {
+  it("corriger au milieu : elle dit l'attente", () => {
     chatType("12 rue des Lilas");
     chatType("12 rue des Tilleuls");
-    // rien n'est encore parti : la bulle diverge du champ, et l'état le dit
-    expect(chatSent()).toBe("12 rue des Lilas");
-    expect(texts()).toEqual(["12 rue des Lilas"]);
     expect(chatStateLine().cls).toBe("warn");
-  });
-
-  it("Entrée fige la bulle locale et vide le champ", () => {
-    chatType("j'arrive");
-    chatEnter();
-    expect(chatSent()).toBe("");
-    expect(texts()).toEqual(["j'arrive"]);
-    expect(bubbles()[0]?.endedAt).not.toBeNull();
-  });
-
-  it("Entrée sur un champ vide ne fige rien", () => {
-    chatEnter();
-    expect(chatThread()).toHaveLength(0);
-  });
-
-  it("un collage n'apporte pas ses retours à la ligne dans la bulle", () => {
-    chatType("deux\r\nlignes");
-    expect(chatSent()).toBe("deux lignes");
   });
 });
 
@@ -184,7 +107,8 @@ describe("l'état du lien", () => {
   it("distingue un canal refusé d'un canal fermé après usage", () => {
     chatLink("closed");
     expect(chatStateLine().label).toContain("ne prend pas");
-    chatReset("Bob");
+    channel = fakeChannel();
+    conv.attach(channel);
     chatLink("open");
     chatLink("closed");
     expect(chatStateLine().label).not.toContain("ne prend pas");
@@ -195,44 +119,6 @@ describe("l'état du lien", () => {
     chatLink("lost");
     expect(chatStateLine().cls).toBe("err");
     expect(chatThread().at(-1)).toMatchObject({ kind: "note", key: "chat.note.broken" });
-  });
-});
-
-describe("les deux côtés du fil", () => {
-  it("tient une bulle vivante de chaque côté à la fois", () => {
-    chatReceive("je vous entends mal");
-    chatType("oui, je vous lis");
-    expect(bubbles().map((b) => [b.side, bubbleText(b)])).toEqual([
-      ["them", "je vous entends mal"],
-      ["us", "oui, je vous lis"],
-    ]);
-    // et le séparateur du correspondant ne fige que la sienne
-    chatReceive(T140.LS);
-    expect(bubbles()[0]?.endedAt).not.toBeNull();
-    expect(bubbles()[1]?.endedAt).toBeNull();
-  });
-});
-
-describe("ce que l'historique garde", () => {
-  it("le fil de l'appel, bulle vivante close au raccrochage", () => {
-    chatReceive("je vous entends mal");
-    chatType("oui, je vous lis");
-    const kept = chatTranscript();
-    expect(kept.filter((i) => i.kind === "bubble").map((b) => bubbleText(b))).toEqual([
-      "je vous entends mal",
-      "oui, je vous lis",
-    ]);
-    // le panneau, lui, les tient encore pour vivantes : ce qui part au
-    // coffre est une copie close, pas le modèle
-    expect(kept.every((i) => i.kind === "note" || i.endedAt !== null)).toBe(true);
-    expect(bubbles().every((b) => b.endedAt === null)).toBe(true);
-  });
-
-  it("rien d'un appel où personne n'a écrit", () => {
-    chatLink("open");
-    chatLink("closed");
-    expect(chatThread().length).toBeGreaterThan(0); // des remarques, pas des messages
-    expect(chatTranscript()).toEqual([]);
   });
 });
 

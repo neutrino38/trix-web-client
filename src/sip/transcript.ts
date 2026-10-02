@@ -1,6 +1,6 @@
 /**
  * The conversation of a call, in the form it is **kept** — the model the
- * chat panel builds while the call lasts (`ui/screens/call/chat.ts`), and
+ * conversation builds while the call lasts (`core/conversation.ts`), and
  * that the call log line carries once it is over (docs/CONCEPTION.md §4.9).
  *
  * It lives here, beside the codec, and not in the panel that fills it, for

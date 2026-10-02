@@ -97,6 +97,7 @@ la langue servira à l'affichage.
 | `sip/rttws.ts` | le fil WebSocket des passerelles déployées (hors RFC 8865) |
 | `sip/t140.ts` | le codec, sans DOM : décodage du flux en événements, différentiel d'émission |
 | `sip/transcript.ts` | le modèle des bulles, et son scellement pour l'historique |
+| `core/conversation.ts` | la conversation : bulles, lien, brouillon, règle des deux secondes, transcription |
 | `ui/screens/call/chat.ts` | le panneau : fil, bulles, composeur, projection |
 | `ui/chatdialog.ts` | la relecture d'une conversation passée, depuis l'historique |
 
@@ -149,10 +150,12 @@ dilué à 22 %. La plage claire (`90`–`97`) rejoint la même palette : une foi
 
 ## Le panneau
 
-`ui/screens/call/chat.ts` tient le **modèle** du fil et sa projection à l'écran — le
-modèle est la source, le DOM n'en est qu'une vue, ce qui rendra l'export en sous-titres
-possible sans relire la page. Un caractère reçu devient un nœud texte, jamais du
-balisage.
+`core/conversation.ts` tient le **modèle** du fil et `ui/screens/call/chat.ts` sa
+projection à l'écran — le modèle est la source, le DOM n'en est qu'une vue, ce qui rend
+l'export en sous-titres possible sans relire la page. La conversation suit le canal de
+l'appel dès qu'il existe, que le panneau soit monté ou non, et c'est elle qui fournit la
+transcription à l'historique (ADR 0011, D5). Un caractère reçu devient un nœud texte,
+jamais du balisage.
 
 - **Une bulle vivante par côté**, la dernière ; le séparateur la fige et en ouvre une
   neuve. Un séparateur reçu sur une bulle vide ne crée rien, et un retour arrière reçu

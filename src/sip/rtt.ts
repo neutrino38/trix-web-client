@@ -7,8 +7,8 @@
  * seul à savoir si le caractère effacé est encore rattrapable ou déjà
  * parti. Le reste — séparateurs de ligne, signature de session, mise en
  * valeur — ne lui dit rien : il transporte un flux de caractères, dans
- * les deux sens, et laisse le codec (`sip/t140.ts`) et le panneau
- * (`ui/screens/call/chat.ts`) l'interpréter.
+ * les deux sens, et laisse le codec (`sip/t140.ts`) et la conversation
+ * (`core/conversation.ts`) l'interpréter.
  * La frontière est la même qu'entre `sip/port.ts` et les machines : au
  * dessus, personne ne sait par où le texte passe.
  *

@@ -290,7 +290,16 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    reste dans `ui/`). Le noyau ne lit aucun dictionnaire : quand il a des mots à écrire, il
    reçoit un `Translate` (`i18n/types.ts`) — celui de l'UI d'ici à D9.
 3. **La conversation** (D5) : `core/conversation.ts`, abonnement au canal par le noyau,
-   transcription fournie par lui ; `chat.ts` réduit au rendu.
+   transcription fournie par lui ; `chat.ts` réduit au rendu. Fait le 2026-10-02 : une
+   instance par `createConversation()`, sans état de module ; `followCalls(phone, conv)`
+   l'attache au canal de l'appel une microtâche après chaque notification et l'en détache
+   à la fin ; elle prévient l'écran par des événements (`reset`, `changed`, `frozen`,
+   `alert`, `link`) — l'annonce d'une bulle figée, le flash du `BEL`, le décompte des deux
+   secondes et le pli mobile restent dans `chat.ts`. Les tests du modèle passent par un faux
+   canal (`test/fakes/rtt.ts`) et vérifient ce qui part sur le fil, ce que l'ancien panneau
+   ne permettait pas. Restent : `chat.ts` lit encore `view.session.rtt()` pour savoir si un
+   canal existe (étapes 4 et 6, D4 et D3) et garde son état d'affichage au niveau du module
+   (D12).
 4. **Les médias** (D4) : `streams()`/`onStreams()` dans le port, `session` retiré de la vue.
 5. **La plateforme et l'instance** (D7, D8) : `Platform`, `storagePrefix`, plus d'état de module
    dans le noyau.

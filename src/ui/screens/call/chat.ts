@@ -1,71 +1,48 @@
 /**
  * Le tchat de l'appel — le panneau (docs/CONCEPTION.md §4.9).
  *
- * Ce module tient **le modèle** de la conversation et sa projection à
- * l'écran. Le protocole est ailleurs (`sip/t140.ts`, qui décode et calcule
- * le différentiel d'émission), le tuyau aussi (`sip/rtt.ts`, qui ne sait
- * de T.140 que le retour arrière) : ici, on ne fait qu'un fil de bulles et
- * un champ de saisie.
- *
- * Trois règles gouvernent tout ce qui suit.
- *
- * **Une seule bulle vivante par côté.** Elle interprète le flux caractère
- * par caractère, comme un terminal ; le séparateur la fige et en ouvre une
- * neuve. C'est ce que l'appendice I de T.140 décrit déjà en 1998.
+ * La conversation elle-même — bulles, lien, brouillon, règle des deux
+ * secondes, transcription — appartient au noyau (`core/conversation.ts`,
+ * ADR 0011, D5). Ce module en est la projection et la saisie : le fil
+ * dessiné, le champ, le bouton « descendre », le pli mobile.
  *
  * **Le modèle est la source, le DOM une projection.** Rien n'est relu dans
- * la page — ni pour copier, ni pour exporter plus tard en sous-titres. Et
- * un caractère reçu devient un **nœud texte**, jamais du balisage : le
- * correspondant écrit dans notre fil, pas dans notre DOM.
+ * la page. Un caractère reçu devient un **nœud texte**, jamais du
+ * balisage : le correspondant écrit dans notre fil, pas dans notre DOM.
  *
- * **Rien n'est rendu par un temporisateur.** L'affichage du texte reçu est
- * piloté par l'arrivée du fragment, sans quoi un onglet caché — dont Chrome
- * aligne les timers sur la seconde — dépasserait les 500 ms de T.140 §6.1.1.
- * Les deux seuls temporisateurs de ce module servent l'émission (la règle
- * des deux secondes) et son décompte à l'écran.
+ * **Rien n'est rendu par un temporisateur.** Le fil est repeint à
+ * l'arrivée du fragment, sans quoi un onglet caché — dont Chrome aligne
+ * les timers sur la seconde — dépasserait les 500 ms de T.140 §6.1.1. Le
+ * seul temporisateur du module est le décompte de la règle des deux
+ * secondes, qui ne repeint que sa ligne.
  *
- * L'état vit ici, hors du DOM, comme celui du pavé DTMF : l'écran d'appel
- * est reconstruit à chaque notification de la machine, et une conversation
- * qui disparaîtrait à chaque re-rendu ne servirait à rien. Il naît avec
- * l'appel (`chatReset`) et meurt avec lui (`closeChat`).
+ * L'état d'affichage (pli mobile, suivi du bas, bulles non vues) vit ici,
+ * hors du DOM : l'écran d'appel est reconstruit à chaque notification de
+ * la machine.
  */
 
 import type { CallView } from "../../../machines/events.js";
 import type { RttChannel, RttState } from "../../../sip/rtt.js";
 import {
-  T140,
-  dropLastGrapheme,
-  sanitizeOutgoing,
-  t140Decoder,
-  t140Edit,
-  type T140Attrs,
-  type T140Decoder,
-  type T140Event,
-} from "../../../sip/t140.js";
-import {
   bubbleText,
-  sealTranscript,
   type ChatBubble,
   type ChatItem,
   type ChatNote,
   type ChatRun,
   type ChatSide,
 } from "../../../sip/transcript.js";
+import {
+  createConversation,
+  type Conversation,
+  type ConversationEvent,
+} from "../../../core/conversation.js";
 import { el, esc } from "../../el.js";
 import { announce } from "../../announce.js";
 import { pulseAlert } from "../../alert.js";
 import { formatNumber, formatTime, t, tn } from "../../../i18n/index.js";
-import type { MsgKey } from "../../../i18n/types.js";
 
 /** Id du panneau, cité par l'`aria-controls` du bouton de la barre mobile. */
 export const CHAT_PANE_ID = "call-chat";
-
-/**
- * Le silence à observer avant de réconcilier une édition faite **au milieu**
- * du texte déjà parti : remonter d'un coup jusqu'au point de divergence,
- * une seule fois, plutôt que de trembler à chaque touche (§4.9).
- */
-export const CHAT_HOLD_MS = 2000;
 
 /** Distance au bas du fil en deçà de laquelle on le considère « suivi ». */
 const PINNED_PX = 24;
@@ -77,59 +54,28 @@ const PINNED_PX = 24;
 const hasDom = (): boolean => typeof document !== "undefined";
 
 // ---------------------------------------------------------------------------
-// Le modèle
+// La conversation
 // ---------------------------------------------------------------------------
 
 /**
- * Le modèle des bulles vit dans `sip/transcript.ts` : c'est lui que la
- * ligne d'historique emporte, et le coffre n'a pas à importer un écran
- * (§4.9). Réexporté ici — le panneau reste l'endroit d'où on le regarde.
+ * Le modèle des bulles vit dans `sip/transcript.ts`, la conversation qui le
+ * remplit dans le noyau (`core/conversation.ts`, ADR 0011, D5) : elle suit
+ * le canal de l'appel que ce panneau soit monté ou non, et c'est elle que
+ * l'historique lit. Ce module n'en garde que la projection et la saisie.
+ * Les types restent réexportés ici — le panneau est l'endroit d'où on les
+ * regarde.
  */
 export type { ChatBubble, ChatItem, ChatNote, ChatRun, ChatSide };
 export { bubbleText };
 
-interface ChatState {
-  peer: string;
-  items: ChatItem[];
-  live: { them: ChatBubble | null; us: ChatBubble | null };
-  attrs: T140Attrs;
-  decoder: T140Decoder;
-  link: RttState;
-  /** Le lien s'est ouvert au moins une fois — un `closed` n'a pas le même sens sinon. */
-  everOpen: boolean;
-  /** Ce qui est réellement parti sur le fil (T.140 §7 : on affiche ce qu'on émet). */
-  sent: string;
-  /** Ce que montre le champ de saisie. */
-  draft: string;
-  /** Échéance de la réconciliation différée, `0` quand il n'y en a pas. */
-  holdUntil: number;
-  seq: number;
-}
+/** La conversation montrée : celle de `main.ts`, une vide tant qu'il n'en a pas posé. */
+let conv: Conversation = createConversation();
+let unfollow = conv.subscribe(onConversation);
 
-function blank(peer = ""): ChatState {
-  return {
-    peer,
-    items: [],
-    live: { them: null, us: null },
-    attrs: {},
-    decoder: t140Decoder(),
-    link: "connecting",
-    everOpen: false,
-    sent: "",
-    draft: "",
-    holdUntil: 0,
-    seq: 0,
-  };
-}
-
-let chat = blank();
-
-/** Le canal auquel nous sommes abonnés, et de quoi s'en détacher. */
-let bound: RttChannel | null = null;
-let unlisten: (() => void) | null = null;
-let holdTimer: ReturnType<typeof setTimeout> | null = null;
+/** Nom du correspondant, tel que les bulles le portent — relu à chaque rendu. */
+let chatPeer = "";
+/** Le décompte de la règle des deux secondes, à l'écran. */
 let tickTimer: ReturnType<typeof setInterval> | null = null;
-
 /** Pli du tchat mobile — affichage pur. */
 let mobileOpen = true;
 /** Flash plein écran sur `BEL` : le réglage du compte, relu à chaque rendu. */
@@ -139,311 +85,73 @@ let pinned = true;
 /** Bulles figées arrivées pendant qu'il lisait plus haut. */
 let unseen = 0;
 
-export const chatThread = (): readonly ChatItem[] => chat.items;
+/** Pose la conversation que le panneau montre. Appelé une fois, depuis `main.ts`. */
+export function showConversation(c: Conversation): void {
+  unfollow();
+  conv = c;
+  unfollow = c.subscribe(onConversation);
+}
+
+/** Ce que la conversation demande à l'écran, au-delà de repeindre. */
+function onConversation(e: ConversationEvent): void {
+  switch (e.type) {
+    case "reset":
+      mobileOpen = true;
+      pinned = true;
+      unseen = 0;
+      break;
+    case "frozen":
+      // ce qui se lit à l'écran ne s'entend pas : la bulle figée est le seul
+      // moment où l'annoncer ait un sens, la bulle vivante changeant à chaque
+      // caractère (voir `chatPane`, sur `aria-live`)
+      if (hasDom()) announce(t("chat.announce", { who: chatPeer, text: bubbleText(e.bubble) }));
+      if (!pinned) unseen += 1;
+      break;
+    case "alert":
+      // l'alerte en séance réemploie les canaux de l'appel entrant : elle
+      // s'adresse à quelqu'un qui ne regarde peut-être pas l'écran
+      if (hasDom()) pulseAlert(flashOnAlert);
+      break;
+    case "link":
+      // un correspondant sans texte temps réel ne doit pas manger la moitié
+      // de l'écran mobile ni tenir la sidebar pour un fil qui n'a jamais vécu
+      // (les deux gabarits interrogent `chatRefused`)
+      if (conv.refused()) mobileOpen = false;
+      break;
+    case "changed":
+      tick();
+      paint();
+      break;
+  }
+}
+
 /**
- * Le fil tel que l'historique le gardera : bulles vivantes closes, copie
- * bornée, et rien du tout si personne n'a écrit (`sip/transcript.ts`).
- * Lu par la machine au moment où l'appel se range — c'est `main.ts` qui
- * les raccorde, le panneau n'en sait rien de plus.
+ * Arme ou désarme le décompte. Il ne repeint que sa propre ligne : c'est le
+ * seul endroit du module où un temporisateur touche à l'écran, et il ne
+ * touche pas au fil.
  */
-export const chatTranscript = (): ChatItem[] => sealTranscript(chat.items, Date.now());
-export const chatLinkState = (): RttState => chat.link;
+function tick(): void {
+  const holding = conv.holdUntil() > 0;
+  if (holding && tickTimer === null && hasDom()) tickTimer = setInterval(paintState, 100);
+  else if (!holding && tickTimer !== null) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
+}
+
+export const chatThread = (): readonly ChatItem[] => conv.items();
+export const chatLinkState = (): RttState => conv.link();
 /**
  * Le lien est mort sans avoir jamais servi — le distant n'a pas voulu du
  * texte. Il n'y a alors pas de fil à montrer : le panneau s'efface au lieu
  * d'occuper la place avec un composeur grisé.
  */
-export const chatRefused = (): boolean => chat.link === "closed" && !chat.everOpen;
+export const chatRefused = (): boolean => conv.refused();
 export const chatMobileOpen = (): boolean => mobileOpen;
 /** Ce qui est parti sur le fil — la bulle locale vivante, en somme. */
-export const chatSent = (): string => chat.sent;
+export const chatSent = (): string => conv.sent();
 /** Ce que le champ doit montrer : la frappe, nettoyée de ce qu'une bulle ne porte pas. */
-export const chatDraft = (): string => chat.draft;
-
-// ---------------------------------------------------------------------------
-// Écritures dans le modèle
-// ---------------------------------------------------------------------------
-
-function openBubble(side: ChatSide): ChatBubble {
-  const b: ChatBubble = {
-    kind: "bubble",
-    id: ++chat.seq,
-    side,
-    runs: [],
-    startedAt: Date.now(),
-    endedAt: null,
-  };
-  chat.items.push(b);
-  chat.live[side] = b;
-  return b;
-}
-
-function note(key: MsgKey): void {
-  const last = chat.items.at(-1);
-  // deux fois la même remarque à la suite ne dit rien de plus
-  if (last?.kind === "note" && last.key === key) return;
-  chat.items.push({ kind: "note", id: ++chat.seq, key, at: Date.now() });
-}
-
-function sameAttrs(a: T140Attrs, b: T140Attrs): boolean {
-  return (
-    a.bold === b.bold &&
-    a.italic === b.italic &&
-    a.underline === b.underline &&
-    a.color === b.color &&
-    a.background === b.background
-  );
-}
-
-function appendText(side: ChatSide, text: string, attrs: T140Attrs): void {
-  if (text === "") return;
-  const b = chat.live[side] ?? openBubble(side);
-  const last = b.runs.at(-1);
-  if (last && !last.lost && sameAttrs(last.attrs, attrs)) last.text += text;
-  else b.runs.push({ text, attrs: { ...attrs } });
-}
-
-/** Le marqueur de texte perdu, jamais deux fois de suite (§4.9). */
-function appendLost(side: ChatSide): void {
-  const b = chat.live[side] ?? openBubble(side);
-  if (b.runs.at(-1)?.lost) return;
-  b.runs.push({ text: T140.LOST, attrs: {}, lost: true });
-}
-
-/**
- * Un retour arrière, dans les deux cas que la norme prévoit : effacer un
- * graphème de la bulle vivante, ou — bulle vivante vide — **effacer le
- * séparateur**, ce qui refusionne la bulle figée précédente (§8.2, les
- * séquences de commande s'effacent en une seule opération).
- */
-function eraseOne(side: ChatSide): void {
-  const live = chat.live[side];
-  if (live && bubbleText(live) !== "") {
-    const last = live.runs.at(-1)!;
-    last.text = dropLastGrapheme(last.text);
-    if (last.text === "") live.runs.pop();
-    return;
-  }
-  if (live) drop(live);
-  // la dernière bulle figée de ce côté redevient vivante
-  const prev = [...chat.items].reverse().find((i) => i.kind === "bubble" && i.side === side) as
-    | ChatBubble
-    | undefined;
-  if (!prev) {
-    chat.live[side] = null;
-    return;
-  }
-  prev.endedAt = null;
-  chat.live[side] = prev;
-}
-
-function drop(b: ChatBubble): void {
-  const at = chat.items.indexOf(b);
-  if (at !== -1) chat.items.splice(at, 1);
-  if (chat.live[b.side] === b) chat.live[b.side] = null;
-}
-
-/**
- * Le séparateur fige la bulle vivante. Reçu sur une bulle vide, il ne crée
- * rien : le fil ne se remplit pas de bulles blanches parce que le
- * correspondant a appuyé deux fois sur Entrée.
- */
-function freeze(side: ChatSide): void {
-  const live = chat.live[side];
-  if (!live) return;
-  chat.live[side] = null;
-  if (bubbleText(live) === "") {
-    drop(live);
-    return;
-  }
-  live.endedAt = Date.now();
-  if (side === "them" && hasDom()) {
-    // ce qui se lit à l'écran ne s'entend pas : la bulle figée est le seul
-    // moment où l'annoncer ait un sens, la bulle vivante changeant à chaque
-    // caractère (voir `chatPane`, sur `aria-live`)
-    announce(t("chat.announce", { who: chat.peer, text: bubbleText(live) }));
-  }
-  if (side === "them" && !pinned) unseen += 1;
-}
-
-// ---------------------------------------------------------------------------
-// Réception
-// ---------------------------------------------------------------------------
-
-/** Ce qui doit être repeint après une écriture — installé par `wireChat`. */
-let changed: (() => void) | null = null;
-
-function touch(): void {
-  changed?.();
-}
-
-function apply(events: readonly T140Event[]): void {
-  for (const ev of events) {
-    switch (ev.type) {
-      case "text":
-        appendText("them", ev.text, chat.attrs);
-        break;
-      case "erase":
-        eraseOne("them");
-        break;
-      case "break":
-        freeze("them");
-        break;
-      case "attrs":
-        chat.attrs = ev.attrs;
-        break;
-      case "lost":
-        note("chat.note.lost");
-        appendLost("them");
-        break;
-      case "alert":
-        // l'alerte en séance réemploie les canaux de l'appel entrant : elle
-        // s'adresse à quelqu'un qui ne regarde peut-être pas l'écran
-        note("chat.note.alert");
-        if (hasDom()) pulseAlert(flashOnAlert);
-        break;
-    }
-  }
-}
-
-/** Un fragment reçu du canal, tel qu'il est arrivé — commandes comprises. */
-export function chatReceive(chunk: string): void {
-  apply(chat.decoder.feed(chunk));
-  touch();
-}
-
-/** L'état du lien, tel que le canal le rapporte. */
-export function chatLink(state: RttState): void {
-  if (state === chat.link) return;
-  const was = chat.link;
-  chat.link = state;
-  if (state === "open") {
-    if (!chat.everOpen) note("chat.note.opened");
-    chat.everOpen = true;
-  } else if (state === "lost") {
-    note("chat.note.broken");
-  } else if (state === "closed" && was !== "closed") {
-    note(chat.everOpen ? "chat.note.closed" : "chat.note.refused");
-    // un correspondant sans texte temps réel ne doit pas manger la moitié
-    // de l'écran mobile ni tenir la sidebar pour un fil qui n'a jamais vécu
-    // (les deux gabarits interrogent `chatRefused`)
-    if (!chat.everOpen) mobileOpen = false;
-  }
-  touch();
-}
-
-// ---------------------------------------------------------------------------
-// Émission
-// ---------------------------------------------------------------------------
-
-function clearHold(): void {
-  if (holdTimer !== null) clearTimeout(holdTimer);
-  if (tickTimer !== null) clearInterval(tickTimer);
-  holdTimer = null;
-  tickTimer = null;
-  chat.holdUntil = 0;
-}
-
-/**
- * Arme l'attente et son décompte. Le décompte ne repeint que sa propre
- * ligne : c'est le seul endroit du module où un temporisateur touche à
- * l'écran, et il ne touche pas au fil.
- */
-function startHold(): void {
-  chat.holdUntil = Date.now() + CHAT_HOLD_MS;
-  holdTimer = setTimeout(() => {
-    holdTimer = null;
-    const late = t140Edit(chat.sent, chat.draft);
-    clearHold();
-    emit(late.back, late.add);
-  }, CHAT_HOLD_MS);
-  if (hasDom()) tickTimer = setInterval(paintState, 100);
-}
-
-/**
- * Ce qui part réellement sur le fil, et se montre du même coup dans la
- * bulle locale : T.140 §7 impose l'affichage local des caractères émis, et
- * c'est ce qui rend visible l'écart pendant les deux secondes d'attente.
- */
-function emit(back: number, add: string): void {
-  if (back === 0 && add === "") return;
-  if (back > 0) {
-    bound?.backspace(back);
-    for (let i = 0; i < back; i++) eraseOne("us");
-  }
-  if (add !== "") {
-    bound?.send(add);
-    appendText("us", add, {});
-  }
-  chat.sent = chat.draft;
-  touch();
-}
-
-/**
- * Le champ a changé. Trois cas, et un seul attend (§4.9) :
- *
- * - on écrit à la fin → le suffixe part tout de suite ;
- * - on efface par la fin → les retours arrière partent tout de suite ;
- * - on corrige au milieu → deux secondes de silence, puis on remonte d'un
- *   coup jusqu'au point de divergence et on retape la suite.
- */
-export function chatType(value: string): void {
-  clearHold();
-  chat.draft = sanitizeOutgoing(value);
-  const edit = t140Edit(chat.sent, chat.draft);
-  if (edit.kind === "same") {
-    touch();
-    return;
-  }
-  if (edit.kind !== "rewrite") {
-    emit(edit.back, edit.add);
-    return;
-  }
-  startHold();
-  touch();
-}
-
-/**
- * Entrée : ce qui reste à réconcilier part sans attendre, puis le
- * séparateur fige la bulle des deux côtés du fil. Le tampon de 300 ms du
- * canal est vidé dans la foulée — une fin de ligne n'attend pas.
- */
-export function chatEnter(): void {
-  clearHold();
-  const edit = t140Edit(chat.sent, chat.draft);
-  emit(edit.back, edit.add);
-  if (chat.sent !== "") {
-    bound?.send(T140.LS);
-    bound?.flush();
-    freeze("us");
-  }
-  chat.sent = "";
-  chat.draft = "";
-  touch();
-}
-
-// ---------------------------------------------------------------------------
-// Cycle de vie
-// ---------------------------------------------------------------------------
-
-/** Un appel commence : le fil repart vide, au nom du correspondant. */
-export function chatReset(peer: string): void {
-  clearHold();
-  chat = blank(peer);
-  mobileOpen = true;
-  pinned = true;
-  unseen = 0;
-}
-
-/** L'appel est fini : le fil quitte l'écran avec lui. */
-export function closeChat(): void {
-  clearHold();
-  unlisten?.();
-  unlisten = null;
-  bound = null;
-  changed = null;
-  chat = blank();
-}
+export const chatDraft = (): string => conv.draft();
 
 // ---------------------------------------------------------------------------
 // Gabarit
@@ -599,19 +307,19 @@ function itemHtml(item: ChatItem, peer: string): string {
  * que porte sa ligne d'historique (`ui/chatdialog.ts`).
  */
 export function chatThreadHtml(
-  items: readonly ChatItem[] = chat.items,
-  peer: string = chat.peer,
+  items: readonly ChatItem[] = conv.items(),
+  peer: string = chatPeer,
 ): string {
   return items.map((i) => itemHtml(i, peer)).join("");
 }
 
 /** L'état du lien, dit à qui écrit : une pastille et une phrase. */
 export function chatStateLine(): { cls: "ok" | "warn" | "err" | "idle"; label: string } {
-  if (chat.holdUntil > Date.now()) {
-    const left = (chat.holdUntil - Date.now()) / 1000;
+  if (conv.holdUntil() > Date.now()) {
+    const left = (conv.holdUntil() - Date.now()) / 1000;
     return { cls: "warn", label: t("chat.state.pending", { s: formatNumber(left, 1) }) };
   }
-  switch (chat.link) {
+  switch (conv.link()) {
     case "open":
       return { cls: "ok", label: t("chat.state.open") };
     case "connecting":
@@ -619,7 +327,7 @@ export function chatStateLine(): { cls: "ok" | "warn" | "err" | "idle"; label: s
     case "lost":
       return { cls: "err", label: t("chat.state.lost") };
     case "closed":
-      return chat.everOpen
+      return !conv.refused()
         ? { cls: "idle", label: t("chat.state.closed") }
         : { cls: "idle", label: t("chat.state.refused") };
   }
@@ -658,7 +366,7 @@ function headDot(): string {
  */
 export function chatPane(peer: string, writable = true): string {
   const state = chatStateLine();
-  const closed = chat.link === "closed";
+  const closed = conv.link() === "closed";
   /**
    * **Lire oui, écrire non** : avant le décrochage, le fil montre ce que le
    * réseau envoie déjà (une annonce en texte temps réel arrive en média
@@ -691,7 +399,7 @@ export function chatPane(peer: string, writable = true): string {
                           : "chat.placeholderEarly",
                     ),
                   )}"
-                  >${esc(chat.draft)}</textarea>
+                  >${esc(conv.draft())}</textarea>
         <div class="chat-foot">
           <span class="chat-state" data-ref="chat-state">
             <span class="dot ${state.cls}"></span>${esc(state.label)}
@@ -785,12 +493,12 @@ function threadNode(): HTMLElement | null {
 function paint(): void {
   const list = threadNode();
   if (!list) return;
-  const items = chat.items;
+  const items = conv.items();
   for (const [i, item] of items.entries()) {
     const cur = list.children[i] as HTMLElement | undefined;
     const sig = signature(item);
     if (cur?.dataset.sig === sig) continue;
-    const node = el(itemHtml(item, chat.peer));
+    const node = el(itemHtml(item, chatPeer));
     if (cur) list.replaceChild(node, cur);
     else list.append(node);
   }
@@ -820,7 +528,7 @@ function paintState(): void {
   const input = document.querySelector<HTMLTextAreaElement>('[data-ref="chat-input"]');
   // seul `closed` coupe la saisie : ce qui est tapé pendant la sonnerie ou
   // pendant une reprise attend dans le tampon du canal et part à l'ouverture
-  if (input) input.disabled = chat.link === "closed";
+  if (input) input.disabled = conv.link() === "closed";
 }
 
 function paintHeadDot(): void {
@@ -851,36 +559,23 @@ export interface ChatCtx {
 }
 
 export function wireChat(screen: HTMLElement, ctx: ChatCtx): void {
-  const { view, peer } = ctx;
   flashOnAlert = ctx.flash;
-  const channel = chatChannel(view);
-  if (!channel) {
-    // appel sans texte (ou pas d'appel du tout) : rien à brancher, et le fil
-    // du précédent n'a rien à faire dans celui-ci
-    if (bound) closeChat();
-    return;
-  }
-
-  if (channel !== bound) {
-    unlisten?.();
-    chatReset(peer);
-    bound = channel;
-    // le premier abonné reçoit ce qui est arrivé avant lui : le canal s'ouvre
-    // avec l'appel, le panneau bien après
-    unlisten = channel.listen({ text: chatReceive, state: chatLink });
-  }
-  changed = paint;
+  chatPeer = ctx.peer;
+  // appel sans texte (ou pas d'appel du tout) : rien à brancher. Le canal,
+  // lui, est suivi par la conversation du noyau (`followCalls`), pas ici.
+  if (!chatChannel(ctx.view)) return;
 
   const input = screen.querySelector<HTMLTextAreaElement>('[data-ref="chat-input"]');
   const list = screen.querySelector<HTMLElement>('[data-ref="chat-thread"]');
 
   input?.addEventListener("input", () => {
-    chatType(input.value);
+    conv.type(input.value);
     // un collage arrive avec ses retours à la ligne : le champ montre ce que
     // la bulle portera, faute de quoi il promettrait dix lignes pour une
-    if (input.value !== chat.draft) {
-      input.value = chat.draft;
-      input.setSelectionRange(chat.draft.length, chat.draft.length);
+    const draft = conv.draft();
+    if (input.value !== draft) {
+      input.value = draft;
+      input.setSelectionRange(draft.length, draft.length);
     }
     grow(input);
   });
@@ -890,7 +585,7 @@ export function wireChat(screen: HTMLElement, ctx: ChatCtx): void {
     // milieu, à chaque mot
     if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
     e.preventDefault();
-    chatEnter();
+    conv.enter();
     input.value = "";
     grow(input);
   });

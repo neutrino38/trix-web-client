@@ -1287,7 +1287,13 @@ un terrain éprouvé, et ses cicatrices valent des spécifications.
 - `sip/transcript.ts` — le modèle des bulles, **sans DOM** : c'est lui que la ligne
   d'historique emporte, et le coffre n'a donc pas à importer un écran. Il porte aussi
   le scellement du fil en fin d'appel — bulles vivantes closes, copie, plafond.
-- `ui/screens/call/chat.ts` — le panneau : en-tête, fil, bulles, composeur.
+- `core/conversation.ts` — la conversation de l'appel : bulles vivantes et figées, état
+  du lien, brouillon, règle des deux secondes, transcription. Une instance, qui suit le
+  canal de chaque appel dès qu'il existe (`followCalls`) — que le panneau soit monté ou
+  non — et que la machine lit en rangeant l'appel (ADR 0011, D5).
+- `ui/screens/call/chat.ts` — le panneau : en-tête, fil, bulles, composeur. Il montre la
+  conversation et lui passe la saisie ; il n'en tient que l'affichage (pli mobile, suivi
+  du bas, bulles non vues).
 - `ui/chatdialog.ts` — la relecture d'une conversation passée, depuis la bulle « T »
   de sa ligne d'historique : même `<dialog>` que le carnet, et le fil rendu par le
   même code que pendant l'appel.
