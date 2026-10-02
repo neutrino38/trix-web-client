@@ -292,6 +292,14 @@ pouvez alors la remplacer par `listen 443 ssl;` plus une ligne `http2 on;`.
   variable vient d'une `map`, et tous les en-têtes restent déclarés au niveau `server`.
 - WebRTC exige un contexte sécurisé. Sans HTTPS valide, le navigateur refuse l'accès à la
   caméra et au micro.
+- `manifest.webmanifest` rend Trix installable comme une application. Il doit être servi en
+  `application/manifest+json` — la configuration Apache le déclare, faute de quoi certaines
+  distributions l'envoient en `text/plain` et le navigateur l'ignore ; sous nginx, vérifiez
+  que votre `mime.types` connaît l'extension `webmanifest`. Il porte
+  `launch_handler: focus-existing` : relancer Trix installé ramène la fenêtre déjà ouverte
+  au lieu d'en ouvrir une seconde, qui enregistrerait le compte une deuxième fois. Cela ne
+  vaut que pour l'application installée (Chrome, Edge) : un second onglet ouvert à la main
+  reste possible.
 - `config.json` est servi tel quel, sans cache. Vérifiez-le après chaque modification :
   `curl -s https://trix.example.com/config.json | python3 -m json.tool`. Une virgule en
   trop et Trix repart en formulaire complet, sans rien signaler à l'utilisateur.

@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Trix Communicator",
+  "short_name": "Trix",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F6F4FA",
+  "theme_color": "#6B4487",
+  "icons": [
+    { "src": "/trix-favicon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/trix-favicon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/trix-favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "launch_handler": { "client_mode": ["focus-existing", "auto"] }
+}

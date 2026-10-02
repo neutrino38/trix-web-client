@@ -14,6 +14,12 @@
        pastille clignotante à l'appel entrant, puis restaure celui-ci. -->
   <link rel="icon" href="/trix-favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/trix-favicon-192.png">
+  <!-- Installable as an app. `launch_handler: focus-existing` brings back the
+       Trix window already open instead of starting a second one, which would
+       register the account twice (same rule as the notification click in
+       public/sw.js). -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#6B4487">
 </head>
 <body>
   <div id="app"></div>
