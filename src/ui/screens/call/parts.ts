@@ -12,7 +12,7 @@
 import type { PhoneInstance } from "../../../machines/phone.js";
 import type { CallView } from "../../../machines/events.js";
 import type { CallLogEntry } from "../../../storage/store.js";
-import { MEDIA_KINDS, type CallMedia } from "../../../sip/port.js";
+import { MEDIA_KINDS, type CallMedia, type CallSession } from "../../../sip/port.js";
 import type { RttTransport } from "../../../sip/rtt.js";
 import type { AccountConfig, StoredAccount } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
@@ -692,13 +692,16 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 
   // --- média, chrono, vu-mètres --------------------------------------------
   const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
+  // la session, hors de la vue (ADR 0011, D4) : d'ici à la façade, l'écran
+  // ne lui demande que ses flux et sa mesure
+  const session = phone.context.session;
   if (view && remote) {
     const self = node.querySelector('[data-ref="self"]') as HTMLVideoElement | null;
     // la surface de l'écran partagé n'existe que pendant un partage reçu ;
     // le port y route la piste **par son MID**, jamais par ordre d'arrivée
     const shared = node.querySelector('[data-ref="share"]') as HTMLVideoElement | null;
     remote.muted = speakerMuted;
-    view.session?.attachMedia(remote, self, shared);
+    if (session) showStreams(node, session, remote, self, shared);
 
     // plein écran : le double-clic est un raccourci, le bouton est le chemin
     // praticable au clavier (RGAA 7.3) — les deux mènent au même geste
@@ -726,9 +729,59 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       }, 1000);
       startVuMeters(node, remote, self);
       // mesure du média sur fenêtre glissante, découverte depuis la pastille
-      if (view.session) startMediaStats(node, view.session, startedAt);
+      if (session) startMediaStats(node, session, startedAt);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Flux : les surfaces de l'écran, branchées sur ce que le port en dit.
+// ---------------------------------------------------------------------------
+
+/** Ce qu'il faut de la session pour montrer l'appel. */
+type CallMediaSource = Pick<CallSession, "streams" | "onStreams">;
+
+let streamsOff: (() => void) | null = null;
+
+/** La surface porte-t-elle déjà exactement ces pistes ? */
+function shows(video: HTMLVideoElement, stream: MediaStream | null): boolean {
+  const now = video.srcObject instanceof MediaStream ? video.srcObject.getTracks() : [];
+  const next = stream?.getTracks() ?? [];
+  return now.length === next.length && next.every((t) => now.includes(t));
+}
+
+/**
+ * Pose les flux de l'appel sur les surfaces, et les y tient tant que
+ * l'écran est en place. Une surface n'est rebranchée que si ses pistes
+ * changent : la rebrancher à chaque annonce relancerait la lecture pour
+ * rien.
+ *
+ * Le visage et l'auto-vue ne sont jamais vidés — une pause, qui retire
+ * mes pistes émises, laisse l'auto-vue sur la dernière image plutôt que
+ * sur un rectangle noir. L'écran partagé, lui, s'en va avec le partage.
+ */
+export function showStreams(
+  node: HTMLElement,
+  session: CallMediaSource,
+  remote: HTMLVideoElement,
+  self: HTMLVideoElement | null,
+  shared: HTMLVideoElement | null,
+): void {
+  streamsOff?.();
+  const sync = (): void => {
+    const { remote: theirs, local: mine, share } = session.streams();
+    if (theirs && !shows(remote, theirs)) remote.srcObject = theirs;
+    if (self && mine && !shows(self, mine)) self.srcObject = mine;
+    if (shared && !shows(shared, share)) shared.srcObject = share;
+  };
+  // le nœud n'est pas encore dans la page au câblage : c'est aux annonces
+  // suivantes seulement qu'un nœud détaché veut dire « re-rendu »
+  streamsOff = session.onStreams(() => {
+    if (node.isConnected) return sync();
+    streamsOff?.();
+    streamsOff = null;
+  });
+  sync();
 }
 
 // ---------------------------------------------------------------------------

@@ -297,10 +297,18 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    `alert`, `link`) — l'annonce d'une bulle figée, le flash du `BEL`, le décompte des deux
    secondes et le pli mobile restent dans `chat.ts`. Les tests du modèle passent par un faux
    canal (`test/fakes/rtt.ts`) et vérifient ce qui part sur le fil, ce que l'ancien panneau
-   ne permettait pas. Restent : `chat.ts` lit encore `view.session.rtt()` pour savoir si un
-   canal existe (étapes 4 et 6, D4 et D3) et garde son état d'affichage au niveau du module
+   ne permettait pas. Reste : `chat.ts` garde son état d'affichage au niveau du module
    (D12).
 4. **Les médias** (D4) : `streams()`/`onStreams()` dans le port, `session` retiré de la vue.
+   Fait le 2026-10-02 : `CallSession.streams()` rend `{ remote, local, share }` — routage
+   par MID et miroir de l'auto-vue compris, désormais testés sans DOM —, `onStreams()`
+   prévient à chaque piste reçue et à chaque négociation conclue ; `ui/` pose `srcObject`
+   (`showStreams`) et ne rebranche une surface que si ses pistes changent. `CallView` perd
+   `session` et gagne `textChannel` (le tchat existe-t-il ?) ; la session est écrite par
+   CallBlock **à côté** de la vue, dans `ctx.session`, où la lisent l'historique, la
+   conversation du noyau et, d'ici à l'étape 6, l'écran d'appel pour ses flux et sa mesure.
+   `test/layers.test.ts` n'a plus que l'exception de D9. Les statistiques
+   (`trix.call.stats()`) attendent la façade.
 5. **La plateforme et l'instance** (D7, D8) : `Platform`, `storagePrefix`, plus d'état de module
    dans le noyau.
 6. **La façade et la vue** (D2, D3) : `createTrix`, `TrixView`, sélecteurs ; `main.ts` passe par

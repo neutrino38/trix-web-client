@@ -39,7 +39,7 @@ function view(over: Partial<CallView> = {}): CallView {
     earlyMedia: { audio: false, video: false, text: false },
     connectedAt: Date.now(),
     endedBy: null,
-    session: null,
+    textChannel: false,
     ...over,
   };
 }

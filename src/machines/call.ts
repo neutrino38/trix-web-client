@@ -54,6 +54,12 @@ export interface CallHost {
   handle: SipHandle | null;
   /** La vue de l'appel : c'est le bloc qui l'écrit, l'UI qui la lit. */
   call: CallView | null;
+  /**
+   * La session de l'appel, **hors de la vue** (ADR 0011, D4) : l'hôte en
+   * tire le carnet et le bilan média au retour, le noyau le canal texte et
+   * les flux. Écrite avec la vue, effacée avec elle.
+   */
+  session: CallSession | null;
   lastError: Msg | null;
   lastErrorCode: string | null;
   suspectFields: SuspectField | null;
@@ -194,8 +200,9 @@ function publish(state: CallView["state"], ctx: CallHost, data: CallData): void 
     earlyMedia: data.earlyMedia,
     connectedAt: data.connectedAt,
     endedBy: data.endedBy,
-    session: data.session,
+    textChannel: data.session?.rtt() != null,
   };
+  ctx.session = data.session;
 }
 
 /**
@@ -272,8 +279,8 @@ function hangUp(fx: CallFx, ending: Ending, reason: Msg, desc: string) {
  * que l'écran doit signaler (un refus technique) de ce qu'il doit taire
  * (un appel simplement manqué).
  *
- * La vue est publiée avant de rapporter : elle porte la session, donc le
- * carnet et le bilan média que l'hôte attache à la ligne d'historique
+ * La vue est publiée avant de rapporter : la session part avec elle, donc
+ * le carnet et le bilan média que l'hôte attache à la ligne d'historique
  * (§5.3). Elle n'est jamais rendue — le rendu vient une microtask plus
  * tard, quand le bloc a déjà rendu la main.
  */
@@ -786,6 +793,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
   cleanup(ctx, data) {
     data.session?.terminate();
     ctx.call = null;
+    ctx.session = null;
   },
 
   states: {
@@ -894,7 +902,7 @@ export const CallBlock = defineSbb<CallHost, PhoneEvent, CallData, CallReturn>()
      * — la sonnerie de l'opérateur, une annonce (« votre correspondant
      * n'est pas joignable »), un serveur vocal. Les pistes reçues sont
      * branchées sur l'élément distant dès qu'elles arrivent
-     * (`sip/port.ts`, `attachMedia`) : cela s'entend.
+     * (`sip/port.ts`, `onStreams` écoute `track`) : cela s'entend.
      *
      * Rien ne distingue cet état de `ringing` du point de vue du protocole
      * — mêmes réponses attendues, même délai de garde. Ce qu'il porte est

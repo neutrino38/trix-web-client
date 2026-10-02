@@ -40,6 +40,17 @@ class FakeTrack {
     this.stopped = true;
   }
 
+  get readyState(): string {
+    return this.stopped ? "ended" : "live";
+  }
+
+  /** Une copie de la même source, avec son propre `enabled` — l'auto-vue. */
+  clone(): FakeTrack {
+    const copy = new FakeTrack(this.kind);
+    copy.enabled = this.enabled;
+    return copy;
+  }
+
   addEventListener(event: string, fn: () => void): void {
     (this.listeners[event] ??= []).push(fn);
   }
@@ -161,6 +172,18 @@ class FakePc {
    */
   addEventListener(type: string, fn: () => void): void {
     if (type === "signalingstatechange") this.listeners.push(fn);
+    if (type === "track") this.trackListeners.push(fn as never);
+  }
+
+  private trackListeners: ((e: { track: FakeTrack }) => void)[] = [];
+
+  /** Une piste arrive du distant, comme `ontrack`. */
+  fireTrack(track: FakeTrack): void {
+    for (const l of this.trackListeners) l({ track });
+  }
+
+  getSenders(): RTCRtpSender[] {
+    return this.transceivers.map((t) => t.sender) as unknown as RTCRtpSender[];
   }
 
   /**
@@ -1213,6 +1236,77 @@ describe("l'écran du correspondant", () => {
     await vi.runAllTimersAsync();
     negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
     expect(ctl.shareTrack("peer")).toBe(ecran.received);
+  });
+
+  /**
+   * **Les flux, par rôle** (ADR 0011, D4) : ce que l'écran pose sur ses
+   * surfaces. Le routage par MID vivait dans `attachMedia`, au contact des
+   * `<video>`, et rien ne le vérifiait ; le voici sans DOM.
+   */
+  describe("les flux de l'appel", () => {
+    /** Ce qu'en garde un `MediaStream` : ses pistes, dans l'ordre. */
+    class FakeStream {
+      constructor(private readonly tracks: MediaStreamTrack[]) {}
+      getTracks(): MediaStreamTrack[] {
+        return this.tracks;
+      }
+    }
+    beforeEach(() => vi.stubGlobal("MediaStream", FakeStream));
+
+    const wrapped = (session: FakeSession, ctl: ReturnType<typeof control>["ctl"]) =>
+      wrapSession(session as never, { take: () => [] }, ctl, null);
+
+    it("l'écran reçu a sa surface, et jamais celle du visage", async () => {
+      const { session, events, ecran, ctl } = ecranOffert();
+      question(events).offer.accept();
+      await vi.runAllTimersAsync();
+      // enveloppée ici, et non avant : sa mesure d'une seconde ne laisserait
+      // jamais `runAllTimersAsync` s'arrêter
+      const call = wrapped(session, ctl);
+      // accepté, pas encore négocié : la m-section est là, sa piste n'est à personne
+      expect(call.streams().share).toBeNull();
+      negocie(session, ecran, offre(...AUDIO, ...CAMERA, ...ECRAN));
+      const { remote, share } = call.streams();
+      expect(share?.getTracks()).toEqual([ecran.received]);
+      expect(remote?.getTracks()).toEqual(
+        session.pc.transceivers.filter((t) => t !== ecran).map((t) => t.received),
+      );
+    });
+
+    it("l'auto-vue montre le miroir de la caméra, pas la piste émise", () => {
+      const { session, ctl } = control(["audio", "video"]);
+      const call = wrapped(session, ctl);
+      const [audio, video] = session.pc.transceivers;
+      const local = call.streams().local!.getTracks();
+      // l'audio tel quel ; la vidéo copiée, pour rester visible malgré le
+      // silence d'avant le décrochage
+      expect(local[0]).toBe(audio!.sent);
+      expect(local[1]).not.toBe(video!.sent);
+      expect(local[1]).toBe(ctl.mirror(video!.sent as unknown as MediaStreamTrack));
+    });
+
+    it("prévient à chaque piste et à chaque négociation conclue, plus après la fin", () => {
+      const { session, ctl } = control(["audio"]);
+      const call = wrapped(session, ctl);
+      const arrives = (): void => session.pc.fireTrack(session.pc.transceivers[0]!.received);
+      let heard = 0;
+      const off = call.onStreams(() => heard++);
+      arrives();
+      session.pc.settle("have-local-offer");
+      expect(heard).toBe(1);
+      session.pc.settle("stable");
+      expect(heard).toBe(2);
+
+      off();
+      arrives();
+      expect(heard).toBe(2);
+
+      call.onStreams(() => heard++);
+      session.ended = true;
+      session.emit("ended");
+      arrives();
+      expect(heard).toBe(2);
+    });
   });
 });
 

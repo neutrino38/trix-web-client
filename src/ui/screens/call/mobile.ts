@@ -26,7 +26,6 @@ import { dtmfPad } from "./dtmf.js";
 import {
   CHAT_PANE_ID,
   chatAvailable,
-  chatChannel,
   chatHead,
   chatMobileOpen,
   chatOnStage,
@@ -71,7 +70,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   // l'appel porte un canal texte dont le distant n'a pas voulu : le bouton
   // reste dans la barre, barré et inactif, au lieu de disparaître sans un
   // mot d'un appel qui promettait le tchat
-  const chatOff = view !== null && !chat && chatChannel(view) !== null;
+  const chatOff = view !== null && !chat && view.textChannel;
   // Un appel sans image lui donne l'écran entier (§4.9) : plus rien à
   // céder, donc plus de pli — ni classe sur la racine, ni bouton dans la
   // barre. Le fil est l'appel.

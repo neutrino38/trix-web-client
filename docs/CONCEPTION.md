@@ -321,7 +321,10 @@ raccrochage.
   changement d'état, et rien ne part sur le fil. `ui:toggleMedia`, lui, engage
   une renégociation et donc un état (§4.4).
 - Chrono : timestamp de `sip:accepted` en contexte, la UI dérive l'affichage.
-- Flux média : `session.connection` (RTCPeerConnection) → attach `remoteVideo`/`localVideo`.
+- Flux média : `CallSession.streams()` rend le distant, l'auto-vue et l'écran reçu en
+  `MediaStream`, `onStreams()` prévient quand ils changent ; l'écran pose lui-même
+  `srcObject` (ADR 0011, D4). La session n'est pas dans la vue de l'appel : CallBlock
+  l'écrit à côté, dans `ctx.session`.
 
 #### Ça sonne : `ringing`, `early_media`, et le son que l'appelant entend
 
@@ -336,7 +339,7 @@ doit traverser une pièce.
 Sauf quand le réseau parle déjà. Une réponse provisoire porteuse d'un SDP décrit du
 **média précoce** (RFC 3960) : la sonnerie de l'opérateur, une annonce, un serveur
 vocal. Les pistes reçues sont branchées sur l'élément distant dès qu'elles arrivent
-(`attachMedia` écoute `track`), donc cela s'entend — et une tonalité locale
+(`onStreams` écoute `track`), donc cela s'entend — et une tonalité locale
 par-dessus ne vaudrait pas mieux que deux personnes qui parlent en même temps.
 
 C'est un **état de la CallBlock**, `early_media`, et non un drapeau dans les
@@ -1558,8 +1561,8 @@ téléphone n'en font aucune lisible (le bouton reste, un appui la rouvre). La
 vignette *et* une entrée dans la barre, parce que le geste tactile seul n'existe pas
 au clavier (RGAA 7.3). Elle est purement locale — rien ne part sur le fil, et son
 état vit hors du DOM comme le pavé DTMF. Les pistes sont routées **par MID** dans
-`attachMedia` : avec deux `m=video`, l'ordre d'arrivée ne dit plus laquelle est le
-visage.
+`CallSession.streams()` : avec deux `m=video`, l'ordre d'arrivée ne dit plus laquelle
+est le visage.
 
 **Un écran reçu se lit, donc il s'agrandit.** `contain` garantit que rien n'est coupé,
 pas que c'est lisible : un écran de bureau ramené à 360 px est entier et illisible. La

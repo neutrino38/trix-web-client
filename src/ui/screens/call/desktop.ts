@@ -20,7 +20,6 @@ import { dtmfPad } from "./dtmf.js";
 import { panelHandle } from "./panel.js";
 import {
   chatAvailable,
-  chatChannel,
   chatHead,
   chatOnStage,
   chatPane,
@@ -76,7 +75,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // sidebar le dit d'une bande barrée là où le panneau se serait ouvert.
   // Sans elle, le tchat disparaîtrait sans un mot d'un appel qui l'avait
   // promis — le bouton barré de la barre mobile joue le même rôle.
-  const chatOff = view !== null && !chat && chatChannel(view) !== null;
+  const chatOff = view !== null && !chat && view.textChannel;
   // Un appel sans image donne la scène au tchat (§4.9) : le fil passe au
   // centre, et la sidebar n'en garde rien — un panneau vide à côté d'un fil
   // plein serait la même conversation affichée deux fois.

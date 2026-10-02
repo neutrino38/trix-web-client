@@ -162,7 +162,12 @@ class FakeCallSession {
   stopShare(): void {
     this.shares.push(false);
   }
-  attachMedia(): void {}
+  streams() {
+    return { remote: null, local: null, share: null };
+  }
+  onStreams(): () => void {
+    return () => {};
+  }
   /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
   rtt(): null {
     return null;

@@ -86,7 +86,12 @@ class FakeSession implements CallSession {
     this.tones.push(tone);
     return true;
   }
-  attachMedia(): void {}
+  streams() {
+    return { remote: null, local: null, share: null };
+  }
+  onStreams(): () => void {
+    return () => {};
+  }
   /** Le lien texte : hors sujet pour ces tests, la session n'en ouvre pas. */
   rtt(): null {
     return null;
@@ -177,6 +182,7 @@ function hostOf(args: Partial<CallData>, handle: SipHandle | null) {
     context: () => ({
       handle,
       call: null,
+      session: null,
       lastError: null,
       lastErrorCode: null,
       suspectFields: null,

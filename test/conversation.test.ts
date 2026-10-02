@@ -223,20 +223,20 @@ describe("what listeners hear", () => {
   });
 });
 
-/** A phone as far as `followCalls` reads it: its current call, and its notifications. */
-type FakeCall = { session: { rtt: () => FakeChannel | null } | null } | null;
+/** A phone as far as `followCalls` reads it: its call's session, and its notifications. */
+type FakeSession = { rtt: () => FakeChannel | null } | null;
 
 function fakePhone() {
   const subs = new Set<() => void>();
   const phone = {
-    context: { call: null as FakeCall },
+    context: { session: null as FakeSession },
     subscribe: (fn: () => void) => {
       subs.add(fn);
       return () => subs.delete(fn);
     },
     /** The call changes, and the machine says so. */
-    set(call: FakeCall) {
-      phone.context.call = call;
+    set(session: FakeSession) {
+      phone.context.session = session;
       for (const fn of subs) fn();
     },
   };
@@ -256,7 +256,7 @@ describe("following the calls (D5)", () => {
     const rtt = fakeChannel();
     // the peer writes before anyone follows: the channel keeps it
     rtt.receive("allô ?");
-    phone.set({ session: { rtt: () => rtt } });
+    phone.set({ rtt: () => rtt });
     await Promise.resolve();
     expect(mine.channel()).toBe(rtt);
     expect(mine.items().filter((i) => i.kind === "bubble").map((b) => bubbleText(b as ChatBubble))).toEqual([
@@ -277,11 +277,11 @@ describe("following the calls (D5)", () => {
     const mine = createConversation();
     followCalls(phone as never, mine);
     const first = fakeChannel();
-    phone.set({ session: { rtt: () => first } });
+    phone.set({ rtt: () => first });
     await Promise.resolve();
     first.receive("premier appel");
     const second = fakeChannel();
-    phone.set({ session: { rtt: () => second } });
+    phone.set({ rtt: () => second });
     await Promise.resolve();
     expect(mine.channel()).toBe(second);
     expect(mine.items()).toEqual([]);
@@ -292,7 +292,7 @@ describe("following the calls (D5)", () => {
     const phone = fakePhone();
     const mine = createConversation();
     followCalls(phone as never, mine);
-    phone.set({ session: { rtt: () => null } });
+    phone.set({ rtt: () => null });
     await Promise.resolve();
     expect(mine.channel()).toBeNull();
   });

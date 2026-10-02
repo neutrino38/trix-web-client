@@ -424,7 +424,7 @@ export function followCalls(phone: PhoneInstance, conversation: Conversation): (
   let queued = false;
   const sync = (): void => {
     queued = false;
-    const channel = phone.context.call?.session?.rtt() ?? null;
+    const channel = phone.context.session?.rtt() ?? null;
     if (channel) conversation.attach(channel);
     else conversation.detach();
   };

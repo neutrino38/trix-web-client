@@ -145,9 +145,6 @@ const KNOWN: Record<string, string[]> = {
   // D9: `MsgKey = keyof fr` — the core's message keys are the UI dictionary's.
   // Goes with `CoreMsgKey` and `core/i18n/`.
   "src/i18n/types.ts": ["imports src/i18n/locales/fr.ts"],
-  // D4: `CallSession.attachMedia` takes `<video>` elements. Goes with
-  // `streams()` / `onStreams()`.
-  "src/sip/port.ts": ["uses HTMLVideoElement"],
 };
 
 describe("layers (ADR 0011, D1)", () => {

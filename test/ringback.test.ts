@@ -46,7 +46,7 @@ function view(state: CallView["state"], earlyMedia: CallMedia = NONE): CallView 
     earlyMedia,
     connectedAt: null,
     endedBy: null,
-    session: null,
+    textChannel: false,
   };
 }
 

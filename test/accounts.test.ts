@@ -134,7 +134,8 @@ class FakeSip implements SipPort {
             stopShare: () => {},
           sendDtmf: () => true,
           
-          attachMedia: () => {},
+          streams: () => ({ remote: null, local: null, share: null }),
+          onStreams: () => () => {},
           rtt: () => null,
           mediaStats: () => null,
           callStats: () => null,

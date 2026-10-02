@@ -8,7 +8,6 @@ export interface AccountData {
 }
 import type {
   CallMedia,
-  CallSession,
   CallSipEvent,
   MediaKind,
   SipEvent,
@@ -214,7 +213,14 @@ export interface CallView {
   connectedAt: number | null;
   /** Qui a mis fin à l'appel, connu à partir de hangingup/fin de session. */
   endedBy: "local" | "remote" | "network" | null;
-  session: CallSession | null;
+  /**
+   * L'appel porte-t-il un canal de texte en temps réel ? Oui dès que le
+   * compte en demande un, **avant** que le distant ait suivi : c'est
+   * `media.text` qui dit s'il l'a fait. La session elle-même n'est pas
+   * dans la vue (ADR 0011, D4) : c'est l'objet du port, et une UI n'a
+   * pas à le tenir.
+   */
+  textChannel: boolean;
 }
 
 /**

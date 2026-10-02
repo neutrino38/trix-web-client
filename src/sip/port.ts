@@ -317,9 +317,21 @@ export interface MediaOffer {
   reject(): void;
 }
 
+/** Les flux d'un appel, par rôle (`CallSession.streams`). */
+export interface CallStreams {
+  /** Le correspondant : sa voix, son visage — jamais son écran partagé. */
+  remote: MediaStream | null;
+  /** L'auto-vue : mon micro et le miroir de ma caméra — jamais mon écran. */
+  local: MediaStream | null;
+  /** L'écran que partage le correspondant (ADR 0005, D11). */
+  share: MediaStream | null;
+}
+
+const NO_STREAMS: CallStreams = { remote: null, local: null, share: null };
+
 /**
- * Session d'appel côté machine/UI : la frontière média. `attachMedia`
- * est le seul point où l'UI touche aux flux WebRTC — jamais à JsSIP.
+ * Session d'appel côté machine/UI : la frontière média. `streams` est le
+ * seul point où l'UI touche aux flux WebRTC — jamais à JsSIP.
  */
 export interface CallSession {
   /** CANCEL / BYE selon l'état ; sans effet si la session est déjà terminée. */
@@ -412,19 +424,28 @@ export interface CallSession {
    */
   sendDtmf(tone: string): boolean;
   /**
-   * Branche les flux de l'appel sur les surfaces de l'écran — le seul point
-   * où l'UI touche à WebRTC.
+   * **Les flux de l'appel**, rangés par rôle (ADR 0011, D4) — à l'UI de les
+   * poser sur ses surfaces (`srcObject`). Le port ne sait rien de
+   * l'affichage : un `MediaStream` est de WebRTC, pas du DOM.
    *
-   * `share` est la surface de **l'écran partagé par le correspondant**
-   * (ADR 0005, D11), `null` là où l'écran n'en a pas rendu. Les pistes y
-   * sont routées **par MID** et non par ordre d'arrivée : avec deux
-   * `m=video` dans l'appel, l'ordre ne dit plus laquelle est le visage.
+   * `share` est **l'écran partagé par le correspondant** (ADR 0005, D11).
+   * Les pistes y sont routées **par MID** et non par ordre d'arrivée : avec
+   * deux `m=video` dans l'appel, l'ordre ne dit plus laquelle est le visage.
+   * `local` porte le miroir de l'auto-vue, pas la piste émise (`mirror`).
+   *
+   * Chaque appel rend des `MediaStream` neufs : ce sont **les pistes** qui
+   * disent si un flux a changé, et une surface qu'on rebrancherait à chaque
+   * fois relancerait sa lecture pour rien. `null` quand le rôle n'a aucune
+   * piste — pas encore de connexion, pause, pas de partage reçu.
    */
-  attachMedia(
-    remote: HTMLVideoElement,
-    local: HTMLVideoElement | null,
-    share: HTMLVideoElement | null,
-  ): void;
+  streams(): CallStreams;
+  /**
+   * Prévient quand `streams()` a pu changer : une piste arrive, ou une
+   * négociation s'achève — un média ajouté ou retiré, un partage qui
+   * commence ou s'arrête. Rend ce qui désabonne ; tout se désabonne avec
+   * la fin de l'appel.
+   */
+  onStreams(listener: () => void): () => void;
   /**
    * L'état du média sur les dix dernières secondes — ce que l'UI affiche
    * pendant la conversation. `null` tant que rien n'a été mesuré, et quand
@@ -2405,6 +2426,29 @@ export function wrapSession(
   const closeRtt = (): void => rtt?.close();
   session.on("ended", closeRtt);
   session.on("failed", closeRtt);
+
+  // `onStreams` : une piste qui arrive, et toute négociation qui s'achève —
+  // c'est là qu'un média entre ou sort, qu'un écran partagé est accepté ou
+  // rendu inerte. Un appel fini n'a plus de flux à annoncer.
+  const streamListeners = new Set<() => void>();
+  const streamsChanged = (): void => {
+    for (const listener of [...streamListeners]) listener();
+  };
+  const watchStreams = (pc: RTCPeerConnection): void => {
+    pc.addEventListener("track", streamsChanged);
+    pc.addEventListener("signalingstatechange", () => {
+      if (pc.signalingState === "stable") streamsChanged();
+    });
+  };
+  if (session.connection) watchStreams(session.connection);
+  else {
+    session.on("peerconnection", (e: { peerconnection: RTCPeerConnection }) =>
+      watchStreams(e.peerconnection),
+    );
+  }
+  const forgetStreams = (): void => streamListeners.clear();
+  session.on("ended", forgetStreams);
+  session.on("failed", forgetStreams);
   return {
     rtt: () => rtt?.channel ?? null,
     terminate() {
@@ -2444,43 +2488,31 @@ export function wrapSession(
       traceNote(`DTMF « ${tone} » → RFC 4733`);
       return true;
     },
-    attachMedia(remote, local, screen) {
+    streams() {
       const pc = session.connection;
-      if (!pc) return;
-      /** La surface porte-t-elle déjà cette piste, et elle seule ? */
-      const shows = (video: HTMLVideoElement, track: MediaStreamTrack | null): boolean => {
-        const tracks = video.srcObject instanceof MediaStream ? video.srcObject.getTracks() : [];
-        return track === null ? tracks.length === 0 : tracks.length === 1 && tracks[0] === track;
-      };
-      const sync = () => {
-        // les deux écrans, repérés par identité : le sien par le MID de sa
-        // m-section, le mien par l'objet capturé (D11). Sans cela, l'écran
-        // reçu se glisserait dans la scène à la place du visage, et le mien
-        // dans l'auto-vue à la place de ma caméra
-        const peerShare = control.shareTrack("peer");
-        const ownShare = control.shareTrack("own");
-        const rTracks = pc
-          .getReceivers()
-          .map((r) => r.track)
-          .filter((t): t is MediaStreamTrack => t !== null && t !== peerShare);
-        if (rTracks.length) remote.srcObject = new MediaStream(rTracks);
-        if (local) {
-          const lTracks = pc
-            .getSenders()
-            .map((s) => s.track)
-            .filter((t): t is MediaStreamTrack => t !== null && t !== ownShare)
-            .map(control.mirror);
-          if (lTracks.length) local.srcObject = new MediaStream(lTracks);
-        }
-        // la surface de l'écran partagé : rebranchée seulement quand elle
-        // change de piste — la réattacher à chaque `track` relancerait la
-        // lecture pour rien
-        if (screen && !shows(screen, peerShare)) {
-          screen.srcObject = peerShare ? new MediaStream([peerShare]) : null;
-        }
-      };
-      pc.addEventListener("track", sync);
-      sync();
+      if (!pc) return NO_STREAMS;
+      // les deux écrans, repérés par identité : le sien par le MID de sa
+      // m-section, le mien par l'objet capturé (D11). Sans cela, l'écran
+      // reçu se glisserait dans la scène à la place du visage, et le mien
+      // dans l'auto-vue à la place de ma caméra
+      const peerShare = control.shareTrack("peer");
+      const ownShare = control.shareTrack("own");
+      const remote = pc
+        .getReceivers()
+        .map((r) => r.track)
+        .filter((t): t is MediaStreamTrack => t !== null && t !== peerShare);
+      const local = pc
+        .getSenders()
+        .map((s) => s.track)
+        .filter((t): t is MediaStreamTrack => t !== null && t !== ownShare)
+        .map(control.mirror);
+      const of = (tracks: MediaStreamTrack[]): MediaStream | null =>
+        tracks.length ? new MediaStream(tracks) : null;
+      return { remote: of(remote), local: of(local), share: of(peerShare ? [peerShare] : []) };
+    },
+    onStreams(listener) {
+      streamListeners.add(listener);
+      return () => streamListeners.delete(listener);
     },
   };
 }

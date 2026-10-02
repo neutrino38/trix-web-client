@@ -27,7 +27,14 @@ import {
 } from "../storage/store.js";
 import { findByAddress } from "../accounts.js";
 import { resumeAccount, setResumeAccount } from "../storage/session.js";
-import type { CallMedia, IncomingCall, RejectReason, SipHandle, SipPort } from "../sip/port.js";
+import type {
+  CallMedia,
+  CallSession,
+  IncomingCall,
+  RejectReason,
+  SipHandle,
+  SipPort,
+} from "../sip/port.js";
 import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
 import type { ChatItem } from "../sip/transcript.js";
@@ -101,6 +108,12 @@ export interface PhoneCtx {
    * pendant `in_call`.
    */
   call: CallView | null;
+  /**
+   * La session de l'appel, écrite par CallBlock avec la vue mais **hors
+   * d'elle** (ADR 0011, D4) : c'est l'objet du port. Lue ici pour le carnet
+   * et le bilan média, par le noyau pour le canal texte et les flux.
+   */
+  session: CallSession | null;
   /** Issue du dernier appel raté (486, pas de réponse…), affichée près du champ d'adresse. */
   callError: Msg | null;
   /** Historique d'appels du compte courant, persisté chiffré. */
@@ -235,7 +248,7 @@ const LOG_OUTCOME: Record<CallReturn["type"], CallLogEntry["outcome"]> = {
  * qui décide de l'icône dans l'historique, et une ligne vide n'en porte pas.
  */
 function traceOf(ctx: PhoneCtx): { trace?: TraceLine[] } {
-  const lines = ctx.call?.session?.trace() ?? [];
+  const lines = ctx.session?.trace() ?? [];
   return lines.length > 0 ? { trace: lines } : {};
 }
 
@@ -245,7 +258,7 @@ function traceOf(ctx: PhoneCtx): { trace?: TraceLine[] } {
  * l'appel n'a jamais eu de média : la loupe n'apparaît alors pas.
  */
 function statsOf(ctx: PhoneCtx): { stats?: MediaStats } {
-  const stats = ctx.call?.session?.callStats() ?? null;
+  const stats = ctx.session?.callStats() ?? null;
   return stats ? { stats } : {};
 }
 
@@ -629,6 +642,7 @@ function back(ctx: PhoneCtx, ev: CallReturn, callError: Msg | null) {
   ctx.pendingCall = null;
   ctx.incoming = null;
   ctx.call = null;
+  ctx.session = null;
   ctx.callError = callError;
   if (sleep) return goto("sleeping", "veille : appel raccroché");
   if (ev.type === "call:dropped") {
@@ -658,6 +672,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     pendingCall: null,
     incoming: null,
     call: null,
+    session: null,
     callError: null,
     history: [],
     contacts: [],

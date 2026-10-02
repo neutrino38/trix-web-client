@@ -29,7 +29,7 @@ import { createConversation, type Conversation } from "../src/core/conversation.
 import { fakeChannel, type FakeChannel } from "./fakes/rtt.js";
 import { overlayBar } from "../src/ui/screens/call/overlay.js";
 import type { CallView } from "../src/machines/events.js";
-import type { CallMedia, CallSession } from "../src/sip/port.js";
+import type { CallMedia } from "../src/sip/port.js";
 import { T140 } from "../src/sip/t140.js";
 import { useLocale } from "../src/i18n/index.js";
 
@@ -176,7 +176,7 @@ describe("le gabarit", () => {
       earlyMedia: { audio: false, video: false, text: false },
       connectedAt: Date.now(),
       endedBy: null,
-      session: null,
+      textChannel: false,
     } satisfies CallView;
     expect(overlayBar({ view, speakerMuted: false })).not.toContain('data-act="chat"');
     const withChat = overlayBar({
@@ -216,7 +216,7 @@ describe("le gabarit", () => {
       earlyMedia: { audio: false, video: false, text: false },
       connectedAt: Date.now(),
       endedBy: null,
-      session: null,
+      textChannel: false,
     } satisfies CallView;
     const bar = overlayBar({
       view,
@@ -242,7 +242,7 @@ describe("le gabarit", () => {
  * son écran le jour où le distant refuse le texte.
  */
 describe("le tchat sur la scène", () => {
-  /** Un appel dont la session porte un canal de texte — le canal suffit ici. */
+  /** Un appel qui porte un canal de texte — le canal suffit ici. */
   const callOf = (media: CallMedia, state = "connected"): CallView =>
     ({
       state,
@@ -263,7 +263,7 @@ describe("le tchat sur la scène", () => {
       notice: null,
       connectedAt: Date.now(),
       endedBy: null,
-      session: { rtt: () => ({}) } as unknown as CallSession,
+      textChannel: true,
     }) as CallView;
 
   it("prend la scène quand l'appel n'a pas d'image", () => {
@@ -282,7 +282,7 @@ describe("le tchat sur la scène", () => {
   it("pas d'appel, pas de canal, pas de scène", () => {
     expect(chatOnStage(null)).toBe(false);
     const view = callOf({ audio: true, video: false, text: true });
-    expect(chatOnStage({ ...view, session: null })).toBe(false);
+    expect(chatOnStage({ ...view, textChannel: false })).toBe(false);
   });
 
   it("texte refusé : l'appel audio retrouve sa scène, l'appel texte garde la sienne", () => {

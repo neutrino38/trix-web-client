@@ -22,7 +22,7 @@
  */
 
 import type { CallView } from "../../../machines/events.js";
-import type { RttChannel, RttState } from "../../../sip/rtt.js";
+import type { RttState } from "../../../sip/rtt.js";
 import {
   bubbleText,
   type ChatBubble,
@@ -157,11 +157,6 @@ export const chatDraft = (): string => conv.draft();
 // Gabarit
 // ---------------------------------------------------------------------------
 
-/** Le tchat n'existe que si le canal existe : sans lui, pas d'onglet. */
-export function chatChannel(view: CallView | null): RttChannel | null {
-  return view?.session?.rtt() ?? null;
-}
-
 /**
  * **Y a-t-il un tchat à montrer ?** Trois conditions, et la première est
  * celle qui tranche : **le texte doit être négocié**.
@@ -176,14 +171,14 @@ export function chatChannel(view: CallView | null): RttChannel | null {
  * un composeur ouvert sur un lien qui n'existe pas promet un message qui
  * ne partira jamais.
  *
- * Le canal doit exister — compte sans transport texte, sonnerie entrante
- * qui n'a pas encore de session — et le lien ne doit pas être mort sans
- * avoir jamais servi (`chatRefused`), ce que la négociation ne dit pas
- * toujours : une passerelle peut annoncer son URL et ne jamais ouvrir le
+ * Le canal doit exister (`textChannel`) — compte sans transport texte,
+ * sonnerie entrante qui n'a pas encore de session — et le lien ne doit
+ * pas être mort sans avoir jamais servi (`chatRefused`), ce que la
+ * négociation ne dit pas toujours : une passerelle peut annoncer son URL et ne jamais ouvrir le
  * socket.
  */
 export function chatAvailable(view: CallView | null): boolean {
-  return view !== null && view.media.text && chatChannel(view) !== null && !chatRefused();
+  return view !== null && view.media.text && view.textChannel && !chatRefused();
 }
 
 /**
@@ -208,7 +203,7 @@ export function chatOnStage(view: CallView | null): boolean {
   // à montrer, et le fil retourne au panneau. Sans cette ligne, l'écran
   // reçu n'aurait nulle part où s'afficher.
   if (!view || view.state === "ringing_in" || view.media.video || view.peerSharing) return false;
-  if (chatChannel(view) === null) return false;
+  if (!view.textChannel) return false;
   // Un appel **texte seul** garde sa scène même quand le texte n'est pas
   // négocié : il n'y a rien d'autre à mettre à l'écran, et la remarque du
   // fil dit pourquoi cet appel ne mènera nulle part — le champ de saisie,
@@ -443,7 +438,7 @@ export interface ChatStageCtx {
  * de scène — ses boutons sont blancs, et c'est ce qui les rend lisibles.
  *
  * **L'élément vidéo distant reste**, quoique invisible : c'est lui qui joue
- * le son de l'appel (`attachMedia`), et le haut-parleur le coupe. Un appel
+ * le son de l'appel (`showStreams`), et le haut-parleur le coupe. Un appel
  * texte seul n'y attache rien, ce qui ne coûte rien non plus.
  *
  * **Pas de `videozone`.** Le plein écran s'attrape au double-clic sur la
@@ -563,7 +558,7 @@ export function wireChat(screen: HTMLElement, ctx: ChatCtx): void {
   chatPeer = ctx.peer;
   // appel sans texte (ou pas d'appel du tout) : rien à brancher. Le canal,
   // lui, est suivi par la conversation du noyau (`followCalls`), pas ici.
-  if (!chatChannel(ctx.view)) return;
+  if (!ctx.view?.textChannel) return;
 
   const input = screen.querySelector<HTMLTextAreaElement>('[data-ref="chat-input"]');
   const list = screen.querySelector<HTMLElement>('[data-ref="chat-thread"]');
