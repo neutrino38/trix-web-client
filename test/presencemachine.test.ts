@@ -11,6 +11,7 @@ import {
   type PresenceEvent,
   type StatusStore,
 } from "../src/machines/presence.js";
+import type { Presence } from "../src/sip/pidf.js";
 import type { SipHandle } from "../src/sip/port.js";
 import type { PresenceLink, PresenceSipEvent, PublishedInfo } from "../src/sip/presence.js";
 import { DEFAULT_STATUS, type StatusPrefs } from "../src/storage/session.js";
@@ -23,9 +24,13 @@ function fakeHandle() {
   const calls: string[] = [];
   const published: PublishedInfo[] = [];
   let send: ((ev: PresenceSipEvent) => void) | null = null;
+  let self = 0;
   const link: PresenceLink = {
     watch: (uri) => calls.push(`watch ${uri}`),
     unwatch: (uri) => calls.push(`unwatch ${uri}`),
+    watchSelf: () => {
+      self += 1;
+    },
     publish: (info) => published.push(info),
   };
   const handle = {
@@ -34,7 +39,13 @@ function fakeHandle() {
       return link;
     },
   } as unknown as SipHandle;
-  return { handle, calls, published, emit: (ev: PresenceSipEvent) => send!(ev) };
+  return {
+    handle,
+    calls,
+    published,
+    selfWatches: () => self,
+    emit: (ev: PresenceSipEvent) => send!(ev),
+  };
 }
 
 function memoryStatusStore(initial: Record<string, StatusPrefs> = {}) {
@@ -98,6 +109,7 @@ describe("PresenceMachine — up and down (D9, D12)", () => {
     const h = up(t, [BOB, CAROL]);
     expect(t.presence.state).toBe("live");
     expect(h.calls).toEqual([`watch ${BOB}`, `watch ${CAROL}`]);
+    expect(h.selfWatches()).toBe(1);
     expect(h.published).toHaveLength(1);
     expect(h.published[0]).toMatchObject({ state: "available", note: null });
   });
@@ -256,6 +268,73 @@ describe("PresenceMachine — our status (D5)", () => {
     t.send({ type: "ui:setStatus", status: "away" });
     const h2 = up(t);
     expect(h2.published[0]!.state).toBe("away");
+  });
+});
+
+describe("PresenceMachine — our other devices", () => {
+  const said = (state: Presence, since: number | null = null, automatic = false): PresenceSipEvent => ({
+    type: "sip:ownPresence",
+    info: { state, note: null, since },
+    automatic,
+  });
+
+  it("a status chosen elsewhere becomes ours, saved and published", () => {
+    const t = start();
+    const h = up(t);
+    h.emit(said("available"));
+    h.emit(said("busy"));
+    expect(t.presence.context.prefs.chosen).toBe("busy");
+    expect(t.saved.get("acc")!.chosen).toBe("busy");
+    expect(h.published.map((p) => p.state)).toEqual(["available", "busy"]);
+  });
+
+  it("the first word, and a repeat, change nothing", () => {
+    const t = start();
+    const h = up(t);
+    h.emit(said("dnd"));
+    h.emit(said("dnd"));
+    expect(t.presence.context.prefs.chosen).toBe("available");
+    expect(h.published).toHaveLength(1);
+  });
+
+  it("neither a rule nor an absence is a choice, nor moves the reference", () => {
+    const t = start();
+    const h = up(t);
+    h.emit(said("available"));
+    h.emit(said("away", null, true));
+    h.emit(said("on-the-phone"));
+    h.emit(said("offline"));
+    h.emit(said("available"));
+    expect(t.presence.context.prefs.chosen).toBe("available");
+    expect(h.published).toHaveLength(1);
+  });
+
+  it("a choice older than ours loses", () => {
+    const t = start();
+    const h = up(t);
+    h.emit(said("available"));
+    t.send({ type: "ui:setStatus", status: "away" });
+    h.emit(said("busy", Date.now() - 60_000));
+    expect(t.presence.context.prefs.chosen).toBe("away");
+    h.emit(said("dnd", Date.now() + 1000));
+    expect(t.presence.context.prefs.chosen).toBe("dnd");
+  });
+
+  it("a new registration starts listening over", () => {
+    const t = start();
+    up(t).emit(said("available"));
+    t.send({ type: "phone:down" });
+    const h2 = up(t);
+    h2.emit(said("busy"));
+    expect(t.presence.context.prefs.chosen).toBe("available");
+  });
+
+  it("what we publish by a rule is marked as such", () => {
+    const t = start();
+    const h = up(t);
+    t.send({ type: "phone:callStarted" });
+    t.send({ type: "phone:callEnded" });
+    expect(h.published.map((p) => !!p.automatic)).toEqual([false, true, false]);
   });
 });
 

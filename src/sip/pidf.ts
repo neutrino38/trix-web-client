@@ -12,7 +12,7 @@
  * `<dm:person>` beside a single tuple, older clients nest them in the tuple.
  * Activities are therefore looked up anywhere in the document, by local
  * name, whatever the prefix or namespace the sender chose. Only our own
- * `<trix:dnd/>` is matched by namespace.
+ * `<trix:dnd/>` and `<trix:auto/>` are matched by namespace.
  *
  * When several devices speak for one person, the most constraining state
  * wins: someone on the phone at their desk is not "available" because their
@@ -86,11 +86,45 @@ const ACTIVITY: Readonly<Record<string, Presence>> = {
 
 /** Reads a presence body. Never throws; anything unreadable is `unknown`. */
 export function readPidf(body: string, parser: XmlParser): PresenceInfo {
+  const root = parse(body, parser);
+  if (!root) return UNKNOWN;
+  const all = () => true;
+  return { state: stateOf(root, all), note: noteOf(root, all), since: sinceOf(root, all) };
+}
+
+/** What the other devices of our own account say (`readOthers`). */
+export interface OthersPresence {
+  info: PresenceInfo;
+  /** One of them publishes a state set by an automatic rule (`<trix:auto/>`). */
+  automatic: boolean;
+}
+
+/**
+ * Reads the NOTIFY of our own subscription, leaving out what this device
+ * published: its tuple `tupleId` and its person `p-<tupleId>`, as
+ * `writePidf` names them. What is left is the word of our other devices —
+ * without the filter, our own publication would come back to us.
+ */
+export function readOthers(body: string, parser: XmlParser, tupleId: string): OthersPresence {
+  const root = parse(body, parser);
+  if (!root) return { info: UNKNOWN, automatic: false };
+  const keep = (el: Element) => !ownedBy(el, tupleId);
+  const automatic = elements(root, "*", "activities")
+    .filter(keep)
+    .some((a) => childElements(a).some((c) => c.namespaceURI === TRIX_NS && c.localName === "auto"));
+  return {
+    info: { state: stateOf(root, keep), note: noteOf(root, keep), since: sinceOf(root, keep) },
+    automatic,
+  };
+}
+
+/** The `<presence>` root of a PIDF document; null when it is not one. */
+function parse(body: string, parser: XmlParser): Element | null {
   let doc: Document;
   try {
     doc = parser.parseFromString(body, "application/xml");
   } catch {
-    return UNKNOWN;
+    return null;
   }
   const root = doc?.documentElement;
   if (
@@ -99,19 +133,30 @@ export function readPidf(body: string, parser: XmlParser): PresenceInfo {
     root.namespaceURI !== PIDF_NS ||
     doc.getElementsByTagName("parsererror").length > 0
   ) {
-    return UNKNOWN;
+    return null;
   }
-
-  return { state: stateOf(root), note: noteOf(root), since: sinceOf(root) };
+  return root;
 }
 
-function stateOf(root: Element): Presence {
-  const tuples = elements(root, PIDF_NS, "tuple");
+/** `el` sits in the tuple or the person this device published. */
+function ownedBy(el: Element, tupleId: string): boolean {
+  for (let n: Node | null = el; n && n.nodeType === 1; n = n.parentNode) {
+    const e = n as Element;
+    if (e.namespaceURI === PIDF_NS && e.localName === "tuple" && e.getAttribute("id") === tupleId) return true;
+    if (e.localName === "person" && e.getAttribute("id") === `p-${tupleId}`) return true;
+  }
+  return false;
+}
+
+type Keep = (el: Element) => boolean;
+
+function stateOf(root: Element, keep: Keep): Presence {
+  const tuples = elements(root, PIDF_NS, "tuple").filter(keep);
   const open = tuples.some((t) => text(first(t, PIDF_NS, "basic")) === "open");
   if (!open) return "offline";
 
   const states = new Set<Presence>(["available"]);
-  for (const activities of elements(root, "*", "activities")) {
+  for (const activities of elements(root, "*", "activities").filter(keep)) {
     for (const child of childElements(activities)) {
       if (child.namespaceURI === TRIX_NS && child.localName === "dnd") {
         states.add("dnd");
@@ -130,9 +175,9 @@ function stateOf(root: Element): Presence {
  * The first non-empty note, in document order: the presence-level one if
  * any, then the tuples', then the persons' (`<note>` or `<dm:note>`).
  */
-function noteOf(root: Element): string | null {
+function noteOf(root: Element, keep: Keep): string | null {
   for (const ns of [PIDF_NS, DATA_MODEL_NS]) {
-    for (const note of elements(root, ns, "note")) {
+    for (const note of elements(root, ns, "note").filter(keep)) {
       const t = text(note);
       if (t) return t;
     }
@@ -141,10 +186,10 @@ function noteOf(root: Element): string | null {
 }
 
 /** The most recent `<timestamp>` or `activities@from`, whichever is later. */
-function sinceOf(root: Element): number | null {
+function sinceOf(root: Element, keep: Keep): number | null {
   const stamps = [
-    ...elements(root, "*", "timestamp").map(text),
-    ...elements(root, "*", "activities").map((a) => a.getAttribute("from")),
+    ...elements(root, "*", "timestamp").filter(keep).map(text),
+    ...elements(root, "*", "activities").filter(keep).map((a) => a.getAttribute("from")),
   ]
     .map((s) => (s ? Date.parse(s) : NaN))
     .filter((n) => !Number.isNaN(n));
@@ -157,10 +202,12 @@ function sinceOf(root: Element): number | null {
  * devices. `tupleId` must be stable for this device across refreshes.
  *
  * Invisible is published as `offline` by the caller: `closed`, no person.
+ * A state set by an automatic rule carries `<trix:auto/>`, so that our
+ * other devices do not take it for a choice (`readOthers`).
  */
 export function writePidf(
   entity: string,
-  info: { state: PublishedPresence; note: string | null; since: number | null },
+  info: { state: PublishedPresence; note: string | null; since: number | null; automatic?: boolean },
   tupleId: string,
 ): string {
   const open = info.state !== "offline";
@@ -180,7 +227,7 @@ export function writePidf(
   if (activities) {
     lines.push(
       `<dm:person id="p-${escape(tupleId)}">`,
-      `<rpid:activities>${activities}</rpid:activities>`,
+      `<rpid:activities>${activities}${info.automatic ? "<trix:auto/>" : ""}</rpid:activities>`,
       `</dm:person>`,
     );
   }

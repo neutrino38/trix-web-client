@@ -9,6 +9,14 @@
  * opened by `SipHandle.presence(send)` and its events go to that `send`
  * alone — PresenceMachine's, never PhoneMachine's (D12).
  *
+ * ## Our own presence
+ *
+ * `watchSelf` subscribes to our own address of record, like any contact.
+ * The server's NOTIFY aggregates every device of the account, this one
+ * included: it is read without our own tuple (`readOthers`) and comes out
+ * as `sip:ownPresence` — what our other devices say. Should our address
+ * also be in the contact book, the same NOTIFY serves it as well.
+ *
  * ## Discovery
  *
  * The server's answer to the first SUBSCRIBE settles the question for
@@ -42,6 +50,7 @@
 import type { UA } from "jssip";
 import { normalizeTarget } from "jssip/lib/Utils.js";
 import {
+  readOthers,
   readPidf,
   UNKNOWN,
   writePidf,
@@ -61,6 +70,13 @@ export type PresenceSipEvent =
       pending: boolean;
     }
   | {
+      /** What the other devices of our account publish (`watchSelf`). */
+      type: "sip:ownPresence";
+      info: PresenceInfo;
+      /** Set by one of their automatic rules, not chosen. */
+      automatic: boolean;
+    }
+  | {
       type: "sip:presenceSupport";
       method: "subscribe" | "publish";
       supported: boolean;
@@ -71,6 +87,8 @@ export interface PublishedInfo {
   state: PublishedPresence;
   note: string | null;
   since: number | null;
+  /** Set by an automatic rule (D5), not chosen; absent: chosen. */
+  automatic?: boolean;
 }
 
 export interface PresenceLink {
@@ -78,6 +96,8 @@ export interface PresenceLink {
   watch(uri: string): void;
   /** Ends the subscription, if any. */
   unwatch(uri: string): void;
+  /** Subscribes to our own address of record. Idempotent. */
+  watchSelf(): void;
   /** Publishes our own presence. */
   publish(info: PublishedInfo): void;
 }
@@ -160,6 +180,8 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
   const watched = new Map<string, Entry>();
   let closed = false;
   let subscribeRefused = false;
+  /** `watchSelf` was called: `unwatch` of our own address keeps it. */
+  let self = false;
   const ownDomain = domainOf(deps.entity);
   /** Other domains that refused SUBSCRIBE itself. */
   const refusedDomains = new Set<string>();
@@ -200,6 +222,9 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
           entry.failures = 0;
           const pidf = contentType?.toLowerCase().startsWith(PIDF_CONTENT_TYPE) ?? true;
           presence(uri, pidf ? readPidf(body, deps.parser) : UNKNOWN);
+          if (self && pidf && uri === deps.entity) {
+            send({ type: "sip:ownPresence", ...readOthers(body, deps.parser, deps.tupleId) });
+          }
         },
         ended(end) {
           if (!current()) return;
@@ -297,23 +322,31 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
     }
   };
 
+  const watch = (uri: string) => {
+    if (closed || subscribeRefused || watched.has(uri) || watched.size >= maxWatched) return;
+    const domain = domainOf(uri);
+    if (domain !== null && refusedDomains.has(domain)) {
+      presence(uri, UNKNOWN);
+      return;
+    }
+    const entry: Entry = { sub: null, token: null, timer: null, failures: 0 };
+    watched.set(uri, entry);
+    start(uri, entry);
+  };
+
   return {
-    watch(uri) {
-      if (closed || subscribeRefused || watched.has(uri) || watched.size >= maxWatched) return;
-      const domain = domainOf(uri);
-      if (domain !== null && refusedDomains.has(domain)) {
-        presence(uri, UNKNOWN);
-        return;
-      }
-      const entry: Entry = { sub: null, token: null, timer: null, failures: 0 };
-      watched.set(uri, entry);
-      start(uri, entry);
-    },
+    watch,
     unwatch(uri) {
+      if (self && uri === deps.entity) return;
       const entry = watched.get(uri);
       if (!entry) return;
       watched.delete(uri);
       drop(entry);
+    },
+    watchSelf() {
+      if (closed) return;
+      self = true;
+      watch(deps.entity);
     },
     publish(info) {
       if (closed) return;
@@ -339,6 +372,7 @@ export function openPresence(deps: PresenceDeps): OpenPresence {
 export const NO_PRESENCE: OpenPresence = {
   watch() {},
   unwatch() {},
+  watchSelf() {},
   publish() {},
   rebind() {},
   close() {},

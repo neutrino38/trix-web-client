@@ -19,6 +19,10 @@
  * - `stale`: was registered; what we knew is kept, marked stale (D9).
  * - `disabled`: `presence: "no"` in `config.json` (D8).
  *
+ * Our own address is watched too: what our other devices publish comes
+ * back as `sip:ownPresence`, and a status chosen there becomes ours
+ * (`ownPresence`).
+ *
  * Neither a refused PUBLISH nor the published status is a state: the
  * first is a flag (`support.publish`) that only changes the menu, the
  * second is computed by `publishedPresence` whenever one of its inputs
@@ -26,7 +30,7 @@
  */
 
 import { defineMachine, goto, stay, type Fx } from "finite-state-language";
-import type { PresenceInfo, PublishedPresence } from "../sip/pidf.js";
+import type { Presence, PresenceInfo, PublishedPresence } from "../sip/pidf.js";
 import type { SipHandle } from "../sip/port.js";
 import type { PresenceLink, PresenceSipEvent, PublishedInfo } from "../sip/presence.js";
 import {
@@ -92,6 +96,10 @@ export interface PresenceCtx {
   idle: boolean;
   /** What was last published, to publish only what changes. */
   published: PublishedInfo | null;
+  /** What our other devices last chose, as `sip:ownPresence` said it; null: not yet. */
+  others: Presence | null;
+  /** When the chosen status last changed, epoch ms: an older choice elsewhere loses. */
+  chosenAt: number;
 }
 
 /**
@@ -118,10 +126,13 @@ export function publishedPresence(
 function publish(ctx: PresenceCtx): void {
   if (!ctx.link || ctx.support.publish === false) return;
   const next = publishedPresence(ctx.prefs, ctx.inCall, ctx.idle);
+  // our other devices must not take a rule for a choice (`ownPresence`)
+  const automatic = ctx.prefs.chosen !== "invisible" && next.state !== ctx.prefs.chosen;
   const last = ctx.published;
-  if (last && last.state === next.state && last.note === next.note) return;
+  if (last && last.state === next.state && last.note === next.note && !!last.automatic === automatic) return;
   const info: PublishedInfo = {
     ...next,
+    ...(automatic ? { automatic } : {}),
     // `since` dates the state, not the note
     since: last && last.state === next.state ? last.since : Date.now(),
   };
@@ -146,8 +157,10 @@ function up(ev: Extract<PresenceEvent, { type: "phone:up" }>, ctx: PresenceCtx, 
   ctx.support = { subscribe: null, publish: null };
   ctx.inCall = false;
   ctx.published = null;
+  ctx.others = null;
   ctx.uris = ev.uris;
   ctx.link = ev.handle.presence((e) => fx.send(e));
+  ctx.link.watchSelf();
   for (const uri of ctx.uris) ctx.link.watch(uri);
   publish(ctx);
   return goto("live", "registered");
@@ -181,12 +194,41 @@ function contactPresence(ev: Extract<PresenceEvent, { type: "sip:presence" }>, c
   return stay("contact presence");
 }
 
+/** What another device may hand us: a choice — not a rule, not an absence. */
+const ADOPTABLE: ReadonlySet<Presence> = new Set<ChosenStatus & Presence>(["available", "busy", "away", "dnd"]);
+
+/**
+ * Our other devices changed what they say: a status chosen there becomes
+ * ours. Only a change counts — the first word after registering is what
+ * they said before we came, and a NOTIFY our own PUBLISH triggers repeats
+ * what they already said. A choice older than ours loses, so two devices
+ * choosing at once settle on the later one instead of swapping forever.
+ * Neither a rule (`automatic`, on the phone) nor an absence (offline:
+ * gone, or invisible) is a choice, and none moves the reference.
+ */
+function ownPresence(ev: Extract<PresenceEvent, { type: "sip:ownPresence" }>, ctx: PresenceCtx) {
+  const { state, since } = ev.info;
+  if (ev.automatic || !ADOPTABLE.has(state)) return stay("own presence: not a choice");
+  const before = ctx.others;
+  ctx.others = state;
+  if (before === null) return stay("own presence: first word");
+  if (before === state) return stay("own presence: unchanged");
+  if (since !== null && since <= ctx.chosenAt) return stay("own presence: older than our choice");
+  if (ctx.prefs.chosen === state) return stay("own presence: already ours");
+  ctx.prefs = { ...ctx.prefs, chosen: state as ChosenStatus };
+  ctx.chosenAt = since ?? Date.now();
+  savePrefs(ctx);
+  publish(ctx);
+  return stay("status chosen elsewhere");
+}
+
 // Status, note, rules, calls and activity: kept whatever the state,
 // published when we can. The diagram extractor follows any identifier that
 // names a function, `ctx.idle` included: hence no function called `idle`.
 
 function setStatus(ev: Extract<PresenceEvent, { type: "ui:setStatus" }>, ctx: PresenceCtx) {
   ctx.prefs = { ...ctx.prefs, chosen: ev.status };
+  ctx.chosenAt = Date.now();
   savePrefs(ctx);
   publish(ctx);
   return stay("status chosen");
@@ -245,6 +287,8 @@ export const PresenceMachine = defineMachine<PresenceCtx, PresenceEvent>()({
     inCall: false,
     idle: false,
     published: null,
+    others: null,
+    chosenAt: 0,
   }),
 
   states: {
@@ -275,6 +319,7 @@ export const PresenceMachine = defineMachine<PresenceCtx, PresenceEvent>()({
         "phone:down": down,
         "phone:contacts": (ev, ctx) => contactsChanged(ev, ctx, true),
         "sip:presence": contactPresence,
+        "sip:ownPresence": ownPresence,
         "sip:presenceSupport": (ev, ctx) => {
           ctx.support = { ...ctx.support, [ev.method]: ev.supported };
           if (ev.method === "subscribe" && !ev.supported) {
@@ -300,6 +345,7 @@ export const PresenceMachine = defineMachine<PresenceCtx, PresenceEvent>()({
         "phone:contacts": (ev, ctx) => contactsChanged(ev, ctx, false),
         // the link dropped every subscription: whatever still arrives is late
         "sip:presence": () => stay("late presence"),
+        "sip:ownPresence": () => stay("late presence"),
         "sip:presenceSupport": (ev, ctx) => {
           ctx.support = { ...ctx.support, [ev.method]: ev.supported };
           return stay(`${ev.method} ${ev.supported ? "accepted" : "refused"}`);
@@ -329,6 +375,7 @@ export const PresenceMachine = defineMachine<PresenceCtx, PresenceEvent>()({
         "phone:contacts": (ev, ctx) => contactsChanged(ev, ctx, false),
         // events of the link that just closed
         "sip:presence": () => stay("late presence"),
+        "sip:ownPresence": () => stay("late presence"),
         "sip:presenceSupport": () => stay("late support"),
         "ui:setStatus": setStatus,
         "ui:setNote": setNote,
@@ -348,6 +395,7 @@ export const PresenceMachine = defineMachine<PresenceCtx, PresenceEvent>()({
         "phone:callStarted": () => stay("presence off"),
         "phone:callEnded": () => stay("presence off"),
         "sip:presence": () => stay("presence off"),
+        "sip:ownPresence": () => stay("presence off"),
         "sip:presenceSupport": () => stay("presence off"),
         "ui:setStatus": () => stay("presence off"),
         "ui:setNote": () => stay("presence off"),

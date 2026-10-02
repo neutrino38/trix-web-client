@@ -7,6 +7,7 @@
 import { DOMParser } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import {
+  readOthers,
   readPidf,
   UNKNOWN,
   writePidf,
@@ -212,6 +213,16 @@ describe("writePidf", () => {
     },
   );
 
+  it("a state set by a rule is marked, and still reads as itself", () => {
+    const body = writePidf(
+      "sip:alice@example.com",
+      { state: "away", note: null, since: null, automatic: true },
+      "dev1",
+    );
+    expect(body).toContain("<rpid:away/><trix:auto/>");
+    expect(read(body).state).toBe("away");
+  });
+
   it("dnd looks busy to a client that ignores our namespace", () => {
     const body = writePidf("sip:alice@example.com", { state: "dnd", note: null, since: null }, "dev1");
     expect(body).toContain("<rpid:busy/><trix:dnd/>");
@@ -233,5 +244,48 @@ describe("writePidf", () => {
   it("a blank note is left out", () => {
     const body = writePidf("sip:alice@example.com", { state: "available", note: "  ", since: null }, "dev1");
     expect(body).not.toContain("<note>");
+  });
+});
+
+describe("readOthers — our own subscription", () => {
+  const ALICE = "sip:alice@example.com";
+  /** What Kamailio sends back: our tuple and person, beside another device's. */
+  const aggregated = (mine: string, theirs: string) =>
+    `<?xml version="1.0"?>
+<presence xmlns="urn:ietf:params:xml:ns:pidf" xmlns:dm="urn:ietf:params:xml:ns:pidf:data-model"
+    xmlns:rpid="urn:ietf:params:xml:ns:pidf:rpid" xmlns:trix="urn:trix:params:xml:ns:pidf" entity="${ALICE}">
+${mine}
+${theirs}
+</presence>`;
+  const body = (state: PublishedPresence, tupleId: string, automatic = false) =>
+    writePidf(ALICE, { state, note: null, since: null, automatic }, tupleId)
+      .split("\n")
+      .slice(2, -1)
+      .join("\n");
+
+  it("leaves our own tuple and person out", () => {
+    const doc = aggregated(body("dnd", "me"), body("away", "phone"));
+    expect(readOthers(doc, parser, "me")).toEqual({
+      info: { state: "away", note: null, since: null },
+      automatic: false,
+    });
+    // the same document, read as a contact's, keeps both
+    expect(read(doc).state).toBe("dnd");
+  });
+
+  it("nothing but our own publication reads offline", () => {
+    expect(readOthers(aggregated(body("busy", "me"), ""), parser, "me").info.state).toBe("offline");
+  });
+
+  it("a state set by a rule says so", () => {
+    const doc = aggregated(body("available", "me"), body("on-the-phone", "phone", true));
+    expect(readOthers(doc, parser, "me")).toMatchObject({ info: { state: "on-the-phone" }, automatic: true });
+    // our own rule is not theirs
+    const mine = aggregated(body("away", "me", true), body("busy", "phone"));
+    expect(readOthers(mine, parser, "me").automatic).toBe(false);
+  });
+
+  it("garbage reads unknown", () => {
+    expect(readOthers("<nope", parser, "me")).toEqual({ info: UNKNOWN, automatic: false });
   });
 });

@@ -295,6 +295,29 @@ inCall, idle)`, le recalcule quand l'une de ses entrées change, et la machine n
 résultat diffère. En faire des états multiplierait `live` par l'appel et l'inactivité, sans aucune
 différence de comportement au-delà de cette valeur.
 
+### D13 — Trix s'abonne à sa propre présence
+
+Ajout du 2026-10-02. À chaque enregistrement, PresenceMachine s'abonne aussi à l'adresse du compte
+(`PresenceLink.watchSelf()`). Le NOTIFY agrège tous les terminaux du compte, celui-ci compris :
+`readOthers` (`sip/pidf.ts`) le lit **sans notre tuple ni notre personne** (`<tuple id>` et
+`p-<tuple id>`, tels que `writePidf` les nomme), sinon notre propre PUBLISH nous reviendrait. Il en
+sort `sip:ownPresence`, ce que disent nos autres terminaux, et un statut choisi là-bas devient le
+nôtre : enregistré, publié, affiché.
+
+Pour ne pas tourner en boucle :
+
+- seul un **changement** compte : le premier NOTIFY après l'enregistrement donne la référence, et
+  celui que déclenche notre propre PUBLISH répète ce que les autres disaient déjà ;
+- un choix **plus ancien** que le nôtre (`<timestamp>` antérieur au dernier choix local) perd : deux
+  terminaux qui choisissent en même temps s'accordent sur le plus récent au lieu d'échanger sans fin ;
+- ni une **règle automatique** ni une **absence** ne sont un choix. Trix marque d'un
+  `<trix:auto/>` ce qu'il publie par une règle de D5 (En communication, Absent par inactivité),
+  qu'un autre client ignore ; `on-the-phone`, `offline` (terminal parti, ou Invisible) et `unknown`
+  ne sont jamais repris, et ne déplacent pas la référence.
+
+Seul le statut est repris, pas la note. Invisible ne se propage pas : vu des autres terminaux, il ne
+se distingue pas d'un départ.
+
 ## 3. Écarts assumés
 
 - Pas de liste de ressources ni de XCAP (D3, D7).

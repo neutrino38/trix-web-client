@@ -319,6 +319,56 @@ describe("publication", () => {
   });
 });
 
+describe("our own presence", () => {
+  const ALICE = "sip:alice@example.com";
+  /** Our tuple `dev1`, busy, beside another device's, away. */
+  const OWN = `<?xml version="1.0"?>
+<presence xmlns="urn:ietf:params:xml:ns:pidf" xmlns:dm="urn:ietf:params:xml:ns:pidf:data-model"
+    xmlns:rpid="urn:ietf:params:xml:ns:pidf:rpid" entity="${ALICE}">
+  <tuple id="dev1"><status><basic>open</basic></status></tuple>
+  <dm:person id="p-dev1"><rpid:activities><rpid:busy/></rpid:activities></dm:person>
+  <tuple id="phone"><status><basic>open</basic></status></tuple>
+  <dm:person id="p-phone"><rpid:activities><rpid:away/></rpid:activities></dm:person>
+</presence>`;
+  const own = (t: ReturnType<typeof setup>) => t.events.filter((e) => e.type === "sip:ownPresence");
+
+  it("watchSelf subscribes to our address, and reads it without our tuple", () => {
+    const t = setup();
+    t.link.watchSelf();
+    t.link.watchSelf();
+    expect(t.subs.map((s) => s.uri)).toEqual([ALICE]);
+    t.subs[0]!.on.notify(OWN, "application/pidf+xml");
+    expect(own(t)).toEqual([
+      { type: "sip:ownPresence", info: { state: "away", note: null, since: null }, automatic: false },
+    ]);
+  });
+
+  it("our address in the contact book shares the subscription, and keeps it when removed", () => {
+    const t = setup();
+    t.link.watchSelf();
+    t.link.watch(ALICE);
+    expect(t.subs).toHaveLength(1);
+    t.subs[0]!.on.notify(OWN, "application/pidf+xml");
+    expect(t.presenceOf(ALICE)).toMatchObject({ info: { state: "busy" } });
+    t.link.unwatch(ALICE);
+    expect(t.subs[0]!.terminated).toBe(false);
+  });
+
+  it("our address as a mere contact says nothing of our own presence", () => {
+    const t = setup();
+    t.link.watch(ALICE);
+    t.subs[0]!.on.notify(OWN, "application/pidf+xml");
+    expect(own(t)).toEqual([]);
+  });
+
+  it("a body that is not PIDF says nothing of our own presence", () => {
+    const t = setup();
+    t.link.watchSelf();
+    t.subs[0]!.on.notify("{}", "application/json");
+    expect(own(t)).toEqual([]);
+  });
+});
+
 describe("close", () => {
   it("withdraws, then unsubscribes everyone, then does nothing", () => {
     const t = setup();

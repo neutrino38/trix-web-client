@@ -204,15 +204,15 @@ stateDiagram-v2
   initial_state --> disabled: enter (presence turned off)
   off --> live: phone:up (registered)
   off --> off: phone:down (never up), phone:contacts (contacts changed), ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
-  live --> live: phone:up (registered), phone:contacts (contacts changed), sip:presence (presence of a former contact), sip:presence (contact presence), sip:presenceSupport, ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  live --> live: phone:up (registered), phone:contacts (contacts changed), sip:presence (presence of a former contact), sip:presence (contact presence), sip:ownPresence (own presence: not a choice), sip:ownPresence (own presence: first word), sip:ownPresence (own presence: unchanged), sip:ownPresence (own presence: older than our choice), sip:ownPresence (own presence: already ours), sip:ownPresence (status chosen elsewhere), sip:presenceSupport, ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
   live --> stale: phone:down (unregistered)
   live --> no_watch: sip:presenceSupport (SUBSCRIBE refused)
   no_watch --> live: phone:up (registered)
   no_watch --> stale: phone:down (unregistered)
-  no_watch --> no_watch: phone:contacts (contacts changed), sip:presence (late presence), sip:presenceSupport, ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  no_watch --> no_watch: phone:contacts (contacts changed), sip:presence (late presence), sip:ownPresence (late presence), sip:presenceSupport, ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
   stale --> live: phone:up (registered)
-  stale --> stale: phone:down (already down), phone:contacts (contacts changed), sip:presence (late presence), sip:presenceSupport (late support), ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
-  disabled --> disabled: phone:up (presence off), phone:down (presence off), phone:contacts (presence off), phone:callStarted (presence off), phone:callEnded (presence off), sip:presence (presence off), sip:presenceSupport (presence off), ui:setStatus (presence off), ui:setNote (presence off), ui:setRule (presence off), sys:idle (presence off), sys:active (presence off)
+  stale --> stale: phone:down (already down), phone:contacts (contacts changed), sip:presence (late presence), sip:ownPresence (late presence), sip:presenceSupport (late support), ui:setStatus (status chosen), ui:setNote (note set), ui:setRule (rule set), phone:callStarted (in a call), phone:callEnded (call ended), sys:idle (idle), sys:active (active)
+  disabled --> disabled: phone:up (presence off), phone:down (presence off), phone:contacts (presence off), phone:callStarted (presence off), phone:callEnded (presence off), sip:presence (presence off), sip:ownPresence (presence off), sip:presenceSupport (presence off), ui:setStatus (presence off), ui:setNote (presence off), ui:setRule (presence off), sys:idle (presence off), sys:active (presence off)
 ```
 
 
