@@ -1063,10 +1063,12 @@ interface MediaControl {
    * et il reçoit tout cela de son côté. Une mise en attente `sendonly`
    * l'aurait suspendu lui aussi, pour rien — le besoin est de me retirer,
    * moi.
+   *
+   * Tenue quand les émetteurs ont lâché ou rattaché leurs pistes :
+   * `replaceTrack` est asynchrone, et l'auto-vue doit savoir quand la
+   * caméra est revenue.
    */
-  setPaused(on: boolean): void;
-  /** Pause : tout ce que j'émets s'arrête, sans que rien ne parte sur le fil. */
-  setPaused(on: boolean): void;
+  setPaused(on: boolean): Promise<void>;
   /** Mon écran rejoint l'appel : transceiver `sendonly` de plus, re-INVITE. */
   startShare(): void;
   /** Mon écran quitte l'appel : m-section rendue inerte, et recyclable. */
@@ -2158,8 +2160,9 @@ export function mediaControl(
      */
     setPaused(on) {
       const conn = pc;
-      if (!conn || paused === on || session.isEnded()) return;
+      if (!conn || paused === on || session.isEnded()) return Promise.resolve();
       paused = on;
+      const swaps: Promise<void>[] = [];
       // les trois rôles ensemble : un écran qui continuerait de s'afficher
       // pendant que je suis parti casserait la promesse de la Pause de la
       // façon la plus coûteuse qui soit (ADR 0005, D10)
@@ -2170,15 +2173,16 @@ export function mediaControl(
           const track = tr.sender.track;
           if (!track) continue;
           held[role] = track;
-          void tr.sender.replaceTrack(null).catch(() => {});
+          swaps.push(tr.sender.replaceTrack(null).catch(() => {}));
         } else {
           const track = held[role];
           delete held[role];
           // la piste a pu disparaître entre-temps — le média a quitté
           // l'appel pendant la pause : il n'y a plus rien à rattacher
-          if (track) void tr.sender.replaceTrack(track).catch(() => {});
+          if (track) swaps.push(tr.sender.replaceTrack(track).catch(() => {}));
         }
       }
+      return Promise.all(swaps).then(() => {});
     },
     /**
      * **Mon écran rejoint l'appel** (ADR 0005, D1). Le chemin est celui de
@@ -2464,7 +2468,9 @@ export function wrapSession(
       control.abandonMedia();
     },
     setPaused(on) {
-      control.setPaused(on);
+      // la caméra rattachée à la reprise : ce n'est ni une piste reçue ni
+      // une négociation, et l'auto-vue redessinée entre-temps l'attend
+      void control.setPaused(on).then(streamsChanged);
     },
     startShare() {
       control.startShare();

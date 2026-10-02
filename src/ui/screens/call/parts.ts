@@ -756,9 +756,9 @@ function shows(video: HTMLVideoElement, stream: MediaStream | null): boolean {
  * changent : la rebrancher à chaque annonce relancerait la lecture pour
  * rien.
  *
- * Le visage et l'auto-vue ne sont jamais vidés — une pause, qui retire
- * mes pistes émises, laisse l'auto-vue sur la dernière image plutôt que
- * sur un rectangle noir. L'écran partagé, lui, s'en va avec le partage.
+ * Le visage et l'auto-vue ne sont jamais vidés par une annonce sans
+ * piste : un instant sans flux ne doit pas noircir une surface qui en
+ * montrait un. L'écran partagé, lui, s'en va avec le partage.
  */
 export function showStreams(
   node: HTMLElement,

@@ -1285,6 +1285,36 @@ describe("l'écran du correspondant", () => {
       expect(local[1]).toBe(ctl.mirror(video!.sent as unknown as MediaStreamTrack));
     });
 
+    /**
+     * La reprise rattache la caméra par `replaceTrack`, qui est asynchrone :
+     * l'écran redessiné sur-le-champ ne la trouve pas encore. Sans annonce
+     * une fois la piste revenue, l'auto-vue restait noire — vu en appel réel.
+     */
+    it("la reprise prévient une fois la caméra rattachée", async () => {
+      const { session, ctl } = control(["audio", "video"]);
+      // le navigateur ne rattache la piste qu'après coup
+      for (const tr of session.pc.transceivers) {
+        const sender = tr.sender;
+        sender.replaceTrack = (t) =>
+          Promise.resolve().then(() => {
+            sender.track = t;
+          });
+      }
+      const call = wrapped(session, ctl);
+      const camera = session.pc.transceivers[1]!.sent as unknown as MediaStreamTrack;
+      call.setPaused(true);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(call.streams().local).toBeNull();
+
+      const seen: (MediaStreamTrack[] | undefined)[] = [];
+      call.onStreams(() => seen.push(call.streams().local?.getTracks()));
+      call.setPaused(false);
+      // l'écran qui se redessine à cet instant ne voit encore rien
+      expect(call.streams().local).toBeNull();
+      await vi.waitFor(() => expect(seen.at(-1)).toContain(ctl.mirror(camera)));
+    });
+
     it("prévient à chaque piste et à chaque négociation conclue, plus après la fin", () => {
       const { session, ctl } = control(["audio"]);
       const call = wrapped(session, ctl);
