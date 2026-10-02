@@ -146,10 +146,7 @@ Full steps, required modules and per-distribution paths:
 - [x] Phase 6 (presence) — contacts kept encrypted in the browser, SIP presence, your own   
       status with do-not-disturb and two automatic rules, and the **Exchanges thread**
 - [x] Phase 7 (messaging) — instant messaging (SIP MESSAGE, text/plain or CPIM with delivery 
-      and read receipts) in the same thread: messages written offline leave at the next registration, unknown senders wait for your answer, contacts can be blocked, and a badge tells about messages during a call. The server  must keep messages while the page sleeps (see
-      [ADR 0008](docs/architecture/0008-messagerie.md),
-      [ADR 0009](docs/architecture/0009-cpim.md),
-      [ADR 0010](docs/architecture/0010-accuses-imdn.md))
+      and read receipts) in the same thread: messages written offline leave at the next registration, unknown senders wait for your answer, contacts can be blocked, and a badge tells about messages during a call. The server  must keep messages while the page sleep.
 
 ## Observability
 
