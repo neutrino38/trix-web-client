@@ -169,8 +169,9 @@ except when the browser freezes the tab, where the notification goes out at once
 is no point waiting there: a freeze is announced, it is certain, and nothing in the page
 would be left running ten seconds later to send anything. That last notification is
 handed to a small service worker, because a frozen page cannot display one itself — it
-is the only part of Trix that keeps running once the tab is asleep, it does nothing else,
-and it caches nothing. Closing the tab or navigating
+is the only part of Trix that keeps running once the tab is asleep. The same worker
+keeps a copy of Trix in your browser, so that it opens even without a network — when the
+server answers, you always get its current version. Closing the tab or navigating
 away never sends one — you have just decided that yourself. When you are reachable again,
 a second notification says so and replaces the first. Clicking either one brings back the
 Trix tab you already have — it never opens a second one, which would register your

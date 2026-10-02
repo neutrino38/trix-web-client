@@ -1659,12 +1659,18 @@ aucun onglet ne se laisse reprendre (il a été déchargé, il n'est plus un cli
 rien : `openWindow()` donnerait un second Trix, donc un second enregistrement et un second contact
 chez le registrar, à côté d'un premier onglet toujours présent dans la barre et qu'un clic recharge.
 
-Ce service worker **n'a pas de handler `fetch`** : il n'intercepte rien, ne met rien en cache, et
-Trix se recharge comme n'importe quelle page. Il n'a rien non plus du push de l'étape 2 — aucun
+Ce service worker a reçu depuis (2026-10-02) un second rôle : **garder tout le client en cache**.
+Le build écrit dans `sw.js` la liste de ses fichiers et une version qui en dépend
+(`build/precache.ts`) ; ils sont mis en cache à l'installation, `config.json` avec eux quand il
+existe. Les pages et `config.json` passent d'abord par le réseau, la copie en cache ne répondant
+que hors ligne ou après 4 secondes sans réponse ; les fichiers hachés de `assets/` sont servis
+depuis le cache. Un serveur joignable sert donc toujours la version du jour. Un fichier qui ne se
+met pas en cache ne fait jamais échouer l'installation : les notifications n'en dépendent pas. Il n'a rien non plus du push de l'étape 2 — aucun
 abonnement Web Push, aucun serveur, aucun message venu d'ailleurs que de la page. Il apporte en
 revanche `getNotifications()`, donc la possibilité de retirer pour de bon une alerte
 `requireInteraction` posée par une page qui n'existe plus. Côté serveur, il ne demande qu'une
-chose : ne pas être mis en cache (`config/nginx`, `config/apache`).
+chose : ne pas être mis en cache (`config/nginx`, `config/apache`) — sans quoi le navigateur
+tarderait à voir passer la liste des fichiers d'une nouvelle version.
 
 **`pagehide` n'alerte jamais**, pour la raison inverse : fermer l'onglet ou naviguer ailleurs est
 une décision que l'utilisateur vient de prendre, et une alerte `requireInteraction` posée par une

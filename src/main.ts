@@ -171,10 +171,11 @@ onLocaleChange(() => {
 // sort aussitôt après (D3).
 watchReachability(phone);
 
-// Le service worker des notifications (`public/sw.js`), sans attendre :
-// c'est le seul contexte que le gel de la page ne suspend pas, donc le
-// seul d'où l'alerte d'endormissement puisse encore partir. Il n'intercepte
-// rien et ne met rien en cache — voir l'en-tête du fichier.
+// Le service worker (`public/sw.js`), sans attendre : c'est le seul
+// contexte que le gel de la page ne suspend pas, donc le seul d'où l'alerte
+// d'endormissement puisse encore partir. Il garde aussi le client en cache
+// pour un chargement hors ligne, sans jamais servir une version d'hier quand
+// le serveur répond — voir l'en-tête du fichier.
 registerNotifier();
 
 // Endormissements de la page et de la machine : gel de l'onglet, départ en

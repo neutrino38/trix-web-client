@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
+import { precache } from "./build/precache.js";
 
 /**
  * Deux pages, et non une application à routes : `index.html` porte le
@@ -11,8 +12,12 @@ import { resolve } from "node:path";
  * ce découpage est ce qui le garantit — Rollup ne met dans son bundle que
  * ce qu'elle importe vraiment. Elle reste servie par un fichier statique,
  * sans réécriture d'URL côté serveur.
+ *
+ * `precache` writes the list of built files into `dist/sw.js`, which keeps
+ * them in the browser's cache (build/precache.ts).
  */
 export default defineConfig({
+  plugins: [precache()],
   build: {
     rollupOptions: {
       input: {

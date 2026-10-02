@@ -40,9 +40,10 @@ function controller(): ServiceWorker | null {
 }
 
 /**
- * Installe le service worker des notifications. Best-effort et sans
- * attente : un échec ne coûte que le repli, et rien de ce que fait Trix
- * n'en dépend. Appelé une fois, depuis `main.ts`.
+ * Installe le service worker — notifications et cache hors ligne.
+ * Best-effort et sans attente : un échec ne coûte que le repli et le
+ * chargement par le réseau, et rien de ce que fait Trix n'en dépend.
+ * Appelé une fois, depuis `main.ts`.
  */
 export function registerNotifier(): void {
   if (typeof navigator === "undefined" || !navigator.serviceWorker) return;

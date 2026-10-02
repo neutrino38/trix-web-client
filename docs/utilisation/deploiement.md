@@ -15,7 +15,8 @@ Les chemins de certificat suivent l'arborescence `/etc/pki` des distributions Re
 - Elles redirigent tout le trafic HTTP vers HTTPS en 301, en conservant le chemin.
 - Elles servent les fichiers statiques du build, en HTTP/2.
 - Elles posent la Content-Security-Policy de production.
-- Elles mettent les assets en cache un an, et jamais `index.html`.
+- Elles mettent les assets en cache un an, et jamais les pages, `config.json` ni `sw.js`.
+  La copie hors ligne du client est l'affaire du service worker, pas du cache HTTP.
 - Elles compressent HTML, CSS, JavaScript, JSON et SVG.
 
 Trix n'a pas de routage côté client : une seule page est servie. Aucune règle de repli
@@ -294,9 +295,16 @@ pouvez alors la remplacer par `listen 443 ssl;` plus une ligne `http2 on;`.
 - `config.json` est servi tel quel, sans cache. Vérifiez-le après chaque modification :
   `curl -s https://trix.example.com/config.json | python3 -m json.tool`. Une virgule en
   trop et Trix repart en formulaire complet, sans rien signaler à l'utilisateur.
-- `sw.js` est le service worker des notifications (ADR 0006, D2 bis) : c'est lui qui affiche
-  l'alerte quand le navigateur endort l'onglet, parce que la page ne le peut plus. Il doit
-  être servi **depuis la racine du site** et **sans cache** — les deux configurations
-  fournies s'en chargent. Il n'intercepte aucune requête et ne met rien en cache : un
-  déploiement ne demande donc aucune purge côté navigateur. Sans lui, Trix retombe sur une
-  notification ordinaire, qui suffit tant que la page tourne mais pas au gel.
+- `sw.js` est le service worker de Trix. Il affiche l'alerte quand le navigateur endort
+  l'onglet, parce que la page ne le peut plus (ADR 0006, D2 bis), et **garde tout le client
+  en cache** : une fois Trix chargé, il se recharge sans réseau. Les pages et `config.json`
+  passent d'abord par le serveur, et la copie en cache ne répond que s'il ne répond pas
+  (hors ligne, ou plus de 4 secondes) : un serveur joignable sert toujours la version et la
+  configuration du jour. Les fichiers de `assets/`, dont le nom porte l'empreinte du
+  contenu, sont servis directement depuis le cache.
+  Le build écrit dans `sw.js` la liste des fichiers et une version qui en dépend : chaque
+  déploiement qui change un fichier change `sw.js`, le navigateur installe le nouveau
+  worker, qui remplace le cache précédent. Aucune purge n'est à faire côté navigateur.
+  Il doit être servi **depuis la racine du site** et **sans cache** — les deux
+  configurations fournies s'en chargent. Sans lui, Trix retombe sur une notification
+  ordinaire et sur un chargement par le réseau.

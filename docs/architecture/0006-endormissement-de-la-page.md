@@ -165,6 +165,15 @@ la barre et qu'un clic dessus le recharge. On n'ouvre donc rien dans ce cas. Ne 
 moins utile que de revenir sur Trix, mais ce n'est pas faux — et c'est le seul des deux qui ne
 laisse pas l'utilisateur avec deux téléphones.
 
+**Révision du 2026-10-02 — le même worker garde le client en cache.** La phrase « ni handler
+`fetch` » ci-dessus ne vaut plus. Le worker met en cache tous les fichiers du build, dont la
+liste et une version sont écrites dans `sw.js` à la construction (`build/precache.ts`), pour
+que Trix se charge sans réseau. La crainte qui l'avait écarté — servir une version d'hier — est
+traitée par la stratégie : pages et `config.json` d'abord au réseau, copie en cache seulement
+hors ligne ou après 4 secondes ; seuls les fichiers hachés de `assets/` viennent d'abord du
+cache. La mise en cache ne peut pas faire échouer l'installation : l'affichage des alertes, qui
+est la raison d'être du worker, n'en dépend pas.
+
 Le repli reste `new Notification(...)` quand aucun service worker ne contrôle la page — premier
 chargement, enregistrement refusé, navigateur qui n'en veut pas. Il suffit tant que la page vit,
 et c'est tout ce qu'on lui demande.
