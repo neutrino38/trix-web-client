@@ -44,6 +44,7 @@ import {
 } from "./rtt.js";
 import { openWsWire, stripTextSection, withTextOverWs, wsUrlFromSdp } from "./rttws.js";
 import { openDcWire } from "./rttdc.js";
+import type { ErrorSink } from "./mediaerror.js";
 
 /** Ce que le négociateur a besoin de savoir d'une session JsSIP, et rien de plus. */
 export interface SdpSession {
@@ -136,7 +137,7 @@ function deferredWire(hooks: RttWireHooks): {
  * le premier SDP ne soit rédigé : côté appelant, dans la foulée de
  * `ua.call()` ; côté appelé, avant de répondre.
  */
-export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
+export function negotiateRttOverWs(session: SdpSession, errors?: ErrorSink): RttNegotiation {
   let deferred: ReturnType<typeof deferredWire> | null = null;
   /** L'URL du socket, dès qu'un SDP distant l'a annoncée. */
   let url: string | null = null;
@@ -176,7 +177,7 @@ export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
     if (found !== null) {
       if (url === null) {
         url = found;
-        deferred?.open((hooks) => openWsWire(found, hooks));
+        deferred?.open((hooks) => openWsWire(found, hooks, errors));
       }
       return;
     }
@@ -214,7 +215,11 @@ export function negotiateRttOverWs(session: SdpSession): RttNegotiation {
  * creates the channel. Should the far end create one too, `sip/rttdc.ts`
  * settles it on the channel id, for as long as the session lasts.
  */
-export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNegotiation {
+export function negotiateRttOverDc(
+  session: PeerSession,
+  role: RttRole,
+  errors?: ErrorSink,
+): RttNegotiation {
   let deferred: ReturnType<typeof deferredWire> | null = null;
   /** Le fil du canal, gardé pour pouvoir dire « fermé » sans passer par lui. */
   let link: RttWireHooks | null = null;
@@ -248,7 +253,7 @@ export function negotiateRttOverDc(session: PeerSession, role: RttRole): RttNego
 
   const start = (pc: RTCPeerConnection): void => {
     peer = pc;
-    deferred?.open((hooks) => openDcWire(pc, role, hooks));
+    deferred?.open((hooks) => openDcWire(pc, role, hooks, errors));
     pc.addEventListener("signalingstatechange", () => settle(pc));
     // la connexion peut être arrivée déjà stable — un appel entrant dont le
     // `peerconnection` est signalé après la réponse
@@ -281,8 +286,10 @@ export function openRttFor(
   transport: RttTransport,
   session: SdpSession & PeerSession,
   role: RttRole,
+  /** Where the channel's failures go: the console, and the call's book. */
+  errors?: ErrorSink,
 ): RttNegotiation | null {
-  if (transport === "websocket") return negotiateRttOverWs(session);
-  if (transport === "datachannel") return negotiateRttOverDc(session, role);
+  if (transport === "websocket") return negotiateRttOverWs(session, errors);
+  if (transport === "datachannel") return negotiateRttOverDc(session, role, errors);
   return null;
 }

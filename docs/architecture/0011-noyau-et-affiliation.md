@@ -167,14 +167,18 @@ visibilité de l'onglet. Ils passent par une interface :
 
 ```ts
 interface Platform {
-  lifecycle(events: { onSleep(reason: PageSleepReason): void; onWake(): void }): () => void;
+  lifecycle(events: { onSleep(reason: PageSleepReason): void; onWake(): void; onOffline(): void }): () => void;
   activity(events: { onIdle(): void; onActive(): void }): () => void;
   visibility(listener: (visible: boolean) => void): () => void;
+  visible(): boolean;   // lu au démarrage, avant tout changement
+  online(): boolean;    // lu quand l'enregistrement échoue : réseau coupé ou mauvais réglage ?
 }
 ```
 
-`browserPlatform()` — ce que font aujourd'hui `ui/lifecycle.ts`, `ui/activity.ts` et l'écouteur
-`visibilitychange` de `main.ts` — est la valeur par défaut. Un affilié qui embarque Trix dans
+`browserPlatform()` (`core/browser/`) — ce que faisaient `ui/lifecycle.ts`, `ui/activity.ts`,
+l'écouteur `visibilitychange` de `main.ts` et `navigator.onLine` — est la valeur par défaut. C'est
+la seule partie du noyau qui écoute la page (`document`, `window`), et la règle de D1 le lui
+permet nommément : elle l'entend, elle ne la change jamais. Un affilié qui embarque Trix dans
 Tauri, Capacitor ou un test fournit la sienne.
 
 ### D8 — Une instance, un espace de stockage
@@ -271,6 +275,13 @@ D10 : commencer par lui figerait l'UI actuelle comme seul client possible.
 - **Une seule plateforme livrée** (`browserPlatform`) ; les autres sont à la charge de l'affilié.
 - **La vue est calculée, donc copiée** : un coût par notification, négligeable devant un rendu
   DOM, et le prix d'un contrat qui survit aux refactors des automates.
+- **Ce qui appartient à JsSIP ou à l'origine reste global** (D8). La greffe SHA-256
+  (`sip/digest.ts`) modifie le prototype de JsSIP, partagé par toutes les instances : son
+  registre l'est aussi, rangé par identité — deux instances sur deux comptes ne se voient pas.
+  L'en-tête `Allow` (`announceMessaging`) s'écrit dans les constantes de JsSIP : deux
+  instances dont une seule éteint la messagerie annoncent le choix du dernier port créé. La
+  demande de stockage persistant vaut pour l'origine. `test/layers.test.ts` les nomme, et
+  refuse tout autre `let` de module dans le noyau.
 
 ## 3. Plan d'implémentation
 
@@ -310,7 +321,16 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    `test/layers.test.ts` n'a plus que l'exception de D9. Les statistiques
    (`trix.call.stats()`) attendent la façade.
 5. **La plateforme et l'instance** (D7, D8) : `Platform`, `storagePrefix`, plus d'état de module
-   dans le noyau.
+   dans le noyau. Fait le 2026-10-03 : `core/platform.ts` et `core/browser/` (D7) ;
+   `createSessionStore(prefix)`, `createBrowserStore(prefix)` et `createSipTrace({ prefix })`
+   rangent la session, le coffre et la trace sous le préfixe de l'instance — `trix` par défaut,
+   les clés des installations existantes. Le déploiement n'est plus un état de module :
+   `loadDeployment()` le rend, `main.ts` le passe aux automates (`ctx.deployment`). La trace SIP
+   et les carnets d'appel appartiennent à un port, et non plus au module. L'UI lit ce dont elle
+   a besoin — marqueur de reprise, déploiement, réglage de la trace — dans le contexte du
+   téléphone, jusqu'à l'étape 6 ; ses propres états de module restent (D12). Le préfixe ne
+   s'applique pas encore aux clés de l'UI (`trix-theme`, `trix-lang`…) ni aux étiquettes de
+   notification : elles sont à l'UI de Trix, qu'un affilié ne monte pas.
 6. **La façade et la vue** (D2, D3) : `createTrix`, `TrixView`, sélecteurs ; `main.ts` passe par
    elle, puis chaque écran migre de `phone.context` vers la vue. `trix.debug` remplace
    `window.trix`.

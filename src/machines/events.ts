@@ -295,7 +295,7 @@ export type PhoneEvent =
    */
   | { type: "ui:setFlashAlert"; on: boolean }
   /**
-   * Endormissement / réveil, machine **ou** page (ADR 0006, `ui/lifecycle.ts`) :
+   * Endormissement / réveil, machine **ou** page (ADR 0006, `Platform.lifecycle`) :
    * veille de l'ordinateur constatée au saut d'horloge, gel de l'onglet par
    * l'Économiseur d'énergie, départ en bfcache ou fermeture de la page.
    * Tous mènent au même endroit — `sleeping` désenregistre, le réveil

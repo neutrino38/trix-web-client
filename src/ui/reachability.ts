@@ -24,23 +24,15 @@
  * seuil, une reconnexion de trois secondes réveillerait tout le monde.
  *
  * Un seul point d'entrée, idempotent : `watchReachability`, appelé depuis
- * `main.ts` comme l'est `watchSystemLifecycle`.
+ * `main.ts` avant le premier rendu.
  *
  * Le niveau, le motif et la phrase sont des données, qui appartiennent au
  * noyau (`core/reachability.ts`, ADR 0011) ; ce module les dit.
  */
 
 import type { PhoneInstance } from "../machines/phone.js";
-import type { PageSleepReason } from "./lifecycle.js";
-import {
-  alertPosted,
-  lastReachableAt,
-  markReachable,
-  pinHintShown,
-  resumeAccount,
-  setAlertPosted,
-  setPinHintShown,
-} from "../storage/session.js";
+import type { PageSleepReason } from "../core/platform.js";
+import type { SessionStore } from "../storage/session.js";
 import { alertPermission } from "./alert.js";
 import { clearNotice, showNotice } from "./notify.js";
 import { setFaviconState } from "./favicon.js";
@@ -99,33 +91,33 @@ let notifyTimer: ReturnType<typeof setTimeout> | null = null;
 let stampTimer: ReturnType<typeof setInterval> | null = null;
 let notification: Notification | null = null;
 
+/** La session de l'instance (ADR 0011, D8), posée par `watchReachability`. */
+let session: SessionStore | null = null;
+
 /**
  * L'épisode d'injoignabilité que la page a trouvé **en se chargeant** : le
  * navigateur avait déchargé l'onglet, et personne n'a pu le dire sur le
- * moment. Calculé une seule fois, à l'import — `document.wasDiscarded`
+ * moment. Calculé une seule fois, au branchement — `document.wasDiscarded`
  * décrit ce chargement-ci, et l'horodatage sera réécrit dès que l'on
  * redeviendra joignable.
  *
  * Il ne décide de rien : la reprise de l'enregistrement, elle, a lieu quel
  * que soit le motif du chargement (D4). Il ne sert qu'à **expliquer**.
  */
-const discarded: { from: number; to: number } | null = (() => {
+let discarded: { from: number; to: number } | null = null;
+
+function discardedOnLoad(from: number | null): { from: number; to: number } | null {
   // hors navigateur (tests unitaires des écrans), il n'y a pas de document
   // à interroger, et rien d'un chargement précédent à expliquer
   if (typeof document === "undefined") return null;
   // `wasDiscarded` n'est pas typé partout : on décrit le peu qu'on en lit
   const doc = document as Document & { wasDiscarded?: boolean };
   if (doc.wasDiscarded !== true) return null;
-  const from = lastReachableAt();
   return from === null ? null : { from, to: Date.now() };
-})();
+}
 
 /** Le message d'après-déchargement, tant qu'il n'a pas été masqué. */
-let discardNotice = discarded !== null;
-
-// un chargement qui suit un déchargement explique déjà le premier épisode
-// de cette page : inutile d'attendre un signal qui ne viendra pas
-if (discarded) noted = "discard";
+let discardNotice = false;
 
 /**
  * Le rappel « épinglez l'onglet » (D6) : une fois, au premier
@@ -134,8 +126,7 @@ if (discarded) noted = "discard";
  * ruses consomment la batterie de quelqu'un pour contourner une décision
  * qu'il a prise. Il dit en revanche ce qui dépend de lui.
  */
-let pinHint = discarded !== null && !pinHintShown();
-if (pinHint) setPinHintShown();
+let pinHint = false;
 
 /**
  * La période d'injoignabilité constatée au chargement, tant qu'elle n'a
@@ -159,7 +150,7 @@ export function dismissPinHint(): void {
 }
 
 /**
- * Le motif rapporté par `ui/lifecycle.ts`, retenu pour la phrase de la
+ * Le motif rapporté par `Platform.lifecycle`, retenu pour la phrase de la
  * notification. Il ne vaut que pour l'épisode qui commence : un gel
  * d'hier n'explique pas une WSS coupée aujourd'hui.
  */
@@ -177,7 +168,7 @@ export function noteSleepReason(reason: PageSleepReason): void {
 // ---------------------------------------------------------------------------
 
 function stamp(): void {
-  if (level === "direct") markReachable();
+  if (level === "direct") session!.markReachable();
 }
 
 function armStamp(): void {
@@ -223,12 +214,12 @@ function notifyAway(): void {
   // qui ne part pas ne se constate depuis aucun écran, et la console est
   // le seul endroit où la différence se lise. Elle survit au gel.
   if (document.visibilityState === "visible") return console.debug("[trix] onglet visible : l'écran le dit déjà");
-  if (alertPosted()) return console.debug("[trix] alerte d'absence déjà posée");
+  if (session!.alertPosted()) return console.debug("[trix] alerte d'absence déjà posée");
   notification = post("reach.notifTitle", NOTIF_BODY[episodeReason], true);
   // le marqueur est posé même si la notification a échoué : ce qu'il
   // commande, c'est de dire le retour à la normale, et la phrase de retour
   // ne coûte rien à qui n'a rien vu partir
-  setAlertPosted(true);
+  session!.setAlertPosted(true);
 }
 
 /**
@@ -252,7 +243,7 @@ function notifyBack(): void {
   notification?.close();
   notification = null;
   clearNotice(TAG);
-  setAlertPosted(false);
+  session!.setAlertPosted(false);
   const back = post("reach.backTitle", "reach.back", false);
   // elle a dit ce qu'elle avait à dire : on ne la laisse pas s'installer
   if (back) setTimeout(() => back.close(), NOTIFY_AFTER_MS);
@@ -273,9 +264,9 @@ function beginEpisode(): void {
   // D6 : au premier gel constaté, et une seule fois, Trix rappelle les deux
   // gestes qui dépendent de l'utilisateur — épingler l'onglet, ajouter le
   // site aux « sites toujours actifs »
-  if (episodeReason === "freeze" && !pinHintShown()) {
+  if (episodeReason === "freeze" && !session!.pinHintShown()) {
     pinHint = true;
-    setPinHintShown();
+    session!.setPinHintShown();
   }
   // La page s'en va : rien à annoncer, et personne pour le lire.
   if (leaving) return;
@@ -301,7 +292,7 @@ function endEpisode(): void {
   leaving = false;
   setTitleOverride(null);
   setFaviconState(null);
-  if (alertPosted()) notifyBack();
+  if (session!.alertPosted()) notifyBack();
 }
 
 function update(): void {
@@ -309,22 +300,31 @@ function update(): void {
   if (!phone) return;
   level = reachabilityOf(phone.state);
   if (level === "direct") {
-    markReachable();
+    session!.markReachable();
     endEpisode();
     armStamp();
     return;
   }
   disarmStamp();
-  if (reachabilityWanted()) beginEpisode();
+  if (reachabilityWanted(session!)) beginEpisode();
 }
 
 /**
  * Branche la joignabilité sur la machine. Idempotent : un second appel ne
  * double ni les abonnements ni les timers.
  */
-export function watchReachability(phone: PhoneInstance): void {
+export function watchReachability(phone: PhoneInstance, store: SessionStore): void {
   if (watched) return;
   watched = phone;
+  session = store;
+
+  discarded = discardedOnLoad(store.lastReachableAt());
+  discardNotice = discarded !== null;
+  // un chargement qui suit un déchargement explique déjà le premier épisode
+  // de cette page : inutile d'attendre un signal qui ne viendra pas
+  if (discarded) noted = "discard";
+  pinHint = discarded !== null && !store.pinHintShown();
+  if (pinHint) store.setPinHintShown();
 
   // Deux motifs de réévaluation hors machine : l'onglet qui se montre ou se
   // cache — la notification ne se pose que sur un onglet caché —, et les
@@ -342,7 +342,7 @@ export function watchReachability(phone: PhoneInstance): void {
     if (episodeSince !== 0 && Date.now() - episodeSince >= NOTIFY_AFTER_MS) notifyAway();
   });
 
-  // `freeze` et `pagehide` s'exécutent **avant** que `ui/lifecycle.ts` ne
+  // `freeze` et `pagehide` s'exécutent **avant** que `Platform.lifecycle` ne
   // pousse `sys:sleep` dans la machine — les écouteurs partent dans l'ordre
   // où ils ont été posés, et `main.ts` pose ceux-ci en premier. Le niveau
   // vaut donc encore `direct` ici, et l'horodatage est juste à la seconde.

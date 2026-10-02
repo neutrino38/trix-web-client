@@ -15,16 +15,23 @@ import {
   reportTextChannelError,
   type ErrorSink,
 } from "../src/sip/mediaerror.js";
-import { openCallTrace, resetCallTraces, type TraceLine } from "../src/sip/record.js";
+import { createCallRecorder, type CallRecorder, type TraceLine } from "../src/sip/record.js";
+
+/** Les carnets du port, neufs à chaque test. */
+let calls: CallRecorder;
 
 /** Le puits d'erreurs, en réduction : ce qu'un développeur lit dans la console. */
 function sink(): ErrorSink & { lines: { text: string; detail: unknown }[] } {
   const lines: { text: string; detail: unknown }[] = [];
-  return { lines, error: (text, detail) => void lines.push({ text, detail }) };
+  return {
+    lines,
+    error: (text, detail) => void lines.push({ text, detail }),
+    record: (head, body) => calls.error(head, body),
+  };
 }
 
 beforeEach(() => {
-  resetCallTraces();
+  calls = createCallRecorder();
 });
 
 describe("describeMediaError", () => {
@@ -66,7 +73,7 @@ describe("reportMediaError", () => {
   });
 
   it("entre au carnet de l'appel sans que la trace soit cochée", () => {
-    const book = openCallTrace("call-42");
+    const book = calls.open("call-42");
     reportMediaError("setRemoteDescription", new Error("SDP refusé"), sink());
 
     const lines: TraceLine[] = book.take();
@@ -86,7 +93,7 @@ describe("reportMediaError", () => {
 describe("reportTextChannelError", () => {
   it("dit la panne même quand le navigateur n'a donné aucune erreur", () => {
     const s = sink();
-    const book = openCallTrace("call-t140");
+    const book = calls.open("call-t140");
     reportTextChannelError({ problem: "aucun canal t140 ouvert", notes: { "rôle": "answer" } }, s);
 
     expect(s.lines).toHaveLength(1);
@@ -102,7 +109,7 @@ describe("reportTextChannelError", () => {
   });
 
   it("garde l'erreur technique entière au carnet, entête sur une ligne", () => {
-    const book = openCallTrace("call-t140");
+    const book = calls.open("call-t140");
     const error = Object.assign(new DOMException("Data channel failure", "OperationError"), {
       errorDetail: "sctp-failure",
       sctpCauseCode: 12,
@@ -155,7 +162,7 @@ describe("certificateFault", () => {
   });
 
   it("le verdict rejoint l'entête du carnet, pas seulement la console", () => {
-    const book = openCallTrace("call-t140");
+    const book = calls.open("call-t140");
     reportTextChannelError(
       { problem: "échec de la poignée de main DTLS", error: { sentAlert: 45 } },
       sink(),

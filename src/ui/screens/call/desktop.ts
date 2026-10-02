@@ -56,6 +56,8 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   const offline = phone.state === "offline";
   const sleeping = phone.state === "sleeping";
   const connected = view?.state === "connected";
+  // the SIP trace's box also opens the media stats (call/stats.ts)
+  const traced = phone.context.trace.enabled();
   const incoming = view?.state === "ringing_in";
   const speakerMuted = isSpeakerMuted();
   const err = phone.context.lastError;
@@ -67,6 +69,8 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // rendrait l'écran inutilisable, sans même un bouton pour le rouvrir
   // (la barre de surimpression n'existe pas dans ces deux états).
   const collapsed = !!view && !incoming && panelCollapsed();
+  // a deployment without text has no chat for the folded panel to promise
+  const withChat = phone.context.deployment.rtt !== "none";
   // Le tchat n'existe que si le texte est **négocié** (§4.9) : compte sans
   // texte, appel qui n'a pas encore de session (sonnerie entrante),
   // correspondant qui n'a pas suivi — dans tous ces cas la sidebar reste
@@ -135,7 +139,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             ? statsPill(
                 `<span class="dot live"></span>
                  ${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`,
-                { cls: "pill", connected },
+                { cls: "pill", connected, traced },
               )
             : ""
         }
@@ -192,7 +196,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                     // pas de plein écran : il n'y a pas d'image à agrandir,
                     // et le bouton serait grisé pour tout le monde
                     withHangup: true,
-                    panel: { collapsed, controls: "call-panel" },
+                    panel: { collapsed, controls: "call-panel", withChat },
                   }),
                   meters: connected && view.media.audio,
                   // avant le décrochage, le fil se lit mais ne s'écrit pas —
@@ -240,7 +244,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                      // rouge est rendu dans les deux cas, le CSS le montre
                      // quand la sidebar s'efface
                      withHangup: true,
-                     panel: { collapsed, controls: "call-panel" },
+                     panel: { collapsed, controls: "call-panel", withChat },
                    })}`
                 : ""
             }

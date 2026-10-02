@@ -210,7 +210,7 @@ describe("les deux groupes de la barre du bureau", () => {
       speakerMuted: false,
       withHangup: true,
       withFullscreen: true,
-      panel: { collapsed: false, controls: "call-panel" },
+      panel: { collapsed: false, controls: "call-panel", withChat: true },
     });
 
   it("l'axe 1 d'un côté du trait, tout le reste de l'autre", () => {
@@ -384,7 +384,7 @@ describe("le bureau ne change pas", () => {
       speakerMuted: false,
       withHangup: true,
       withFullscreen: true,
-      panel: { collapsed: false, controls: "call-panel" },
+      panel: { collapsed: false, controls: "call-panel", withChat: true },
     });
 
   it("garde toutes ses commandes dans la pastille, sans feuille ni « ⋯ »", () => {

@@ -90,7 +90,7 @@ export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "
  */
 export function reachBanner(phone: PhoneInstance): string {
   const notes: string[] = [];
-  const sentence = reachSentence(phone.state);
+  const sentence = reachSentence(phone.state, phone.context.resume);
   if (sentence) {
     notes.push(`<p class="reach-note err" role="status">${esc(t(sentence))}</p>`);
   }
@@ -683,7 +683,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   // --- panneau latéral (repli, largeur) ------------------------------------
   // absent de la vue mobile : `wirePanel` ne trouve alors ni bouton ni
   // poignée et ne fait rien, comme tout le reste de ce câblage
-  wirePanel(node);
+  wirePanel(node, phone.context.deployment.rtt !== "none");
 
   // --- préférences ---------------------------------------------------------
   // seule la taille du texte reste ici : c'est le seul réglage qu'on ajuste en

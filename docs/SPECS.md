@@ -98,7 +98,7 @@ une forme (icône barrée) ou par un mot (RGAA 3.1).
       « Corriger les réglages ».
 - [x] Perte de connexion : reconnexion automatique périodique, sans action de l'utilisateur.
 - [x] Veille / réveil de la machine : détectés par saut d'horloge, l'enregistrement est
-      relâché puis repris (`ui/lifecycle.ts`).
+      relâché puis repris (`core/browser/lifecycle.ts`).
 
 ### En tant qu'utilisateur, je veux appeler une adresse SIP en audio ou en vidéo
 

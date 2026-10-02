@@ -155,7 +155,7 @@ export interface OverlayCtx {
   /** Le plein écran n'a de sens que là où la vidéo n'occupe pas déjà l'écran. */
   withFullscreen?: boolean;
   /** Bureau : bouton de repli du panneau latéral, en fin de barre. */
-  panel?: { collapsed: boolean; controls: string };
+  panel?: { collapsed: boolean; controls: string; withChat: boolean };
   /**
    * Mobile : bouton de pli du tchat, faute de sidebar pour l'accueillir.
    * Absent quand l'appel ne porte pas de canal texte du tout — il n'y a
@@ -425,7 +425,7 @@ export function overlayBar(ctx: OverlayCtx): string {
     cmds.push({
       act: "panel",
       icon: panelIcon(ctx.panel.collapsed),
-      label: panelToggleLabel(ctx.panel.collapsed),
+      label: panelToggleLabel(ctx.panel.collapsed, ctx.panel.withChat),
       aria: t("panel.aria"),
       expanded: !ctx.panel.collapsed,
       controls: ctx.panel.controls,

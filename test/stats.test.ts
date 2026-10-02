@@ -29,21 +29,7 @@ import {
 import { statsAsText, statsCardHtml, statsPill } from "../src/ui/screens/call/stats.js";
 import { historyRow } from "../src/ui/screens/call/parts.js";
 import type { CallLogEntry } from "../src/storage/store.js";
-import { setSipTrace } from "../src/sip/trace.js";
 import { useLocale } from "../src/i18n/index.js";
-
-/** localStorage minimal : le réglage de la trace SIP y vit. */
-function stubStorage(): void {
-  const data = new Map<string, string>();
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: {
-      getItem: (k: string) => data.get(k) ?? null,
-      setItem: (k: string, v: string) => data.set(k, v),
-      removeItem: (k: string) => data.delete(k),
-    },
-  });
-}
 
 interface Recv {
   bytes: number;
@@ -138,7 +124,6 @@ function between(from: Spec, to: Spec, spanMs: number): MediaStats {
 }
 
 beforeEach(async () => {
-  stubStorage();
   await useLocale("fr");
 });
 
@@ -366,11 +351,11 @@ describe("encart des statistiques", () => {
 
 describe("pastille « En communication »", () => {
   it("ne découvre les statistiques que si la trace SIP est cochée", () => {
-    setSipTrace(false);
-    expect(statsPill("En communication", { cls: "pill", connected: true })).not.toContain("<button");
+    expect(statsPill("En communication", { cls: "pill", connected: true, traced: false })).not.toContain(
+      "<button",
+    );
 
-    setSipTrace(true);
-    const html = statsPill("En communication", { cls: "pill", connected: true });
+    const html = statsPill("En communication", { cls: "pill", connected: true, traced: true });
     expect(html).toContain("<button");
     expect(html).toContain('data-ref="statsbtn"');
     expect(html).toContain('aria-expanded="false"');
@@ -378,8 +363,7 @@ describe("pastille « En communication »", () => {
   });
 
   it("reste une pastille tant que l'appel n'est pas établi", () => {
-    setSipTrace(true);
-    const html = statsPill("Sonnerie", { cls: "pill", connected: false });
+    const html = statsPill("Sonnerie", { cls: "pill", connected: false, traced: true });
     expect(html).toBe('<span class="pill">Sonnerie</span>');
   });
 });

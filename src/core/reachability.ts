@@ -8,7 +8,7 @@
  * (`ui/reachability.ts`).
  */
 
-import { resumeAccount } from "../storage/session.js";
+import type { ResumeStore } from "../storage/session.js";
 import type { MsgKey } from "../i18n/types.js";
 
 /**
@@ -53,8 +53,8 @@ export function reachabilityOf(state: string): Reachability {
  * first connection in progress are not failures, and have nothing to
  * announce.
  */
-export function reachabilityWanted(): boolean {
-  return resumeAccount() !== null;
+export function reachabilityWanted(session: ResumeStore): boolean {
+  return session.resumeAccount() !== null;
 }
 
 /**
@@ -65,8 +65,8 @@ export function reachabilityWanted(): boolean {
  * nobody. `deferred` has none either, for another reason — at step 1,
  * nothing produces it (D1).
  */
-export function reachSentence(state: string): MsgKey | null {
-  return reachabilityOf(state) === "none" && reachabilityWanted() ? "reach.none" : null;
+export function reachSentence(state: string, session: ResumeStore): MsgKey | null {
+  return reachabilityOf(state) === "none" && reachabilityWanted(session) ? "reach.none" : null;
 }
 
 /**

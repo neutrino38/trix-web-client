@@ -292,7 +292,6 @@ export interface SecureStore {
   deleteMessages(id: string): Promise<void>;
 }
 
-const DB_NAME = "trix";
 const STORE = "vault";
 const KEY_ID = "aes-key";
 /** Le coffre à liste (ADR 0002). */
@@ -300,9 +299,9 @@ const VAULT_ID = "accounts";
 /** Le compte unique des versions précédentes, migré puis effacé. */
 const LEGACY_ID = "account";
 
-function openDb(): Promise<IDBDatabase> {
+function openBase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(name, 1);
     req.onupgradeneeded = () => {
       req.result.createObjectStore(STORE);
     };
@@ -417,6 +416,10 @@ async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
  * asks, which is why this waits for a vault that holds an account rather
  * than running at start-up. Asked once per page, never awaited: a refusal
  * changes nothing to what was just written.
+ *
+ * Kept at module level on purpose: persistence
+ * belongs to the origin, not to an instance (ADR 0011, D8) — two instances
+ * asking would ask the same thing twice.
  */
 let persistenceAsked = false;
 function requestPersistence(): void {
@@ -613,7 +616,14 @@ async function migrateLegacy(db: IDBDatabase): Promise<Vault> {
   return vault;
 }
 
-export function createBrowserStore(): SecureStore {
+/**
+ * The vault in this browser, in the IndexedDB base named after the
+ * instance's storage prefix (ADR 0011, D8): two derivatives on the same
+ * origin keep separate vaults, and the default, `trix`, is the base of the
+ * existing installations.
+ */
+export function createBrowserStore(prefix = "trix"): SecureStore {
+  const openDb = (): Promise<IDBDatabase> => openBase(prefix);
   return {
     async save(vault: Vault): Promise<void> {
       const db = await openDb();

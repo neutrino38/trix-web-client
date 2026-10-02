@@ -26,7 +26,6 @@ import {
 } from "../../prefs.js";
 import { esc } from "../../el.js";
 import { isRtl, t } from "../../../i18n/index.js";
-import { deployment } from "../../../deployment.js";
 
 /** Rectangle avec une colonne sur le bord : le panneau lui-même (maquette
  * 1b/1c). Le dessin est celui de la lecture latine ; le CSS le retourne en
@@ -51,9 +50,9 @@ export function panelIcon(collapsed: boolean): string {
  * où il n'y a pas de tchat à promettre : le bouton dit alors simplement ce
  * qu'il fait, rouvrir le panneau.
  */
-export function panelToggleLabel(collapsed: boolean): string {
+export function panelToggleLabel(collapsed: boolean, withChat: boolean): string {
   if (!collapsed) return t("panel.hide");
-  return t(deployment().rtt === "none" ? "panel.show" : "panel.showChat");
+  return t(withChat ? "panel.showChat" : "panel.show");
 }
 
 /**
@@ -82,7 +81,7 @@ function widenSign(): 1 | -1 {
   return isRtl() ? 1 : -1;
 }
 
-export function wirePanel(screen: HTMLElement): void {
+export function wirePanel(screen: HTMLElement, withChat: boolean): void {
   const sidebar = screen.querySelector(".sidebar") as HTMLElement | null;
   const toggle = screen.querySelector('[data-act="panel"]') as HTMLElement | null;
   const handle = screen.querySelector('[data-ref="panel-handle"]') as HTMLElement | null;
@@ -93,7 +92,7 @@ export function wirePanel(screen: HTMLElement): void {
     setPanelCollapsed(collapsed);
     toggle.classList.toggle("toggled", collapsed);
     toggle.setAttribute("aria-expanded", String(!collapsed));
-    toggle.title = panelToggleLabel(collapsed);
+    toggle.title = panelToggleLabel(collapsed, withChat);
     toggle.innerHTML = panelIcon(collapsed);
     // Pas d'annonce dans la région `polite` : `aria-expanded` sur le bouton
     // qu'on vient d'activer dit déjà l'état, et cette région appartient au

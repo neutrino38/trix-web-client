@@ -1,12 +1,10 @@
 import { editedAccount, type PhoneInstance } from "../../machines/phone.js";
 import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
-import { setSipTrace, sipTraceEnabled } from "../../sip/trace.js";
 import type { SuspectField } from "../../machines/events.js";
 import { t } from "../../i18n/index.js";
 import type { Msg } from "../../i18n/types.js";
 import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
-import { deployment } from "../../deployment.js";
 import { shareUrl } from "../../share/link.js";
 import { showToast } from "../toast.js";
 import { RTT_LABELS } from "../rttlabels.js";
@@ -76,7 +74,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    * vite. La machine, elle, ne lit pas davantage ces champs : ce qui suit
    * est de l'affichage, pas de la sécurité (machines/phone.ts).
    */
-  const dep = deployment();
+  const dep = phone.context.deployment;
   const uriValue = cfg
     ? `${cfg.username}@${cfg.domain}`
     : dep.domain
@@ -262,7 +260,7 @@ ${natSection}
             ? `<h3>${esc(t("config.section.diag"))}</h3>
         <div class="field">
           <label class="checkline" for="f-siptrace">
-            <input type="checkbox" id="f-siptrace" ${sipTraceEnabled() ? "checked" : ""}>
+            <input type="checkbox" id="f-siptrace" ${phone.context.trace.enabled() ? "checked" : ""}>
             <span><b>${esc(t("config.traceLabel"))}</b>${esc(t("config.traceDesc"))}</span>
           </label>
           <span class="hint">${esc(t("config.traceHint"))}</span>
@@ -380,7 +378,7 @@ ${natSection}
   // registrar et ne doit pas attendre l'enregistrement pour s'allumer —
   // le socket relit ce réglage à chaque paquet
   const traceToggle = node.querySelector<HTMLInputElement>("#f-siptrace");
-  traceToggle?.addEventListener("change", () => setSipTrace(traceToggle.checked));
+  traceToggle?.addEventListener("change", () => phone.context.trace.set(traceToggle.checked));
 
   // la mention « si différent de … » suit le userpart de l'URI en cours de saisie
   const uriInput = form.querySelector("#f-uri") as HTMLInputElement;

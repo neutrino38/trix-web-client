@@ -27,7 +27,7 @@ import {
   type Vault,
 } from "../storage/store.js";
 import { findByAddress } from "../accounts.js";
-import { resumeAccount, setResumeAccount } from "../storage/session.js";
+import { createSessionStore, type ResumeStore } from "../storage/session.js";
 import type {
   CallMedia,
   CallSession,
@@ -46,7 +46,8 @@ import { isBlocked } from "./contacts.js";
 import type { AccountData, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { parseIceForm } from "../sip/ice.js";
 import { parseRttTransport } from "../sip/rtt.js";
-import { deployment, pinAccount } from "../deployment.js";
+import { OPEN_DEPLOYMENT, pinAccount, type Deployment } from "../deployment.js";
+import type { SipTrace } from "../sip/trace.js";
 import { msg, type Msg } from "../i18n/types.js";
 
 export interface PhoneCtx {
@@ -74,6 +75,23 @@ export interface PhoneCtx {
    * `false` is reliable; `true` only means an interface is up.
    */
   online: () => boolean;
+  /**
+   * Where the account to resume is marked (ADR 0006, D4), outside the
+   * vault: the instance's session, under its storage prefix (ADR 0011, D8).
+   */
+  resume: ResumeStore;
+  /**
+   * What the operator pins (`config.json`): read back accounts are realigned
+   * on it, and the settings form cannot place an account elsewhere. The
+   * instance's own, not a module's (ADR 0011, D8).
+   */
+  deployment: Deployment;
+  /**
+   * The SIP trace's setting (`sip/trace.ts`). The machine never reads it: it
+   * rides here for the screens — the settings' box, the media stats — until
+   * the facade exposes it (ADR 0011, step 6), as `session` does for the call.
+   */
+  trace: Pick<SipTrace, "enabled" | "set">;
   /**
    * Les comptes du coffre, dans l'ordre où ils y sont (ADR 0002). La
    * machine en manipule une liste sans savoir combien il en tient : la
@@ -224,7 +242,7 @@ function goOffline(ctx: PhoneCtx) {
  * marqueur qui désigne un compte absent du coffre ne reprend rien.
  */
 function forgetResume(ctx: PhoneCtx): void {
-  if (resumeAccount() === ctx.activeId) setResumeAccount(null);
+  if (ctx.resume.resumeAccount() === ctx.activeId) ctx.resume.setResumeAccount(null);
 }
 
 function clearError(ctx: PhoneCtx): void {
@@ -487,7 +505,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
   // pas les champs, et cette fonction n'en lit pas la saisie — un formulaire
   // trafiqué ne peut donc pas placer le compte ailleurs que sur ce
   // déploiement
-  const dep = deployment();
+  const dep = ctx.deployment;
   const parsed = parseSipUri(f.uri);
   if (!parsed) {
     ctx.lastError = msg("error.invalidUri");
@@ -686,6 +704,9 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
     transcript: () => [],
     doNotDisturb: () => false,
     online: () => true,
+    resume: createSessionStore(),
+    deployment: OPEN_DEPLOYMENT,
+    trace: { enabled: () => false, set: () => {} },
     accounts: [],
     activeId: null,
     editing: null,
@@ -717,7 +738,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
             // ici, avant l'historique, parce que c'est lui qui décide duquel
             // on a besoin — les deux coïncident sauf si l'écriture du coffre
             // avait échoué.
-            const resume = resumeAccount();
+            const resume = ctx.resume.resumeAccount();
             const activeId = vault.accounts.some((a) => a.id === resume)
               ? resume
               : vault.activeId;
@@ -748,7 +769,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           // sur ce domaine-là (§6), rien ne peut le rattraper ici. Si c'est
           // l'actif qui disparaît ainsi, l'accueil repart sur ce qui reste.
           ctx.accounts = ev.value.vault.accounts.flatMap((a) => {
-            const pinned = pinAccount(a);
+            const pinned = pinAccount(a, ctx.deployment);
             return pinned ? [{ ...pinned, id: a.id, instanceId: a.instanceId }] : [];
           });
           const wanted = ev.value.activeId;
@@ -1032,7 +1053,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // page ait été rechargée, déchargée par l'Économiseur de mémoire ou
         // rouverte après un redémarrage du navigateur. Hors du coffre, parce
         // qu'il faut pouvoir le lire même quand celui-ci refuse de s'ouvrir.
-        setResumeAccount(ctx.activeId);
+        ctx.resume.setResumeAccount(ctx.activeId);
       },
       on: {
         "ui:call": (ev, ctx) => {

@@ -25,8 +25,6 @@
  *   de la cause JsSIP, sur l'écran comme dans l'historique.
  */
 
-import { recordError } from "./record.js";
-
 /** L'opération WebRTC qui a échoué, telle qu'on la nomme partout ensuite. */
 export type MediaOp =
   | "getUserMedia"
@@ -72,6 +70,12 @@ const TAG = "[trix]";
 /** Où part la ligne de console. Injectable pour les tests, comme les autres puits. */
 export interface ErrorSink {
   error(text: string, detail?: unknown): void;
+  /**
+   * La ligne du carnet de l'appel. Absente, l'échec ne va qu'à la console :
+   * les carnets appartiennent à la trace d'une instance (`sip/trace.ts`),
+   * qui fournit le puits qui les remplit (`SipTrace.errors`).
+   */
+  record?(head: string, body: string): void;
 }
 
 export const consoleErrorSink: ErrorSink = {
@@ -101,7 +105,7 @@ export function reportMediaError(
 ): MediaFailure {
   const failure = describeMediaError(op, error);
   sink.error(`${TAG} WebRTC : ${failure.op} a échoué — ${failure.message}`, error);
-  recordError(`WebRTC ${failure.op} : ${firstLine(failure.message)}`, bodyOf(failure, error));
+  sink.record?.(`WebRTC ${failure.op} : ${firstLine(failure.message)}`, bodyOf(failure, error));
   return failure;
 }
 
@@ -149,7 +153,7 @@ export function reportOfferRefused(
   sink: ErrorSink = consoleErrorSink,
 ): void {
   sink.error(`${TAG} INVITE refusé (488) : offre média incompatible WebRTC — ${problem}`);
-  recordError(`Offre média incompatible WebRTC : ${problem}`, sdp ?? "");
+  sink.record?.(`Offre média incompatible WebRTC : ${problem}`, sdp ?? "");
 }
 
 /** Une panne du canal texte, telle qu'on la raconte. */
@@ -192,7 +196,7 @@ export function reportTextChannelError(
   const line = notes === "" ? line0 : `${line0}\n${notes}`;
   if (failure.error === undefined) sink.error(line);
   else sink.error(line, failure.error);
-  recordError(`Canal texte T.140 : ${head}`, textChannelBody(failure, message, notes));
+  sink.record?.(`Canal texte T.140 : ${head}`, textChannelBody(failure, message, notes));
 }
 
 /**

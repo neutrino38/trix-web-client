@@ -10,7 +10,10 @@
  * en silence.
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import {
+import { createSessionStore, DEFAULT_STATUS } from "../src/storage/session.js";
+
+// the default instance: the `trix-…` keys of the existing installations
+const {
   alertPosted,
   lastReachableAt,
   markReachable,
@@ -21,8 +24,7 @@ import {
   setResumeAccount,
   setStatusPrefs,
   statusPrefs,
-  DEFAULT_STATUS,
-} from "../src/storage/session.js";
+} = createSessionStore();
 
 /** localStorage minimal, en mémoire. */
 function stubStorage(initial: Record<string, string> = {}): Map<string, string> {
@@ -184,4 +186,35 @@ describe("état de session — stockage indisponible", () => {
       });
     });
   }
+});
+
+describe("état de session — une instance, un espace (ADR 0011, D8)", () => {
+  it("le préfixe par défaut garde les clés des installations existantes", () => {
+    const data = stubStorage();
+    const session = createSessionStore();
+    session.setResumeAccount("acc-1");
+    session.markReachable(1_700_000_000_000);
+    session.setAlertPosted(true);
+    session.setPinHintShown();
+    session.setStatusPrefs("acc-1", DEFAULT_STATUS);
+    expect([...data.keys()].sort()).toEqual([
+      "trix-pin-hint",
+      "trix-reach-alert",
+      "trix-reachable",
+      "trix-resume",
+      "trix-status:acc-1",
+    ]);
+  });
+
+  it("deux préfixes sur la même origine ne se lisent pas", () => {
+    const data = stubStorage();
+    const trix = createSessionStore();
+    const acme = createSessionStore("acme");
+    acme.setResumeAccount("acc-acme");
+    acme.setStatusPrefs("acc", { ...DEFAULT_STATUS, chosen: "dnd" });
+    expect(trix.resumeAccount()).toBeNull();
+    expect(trix.statusPrefs("acc")).toEqual(DEFAULT_STATUS);
+    expect(acme.resumeAccount()).toBe("acc-acme");
+    expect(data.has("acme-resume")).toBe(true);
+  });
 });

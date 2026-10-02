@@ -13,6 +13,15 @@
  *   web platform APIs that are not display — WebRTC, IndexedDB, Web Storage,
  *   WebCrypto — are allowed; the rest comes by injection (D7).
  *
+ * And it keeps no state at module level (D8): two instances on a page must
+ * not see each other. A top-level `let` is what gives such state away; the
+ * few that are there on purpose are listed in `MODULE_STATE`, with why.
+ *
+ * One part of the core is the exception by design: `core/browser/`, the
+ * default `Platform` (D7). It listens to the page — `document` and `window`
+ * events — and nothing else; an element or an alert channel there is still
+ * a violation.
+ *
  * The source is read as TypeScript syntax, not searched as text: the word
  * `Notification` in an IMDN header name or in a comment is not a violation.
  *
@@ -49,6 +58,10 @@ const PAGE_GLOBALS = new Set([
   "matchMedia",
   "requestAnimationFrame",
 ]);
+/** What the browser platform (D7) may use: the page's events, heard, never changed. */
+const PLATFORM_ADAPTER = /^src\/core\/browser\//;
+const LISTENING = new Set(["uses document", "uses window"]);
+
 /** Element types: handing them over is what D4 replaces with streams. */
 const ELEMENT_TYPE = /^(HTML|SVG)\w*Element$/;
 /** `navigator` is allowed (media devices, storage); these members are not. */
@@ -125,7 +138,17 @@ function violations(file: string, source: string): string[] {
     ts.forEachChild(node, visit);
   };
   visit(sf);
+  if (PLATFORM_ADAPTER.test(file)) for (const v of LISTENING) found.delete(v);
   return [...found].sort();
+}
+
+/** The variables a core file declares with `let` or `var` at its top level. */
+function moduleState(file: string, source: string): string[] {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  return sf.statements.flatMap((st) => {
+    if (!ts.isVariableStatement(st) || st.declarationList.flags & ts.NodeFlags.Const) return [];
+    return st.declarationList.declarations.map((d) => d.name.getText(sf));
+  });
 }
 
 /** Every `.ts` file under `src/`, repo-relative. */
@@ -147,6 +170,17 @@ const KNOWN: Record<string, string[]> = {
   "src/i18n/types.ts": ["imports src/i18n/locales/fr.ts"],
 };
 
+/**
+ * Module state the core keeps on purpose: what belongs to the page or to
+ * JsSIP — shared by every instance whatever we do — not to an instance.
+ */
+const MODULE_STATE: Record<string, string[]> = {
+  // JsSIP's prototype is patched once per page (its registry is a `const` Map)
+  "src/sip/digest.ts": ["installed"],
+  // storage persistence is the origin's, asked once
+  "src/storage/store.ts": ["persistenceAsked"],
+};
+
 describe("layers (ADR 0011, D1)", () => {
   it("the core imports only the core and shipped dependencies, and leaves the page alone", () => {
     const actual: Record<string, string[]> = {};
@@ -155,6 +189,19 @@ describe("layers (ADR 0011, D1)", () => {
       if (v.length) actual[file] = v;
     }
     expect(actual).toEqual(KNOWN);
+  });
+
+  it("the core keeps no state at module level but the page's and JsSIP's (D8)", () => {
+    const actual: Record<string, string[]> = {};
+    for (const file of sources().filter(isCore)) {
+      const names = moduleState(file, readFileSync(join(ROOT, file), "utf8"));
+      if (names.length) actual[file] = names;
+    }
+    expect(actual).toEqual(MODULE_STATE);
+  });
+
+  it("sees a top-level let, not a const nor a local one", () => {
+    expect(moduleState("x.ts", `let a = 1; var b; const c = 2; function f() { let d = 3; }`)).toEqual(["a", "b"]);
   });
 
   // The rule is only worth something if the checker sees what it must see.
@@ -179,6 +226,13 @@ describe("layers (ADR 0011, D1)", () => {
       expect(check(`new Notification("x");`)).toEqual(["uses Notification"]);
       expect(check(`function f(v: HTMLVideoElement) {}`)).toEqual(["uses HTMLVideoElement"]);
       expect(check(`navigator.serviceWorker.register("sw.js");`)).toEqual(["uses navigator.serviceWorker"]);
+    });
+
+    it("lets the browser platform listen to the page, and nothing more", () => {
+      const adapter = (source: string) => violations("src/core/browser/x.ts", source);
+      expect(adapter(`document.addEventListener("freeze", f); window.addEventListener("keydown", f);`)).toEqual([]);
+      expect(adapter(`new Notification("x");`)).toEqual(["uses Notification"]);
+      expect(adapter(`import { a } from "../../ui/app.js";`)).toEqual(["imports src/ui/app.ts"]);
     });
 
     it("lets through the platform APIs that are not display, and mere names", () => {

@@ -60,6 +60,12 @@ export interface Sha256Credential {
   onMissing: () => void;
 }
 
+/**
+ * At module level, on purpose (ADR 0011, D8): the graft patches JsSIP's
+ * prototype, which every instance on the page shares, so the registry it
+ * reads is shared too. Keyed by identity, it keeps two instances on two
+ * accounts apart; two instances on the same account present the same HA1.
+ */
 const credentials = new Map<string, Sha256Credential>();
 
 const keyOf = (username: string, realm: string): string => `${username}:${realm}`;
@@ -133,6 +139,7 @@ function randomToken(size: number): string {
   return token;
 }
 
+/** JsSIP's prototype is patched once per page, whatever the number of instances. */
 let installed = false;
 
 /**

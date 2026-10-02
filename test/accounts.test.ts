@@ -21,7 +21,13 @@ import { NO_MESSAGING } from "../src/sip/message.js";
 import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
 import { MAX_ACCOUNTS } from "../src/accounts.js";
-import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
+import { OPEN_DEPLOYMENT, type Deployment } from "../src/deployment.js";
+
+/** What the instance under test is told by `config.json` — each boot reads it. */
+let deployment: Deployment = OPEN_DEPLOYMENT;
+function setDeployment(d: Deployment): void {
+  deployment = d;
+}
 
 const ALICE: StoredAccount = {
   id: "id-alice",
@@ -150,7 +156,7 @@ class FakeSip implements SipPort {
 async function boot(vault: Vault, histories: Record<string, CallLogEntry[]> = {}) {
   const { store, box, messages } = fakeStore(vault, histories);
   const sip = new FakeSip();
-  const phone = PhoneMachine.start({ args: { store, sip, transcript: () => [] } });
+  const phone = PhoneMachine.start({ args: { store, sip, transcript: () => [], deployment } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
   return { phone, sip, box, messages };
 }

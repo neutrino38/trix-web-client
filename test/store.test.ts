@@ -141,6 +141,19 @@ async function wipe(): Promise<void> {
 
 beforeEach(wipe);
 
+describe("browserStore — une instance, un espace (ADR 0011, D8)", () => {
+  it("deux préfixes sur la même origine gardent deux coffres", async () => {
+    // a base of its own, which `wipe` does not empty: start from nothing
+    const acme = createBrowserStore("acme");
+    await acme.save({ accounts: [], activeId: null });
+    await createBrowserStore().save(soloVault());
+    expect(await acme.load()).toEqual({ accounts: [], activeId: null });
+    await acme.save({ accounts: [BOB], activeId: BOB.id });
+    expect(await createBrowserStore().load()).toEqual(soloVault());
+    expect((await createBrowserStore("acme").load()).activeId).toBe(BOB.id);
+  });
+});
+
 describe("browserStore — coffre à liste", () => {
   it("load sans donnée : coffre vide", async () => {
     expect(await createBrowserStore().load()).toEqual({ accounts: [], activeId: null });

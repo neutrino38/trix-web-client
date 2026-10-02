@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { watchActivity } from "../src/ui/activity.js";
+import { watchActivity } from "../src/core/browser/activity.js";
 
 const MIN = 60_000;
 

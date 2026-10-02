@@ -35,7 +35,13 @@ import type { MediaStats } from "../src/sip/stats.js";
 import type { ChatItem } from "../src/sip/transcript.js";
 import { computeHa1, computeHa1Sha256 } from "../src/storage/ha1.js";
 import { NO_ICE } from "../src/sip/ice.js";
-import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
+import { OPEN_DEPLOYMENT, type Deployment } from "../src/deployment.js";
+
+/** What the instance under test is told by `config.json` — each boot reads it. */
+let deployment: Deployment = OPEN_DEPLOYMENT;
+function setDeployment(d: Deployment): void {
+  deployment = d;
+}
 
 const CFG: AccountConfig = {
   proxy: "wss://sip.example.fr:8443/ws",
@@ -266,7 +272,7 @@ async function bootTo(
 }> {
   const { store, box } = fakeStore(initial, history);
   const sip = new FakeSip();
-  const phone = PhoneMachine.start({ args: { store, sip, transcript, doNotDisturb } });
+  const phone = PhoneMachine.start({ args: { store, sip, transcript, doNotDisturb, deployment } });
   await vi.waitFor(() => expect(phone.state).toBe("home"));
   if (state === "home") return { phone, sip, box };
   // choisir un compte passe par `switching`, qui écrit le coffre et charge
@@ -347,8 +353,8 @@ describe("PhoneMachine — coffre illisible", () => {
 });
 
 describe("PhoneMachine — configuration imposée par le déploiement", () => {
-  // `config.json` est un état de module : chaque cas repose l'ardoise, sans
-  // quoi le suivant hériterait d'un proxy imposé qu'il n'a pas demandé
+  // chaque cas repose l'ardoise, sans quoi le suivant hériterait d'un proxy
+  // imposé qu'il n'a pas demandé
   afterEach(() => setDeployment(OPEN_DEPLOYMENT));
 
   const FORM = {

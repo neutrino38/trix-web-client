@@ -27,7 +27,7 @@
 import "../ui/theme.css";
 import { applyPrefs } from "../ui/prefs.js";
 import { initI18n, t } from "../i18n/index.js";
-import { loadDeployment, pinAccount } from "../deployment.js";
+import { loadDeployment, pinAccount, type Deployment } from "../deployment.js";
 import { el, esc } from "../ui/el.js";
 import { trixIcon } from "../ui/logo.js";
 import { langPicker, wireLangPicker } from "../ui/langpicker.js";
@@ -92,7 +92,7 @@ function summary(cfg: AccountConfig): string {
  * empêcher la création est tranché ici, avant le premier pixel : l'écran
  * n'affiche jamais un bouton qui échouerait au clic.
  */
-async function decide(): Promise<Outcome> {
+async function decide(dep: Deployment): Promise<Outcome> {
   const data = linkPayload(location);
   if (data === null) return { account: null, error: t("share.noLink") };
   const decoded = decodeAccount(data);
@@ -105,7 +105,7 @@ async function decide(): Promise<Outcome> {
   // le compte reçu passe par le déploiement comme un compte relu du coffre :
   // proxy, serveurs ICE et transport texte imposés l'emportent sur ce que le
   // lien transportait, et un autre domaine SIP le disqualifie
-  const account = pinAccount(decoded.account);
+  const account = pinAccount(decoded.account, dep);
   if (!account) {
     return {
       account: null,
@@ -200,7 +200,7 @@ applyPrefs();
 // même amorçage que l'application (`main.ts`) : la langue avant tout écran,
 // puisque `t()` est synchrone, et le déploiement avant toute décision,
 // puisque c'est lui qui dit quel domaine cette installation accepte
-await Promise.all([initI18n(), loadDeployment()]);
+const [, dep] = await Promise.all([initI18n(), loadDeployment()]);
 
 const root = document.getElementById("app")!;
-render(root, await decide());
+render(root, await decide(dep));

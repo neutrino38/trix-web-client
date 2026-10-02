@@ -24,7 +24,10 @@ import {
 import { openWsWire, withTextOverWs, wsUrlFromSdp } from "../src/sip/rttws.js";
 import { openDcWire, T140_CHANNEL } from "../src/sip/rttdc.js";
 import type { ErrorSink } from "../src/sip/mediaerror.js";
-import { openCallTrace, resetCallTraces, type TraceLine } from "../src/sip/record.js";
+import { createCallRecorder, type CallRecorder, type TraceLine } from "../src/sip/record.js";
+
+/** Les carnets du port, neufs à chaque test qui les lit. */
+let calls: CallRecorder = createCallRecorder();
 
 /** Ce que le canal a fait passer sur le fil, et ce qu'il a rapporté. */
 interface Recorder {
@@ -580,10 +583,12 @@ describe("fil WebSocket", () => {
    * plus.
    */
   describe("pannes dites à voix haute", () => {
-    beforeEach(() => resetCallTraces());
+    beforeEach(() => {
+      calls = createCallRecorder();
+    });
 
     it("une rupture part à la console et au carnet, code de fermeture compris", () => {
-      const book = openCallTrace("call-ws");
+      const book = calls.open("call-ws");
       const s = errorSink();
       const rec = recorder();
       wsChannel(rec, s);
@@ -847,7 +852,11 @@ const asPc = (pc: FakeConnection): RTCPeerConnection => pc as unknown as RTCPeer
 /** Le puits d'erreurs, en réduction : ce qu'un développeur lit dans la console. */
 function errorSink(): ErrorSink & { lines: { text: string; detail: unknown }[] } {
   const lines: { text: string; detail: unknown }[] = [];
-  return { lines, error: (text, detail) => void lines.push({ text, detail }) };
+  return {
+    lines,
+    error: (text, detail) => void lines.push({ text, detail }),
+    record: (head, body) => calls.error(head, body),
+  };
 }
 
 /**
@@ -1140,10 +1149,12 @@ describe("fil canal de données", () => {
    * sur deux serait du bruit qui ferait ignorer les vraies.
    */
   describe("pannes dites à voix haute", () => {
-    beforeEach(() => resetCallTraces());
+    beforeEach(() => {
+      calls = createCallRecorder();
+    });
 
     it("une rupture en cours d'appel part à la console et au carnet", () => {
-      const book = openCallTrace("call-t140");
+      const book = calls.open("call-t140");
       const s = errorSink();
       const rec = recorder();
       const pc = new FakeConnection();

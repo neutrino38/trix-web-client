@@ -31,34 +31,16 @@
  * c'est ce carnet que l'historique attache à sa ligne. Rien n'y va quand
  * la case est décochée : la décision se prend ici, une fois, en tête de
  * chaque trace.
+ *
+ * Une trace par instance (`createSipTrace`, ADR 0011, D8) : son réglage sous
+ * la clé `<préfixe>-siptrace`, ses carnets à elle. Deux instances dans une
+ * page ne mêlent ni leurs réglages ni leurs appels.
  */
 
-import { recordFsm, recordPacket } from "./record.js";
-import { deployment } from "../deployment.js";
-
-const KEY = "trix-siptrace";
+import { createCallRecorder, type CallRecorder } from "./record.js";
+import { consoleErrorSink, type ErrorSink } from "./mediaerror.js";
 
 const TAG = "[trix]";
-
-/**
- * La trace est-elle demandée ? Éteinte par défaut : elle est verbeuse.
- *
- * Le déploiement a le dernier mot (`config.json`, `debug_activated: "no"`) :
- * il n'y a alors pas de case à cocher dans les paramètres, et ce réglage
- * reste éteint quoi qu'en dise `localStorage` — une trace laissée allumée
- * avant le déploiement du fichier ne doit pas survivre à l'interdiction.
- * Comme tout ce qui passe par ici est aussi proposé au carnet de l'appel,
- * c'est du même coup la fin des paquets SIP dans l'historique.
- */
-export function sipTraceEnabled(): boolean {
-  return deployment().debug && localStorage.getItem(KEY) === "on";
-}
-
-/** Effet immédiat : les sockets déjà ouverts consultent ce réglage à chaque paquet. */
-export function setSipTrace(on: boolean): void {
-  if (on) localStorage.setItem(KEY, "on");
-  else localStorage.removeItem(KEY);
-}
 
 /**
  * Où partent les lignes. Injectable pour les tests, comme le puits de
@@ -78,20 +60,114 @@ export const consoleTraceSink: TraceSink = {
   groupEnd: () => console.groupEnd(),
 };
 
-/**
- * Un événement de l'appel qui n'est ni un paquet ni une transition : la
- * console et le carnet le reçoivent comme le reste, au même réglage.
- *
- * Aujourd'hui les tonalités DTMF, et c'est bien pourquoi cette fonction
- * existe — parties en RFC 4733, elles voyagent dans le flux RTP et ne
- * laissent **aucune** trace SIP. Sans cette ligne, le carnet d'un appel
- * passé à naviguer dans un serveur vocal ne dirait rien de ce qui a été
- * composé, la seule chose qu'on veuille y relire.
- */
-export function traceNote(head: string, sink: TraceSink = consoleTraceSink): void {
-  if (!sipTraceEnabled()) return;
-  recordFsm(head);
-  sink.line(`${TAG} ${head}`);
+export interface SipTraceOptions {
+  /** Le préfixe de stockage de l'instance (ADR 0011, D8) ; `trix` par défaut. */
+  prefix?: string;
+  /**
+   * Le déploiement permet-il la trace (`config.json`, `debug_activated`) ?
+   * Non : il n'y a alors pas de case à cocher dans les paramètres, et le
+   * réglage reste éteint quoi qu'en dise `localStorage` — une trace laissée
+   * allumée avant le déploiement du fichier ne doit pas survivre à
+   * l'interdiction. Comme tout ce qui passe par ici est aussi proposé au
+   * carnet de l'appel, c'est du même coup la fin des paquets SIP dans
+   * l'historique.
+   */
+  allowed?: boolean;
+  sink?: TraceSink;
+}
+
+export interface SipTrace {
+  /** La trace est-elle demandée ? Éteinte par défaut : elle est verbeuse. */
+  enabled(): boolean;
+  /** Effet immédiat : les sockets déjà ouverts consultent ce réglage à chaque paquet. */
+  set(on: boolean): void;
+  /** Les carnets des appels de cette instance. */
+  readonly recorder: CallRecorder;
+  /**
+   * Où vont les échecs WebRTC : la console, et le carnet de l'appel — sans
+   * condition, voir `CallRecorder.error`.
+   */
+  readonly errors: ErrorSink;
+  /**
+   * Enveloppe un socket JsSIP pour tracer ce qui passe dans les deux sens.
+   * Rend le socket lui-même — il est modifié sur place, JsSIP n'y voit que
+   * du feu et garde l'objet qu'il attend (`via_transport`, `sip_uri` et le
+   * reste restent ceux du socket d'origine, y compris leurs accesseurs).
+   */
+  socket<S extends object>(socket: S): S;
+  /**
+   * Un événement de l'appel qui n'est ni un paquet ni une transition : la
+   * console et le carnet le reçoivent comme le reste, au même réglage.
+   *
+   * Aujourd'hui les tonalités DTMF, et c'est bien pourquoi cette fonction
+   * existe — parties en RFC 4733, elles voyagent dans le flux RTP et ne
+   * laissent **aucune** trace SIP. Sans cette ligne, le carnet d'un appel
+   * passé à naviguer dans un serveur vocal ne dirait rien de ce qui a été
+   * composé, la seule chose qu'on veuille y relire.
+   */
+  note(head: string): void;
+  /** Voir `traceCallStates`. */
+  callStates(m: Traceable): () => void;
+}
+
+export function createSipTrace(opts: SipTraceOptions = {}): SipTrace {
+  const key = `${opts.prefix ?? "trix"}-siptrace`;
+  const allowed = opts.allowed ?? true;
+  const sink = opts.sink ?? consoleTraceSink;
+  const recorder = createCallRecorder();
+
+  const enabled = (): boolean => {
+    if (!allowed) return false;
+    try {
+      return localStorage.getItem(key) === "on";
+    } catch {
+      return false;
+    }
+  };
+
+  const trace = (way: Way, data: unknown): void => {
+    if (!enabled()) return;
+    const text = asText(data);
+    if (text === null) {
+      sink.line(`${TAG} SIP ${way} paquet binaire illisible`);
+      return;
+    }
+    // les keep-alive (CRLF simple ou double) n'ont pas de corps à déplier :
+    // une ligne compacte suffit à voir que le lien respire
+    if (text.trim() === "") {
+      sink.line(`${TAG} SIP ${way} keep-alive`);
+      return;
+    }
+    const head = firstLine(text);
+    recorder.packet(way === "→" ? "out" : "in", head, text);
+    sink.group(`${TAG} SIP ${way} ${head}`);
+    sink.line(text);
+    sink.groupEnd();
+  };
+
+  return {
+    enabled,
+    set(on) {
+      try {
+        if (on) localStorage.setItem(key, "on");
+        else localStorage.removeItem(key);
+      } catch {
+        // stockage refusé : la case ne restera pas cochée, rien de plus
+      }
+    },
+    recorder,
+    errors: {
+      error: consoleErrorSink.error,
+      record: (head, body) => recorder.error(head, body),
+    },
+    socket: (socket) => traceSocket(socket, trace),
+    note(head) {
+      if (!enabled()) return;
+      recorder.fsm(head);
+      sink.line(`${TAG} ${head}`);
+    },
+    callStates: (m) => traceCallStates(m, enabled, recorder, sink),
+  };
 }
 
 /** Sens d'un paquet, du point de vue de Trix. */
@@ -103,18 +179,13 @@ interface Wire {
   ondata(data: unknown): void;
 }
 
-/**
- * Enveloppe un socket JsSIP pour tracer ce qui passe dans les deux sens.
- * Rend le socket lui-même — il est modifié sur place, JsSIP n'y voit que du
- * feu et garde l'objet qu'il attend (`via_transport`, `sip_uri` et le reste
- * restent ceux du socket d'origine, y compris leurs accesseurs).
- */
-export function traceSocket<S extends object>(socket: S, sink: TraceSink = consoleTraceSink): S {
+/** Voir `SipTrace.socket`. */
+function traceSocket<S extends object>(socket: S, trace: (way: Way, data: unknown) => void): S {
   const wire = socket as S & Wire;
 
   const send = wire.send.bind(wire);
   wire.send = (message: unknown): boolean => {
-    trace("→", message, sink);
+    trace("→", message);
     return send(message);
   };
 
@@ -123,7 +194,7 @@ export function traceSocket<S extends object>(socket: S, sink: TraceSink = conso
   // l'accesseur : il intercepte cette pose, et rend à JsSIP notre relais.
   let deliver: (data: unknown) => void = () => {};
   const traced = (data: unknown): void => {
-    trace("←", data, sink);
+    trace("←", data);
     deliver(data);
   };
   Object.defineProperty(wire, "ondata", {
@@ -135,26 +206,6 @@ export function traceSocket<S extends object>(socket: S, sink: TraceSink = conso
   });
 
   return socket;
-}
-
-function trace(way: Way, data: unknown, sink: TraceSink): void {
-  if (!sipTraceEnabled()) return;
-  const text = asText(data);
-  if (text === null) {
-    sink.line(`${TAG} SIP ${way} paquet binaire illisible`);
-    return;
-  }
-  // les keep-alive (CRLF simple ou double) n'ont pas de corps à déplier :
-  // une ligne compacte suffit à voir que le lien respire
-  if (text.trim() === "") {
-    sink.line(`${TAG} SIP ${way} keep-alive`);
-    return;
-  }
-  const head = firstLine(text);
-  recordPacket(way === "→" ? "out" : "in", head, text);
-  sink.group(`${TAG} SIP ${way} ${head}`);
-  sink.line(text);
-  sink.groupEnd();
 }
 
 /**
@@ -195,7 +246,7 @@ interface Position {
   readonly sbb?: { readonly block: string; readonly state: string } | undefined;
 }
 
-interface Traceable extends Position {
+export interface Traceable extends Position {
   subscribe(fn: (n: Position & { event?: { type: string }; desc?: string }) => void): () => void;
 }
 
@@ -221,7 +272,12 @@ interface Traceable extends Position {
  * relèvent du diagnostic général (`core/diagnostics.ts`), pas d'un échange
  * SIP. Rend une fonction qui débranche la trace.
  */
-export function traceCallStates(m: Traceable, sink: TraceSink = consoleTraceSink): () => void {
+function traceCallStates(
+  m: Traceable,
+  enabled: () => boolean,
+  recorder: CallRecorder,
+  sink: TraceSink,
+): () => void {
   let from = where(m);
   let inside = inBlock(m);
   return m.subscribe((n) => {
@@ -229,11 +285,11 @@ export function traceCallStates(m: Traceable, sink: TraceSink = consoleTraceSink
     const enters = inBlock(n);
     // l'entrée dans le bloc et son retour sont des transitions dont un seul
     // bout est dedans : les garder, ce sont les bornes de l'appel
-    if ((inside || enters) && sipTraceEnabled()) {
+    if ((inside || enters) && enabled()) {
       const ev = n.event ? `${n.event.type}: ` : "";
       const desc = n.desc ? ` "${n.desc}"` : "";
       const head = `${ev}(${from}) → (${to})${desc}`;
-      recordFsm(head);
+      recorder.fsm(head);
       sink.line(`${TAG} FSM ${head}`);
     }
     from = to;

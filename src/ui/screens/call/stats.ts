@@ -43,7 +43,6 @@ import {
 } from "../../../sip/stats.js";
 import type { CallLogEntry } from "../../../storage/store.js";
 import { formatNumber, formatTime, t } from "../../../i18n/index.js";
-import { sipTraceEnabled } from "../../../sip/trace.js";
 import { esc } from "../../el.js";
 
 /** Cadence de rafraîchissement de l'encart : celle de la mesure (§5.4). */
@@ -84,12 +83,12 @@ const LOSS_HOT = 0.05;
  * mobile y mène aussi (ADR 0003, D8), et une entrée qui n'ouvrirait rien ne
  * vaudrait pas mieux qu'une entrée grisée.
  */
-export function statsAvailable(connected: boolean): boolean {
-  return connected && sipTraceEnabled();
+export function statsAvailable(connected: boolean, traced: boolean): boolean {
+  return connected && traced;
 }
 
-export function statsPill(inner: string, opts: { cls: string; connected: boolean }): string {
-  if (!statsAvailable(opts.connected)) return `<span class="${opts.cls}">${inner}</span>`;
+export function statsPill(inner: string, opts: { cls: string; connected: boolean; traced: boolean }): string {
+  if (!statsAvailable(opts.connected, opts.traced)) return `<span class="${opts.cls}">${inner}</span>`;
   return `<span class="livewrap" data-ref="livewrap">
     <button type="button" class="${opts.cls} livepill" data-ref="statsbtn"
             aria-expanded="false" aria-controls="media-stats"

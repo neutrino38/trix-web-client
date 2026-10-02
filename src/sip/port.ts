@@ -17,7 +17,6 @@ import {
   withSharedVideo,
   withoutMedia,
 } from "./sdp.js";
-import { traceSocket } from "./trace.js";
 import { useSha256Ha1 } from "./digest.js";
 import {
   jssipWatcher,
@@ -38,17 +37,18 @@ import {
   type MessagingSipEvent,
   type OpenMessaging,
 } from "./message.js";
-import { openCallTrace, type CallTraceHandle, type TraceLine } from "./record.js";
+import type { CallTraceHandle, TraceLine } from "./record.js";
 import {
   MEDIA_ERROR_EVENTS,
   reportMediaError,
   reportOfferRefused,
+  type ErrorSink,
   type MediaFailure,
 } from "./mediaerror.js";
 import { createCallStats, STATS_SAMPLE_MS, type MediaStats } from "./stats.js";
 import type { RttChannel, RttTransport } from "./rtt.js";
 import { openRttFor, type RttNegotiation } from "./rttsip.js";
-import { sipTraceEnabled, traceNote } from "./trace.js";
+import { createSipTrace, type SipTrace } from "./trace.js";
 
 export type SipEvent =
   | { type: "sip:connected" }
@@ -567,6 +567,10 @@ export const ACCEPTED_BODY_TYPES_WITH_TEXT = `${ACCEPTED_BODY_TYPES}, text/plain
  * Écrit les deux listes dans les constantes de JsSIP — le même objet que
  * celui qu'importe `SIPMessage` (voir `sip/digest.ts` pour l'identité des
  * modules internes sur les trois chemins de construction).
+ *
+ * Global à la page, comme JsSIP lui-même : deux instances dont l'une
+ * éteint la messagerie et l'autre non annonceraient toutes deux le choix
+ * du dernier port créé (ADR 0011, §2, écarts assumés).
  */
 export function announceMessaging(on: boolean): void {
   const c = JsSIP.C as { ALLOWED_METHODS: string; ACCEPTED_BODY_TYPES: string };
@@ -580,10 +584,22 @@ announceMessaging(false);
 export interface PortOptions {
   /** False for `"messaging": "no"` in `config.json` (ADR 0008, D13). */
   messaging?: boolean;
+  /**
+   * The instance's SIP trace, its setting and its call books (ADR 0011,
+   * D8). One of its own by default.
+   */
+  trace?: SipTrace;
 }
+
+/** What a session hears of the trace: its notes, and whether it is on. */
+type SessionTrace = Pick<SipTrace, "note" | "enabled">;
+
+/** No trace at all — the tests that build a session by hand. */
+const NO_TRACE: SessionTrace = { note: () => {}, enabled: () => false };
 
 export function createJsSipPort(opts: PortOptions = {}): SipPort {
   const messagingOn = opts.messaging ?? true;
+  const trace = opts.trace ?? createSipTrace();
   announceMessaging(messagingOn);
   return {
     start(cfg, send) {
@@ -592,7 +608,7 @@ export function createJsSipPort(opts: PortOptions = {}): SipPort {
         // enveloppé sans condition : la trace se décide paquet par paquet
         // (src/sip/trace.ts), pour que cocher la case en cours de
         // communication n'oblige pas à rouvrir le transport
-        const socket = traceSocket(new JsSIP.WebSocketInterface(cfg.proxy));
+        const socket = trace.socket(new JsSIP.WebSocketInterface(cfg.proxy));
         ua = new JsSIP.UA({
           sockets: [socket],
           uri: `sip:${cfg.username}@${cfg.domain}`,
@@ -691,7 +707,7 @@ export function createJsSipPort(opts: PortOptions = {}): SipPort {
           if (e.originator !== "remote") return;
           send({
             type: "sip:incoming",
-            call: wrapIncoming(e.session, e.request, pcConfig, cfg),
+            call: wrapIncoming(e.session, e.request, pcConfig, cfg, trace),
           });
         },
       );
@@ -776,23 +792,23 @@ export function createJsSipPort(opts: PortOptions = {}): SipPort {
         },
         call(target, media, sendCall) {
           // avant l'INVITE : le carnet adopte le dialogue du premier qui part
-          const book = openCallTrace(null);
+          const book = trace.recorder.open(null);
           const session = ua.call(target, {
             mediaConstraints: { audio: media.audio, video: media.video },
             pcConfig,
           });
-          bindSession(session, sendCall, cfg.rtt);
+          bindSession(session, sendCall, cfg.rtt, trace.errors);
           // le contrôle média naît avant le lien texte — son écouteur `sdp`
           // doit passer avant celui du texte — mais il a besoin de savoir si
           // le texte est négocié : d'où la fonction, résolue plus tard
           let rtt: RttNegotiation | null = null;
-          const control = mediaControl(session, sendCall, () => rtt?.negotiated() ?? false);
+          const control = mediaControl(session, sendCall, () => rtt?.negotiated() ?? false, trace);
           // le texte se greffe avant que le premier SDP ne soit rédigé :
           // `ua.call()` a lancé la négociation, elle n'est pas encore
           // arrivée à l'offre (getUserMedia d'abord). C'est nous qui
           // offrons, donc nous qui créons le canal de données (RFC 8865 §5)
-          rtt = openRttFor(cfg.rtt, session, "offer");
-          return wrapSession(session, book, control, rtt);
+          rtt = openRttFor(cfg.rtt, session, "offer", trace.errors);
+          return wrapSession(session, book, control, rtt, trace);
         },
       };
     },
@@ -846,13 +862,18 @@ function bindSession(
   send: (ev: CallSipEvent) => void,
   /** Le transport texte du compte : sans lui, une section texte précoce ne se reconnaît pas. */
   carries: RttTransport,
+  errors: ErrorSink,
 ): void {
   // ce que le navigateur a refusé, capté avant que JsSIP ne le réduise à
   // « WebRTC Error » : le dernier échec vu accompagne la fin de session
   let failure: MediaFailure | null = null;
-  bindMediaErrors(session, (f) => {
-    failure = f;
-  });
+  bindMediaErrors(
+    session,
+    (f) => {
+      failure = f;
+    },
+    errors,
+  );
 
   // `e` n'est pas typé par JsSIP sur cet événement (l'écouteur y est une
   // union de signatures) : c'est `earlyMediaOf` qui en tire ce qu'il faut
@@ -907,12 +928,16 @@ function mediaCause(cause: string): boolean {
  * *pourquoi* l'appel a échoué. Les noms d'événements ne sont pas dans les
  * types de JsSIP, qui n'y déclare que les siens.
  */
-function bindMediaErrors(session: Session, onFailure: (failure: MediaFailure) => void): void {
+function bindMediaErrors(
+  session: Session,
+  onFailure: (failure: MediaFailure) => void,
+  errors: ErrorSink,
+): void {
   const emitter = session as unknown as {
     on(event: string, listener: (error: unknown) => void): void;
   };
   for (const [event, op] of Object.entries(MEDIA_ERROR_EVENTS)) {
-    emitter.on(event, (error) => onFailure(reportMediaError(op, error)));
+    emitter.on(event, (error) => onFailure(reportMediaError(op, error, errors)));
   }
 }
 
@@ -929,6 +954,7 @@ function wrapIncoming(
   request: { body?: string | null; call_id?: string },
   pcConfig: RTCConfiguration,
   cfg: AccountConfig,
+  trace: SipTrace,
 ): IncomingCall {
   const from = session.remote_identity;
   const offer = request.body ?? null;
@@ -949,19 +975,19 @@ function wrapIncoming(
     offered,
     offerProblem: problem,
     listen(send) {
-      bindSession(session, send, cfg.rtt);
+      bindSession(session, send, cfg.rtt, trace.errors);
       let rtt: RttNegotiation | null = null;
-      control = mediaControl(session, send, () => rtt?.negotiated() ?? false);
+      control = mediaControl(session, send, () => rtt?.negotiated() ?? false, trace);
       // le texte se greffe avant `answer()` : c'est là que JsSIP présente
       // l'offre distante, dont il faut retirer la section texte avant que
       // le navigateur ne la voie — et c'est là que naît la connexion
       // pair-à-pair, sur laquelle le canal de données du distant arrivera
-      rtt = openRttFor(cfg.rtt, session, "answer");
+      rtt = openRttFor(cfg.rtt, session, "answer", trace.errors);
       // le carnet ne s'ouvre qu'ici, jamais à l'arrivée de l'INVITE : un
       // second appel refusé « occupé » n'est pas écouté, et n'a donc pas de
       // carnet à voler à la communication en cours. L'INVITE, lui, est déjà
       // passé — le Call-ID sert à le rattraper.
-      return wrapSession(session, openCallTrace(request.call_id ?? null), control, rtt);
+      return wrapSession(session, trace.recorder.open(request.call_id ?? null), control, rtt, trace);
     },
     answer(media) {
       // répondre « audio seul » à une offre audio + vidéo — ou « texte
@@ -975,7 +1001,7 @@ function wrapIncoming(
     reject(reason) {
       // le carnet est ouvert depuis `listen()` : la ligne d'erreur et le
       // 488 qui la suit y tombent ensemble, dans cet ordre
-      if (reason === "incompatible" && problem) reportOfferRefused(problem, offer);
+      if (reason === "incompatible" && problem) reportOfferRefused(problem, offer, trace.errors);
       if (!session.isEnded()) session.terminate(REJECT[reason]);
     },
   };
@@ -1315,6 +1341,7 @@ export function mediaControl(
    * chaque retour à `stable`.
    */
   textNegotiated: () => boolean,
+  trace: SessionTrace = NO_TRACE,
 ): MediaControl {
   const raw = session as unknown as Session & Renegotiable;
   /**
@@ -1554,7 +1581,7 @@ export function mediaControl(
       const sharing = peerShareLive(conn);
       if (sharing !== peerSharing) {
         peerSharing = sharing;
-        traceNote(`écran du correspondant ${sharing ? "affiché" : "retiré"}`);
+        trace.note(`écran du correspondant ${sharing ? "affiché" : "retiré"}`);
         // son partage a pris fin : le suivant sera une nouvelle demande
         if (!sharing) peerShareAllowed = false;
         send({ type: "sip:peerSharing", on: sharing });
@@ -1800,7 +1827,7 @@ export function mediaControl(
     if (dialog) dialog.uac_pending_reply = false;
     if (wanted?.role === "share") {
       dropFreshShare();
-      traceNote(
+      trace.note(
         wanted.on
           ? `partage d'écran refusé (${by === "remote" ? (statusCode ?? "refus") : "abandon local"})`
           : "partage d'écran arrêté",
@@ -1850,10 +1877,10 @@ export function mediaControl(
               // 200 OK comme un autre, et seule la direction d'une m-section
               // le distingue d'un oui. Sans cette ligne, le carnet d'un
               // partage refusé se lit comme celui d'un partage accepté
-              traceNote("partage d'écran refusé par le distant");
+              trace.note("partage d'écran refusé par le distant");
               send({ type: "sip:mediaRefused", by: "remote", share: true });
             } else {
-              traceNote(`partage d'écran ${wanted.on ? "démarré" : "arrêté"}`);
+              trace.note(`partage d'écran ${wanted.on ? "démarré" : "arrêté"}`);
               send({ type: "sip:sharing", on: wanted.on });
             }
             return;
@@ -1948,7 +1975,7 @@ export function mediaControl(
     inFlight = false;
     // l'abandon a déjà eu lieu : la transaction ne fait que finir de mourir
     if (asking === null) {
-      traceNote("re-INVITE expiré après abandon — l'appel continue");
+      trace.note("re-INVITE expiré après abandon — l'appel continue");
       return;
     }
     abandon("local");
@@ -2018,18 +2045,18 @@ export function mediaControl(
     // D9, et il ne laisse aucune trace SIP non plus : sa m-section est
     // répondue `inactive` dans un 200 OK ordinaire
     if (conn !== null && weShare() && !peerShareAllowed && peerShareMid(body) !== null) {
-      traceNote("écran du correspondant refusé — un seul partage à la fois");
+      trace.note("écran du correspondant refusé — un seul partage à la fois");
     }
     if (!conn || (added.length === 0 && !asksShare)) {
       // le carnet du **récepteur** dit ce qu'il a fait de l'offre : sans
       // cette ligne, une renégociation qui n'aboutit pas ne se lit que
       // d'un seul côté, et le silence ne se distingue pas d'un message
       // qui ne serait jamais arrivé
-      traceNote(conn ? "re-INVITE reçu — répondu sans question" : "re-INVITE reçu avant la connexion");
+      trace.note(conn ? "re-INVITE reçu — répondu sans question" : "re-INVITE reçu avant la connexion");
       passThrough(request);
       return;
     }
-    traceNote(
+    trace.note(
       `re-INVITE reçu — question posée : ${[...added, ...(asksShare ? ["écran"] : [])].join(", ")}`,
     );
     asked.yes = true;
@@ -2063,7 +2090,7 @@ export function mediaControl(
           // appliquée du tout, et la session revient à ce qu'elle était
           // (RFC 3261 §14.1). Il n'y a rien à désactiver dans une réponse
           // qui ne sera pas écrite
-          if (asksShare) traceNote("écran du correspondant refusé");
+          if (asksShare) trace.note("écran du correspondant refusé");
           request.reply(488, "Not Acceptable Here");
         }),
       },
@@ -2076,7 +2103,7 @@ export function mediaControl(
       receiveReinvite(request, asked);
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err);
-      traceNote(`re-INVITE : erreur de traitement (${cause})`);
+      trace.note(`re-INVITE : erreur de traitement (${cause})`);
       // la question est posée : la popup répondra, et une réponse de plus
       // serait une réponse de trop
       if (asked.yes) return;
@@ -2335,11 +2362,12 @@ function collectStats(
   session: RtcSessionLike,
   control: MediaControl,
   rtt: RttNegotiation | null,
+  enabled: () => boolean,
 ) {
   const media = createCallStats();
   const timer = setInterval(() => {
     if (session.isEnded()) return clearInterval(timer);
-    if (!sipTraceEnabled()) return;
+    if (!enabled()) return;
     // le texte ne passe pas par RTP : son compteur ne sort pas de
     // `getStats()` mais du canal lui-même (T.140 §5.3.2.3), et il est lu au
     // même relevé pour que les deux mesures parlent de la même seconde
@@ -2385,8 +2413,9 @@ export function wrapSession(
   book: CallTraceHandle,
   control: MediaControl,
   rtt: RttNegotiation | null,
+  trace: SessionTrace = NO_TRACE,
 ): CallSession {
-  const media = collectStats(session, control, rtt);
+  const media = collectStats(session, control, rtt, trace.enabled);
   /**
    * **Rien de réel ne part avant le décrochage** — ni son, ni image, ni
    * texte tapé. Le média précoce (RFC 3960) établit la connexion
@@ -2491,7 +2520,7 @@ export function wrapSession(
         // état de session refusé par JsSIP (dialogue en train de se fermer)
         return false;
       }
-      traceNote(`DTMF « ${tone} » → RFC 4733`);
+      trace.note(`DTMF « ${tone} » → RFC 4733`);
       return true;
     },
     streams() {

@@ -76,93 +76,122 @@ export interface CallTraceHandle {
   take(): TraceLine[];
 }
 
-/** Carnets ouverts, du plus ancien au plus récent. */
-const books: Book[] = [];
-
-/** Derniers dialogues vus hors carnet, pour l'INVITE arrivé trop tôt. */
-const recent = new Map<string, TraceLine[]>();
-
 /**
- * Ouvre un carnet. `callId` est connu pour un appel entrant (l'INVITE est
- * déjà là) et vaut `null` pour un sortant : le carnet adopte alors le premier
- * dialogue d'appel qui peut être le sien (voir `adoptable`).
+ * The books of one SIP port (ADR 0011, D8): its open books and the dialogs
+ * it saw lately. One per port, so that two instances on a page never write
+ * into each other's calls.
  */
-export function openCallTrace(callId: string | null): CallTraceHandle {
-  const book: Book = { callId, lines: [], bytes: 0, full: false };
-  if (callId !== null) {
-    // ce qui est déjà passé de ce dialogue — l'INVITE entrant, au moins
-    for (const line of recent.get(callId) ?? []) add(book, line);
+export interface CallRecorder {
+  /**
+   * Ouvre un carnet. `callId` est connu pour un appel entrant (l'INVITE est
+   * déjà là) et vaut `null` pour un sortant : le carnet adopte alors le
+   * premier dialogue d'appel qui peut être le sien (voir `adoptable`).
+   */
+  open(callId: string | null): CallTraceHandle;
+  /** Un paquet vient de passer. `head` est sa ligne de départ, déjà extraite par la trace. */
+  packet(way: Way, head: string, text: string): void;
+  /**
+   * Une transition de la machine d'appel. Elle va au carnet ouvert le plus
+   * récent : il n'y a jamais qu'un appel suivi par la machine à la fois, et
+   * c'est le dernier ouvert (§4.3).
+   */
+  fsm(head: string): void;
+  /**
+   * Un échec WebRTC (`sip/mediaerror.ts`), au carnet du même appel que les
+   * transitions. C'est la seule ligne que le carnet accepte **sans que la
+   * trace soit cochée** : l'appel a raté, il ne se reproduira pas sur
+   * demande, et le message du navigateur est tout ce qui dira pourquoi. La
+   * ligne suffit à faire apparaître le parchemin dans l'historique.
+   */
+  error(head: string, body: string): void;
+}
+
+export function createCallRecorder(): CallRecorder {
+  /** Carnets ouverts, du plus ancien au plus récent. */
+  const books: Book[] = [];
+  /** Derniers dialogues vus hors carnet, pour l'INVITE arrivé trop tôt. */
+  const recent = new Map<string, TraceLine[]>();
+
+  /**
+   * À quel carnet ce paquet appartient-il ? Un carnet déjà rattaché à ce
+   * dialogue le prend ; sinon, un carnet en attente peut l'adopter.
+   */
+  const bookFor = (callId: string, way: Way, head: string, text: string): Book | undefined => {
+    const known = books.find((b) => b.callId === callId);
+    if (known) return known;
+    if (!adoptable(way, head, text)) return undefined;
+    const waiting = books.find((b) => b.callId === null);
+    if (!waiting) return undefined;
+    waiting.callId = callId;
+    // carnet encore vierge : ce que l'on a vu passer de ce dialogue avant
+    // l'adoption vient en tête, dans l'ordre. Un carnet déjà entamé, lui,
+    // garderait ces lignes-là au mauvais endroit — on s'en passe.
+    if (waiting.lines.length === 0) {
+      for (const line of recent.get(callId) ?? []) add(waiting, line);
+    }
     recent.delete(callId);
-  }
-  books.push(book);
-  // un carnet que personne ne reprend (session jamais rapportée) ne doit pas
-  // rester à collecter indéfiniment : le plus ancien cède la place
-  while (books.length > MAX_OPEN) books.shift();
+    return waiting;
+  };
+
+  const close = (book: Book): void => {
+    const i = books.indexOf(book);
+    if (i !== -1) books.splice(i, 1);
+  };
+
+  /** Garde de quoi rattraper un dialogue dont le carnet n'est pas encore ouvert. */
+  const remember = (callId: string, line: TraceLine): void => {
+    const lines = recent.get(callId) ?? [];
+    if (lines.length < RECENT_LINES) lines.push(line);
+    // ré-insertion : la Map est ordonnée par insertion, et c'est cet ordre qui
+    // désigne le dialogue le plus ancien quand il faut faire de la place
+    recent.delete(callId);
+    recent.set(callId, lines);
+    while (recent.size > RECENT_DIALOGS) {
+      const oldest = recent.keys().next();
+      if (oldest.done) break;
+      recent.delete(oldest.value);
+    }
+  };
+
   return {
-    take() {
-      close(book);
-      return book.lines;
+    open(callId) {
+      const book: Book = { callId, lines: [], bytes: 0, full: false };
+      if (callId !== null) {
+        // ce qui est déjà passé de ce dialogue — l'INVITE entrant, au moins
+        for (const line of recent.get(callId) ?? []) add(book, line);
+        recent.delete(callId);
+      }
+      books.push(book);
+      // un carnet que personne ne reprend (session jamais rapportée) ne doit pas
+      // rester à collecter indéfiniment : le plus ancien cède la place
+      while (books.length > MAX_OPEN) books.shift();
+      return {
+        take() {
+          close(book);
+          return book.lines;
+        },
+      };
+    },
+
+    packet(way, head, text) {
+      const callId = callIdOf(text);
+      if (callId === null || isRegister(head, text)) return;
+      const line: TraceLine = { at: Date.now(), kind: "sip", way, head, ...clip(text) };
+      const book = bookFor(callId, way, head, text);
+      if (book) add(book, line);
+      else remember(callId, line);
+    },
+
+    fsm(head) {
+      const book = books[books.length - 1];
+      if (book) add(book, { at: Date.now(), kind: "fsm", head });
+    },
+
+    error(head, body) {
+      const book = books[books.length - 1];
+      if (book) add(book, { at: Date.now(), kind: "err", head, body });
     },
   };
-}
-
-/** Un paquet vient de passer. `head` est sa ligne de départ, déjà extraite par la trace. */
-export function recordPacket(way: Way, head: string, text: string): void {
-  const callId = callIdOf(text);
-  if (callId === null || isRegister(head, text)) return;
-  const line: TraceLine = { at: Date.now(), kind: "sip", way, head, ...clip(text) };
-  const book = bookFor(callId, way, head, text);
-  if (book) add(book, line);
-  else remember(callId, line);
-}
-
-/**
- * Une transition de la machine d'appel. Elle va au carnet ouvert le plus
- * récent : il n'y a jamais qu'un appel suivi par la machine à la fois, et
- * c'est le dernier ouvert (§4.3).
- */
-export function recordFsm(head: string): void {
-  const book = books[books.length - 1];
-  if (book) add(book, { at: Date.now(), kind: "fsm", head });
-}
-
-/**
- * Un échec WebRTC (`sip/mediaerror.ts`), au carnet du même appel que les
- * transitions. C'est la seule ligne que le carnet accepte **sans que la
- * trace soit cochée** : l'appel a raté, il ne se reproduira pas sur
- * demande, et le message du navigateur est tout ce qui dira pourquoi. La
- * ligne suffit à faire apparaître le parchemin dans l'historique.
- */
-export function recordError(head: string, body: string): void {
-  const book = books[books.length - 1];
-  if (book) add(book, { at: Date.now(), kind: "err", head, body });
-}
-
-/** Remet le module à zéro — l'UA s'arrête, ou un test recommence. */
-export function resetCallTraces(): void {
-  books.length = 0;
-  recent.clear();
-}
-
-/**
- * À quel carnet ce paquet appartient-il ? Un carnet déjà rattaché à ce
- * dialogue le prend ; sinon, un carnet en attente peut l'adopter.
- */
-function bookFor(callId: string, way: Way, head: string, text: string): Book | undefined {
-  const known = books.find((b) => b.callId === callId);
-  if (known) return known;
-  if (!adoptable(way, head, text)) return undefined;
-  const waiting = books.find((b) => b.callId === null);
-  if (!waiting) return undefined;
-  waiting.callId = callId;
-  // carnet encore vierge : ce que l'on a vu passer de ce dialogue avant
-  // l'adoption vient en tête, dans l'ordre. Un carnet déjà entamé, lui,
-  // garderait ces lignes-là au mauvais endroit — on s'en passe.
-  if (waiting.lines.length === 0) {
-    for (const line of recent.get(callId) ?? []) add(waiting, line);
-  }
-  recent.delete(callId);
-  return waiting;
 }
 
 /** Méthodes d'un dialogue d'appel : ce qu'un carnet a le droit d'adopter. */
@@ -204,26 +233,6 @@ function add(book: Book, line: TraceLine): void {
   }
   book.lines.push(line);
   book.bytes += size;
-}
-
-function close(book: Book): void {
-  const i = books.indexOf(book);
-  if (i !== -1) books.splice(i, 1);
-}
-
-/** Garde de quoi rattraper un dialogue dont le carnet n'est pas encore ouvert. */
-function remember(callId: string, line: TraceLine): void {
-  const lines = recent.get(callId) ?? [];
-  if (lines.length < RECENT_LINES) lines.push(line);
-  // ré-insertion : la Map est ordonnée par insertion, et c'est cet ordre qui
-  // désigne le dialogue le plus ancien quand il faut faire de la place
-  recent.delete(callId);
-  recent.set(callId, lines);
-  while (recent.size > RECENT_DIALOGS) {
-    const oldest = recent.keys().next();
-    if (oldest.done) break;
-    recent.delete(oldest.value);
-  }
 }
 
 function clip(text: string): { body: string; clipped?: boolean } {

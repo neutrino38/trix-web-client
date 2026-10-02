@@ -56,7 +56,7 @@ export type PresenceEvent =
   | { type: "ui:setStatus"; status: ChosenStatus }
   | { type: "ui:setNote"; note: string | null }
   | { type: "ui:setRule"; rule: "onThePhone" | "awayWhenIdle"; on: boolean }
-  /** Ten minutes without activity, and back (`ui/activity.ts`, D5 rule 2). */
+  /** Ten minutes without activity, and back (`Platform.activity`, D5 rule 2). */
   | { type: "sys:idle" }
   | { type: "sys:active" };
 

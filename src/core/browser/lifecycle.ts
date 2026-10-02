@@ -32,42 +32,11 @@
  * et `pagehide`, chacun pour sa propre raison.
  */
 
+import type { LifecycleEvents } from "../platform.js";
+
 const TICK_MS = 2000;
 /** Au-delà, le retard ne s'explique plus par la charge machine : c'est une veille. */
 const GAP_MS = 30_000;
-
-/**
- * Pourquoi la page s'endort, **parmi ce que le navigateur annonce**.
- *
- * `leave` n'est pas un `freeze` déguisé, et les confondre coûterait cher :
- * le gel garde l'onglet dans la barre et le rendra plus tard, tandis que
- * `pagehide` dit que la page s'en va — l'utilisateur a fermé, navigué
- * ailleurs, ou le navigateur se ferme. Le SIP en tire la même conclusion
- * (D3 : on se désenregistre dans les deux cas), mais on n'alerte personne
- * de ce qu'il vient de décider (D2).
- *
- * Les deux autres motifs d'injoignabilité — réseau coupé, onglet déchargé —
- * ne s'observent pas ici : le premier se lit sur `navigator.onLine`, le
- * second au chargement suivant (`ui/reachability.ts`).
- */
-export type PageSleepReason = "freeze" | "leave" | "system";
-
-export interface LifecycleEvents {
-  onSleep: (reason: PageSleepReason) => void;
-  /**
-   * Un retour, quel qu'il soit : dégel, sortie du bfcache, retour au
-   * premier plan, retour en ligne, réveil machine. Il ne porte pas de
-   * motif — ce qui demande une explication est la période écoulée, pas
-   * la façon dont elle s'est terminée (D5).
-   */
-  onWake: () => void;
-  /**
-   * The browser lost its network. Not a sleep: the page is awake, it just
-   * cannot reach anyone — the machine says so instead of blaming the
-   * settings, and the return comes through `onWake`.
-   */
-  onOffline: () => void;
-}
 
 export function watchSystemLifecycle(ev: LifecycleEvents): () => void {
   let last = Date.now();

@@ -9,15 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  setSipTrace,
-  sipTraceEnabled,
-  traceCallStates,
-  traceSocket,
-  type TraceSink,
-} from "../src/sip/trace.js";
-import { openCallTrace, resetCallTraces } from "../src/sip/record.js";
-import { OPEN_DEPLOYMENT, setDeployment } from "../src/deployment.js";
+import { createSipTrace, type SipTraceOptions, type TraceSink } from "../src/sip/trace.js";
 
 /** localStorage minimal : le réglage de la trace y vit. */
 function stubStorage(): void {
@@ -32,14 +24,15 @@ function stubStorage(): void {
   });
 }
 
-function fakeSink() {
+/** Une trace neuve, et ce qu'elle écrit — ce qu'un développeur lit dans la console. */
+function fakeTrace(opts: SipTraceOptions = {}) {
   const lines: string[] = [];
   const sink: TraceSink = {
     group: (label) => lines.push(`> ${label}`),
     line: (text) => lines.push(text),
     groupEnd: () => lines.push("<"),
   };
-  return { sink, lines };
+  return { trace: createSipTrace({ ...opts, sink }), lines };
 }
 
 /** Un socket JsSIP en réduction : ce que le Transport touche, et rien d'autre. */
@@ -63,45 +56,68 @@ const UNAUTHORIZED = "SIP/2.0 401 Unauthorized\r\nCSeq: 1 REGISTER\r\n\r\n";
 
 beforeEach(() => {
   stubStorage();
-  resetCallTraces();
 });
 
 describe("réglage de la trace", () => {
   it("est éteinte par défaut, et se rallume d'un appel", () => {
-    expect(sipTraceEnabled()).toBe(false);
-    setSipTrace(true);
-    expect(sipTraceEnabled()).toBe(true);
-    setSipTrace(false);
-    expect(sipTraceEnabled()).toBe(false);
+    const { trace } = fakeTrace();
+    expect(trace.enabled()).toBe(false);
+    trace.set(true);
+    expect(trace.enabled()).toBe(true);
+    trace.set(false);
+    expect(trace.enabled()).toBe(false);
   });
 
   it("reste éteinte quand le déploiement l'interdit, même déjà allumée", () => {
     // `debug_activated: "no"` dans config.json : la case n'existe plus dans
     // les paramètres, et un réglage laissé allumé avant ne doit pas survivre
-    setSipTrace(true);
-    setDeployment({ ...OPEN_DEPLOYMENT, debug: false });
-    expect(sipTraceEnabled()).toBe(false);
+    fakeTrace().trace.set(true);
+    const { trace, lines } = fakeTrace({ allowed: false });
+    expect(trace.enabled()).toBe(false);
 
     const { socket, sent } = fakeSocket();
-    const { sink, lines } = fakeSink();
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.send(REGISTER);
     expect(sent).toEqual([REGISTER]); // le paquet part quand même
     expect(lines).toEqual([]); // mais rien n'en est dit
 
-    setDeployment(OPEN_DEPLOYMENT);
-    expect(sipTraceEnabled()).toBe(true);
-    setSipTrace(false);
+    expect(fakeTrace().trace.enabled()).toBe(true);
+  });
+
+  it("une instance, un réglage : le préfixe nomme la clé (ADR 0011, D8)", () => {
+    const trix = fakeTrace().trace;
+    const acme = fakeTrace({ prefix: "acme" }).trace;
+    acme.set(true);
+    expect(localStorage.getItem("acme-siptrace")).toBe("on");
+    expect(trix.enabled()).toBe(false);
+    trix.set(true);
+    expect(localStorage.getItem("trix-siptrace")).toBe("on");
+  });
+
+  it("une instance, des carnets : un paquet tracé ne va qu'aux siens", () => {
+    const INVITE = "INVITE sip:bob@example.fr SIP/2.0\r\nCall-ID: abc\r\n\r\n";
+    const mine = fakeTrace().trace;
+    const other = fakeTrace({ prefix: "acme" }).trace;
+    mine.set(true);
+    other.set(true);
+    const myBook = mine.recorder.open(null);
+    const otherBook = other.recorder.open(null);
+    const { socket } = fakeSocket();
+    mine.socket(socket);
+    socket.send(INVITE);
+    other.note("ligne de l'autre instance");
+    expect(myBook.take().map((l) => l.head)).toEqual(["INVITE sip:bob@example.fr SIP/2.0"]);
+    expect(otherBook.take().map((l) => l.head)).toEqual(["ligne de l'autre instance"]);
   });
 });
 
 describe("socket enveloppé", () => {
   it("laisse passer les paquets et le booléen de send, trace éteinte", () => {
     const { socket, sent } = fakeSocket();
-    const { sink, lines } = fakeSink();
+    const { trace, lines } = fakeTrace();
     const received: unknown[] = [];
 
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.ondata = (data) => received.push(data);
 
     expect(socket.send(REGISTER)).toBe(true);
@@ -114,17 +130,17 @@ describe("socket enveloppé", () => {
 
   it("garde les accesseurs du socket d'origine", () => {
     const { socket } = fakeSocket();
-    const { sink } = fakeSink();
-    expect(traceSocket(socket, sink)).toBe(socket);
+    const { trace } = fakeTrace();
+    expect(trace.socket(socket)).toBe(socket);
     expect(socket.via_transport).toBe("WSS");
   });
 
   it("trace les deux sens, entête visible et paquet déplié", () => {
     const { socket } = fakeSocket();
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.ondata = () => {};
     socket.send(REGISTER);
     socket.ondata(UNAUTHORIZED);
@@ -141,13 +157,13 @@ describe("socket enveloppé", () => {
 
   it("s'allume et s'éteint en cours de route, sans rouvrir le socket", () => {
     const { socket } = fakeSocket();
-    const { sink, lines } = fakeSink();
+    const { trace, lines } = fakeTrace();
 
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.send(REGISTER); // éteinte
-    setSipTrace(true);
+    trace.set(true);
     socket.send(REGISTER); // allumée
-    setSipTrace(false);
+    trace.set(false);
     socket.send(REGISTER); // éteinte de nouveau
 
     expect(lines.filter((l) => l.startsWith(">"))).toHaveLength(1);
@@ -155,10 +171,10 @@ describe("socket enveloppé", () => {
 
   it("compacte les keep-alive plutôt que d'ouvrir un groupe vide", () => {
     const { socket } = fakeSocket();
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.send("\r\n\r\n");
 
     expect(lines).toEqual(["[trix] SIP → keep-alive"]);
@@ -166,10 +182,10 @@ describe("socket enveloppé", () => {
 
   it("décode les paquets binaires — certains proxys n'envoient que cela", () => {
     const { socket } = fakeSocket();
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.ondata = () => {};
     socket.ondata(new TextEncoder().encode(UNAUTHORIZED));
 
@@ -215,10 +231,10 @@ const CALL = (name: string) => ({ block: "CallBlock", state: name });
 describe("trace de la FSM d'appel", () => {
   it("ne dit rien des transitions du téléphone : elles ne sont pas un échange SIP", () => {
     const { m, move } = fakeMachine("home");
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    traceCallStates(m, sink);
+    trace.callStates(m);
     move({ state: "connecting" }, { event: { type: "ui:save" }, desc: "compte saisi" });
     move({ state: "ready" }, { event: { type: "sip:registered" } });
 
@@ -227,10 +243,10 @@ describe("trace de la FSM d'appel", () => {
 
   it("trace l'entrée dans le bloc, ses transitions, et son retour à l'hôte", () => {
     const { m, move } = fakeMachine("ready");
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    traceCallStates(m, sink);
+    trace.callStates(m);
     move({ state: "in_call", sbb: CALL("initial_state") }, { desc: "sbb CallBlock" });
     move({ sbb: CALL("dialing") }, { desc: "INVITE sortant" });
     move({ sbb: CALL("ringing") }, { event: { type: "sip:progress" }, desc: "180/183" });
@@ -250,10 +266,10 @@ describe("trace de la FSM d'appel", () => {
 
   it("garde les transitions sur place — micro coupé, self-view", () => {
     const { m, move } = fakeMachine("in_call");
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    traceCallStates(m, sink);
+    trace.callStates(m);
     move({ sbb: CALL("connected") }, { event: { type: "sip:accepted" }, desc: "200 OK" });
     move({ sbb: CALL("connected") }, { event: { type: "ui:muteMic" }, desc: "micro coupé" });
 
@@ -264,11 +280,11 @@ describe("trace de la FSM d'appel", () => {
 
   it("suit le même réglage que les paquets, consulté à chaque transition", () => {
     const { m, move } = fakeMachine("in_call");
-    const { sink, lines } = fakeSink();
+    const { trace, lines } = fakeTrace();
 
-    traceCallStates(m, sink);
+    trace.callStates(m);
     move({ sbb: CALL("dialing") }, { desc: "INVITE sortant" }); // éteinte
-    setSipTrace(true);
+    trace.set(true);
     move({ sbb: CALL("ringing") }, { event: { type: "sip:progress" }, desc: "180/183" });
 
     expect(lines).toEqual([
@@ -278,10 +294,10 @@ describe("trace de la FSM d'appel", () => {
 
   it("se débranche sur demande", () => {
     const { m, move } = fakeMachine("in_call");
-    const { sink, lines } = fakeSink();
-    setSipTrace(true);
+    const { trace, lines } = fakeTrace();
+    trace.set(true);
 
-    const off = traceCallStates(m, sink);
+    const off = trace.callStates(m);
     off();
     move({ sbb: CALL("dialing") }, { desc: "INVITE sortant" });
 
@@ -292,16 +308,16 @@ describe("trace de la FSM d'appel", () => {
 describe("carnet de l'appel", () => {
   it("ne reçoit rien quand la case est décochée, et tout dès qu'elle est cochée", () => {
     const { socket } = fakeSocket();
-    const { sink } = fakeSink();
+    const { trace } = fakeTrace();
     const INVITE = "INVITE sip:bob@example.fr SIP/2.0\r\nCall-ID: abc\r\n\r\n";
     const OK = "SIP/2.0 200 OK\r\nCSeq: 1 INVITE\r\nCall-ID: abc\r\n\r\n";
 
-    traceSocket(socket, sink);
+    trace.socket(socket);
     socket.ondata = () => {};
-    const book = openCallTrace(null);
+    const book = trace.recorder.open(null);
 
     socket.send(INVITE); // trace éteinte : rien n'est gardé
-    setSipTrace(true);
+    trace.set(true);
     socket.send(INVITE);
     socket.ondata(OK);
 
@@ -313,11 +329,11 @@ describe("carnet de l'appel", () => {
 
   it("y verse aussi les transitions de la machine d'appel", () => {
     const { m, move } = fakeMachine("in_call");
-    const { sink } = fakeSink();
-    setSipTrace(true);
+    const { trace } = fakeTrace();
+    trace.set(true);
 
-    const book = openCallTrace("abc");
-    traceCallStates(m, sink);
+    const book = trace.recorder.open("abc");
+    trace.callStates(m);
     move({ sbb: CALL("ringing") }, { event: { type: "sip:progress" }, desc: "180/183" });
 
     expect(book.take()).toEqual([

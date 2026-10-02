@@ -65,6 +65,10 @@ src/
     reachability.ts       # niveau de joignabilité, motif, phrase — comme données (§4.13)
     subtitles.ts          # la conversation d'un appel en WebVTT (§4.9)
     diagnostics.ts        # traces des automates sur la console (§4.5)
+    platform.ts           # Platform : ce que le noyau entend de la plateforme (ADR 0011, D7)
+    browser/              # browserPlatform(), la seule partie du noyau qui écoute la page
+      lifecycle.ts        # gel, dégel, bfcache, veille machine, réseau → sys:sleep / sys:wake (§4.1)
+      activity.ts         # inactivité de l'utilisateur → sys:idle / sys:active (§4.14)
   share/
     link.ts               # encodage/décodage d'un compte dans une URL (§6.1)
     page.ts               # share_account.html : le compte reçu, montré puis créé
@@ -91,9 +95,7 @@ src/
     md5.ts, sha256.ts     # condensés synchrones — le chemin Digest ne sait pas attendre
   ui/
     screens/{home,config,call}.ts
-    lifecycle.ts          # gel, dégel, bfcache, veille machine → sys:sleep / sys:wake (§4.1)
     reachability.ts       # dire la joignabilité : phrase, onglet, notification (§4.13)
-    activity.ts           # inactivité de l'utilisateur → sys:idle / sys:active (§4.14)
     presence.ts           # glyphes, bouton de statut et son menu (§4.14)
     screens/call/thread.ts # le fil Échanges à l'écran (§4.14)
     notify.ts             # poser une notification par la voie qui survit au gel (§4.13)
@@ -151,7 +153,7 @@ champs imposés et refuse une adresse hors du domaine imposé : un formulaire tr
 depuis la console ne place pas le compte ailleurs que sur ce déploiement.
 
 `debug_activated: "no"` mérite une mention à part : la clé ne masque pas seulement la
-case, elle éteint `sipTraceEnabled()` (§5.2) quoi qu'en dise `localStorage`. Comme
+case, elle éteint la trace (`createSipTrace({ allowed })`, §5.2) quoi qu'en dise `localStorage`. Comme
 tout ce qui passe par là est aussi proposé au carnet de l'appel (§5.3), c'est du même
 coup la fin des paquets SIP dans l'historique — y compris pour qui avait laissé la
 trace allumée avant que le fichier n'arrive.
@@ -222,7 +224,7 @@ Décisions :
 #### Le cycle de vie complet (ADR 0006)
 
 Trois choses différentes endorment Trix, et une seule est annoncée par le navigateur. Elles
-arrivent toutes à `sys:sleep` / `sys:wake` (`ui/lifecycle.ts`), parce qu'elles ont toutes la
+arrivent toutes à `sys:sleep` / `sys:wake` (`core/browser/lifecycle.ts`), parce qu'elles ont toutes la
 même conséquence SIP : un contact qui reste vivant chez un registrar sans personne au bout du
 fil, c'est-à-dire un appelant qui entend sonner dans le vide.
 
@@ -1696,7 +1698,7 @@ tarderait à voir passer la liste des fichiers d'une nouvelle version.
 
 **`pagehide` n'alerte jamais**, pour la raison inverse : fermer l'onglet ou naviguer ailleurs est
 une décision que l'utilisateur vient de prendre, et une alerte `requireInteraction` posée par une
-page qui va disparaître ne pourrait plus être effacée par personne. `ui/lifecycle.ts` rapporte donc
+page qui va disparaître ne pourrait plus être effacée par personne. `core/browser/lifecycle.ts` rapporte donc
 `freeze` et `leave` séparément — même `sys:sleep`, même unREGISTER, mais pas le même mot.
 
 **Le retour à la normale se notifie aussi**, sur le même `tag`, dès qu'une alerte d'absence a été
@@ -1757,7 +1759,7 @@ Le refus du PUBLISH n'est pas un état mais un drapeau (`support.publish`) : il 
 abonnements. Le **statut publié** n'en est pas un non plus : `publishedPresence(prefs, inCall,
 idle)` le recalcule à chaque changement d'une de ses entrées, et la machine ne publie que si le
 résultat diffère. Le statut **choisi**, la note et les deux règles automatiques (« En
-communication » pendant un appel, « Absent » après 10 min d'inactivité, `ui/activity.ts`) sont
+communication » pendant un appel, « Absent » après 10 min d'inactivité, `core/browser/activity.ts`) sont
 gardés par compte hors coffre (`storage/session.ts`), pour être là dès le rechargement.
 
 **Le carnet reste à PhoneMachine**, chiffré par compte à côté de l'historique
@@ -1993,11 +1995,13 @@ seule.
 - Le socket est enveloppé sans condition ; c'est la trace qui consulte le réglage à
   **chaque** paquet. Cocher la case en pleine communication trace donc la suite de
   l'échange, sans redémarrer l'UA ni rouvrir le transport.
-- Réglage local (`localStorage`, clé `trix-siptrace`), jamais enregistré avec le compte :
-  il décrit une séance de dépannage, pas un utilisateur.
+- Réglage local (`localStorage`, clé `<préfixe>-siptrace`, `trix-siptrace` par défaut),
+  jamais enregistré avec le compte : il décrit une séance de dépannage, pas un
+  utilisateur. Une trace par instance (`createSipTrace`, ADR 0011, D8), qui tient aussi
+  les carnets de ses appels : deux instances dans une page ne mêlent pas leurs appels.
 - Les keep-alive (CRLF) tiennent sur une ligne, sans groupe à déplier ; les paquets
   binaires sont décodés en UTF-8 — certains proxys n'envoient que cela.
-- La trace de la FSM (`traceCallStates`, branchée dans `main.ts`) s'abonne à la machine
+- La trace de la FSM (`trace.callStates`, branchée dans `main.ts`) s'abonne à la machine
   et ne rapporte que le **bloc** en cours — son entrée, ses transitions internes, son
   retour à l'hôte : l'appel, aujourd'hui le seul bloc (§4.3). Les transitions du
   téléphone lui-même n'y sont pas ; elles ne racontent pas un échange SIP, et le
@@ -2296,7 +2300,7 @@ avant d'envoyer (`dtmfSender()`), refuse une tonalité hors de `0-9 * # A-D`, et
 
 Enfin, une tonalité partie en RFC 4733 ne laisse **aucune** trace SIP : le carnet d'un
 appel passé à naviguer dans un serveur vocal ne dirait rien de ce qui a été composé,
-la seule chose qu'on veuille y relire. D'où `traceNote()` (`sip/trace.ts`), qui pose la
+la seule chose qu'on veuille y relire. D'où `trace.note()` (`sip/trace.ts`), qui pose la
 ligne au carnet et à la console, au même réglage que le reste (§5.2).
 
 ### 5.7 PUBLISH hors JsSIP

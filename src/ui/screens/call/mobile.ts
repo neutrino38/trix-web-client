@@ -60,6 +60,8 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
   const offline = phone.state === "offline";
   const sleeping = phone.state === "sleeping";
   const connected = view?.state === "connected";
+  // the SIP trace's box also opens the media stats (call/stats.ts)
+  const traced = phone.context.trace.enabled();
   const incoming = view?.state === "ringing_in";
   const speakerMuted = isSpeakerMuted();
   const err = phone.context.lastError;
@@ -94,7 +96,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
               view
                 ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
                 : esc(pillLabel(phone, status.label)),
-              { cls: "mstatus", connected },
+              { cls: "mstatus", connected, traced },
             )
           }`
         }
@@ -136,7 +138,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                 speakerMuted,
                 withHangup: true,
                 compact: true,
-                withStats: statsAvailable(connected),
+                withStats: statsAvailable(connected, traced),
               }),
               // pas de vu-mètres ici : à 390 px, cinq commandes et le rond
               // rouge tiennent tout juste le bandeau. L'audio entrant se voit
@@ -190,7 +192,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                  // le plein écran a du sens ici : c'est lui qui fait
                  // disparaître la barre d'adresse du navigateur mobile
                  withFullscreen: true,
-                 withStats: statsAvailable(connected),
+                 withStats: statsAvailable(connected, traced),
                  ...(chat
                    ? { chat: { open: chatOpen, controls: CHAT_PANE_ID } }
                    : chatOff

@@ -10,7 +10,7 @@
  * Pointer moves fire dozens of times a second, so a gesture only notes the
  * time; the one timer runs to the deadline and, if something happened in
  * between, re-arms itself for what is left. A hidden tab has its timers
- * throttled to about one wake-up a minute (see `ui/lifecycle.ts`): the
+ * throttled to about one wake-up a minute (see `lifecycle.ts`): the
  * idle signal may then come up to a minute late, which ten minutes can
  * afford.
  *
@@ -18,14 +18,11 @@
  * is PresenceMachine's decision.
  */
 
+import type { ActivityEvents } from "../platform.js";
+
 export const IDLE_MS = 10 * 60_000;
 
 const GESTURES = ["keydown", "pointerdown", "pointermove", "touchstart", "wheel"] as const;
-
-export interface ActivityEvents {
-  onIdle: () => void;
-  onActive: () => void;
-}
 
 export interface ActivityOptions {
   idleMs?: number;

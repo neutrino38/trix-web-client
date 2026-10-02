@@ -18,6 +18,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocale } from "../src/i18n/index.js";
+import { createSessionStore } from "../src/storage/session.js";
 
 interface PostedNotification {
   title: string;
@@ -133,10 +134,17 @@ function fakePhone(state: string) {
   };
 }
 
-/** Le module, rechargé à neuf : il lit `document.wasDiscarded` à son import. */
+/** Le module, rechargé à neuf : son état est celui d'une page qui vient de se charger. */
 async function loadModule() {
   vi.resetModules();
   return import("../src/ui/reachability.js");
+}
+
+/** Le module rechargé, et branché sur une machine au repos : c'est au branchement qu'il lit le chargement. */
+async function loadWatched() {
+  const mod = await loadModule();
+  mod.watchReachability(fakePhone("home") as never, createSessionStore());
+  return mod;
 }
 
 /** Le niveau, le motif et la phrase, qui sont au noyau (ADR 0011, D6). */
@@ -193,11 +201,10 @@ describe("niveaux de joignabilité (D1)", () => {
     stubBrowser({ stored: {} });
     const { reachSentence } = await loadCore();
     // personne n'a demandé : l'accueil n'est pas une panne
-    expect(reachSentence("reconnecting")).toBeNull();
+    expect(reachSentence("reconnecting", createSessionStore())).toBeNull();
     stubBrowser({ stored: { "trix-resume": "acc-1" } });
-    const withMarker = await loadCore();
-    expect(withMarker.reachSentence("reconnecting")).toBe("reach.none");
-    expect(withMarker.reachSentence("ready")).toBeNull();
+    expect(reachSentence("reconnecting", createSessionStore())).toBe("reach.none");
+    expect(reachSentence("ready", createSessionStore())).toBeNull();
   });
 
   it("le motif : hors ligne d'abord, puis ce que le cycle de vie a dit, puis le simple constat", async () => {
@@ -213,7 +220,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
     const phone = fakePhone("reconnecting");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     vi.advanceTimersByTime(3000);
     phone.goto("ready");
     vi.advanceTimersByTime(60_000);
@@ -224,7 +231,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
     const phone = fakePhone("sleeping");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     vi.advanceTimersByTime(9000);
     expect(posted).toHaveLength(0);
     vi.advanceTimersByTime(2000);
@@ -239,7 +246,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     const store = stubBrowser({ visible: true, stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
     const phone = fakePhone("reg_failed");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     vi.advanceTimersByTime(30_000);
     expect(posted).toHaveLength(0); // l'écran le dit déjà, une phrase entière
     hide();
@@ -254,7 +261,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     const store = stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
     const { watchReachability, noteSleepReason } = await loadModule();
     const phone = fakePhone("ready");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     noteSleepReason("freeze");
     phone.goto("sleeping");
     // aucun timer n'a été avancé : l'alerte est partie avec le gel
@@ -273,7 +280,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
     stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
     const { watchReachability, noteSleepReason } = await loadModule();
     const phone = fakePhone("ready");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     noteSleepReason("leave");
     phone.goto("sleeping");
     vi.advanceTimersByTime(60_000);
@@ -283,7 +290,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
   it("n'alerte pas si personne n'a demandé à être joignable", async () => {
     stubBrowser({ visible: false, stored: {} });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("home") as never);
+    watchReachability(fakePhone("home") as never, createSessionStore());
     vi.advanceTimersByTime(60_000);
     expect(posted).toHaveLength(0);
   });
@@ -294,7 +301,7 @@ describe("seuil de 10 s avant d'alerter (D2)", () => {
       stored: { "trix-resume": "acc-1", "trix-reach-notify": "off" },
     });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("sleeping") as never);
+    watchReachability(fakePhone("sleeping") as never, createSessionStore());
     vi.advanceTimersByTime(60_000);
     expect(posted).toHaveLength(1);
   });
@@ -305,7 +312,7 @@ describe("le retour à la normale se notifie aussi (D8)", () => {
     const store = stubBrowser({ visible: false, stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
     const phone = fakePhone("sleeping");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     vi.advanceTimersByTime(11_000);
     expect(posted).toHaveLength(1);
     phone.goto("ready");
@@ -323,7 +330,7 @@ describe("le retour à la normale se notifie aussi (D8)", () => {
       stored: { "trix-resume": "acc-1", "trix-reach-alert": "1" },
     });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("ready") as never);
+    watchReachability(fakePhone("ready") as never, createSessionStore());
     expect(posted).toHaveLength(1);
     expect(posted[0]).toMatchObject({ tag: "trix-reachability", requireInteraction: false });
     expect(store.get("trix-reach-alert")).toBeUndefined();
@@ -332,7 +339,7 @@ describe("le retour à la normale se notifie aussi (D8)", () => {
   it("ne dit rien quand rien n'avait été annoncé", async () => {
     stubBrowser({ stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("ready") as never);
+    watchReachability(fakePhone("ready") as never, createSessionStore());
     expect(posted).toHaveLength(0);
   });
 });
@@ -351,7 +358,7 @@ describe("l'alerte passe par le service worker quand il y en a un", () => {
     stubBrowser({ visible: false, worker: true, stored: { "trix-resume": "acc-1" } });
     const { watchReachability, noteSleepReason } = await loadModule();
     const phone = fakePhone("ready");
-    watchReachability(phone as never);
+    watchReachability(phone as never, createSessionStore());
     noteSleepReason("freeze");
     phone.goto("sleeping");
     // rien n'a été construit dans la page : elle est sur le point de geler
@@ -373,7 +380,7 @@ describe("l'alerte passe par le service worker quand il y en a un", () => {
       stored: { "trix-resume": "acc-1", "trix-reach-alert": "1" },
     });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("ready") as never);
+    watchReachability(fakePhone("ready") as never, createSessionStore());
     expect(toWorker).toHaveLength(2);
     expect(toWorker[0]).toMatchObject({ tag: "trix-reachability", close: true, title: "" });
     expect(toWorker[1]).toMatchObject({ tag: "trix-reachability", keep: false });
@@ -384,7 +391,7 @@ describe("la période d'injoignabilité après un déchargement (D4)", () => {
   it("borne l'absence par le dernier instant joignable et l'instant du retour", async () => {
     const from = Date.now() - 47 * 60_000;
     stubBrowser({ wasDiscarded: true, stored: { "trix-reachable": String(from) } });
-    const { discardedEpisode } = await loadModule();
+    const { discardedEpisode } = await loadWatched();
     const gone = discardedEpisode();
     expect(gone?.from).toBe(from);
     expect(gone?.to).toBeGreaterThanOrEqual(from);
@@ -392,7 +399,7 @@ describe("la période d'injoignabilité après un déchargement (D4)", () => {
 
   it("ne raconte rien d'un chargement ordinaire", async () => {
     stubBrowser({ stored: { "trix-reachable": String(Date.now()) } });
-    const { discardedEpisode } = await loadModule();
+    const { discardedEpisode } = await loadWatched();
     expect(discardedEpisode()).toBeNull();
   });
 
@@ -400,13 +407,13 @@ describe("la période d'injoignabilité après un déchargement (D4)", () => {
     // rien n'a jamais été écrit : « injoignable depuis le 1er janvier 1970 »
     // n'informerait personne
     stubBrowser({ wasDiscarded: true });
-    const { discardedEpisode } = await loadModule();
+    const { discardedEpisode } = await loadWatched();
     expect(discardedEpisode()).toBeNull();
   });
 
   it("le message se masque, et ne revient pas", async () => {
     stubBrowser({ wasDiscarded: true, stored: { "trix-reachable": String(Date.now() - 1000) } });
-    const { discardedEpisode, dismissDiscardNotice } = await loadModule();
+    const { discardedEpisode, dismissDiscardNotice } = await loadWatched();
     expect(discardedEpisode()).not.toBeNull();
     dismissDiscardNotice();
     expect(discardedEpisode()).toBeNull();
@@ -417,11 +424,11 @@ describe("la période d'injoignabilité après un déchargement (D4)", () => {
       wasDiscarded: true,
       stored: { "trix-reachable": String(Date.now() - 1000) },
     });
-    const first = await loadModule();
+    const first = await loadWatched();
     expect(first.pinHintDue()).toBe(true);
     expect(store.get("trix-pin-hint")).toBe("1");
     // un second déchargement, plus tard : le conseil a déjà été donné
-    const second = await loadModule();
+    const second = await loadWatched();
     expect(second.pinHintDue()).toBe(false);
   });
 });
@@ -430,7 +437,7 @@ describe("l'horodatage du dernier instant joignable", () => {
   it("s'écrit dès que l'on est joignable, et au passage en arrière-plan", async () => {
     const store = stubBrowser({ visible: true, stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("ready") as never);
+    watchReachability(fakePhone("ready") as never, createSessionStore());
     const first = Number(store.get("trix-reachable"));
     expect(first).toBeGreaterThan(0);
     vi.advanceTimersByTime(20_000);
@@ -444,7 +451,7 @@ describe("l'horodatage du dernier instant joignable", () => {
   it("ne s'écrit pas quand on n'est pas joignable", async () => {
     const store = stubBrowser({ visible: true, stored: { "trix-resume": "acc-1" } });
     const { watchReachability } = await loadModule();
-    watchReachability(fakePhone("reconnecting") as never);
+    watchReachability(fakePhone("reconnecting") as never, createSessionStore());
     vi.advanceTimersByTime(60_000);
     expect(store.get("trix-reachable")).toBeUndefined();
   });

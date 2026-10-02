@@ -160,24 +160,10 @@ export function parseDeployment(raw: unknown): Deployment {
   };
 }
 
-let current: Deployment = OPEN_DEPLOYMENT;
-
 /**
- * What the deployment pins, read synchronously by the screens and the
- * machine. Open until `loadDeployment()` has resolved, which is why
- * `main.ts` awaits it before the first render.
- */
-export function deployment(): Deployment {
-  return current;
-}
-
-/** Injects a deployment — tests, and nothing else. */
-export function setDeployment(d: Deployment): void {
-  current = d;
-}
-
-/**
- * Fetches `config.json` and installs it. Never rejects: a missing file, a
+ * Fetches `config.json`. The result belongs to whoever asked: the instance
+ * hands it to its machines (ADR 0011, D8), nothing keeps it at module
+ * level — two instances on one page may serve two deployments. Never rejects: a missing file, a
  * server that answers `index.html` to a 404, a truncated download all end
  * up as the open deployment.
  *
@@ -189,12 +175,11 @@ export function setDeployment(d: Deployment): void {
 export async function loadDeployment(url: string = DEPLOYMENT_URL): Promise<Deployment> {
   try {
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return (current = OPEN_DEPLOYMENT);
-    current = parseDeployment(JSON.parse(await res.text()) as unknown);
+    if (!res.ok) return OPEN_DEPLOYMENT;
+    return parseDeployment(JSON.parse(await res.text()) as unknown);
   } catch {
-    current = OPEN_DEPLOYMENT;
+    return OPEN_DEPLOYMENT;
   }
-  return current;
 }
 
 /**
@@ -203,10 +188,7 @@ export async function loadDeployment(url: string = DEPLOYMENT_URL): Promise<Depl
  * HA1 cannot follow (see the module header), so the account is not usable
  * here and the person is sent back to an empty form.
  */
-export function pinAccount(
-  cfg: AccountConfig,
-  dep: Deployment = deployment(),
-): AccountConfig | null {
+export function pinAccount(cfg: AccountConfig, dep: Deployment): AccountConfig | null {
   if (dep.domain !== null && cfg.domain !== dep.domain) return null;
   return {
     ...cfg,

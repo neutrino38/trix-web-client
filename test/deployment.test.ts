@@ -13,7 +13,6 @@ import {
   loadDeployment,
   parseDeployment,
   pinAccount,
-  setDeployment,
   type Deployment,
 } from "../src/deployment.js";
 import type { AccountConfig } from "../src/storage/store.js";
@@ -34,7 +33,6 @@ const ACCOUNT: AccountConfig = {
 };
 
 afterEach(() => {
-  setDeployment(OPEN_DEPLOYMENT);
   vi.unstubAllGlobals();
 });
 

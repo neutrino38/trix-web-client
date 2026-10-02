@@ -10,23 +10,22 @@ import { bindMessaging } from "./ui/messaging.js";
 import { syncStrangerPrompt } from "./ui/strangerprompt.js";
 import { watchMessageAlerts } from "./ui/messagealerts.js";
 import { openThreadKey } from "./ui/screens/call/thread.js";
-import { setStatusPrefs, statusPrefs } from "./storage/session.js";
+import { createSessionStore } from "./storage/session.js";
 import { createBrowserStore } from "./storage/store.js";
 import { createJsSipPort } from "./sip/port.js";
 import { showConversation } from "./ui/screens/call/chat.js";
 import { createConversation, followCalls } from "./core/conversation.js";
 import { invalidateScreen, renderApp } from "./ui/app.js";
 import { applyPrefs } from "./ui/prefs.js";
-import { watchSystemLifecycle } from "./ui/lifecycle.js";
-import { watchActivity } from "./ui/activity.js";
+import { browserPlatform } from "./core/browser/index.js";
 import { noteSleepReason, watchReachability } from "./ui/reachability.js";
 import { registerNotifier } from "./ui/notify.js";
 import { watchLayout } from "./ui/layout.js";
 import { formatLog, machineLogger, watchMachine } from "./core/diagnostics.js";
 import { watchGlobalErrors } from "./ui/diagnostics.js";
-import { traceCallStates } from "./sip/trace.js";
+import { createSipTrace } from "./sip/trace.js";
 import { initI18n, onLocaleChange, translate } from "./i18n/index.js";
-import { deployment, loadDeployment } from "./deployment.js";
+import { loadDeployment } from "./deployment.js";
 
 applyPrefs();
 
@@ -44,9 +43,21 @@ applyPrefs();
 // proxy. Absente, illisible : Trix se comporte comme sans elle.
 //
 // Top-level await : Vite le sert nativement en ESM, et le premier rendu suit.
-await Promise.all([initI18n(), loadDeployment()]);
+const [, deployment] = await Promise.all([initI18n(), loadDeployment()]);
 
 watchGlobalErrors();
+
+// what the core hears from the browser: sleeps, idleness, the tab being
+// seen, the network (ADR 0011, D7)
+const platform = browserPlatform();
+
+// the instance's storage: IndexedDB base and localStorage keys under one
+// prefix (ADR 0011, D8) — `trix`, the existing installations' own
+const STORAGE_PREFIX = "trix";
+const session = createSessionStore(STORAGE_PREFIX);
+// the SIP trace, its setting and its call books — offered unless the
+// deployment says `debug_activated: "no"`
+const trace = createSipTrace({ prefix: STORAGE_PREFIX, allowed: deployment.debug });
 
 // le moteur peut écrire avant que `phone` ne soit affectée (transition
 // initiale) : le logger passe par cette variable, pas par la const
@@ -59,16 +70,16 @@ let started: PhoneInstance | null = null;
 const presence = PresenceMachine.start({
   debug: true,
   args: {
-    statusStore: { load: statusPrefs, save: setStatusPrefs },
+    statusStore: { load: session.statusPrefs, save: session.setStatusPrefs },
     // `"presence": "no"` dans config.json (ADR 0007, D8) : la machine reste
     // en `disabled`, et pas un SUBSCRIBE ne part
-    enabled: deployment().presence,
+    enabled: deployment.presence,
   },
 });
 
 // Un seul coffre pour les deux machines qui y écrivent : PhoneMachine
 // (comptes, historique, contacts) et MessagingMachine (messages).
-const store = createBrowserStore();
+const store = createBrowserStore(STORAGE_PREFIX);
 
 // La messagerie (ADR 0008, D12) : une troisième paire, sur le modèle de la
 // présence. Elle ne lit du téléphone que ses transitions (`linkMessaging`).
@@ -77,8 +88,8 @@ const messaging = MessagingMachine.start({
   args: {
     store,
     // `"messaging": "no"` dans config.json (D13)
-    enabled: deployment().messaging,
-    visible: document.visibilityState === "visible",
+    enabled: deployment.messaging,
+    visible: platform.visible(),
   },
 });
 
@@ -95,7 +106,7 @@ const phone = PhoneMachine.start({
     store,
     // `"messaging": "no"` dans config.json (ADR 0008, D13) : ni écouteur,
     // ni MESSAGE dans `Allow`
-    sip: createJsSipPort({ messaging: deployment().messaging }),
+    sip: createJsSipPort({ messaging: deployment.messaging, trace }),
     // la conversation de l'appel qui se termine, lue au moment où la machine
     // range sa ligne d'historique (§4.9) — celle du noyau, que le panneau
     // soit monté ou non (ADR 0011, D5)
@@ -104,7 +115,10 @@ const phone = PhoneMachine.start({
     // par PresenceMachine, lu ici au moment de décider
     doNotDisturb: () => presence.state !== "disabled" && presence.context.prefs.chosen === "dnd",
     // a cut network is not a wrong setting: the machine reads it on failure
-    online: () => navigator.onLine,
+    online: platform.online,
+    resume: session,
+    deployment,
+    trace,
   },
 });
 
@@ -126,7 +140,7 @@ linkMessaging(phone, messaging);
 
 // états et transitions de l'appel, dans le même flux que les paquets SIP et
 // sous le même réglage : c'est de leur juxtaposition qu'on lit un échange
-traceCallStates(phone);
+trace.callStates(phone);
 
 const root = document.getElementById("app")!;
 
@@ -161,6 +175,18 @@ messaging.subscribe(scheduleRender);
 messaging.subscribe(() => syncStrangerPrompt(phone, messaging));
 // titre, icône, notification, annonce, pastille d'appel (D10, D11)
 watchMessageAlerts(phone, messaging, openThreadKey);
+
+// La joignabilité (ADR 0006) : le niveau dérivé de la machine, la phrase
+// dans la page, le titre d'onglet, le favicon et la notification système.
+//
+// **Avant** `platform.lifecycle`, et ce n'est pas indifférent : les deux
+// écoutent `freeze` et `pagehide`, les écouteurs partent dans l'ordre où
+// ils ont été posés, et celui-ci doit horodater le dernier instant
+// joignable pendant que la machine est encore enregistrée — l'autre l'en
+// sort aussitôt après (D3). Et avant le premier rendu, qui montre déjà
+// l'absence constatée au chargement (D4).
+watchReachability(phone, session);
+
 renderApp(root, phone);
 
 // bascule mobile ⇄ bureau : simple re-rendu, l'appel en cours n'est pas coupé
@@ -174,16 +200,6 @@ onLocaleChange(() => {
   renderApp(root, phone);
 });
 
-// La joignabilité (ADR 0006) : le niveau dérivé de la machine, la phrase
-// dans la page, le titre d'onglet, le favicon et la notification système.
-//
-// **Avant** `watchSystemLifecycle`, et ce n'est pas indifférent : les deux
-// écoutent `freeze` et `pagehide`, les écouteurs partent dans l'ordre où
-// ils ont été posés, et celui-ci doit horodater le dernier instant
-// joignable pendant que la machine est encore enregistrée — l'autre l'en
-// sort aussitôt après (D3).
-watchReachability(phone);
-
 // Le service worker (`public/sw.js`), sans attendre : c'est le seul
 // contexte que le gel de la page ne suspend pas, donc le seul d'où l'alerte
 // d'endormissement puisse encore partir. Il garde aussi le client en cache
@@ -194,7 +210,7 @@ registerNotifier();
 // Endormissements de la page et de la machine : gel de l'onglet, départ en
 // bfcache, fermeture, veille de l'ordinateur. Tous raccrochent et
 // désenregistrent ; tout retour réenregistre (ADR 0006, D3 et D5).
-watchSystemLifecycle({
+platform.lifecycle({
   onSleep: (reason) => {
     // le motif sert la phrase de la notification, pas la décision : elle
     // est la même pour les trois
@@ -210,11 +226,9 @@ watchSystemLifecycle({
 // présence seule en décide ; le téléphone n'en sait rien.
 // La fenêtre d'un inconnu ne compte ses deux minutes que dans un onglet
 // visible (ADR 0008, D5).
-document.addEventListener("visibilitychange", () =>
-  messaging.send({ type: "sys:visible", visible: document.visibilityState === "visible" }),
-);
+platform.visibility((visible) => messaging.send({ type: "sys:visible", visible }));
 
-watchActivity({
+platform.activity({
   onIdle: () => presence.send({ type: "sys:idle" }),
   onActive: () => presence.send({ type: "sys:active" }),
 });
