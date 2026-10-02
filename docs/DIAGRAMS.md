@@ -18,6 +18,8 @@ bloc.
 ```mermaid
 stateDiagram-v2
   state initial_state
+  state vault_error
+  state wiping_vault
   state home
   state configuring
   state reconfiguring
@@ -33,8 +35,13 @@ stateDiagram-v2
   state reg_failed
   state unregistering
   [*] --> initial_state
+  initial_state --> vault_error: task:loadVault (coffre illisible)
   initial_state --> connecting: task:loadVault (reprise de l'enregistrement)
   initial_state --> home: task:loadVault
+  vault_error --> initial_state: ui:retryVault (nouvelle lecture du coffre)
+  vault_error --> wiping_vault: ui:resetVault
+  wiping_vault --> vault_error: task:clearVault (effacement impossible)
+  wiping_vault --> home: task:clearVault (coffre effacé)
   home --> configuring: ui:configure
   home --> home: ui:useAccount (compte inconnu)
   home --> switching: ui:useAccount (compte choisi)
@@ -101,6 +108,8 @@ Blocs entrés depuis cet état (`fx.sbb`) :
 | État | Événements |
 | --- | --- |
 | `initial_state` | `sys:sleep`, `sys:wake` |
+| `vault_error` | `sys:sleep`, `sys:wake` |
+| `wiping_vault` | `sys:sleep`, `sys:wake` |
 | `home` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake` |
 | `configuring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sys:sleep`, `sys:wake` |
 | `reconfiguring` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sys:sleep`, `sys:wake` |

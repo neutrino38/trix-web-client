@@ -266,7 +266,11 @@ export interface MessageEntry {
 export const MAX_MESSAGES_PER_PEER = 1000;
 
 export interface SecureStore {
-  /** Le coffre entier, migré depuis le format à compte unique s'il le faut. */
+  /**
+   * Le coffre entier, migré depuis le format à compte unique s'il le faut.
+   * Vide seulement s'il n'y a rien d'enregistré : un coffre présent mais
+   * illisible rejette (`VaultUnreadableError`).
+   */
   load(): Promise<Vault>;
   save(vault: Vault): Promise<void>;
   /** Efface les comptes ; les historiques se suppriment un par un. */
@@ -357,22 +361,73 @@ async function encryptPut(db: IDBDatabase, id: string, value: unknown): Promise<
   await idbPut(db, id, record);
 }
 
-/** null si l'enregistrement est absent, corrompu ou que la clé est perdue. */
-async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
+/**
+ * A record that is there but cannot be read: the key is gone, or the
+ * cipher does not decrypt into JSON. Distinct from an absent record — the
+ * vault must never pass for empty when it is only unreadable, or the next
+ * save would write an empty list over the accounts still in the base.
+ */
+export class VaultUnreadableError extends Error {
+  constructor(id: string, cause?: unknown) {
+    super(`record "${id}" is unreadable`, { cause });
+    this.name = "VaultUnreadableError";
+  }
+}
+
+/**
+ * Reads and decrypts a record. `null` only when it is absent; an unreadable
+ * record throws `VaultUnreadableError`, and an IndexedDB failure rejects as
+ * it came. This is the read the vault needs.
+ */
+async function readSealed(db: IDBDatabase, id: string): Promise<unknown> {
+  const record = (await idbGet(db, id)) as VaultRecord | undefined;
+  if (record === undefined || record === null) return null;
+  const key = (await idbGet(db, KEY_ID)) as CryptoKey | undefined;
+  if (!key) throw new VaultUnreadableError(id);
   try {
-    const record = (await idbGet(db, id)) as VaultRecord | undefined;
-    if (!record) return null;
-    const key = (await idbGet(db, KEY_ID)) as CryptoKey | undefined;
-    if (!key) return null;
     const plain = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: new Uint8Array(record.iv) },
       key,
       record.cipher,
     );
     return JSON.parse(new TextDecoder().decode(plain)) as unknown;
+  } catch (err) {
+    throw new VaultUnreadableError(id, err);
+  }
+}
+
+/**
+ * null si l'enregistrement est absent, corrompu ou que la clé est perdue —
+ * la lecture tolérante de l'historique, du carnet et des messages, dont un
+ * enregistrement abîmé ne doit pas empêcher l'application de démarrer.
+ */
+async function decryptGet(db: IDBDatabase, id: string): Promise<unknown> {
+  try {
+    return await readSealed(db, id);
   } catch {
     return null;
   }
+}
+
+/**
+ * Asks the browser to keep this origin's storage under pressure (Storage
+ * API). Without it the storage is "best-effort", and Chrome on Android
+ * evicts best-effort origins when the device runs short of space — the
+ * accounts go with it. Chrome grants or refuses without asking; Firefox
+ * asks, which is why this waits for a vault that holds an account rather
+ * than running at start-up. Asked once per page, never awaited: a refusal
+ * changes nothing to what was just written.
+ */
+let persistenceAsked = false;
+function requestPersistence(): void {
+  if (persistenceAsked) return;
+  persistenceAsked = true;
+  const storage = typeof navigator === "undefined" ? undefined : navigator.storage;
+  if (!storage?.persist || !storage.persisted) return;
+  storage
+    .persisted()
+    .then((done) => done || storage.persist())
+    .catch(() => {});
 }
 
 const historyId = (id: string): string => `history:${id}`;
@@ -541,7 +596,7 @@ function normalizeVault(raw: unknown): { vault: Vault; drawn: boolean } {
  * une clé que plus personne ne lit.
  */
 async function migrateLegacy(db: IDBDatabase): Promise<Vault> {
-  const legacy = (await decryptGet(db, LEGACY_ID)) as AccountConfig | null;
+  const legacy = (await readSealed(db, LEGACY_ID)) as AccountConfig | null;
   if (!legacy) return { ...EMPTY_VAULT };
   const account: StoredAccount = {
     ...migrateAccount(legacy),
@@ -567,12 +622,15 @@ export function createBrowserStore(): SecureStore {
       } finally {
         db.close();
       }
+      if (vault.accounts.length > 0) requestPersistence();
     },
 
     async load(): Promise<Vault> {
       const db = await openDb();
       try {
-        const raw = await decryptGet(db, VAULT_ID);
+        // strict read: an unreadable vault rejects, it does not come back
+        // empty (`VaultUnreadableError`)
+        const raw = await readSealed(db, VAULT_ID);
         // Le coffre absent est le seul cas où l'on regarde l'ancienne clé :
         // la migration est ainsi idempotente sans avoir à se souvenir
         // qu'elle a eu lieu.

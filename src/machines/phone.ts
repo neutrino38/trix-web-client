@@ -126,6 +126,15 @@ export interface PhoneCtx {
  */
 const HISTORY_MAX = 50;
 
+/**
+ * How long the start-up read of the vault may take. Three seconds used to
+ * be enough on a desktop; on a phone, right after a deploy, the new bundle
+ * is compiled on the main thread and IndexedDB and WebCrypto answer late.
+ * A read cut short is no longer an empty vault (`vault_error`), but every
+ * spurious cut still costs a screen and a click.
+ */
+const VAULT_READ_TIMEOUT = 15_000;
+
 /** Les entrées à garder d'un historique relu — les plus récentes sont en tête. */
 function recent(entries: CallLogEntry[]): CallLogEntry[] {
   return entries.slice(0, HISTORY_MAX);
@@ -679,25 +688,33 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
             return { vault, activeId, resume: activeId !== null && activeId === resume, ...data };
           }),
           "loadVault",
-          { timeout: 3000 },
+          { timeout: VAULT_READ_TIMEOUT },
         );
       },
       on: {
         "task:loadVault": (ev, ctx) => {
+          // A failed read is not an empty vault: going home with no account
+          // would invite creating one, and that save would write a list of
+          // one over the accounts still sitting in the base.
+          if (!ev.ok) {
+            ctx.accounts = [];
+            ctx.activeId = null;
+            ctx.lastError = msg("error.vaultUnreadable", { detail: String(ev.error) });
+            return goto("vault_error", "coffre illisible");
+          }
           // les comptes relus passent par le déploiement avant d'être
           // adoptés : proxy, serveurs ICE et transport texte imposés
           // écrasent ce qui avait été enregistré, et un compte d'un autre
           // domaine que le domaine imposé est écarté — son HA1 a été calculé
           // sur ce domaine-là (§6), rien ne peut le rattraper ici. Si c'est
           // l'actif qui disparaît ainsi, l'accueil repart sur ce qui reste.
-          const vault = ev.ok ? ev.value.vault : null;
-          ctx.accounts = (vault?.accounts ?? []).flatMap((a) => {
+          ctx.accounts = ev.value.vault.accounts.flatMap((a) => {
             const pinned = pinAccount(a);
             return pinned ? [{ ...pinned, id: a.id, instanceId: a.instanceId }] : [];
           });
-          const wanted = ev.ok ? ev.value.activeId : null;
+          const wanted = ev.value.activeId;
           ctx.activeId = ctx.accounts.some((a) => a.id === wanted) ? wanted : null;
-          adoptAccountData(ctx, ctx.activeId && ev.ok ? ev.value : null);
+          adoptAccountData(ctx, ctx.activeId ? ev.value : null);
           // D4 : quel que soit le motif du chargement — onglet déchargé par
           // l'Économiseur de mémoire, F5, redémarrage du navigateur —, un
           // compte marqué « à reprendre » se réenregistre sans rien
@@ -705,7 +722,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
           // deux comportements à deux rechargements que l'utilisateur ne
           // distingue pas ; ce drapeau ne sert donc qu'à **expliquer**
           // l'absence (`ui/reachability.ts`).
-          if (ctx.activeId && ev.ok && ev.value.resume) {
+          if (ctx.activeId && ev.value.resume) {
             return goto("connecting", "reprise de l'enregistrement");
           }
           return goto("home", ctx.accounts.length > 0 ? "compte trouvé" : "aucun compte");
@@ -713,6 +730,44 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         // le temps de lire le coffre, il n'y a pas d'UA : rien à
         // désenregistrer, rien à rafraîchir. Un gel qui tomberait ici ne
         // doit pas pour autant empêcher la reprise qui suit
+        "sys:sleep": () => undefined,
+        "sys:wake": () => undefined,
+      },
+      meta: { screen: "boot" },
+    },
+
+    /**
+     * The vault could not be read (timeout, IndexedDB failure, record that
+     * does not decrypt). Nothing here writes it: the only ways out are
+     * reading it again, or wiping it on an explicit, confirmed request.
+     */
+    vault_error: {
+      on: {
+        "ui:retryVault": (_ev, ctx) => {
+          clearError(ctx);
+          return goto("initial_state", "nouvelle lecture du coffre");
+        },
+        "ui:resetVault": () => goto("wiping_vault"),
+        "sys:sleep": () => undefined,
+        "sys:wake": () => undefined,
+      },
+      meta: { screen: "boot" },
+    },
+
+    /** Wiping an unreadable vault, asked for from `vault_error`. */
+    wiping_vault: {
+      enter(ctx, fx) {
+        fx.task(ctx.store.clear(), "clearVault", { timeout: VAULT_READ_TIMEOUT });
+      },
+      on: {
+        "task:clearVault": (ev, ctx) => {
+          if (!ev.ok) {
+            ctx.lastError = msg("error.vaultUnreadable", { detail: String(ev.error) });
+            return goto("vault_error", "effacement impossible");
+          }
+          clearError(ctx);
+          return goto("home", "coffre effacé");
+        },
         "sys:sleep": () => undefined,
         "sys:wake": () => undefined,
       },

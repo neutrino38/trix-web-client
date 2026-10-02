@@ -64,6 +64,11 @@ const messages: Translation = {
   "home.addAccount": "添加账号",
   "home.editAccount": "修改",
   "home.version": "版本 {version}",
+  "vault.title": "无法读取账户",
+  "vault.explain": "无法读取已保存的账户。它们可能仍然存在：请先重试。",
+  "vault.retry": "重试",
+  "vault.reset": "清除已保存的账户",
+  "vault.resetConfirm": "确认：清除所有账户",
   "fsl.aria": "Powered by FSL — GitHub 上的 finite-state-language（新窗口）",
 
   // ---------------------------------------------------------------------
@@ -598,6 +603,7 @@ const messages: Translation = {
   "error.duplicateAccount": "{address} 已登记为另一个账号",
   "error.passwordRequired": "请输入密码",
   "error.saveFailed": "无法保存：{detail}",
+  "error.vaultUnreadable": "无法读取账户：{detail}",
   "error.invalidProxy": "代理服务器名称无效 — 请检查 WSS 地址",
   "error.wssRefused": "无法连接到代理服务器（WSS 连接被拒绝）",
   "error.wssTimeout": "代理服务器无响应（WebSocket 超时）",

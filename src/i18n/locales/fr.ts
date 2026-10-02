@@ -48,6 +48,12 @@ const messages = {
   "home.editAccount": "Modifier",
   /** Version du logiciel, en pied de l'accueil — voir `src/version.ts`. */
   "home.version": "Version {version}",
+  /** Écran du coffre illisible (`ui/screens/vaulterror.ts`). */
+  "vault.title": "Comptes illisibles",
+  "vault.explain": "Vos comptes enregistrés n'ont pas pu être lus. Ils sont peut-être toujours là : réessayez avant toute autre chose.",
+  "vault.retry": "Réessayer",
+  "vault.reset": "Effacer les comptes enregistrés",
+  "vault.resetConfirm": "Confirmer : effacer tous les comptes",
   "fsl.aria": "Powered by FSL — finite-state-language sur GitHub (nouvelle fenêtre)",
 
   // ---------------------------------------------------------------------
@@ -658,6 +664,7 @@ const messages = {
   "error.duplicateAccount": "{address} est déjà enregistré dans l'autre compte",
   "error.passwordRequired": "Mot de passe requis",
   "error.saveFailed": "Sauvegarde impossible : {detail}",
+  "error.vaultUnreadable": "Lecture des comptes impossible : {detail}",
   "error.invalidProxy": "Nom du proxy invalide — vérifiez l'adresse WSS",
   "error.wssRefused": "Impossible de se connecter au proxy (connexion WSS refusée)",
   "error.wssTimeout": "Le proxy ne répond pas (timeout WebSocket)",

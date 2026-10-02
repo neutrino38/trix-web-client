@@ -252,6 +252,10 @@ export type PhoneEvent =
   | { type: "ui:deleteAccount" }
   /** S'enregistrer sur ce compte, depuis l'accueil. */
   | { type: "ui:useAccount"; id: string }
+  /** Read the vault again after it could not be read. */
+  | { type: "ui:retryVault" }
+  /** Wipe an unreadable vault — asked twice by the screen, never implied. */
+  | { type: "ui:resetVault" }
   /**
    * Passer à l'autre compte, depuis l'en-tête de l'écran d'appel. Interdit
    * dès la première sonnerie : `CallBlock` consomme l'événement sans effet
@@ -318,4 +322,6 @@ export type PhoneEvent =
   // écriture du coffre : rend l'historique et le carnet du compte qui prend la main
   | TaskResult<"saveVault", AccountData>
   // suppression : coffre amputé écrit, puis historique et carnet effacés
-  | TaskResult<"deleteAccount", void>;
+  | TaskResult<"deleteAccount", void>
+  // effacement d'un coffre illisible, demandé depuis `vault_error`
+  | TaskResult<"clearVault", void>;

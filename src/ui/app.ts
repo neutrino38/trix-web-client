@@ -1,6 +1,7 @@
 import type { PhoneInstance } from "../machines/phone.js";
 import { renderHome } from "./screens/home.js";
 import { renderConfig } from "./screens/config.js";
+import { renderVaultError } from "./screens/vaulterror.js";
 import { renderCall } from "./screens/call/index.js";
 import { layoutMode, type LayoutMode } from "./layout.js";
 import { stopIncomingAlert } from "./alert.js";
@@ -127,7 +128,10 @@ export function renderApp(root: HTMLElement, phone: PhoneInstance): void {
 function pick(phone: PhoneInstance): HTMLElement {
   switch (phone.state) {
     case "initial_state":
-      return document.createElement("div"); // chargement de la config (< 3 s)
+    case "wiping_vault":
+      return document.createElement("div"); // lecture ou effacement du coffre
+    case "vault_error":
+      return renderVaultError(phone);
     case "home":
       closeStatusMenu();
       stopIncomingAlert();

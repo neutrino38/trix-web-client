@@ -197,7 +197,9 @@ stateDiagram-v2
 ```
 
 Décisions :
-- `boot` (= `initial_state`) : `fx.task(store.load(), "loadConfig")` → pré-remplit le contexte.
+- `boot` (= `initial_state`) : `fx.task(store.load(), "loadVault")` → pré-remplit le contexte.
+  Une lecture qui échoue ou dépasse son délai (15 s) mène à `vault_error`, **jamais** à un
+  accueil sans compte (§6, « Un coffre illisible n'est pas un coffre vide »).
 - **« Paramètres » et « Déconnexion » désenregistrent et arrêtent l'UA** — pas d'UA vivant
   hors de `ready`/`in_call` : simple, prédictible, re-REGISTER propre à chaque retour.
 - L'UA JsSIP est créé dans `enter` de `connecting` et stocké dans le contexte.
@@ -2362,7 +2364,7 @@ interface Vault {
   activeId: string | null;     // celui qui s'enregistre — un seul à la fois
 }
 interface SecureStore {
-  load(): Promise<Vault>;                     // coffre vide si rien n'est enregistré
+  load(): Promise<Vault>;                     // coffre vide si rien n'est enregistré ; rejette s'il est illisible
   save(vault: Vault): Promise<void>;
   clear(): Promise<void>;
   loadHistory(id: string): Promise<CallLogEntry[]>;   // clé : l'identifiant, non l'adresse
@@ -2419,6 +2421,32 @@ historique orphelin est un désagrément, un compte sans son historique serait u
 Supprimer l'actif ne promeut pas l'autre — on revient à l'accueil, où le compte restant
 se choisit d'un clic ; se réenregistrer ailleurs sans qu'on l'ait demandé serait une
 décision prise à la place de quelqu'un.
+
+### Un coffre illisible n'est pas un coffre vide
+
+Constaté sur Chrome Android : après un déploiement, les comptes disparaissaient. Le nouveau
+bundle se compile sur le fil principal, IndexedDB et WebCrypto répondent en retard, et la
+lecture du coffre dépassait les 3 s qui lui étaient accordées. L'échec était lu comme un
+coffre vide : l'accueil proposait de configurer un compte, et l'enregistrer écrivait une
+liste d'un compte **par-dessus** ceux qui n'étaient qu'illisibles.
+
+- **`load()` distingue l'absent de l'illisible.** Un enregistrement absent rend `null`, donc
+  un coffre vide ; une clé AES disparue ou un chiffré qui ne se déchiffre pas lèvent
+  `VaultUnreadableError`, et une panne d'IndexedDB rejette telle quelle. L'historique, le
+  carnet et les messages gardent la lecture tolérante : un enregistrement abîmé n'y coûte
+  qu'une liste vide.
+- **`vault_error` n'écrit rien.** On n'en sort qu'en relisant (« Réessayer », le cas courant :
+  les comptes reviennent) ou en effaçant le coffre sur demande explicite, en deux clics —
+  sans quoi un coffre qui ne se déchiffrera jamais bloquerait l'application pour de bon.
+  L'effacement (`wiping_vault`) ne retire que le coffre ; les historiques des comptes perdus
+  restent dans la base, orphelins.
+- **Le délai de lecture passe à 15 s.** Il ne protège plus les comptes — `vault_error` s'en
+  charge —, il évite seulement un écran et un clic inutiles sur un téléphone lent.
+- **Stockage persistant.** Le premier coffre écrit avec un compte demande
+  `navigator.storage.persist()`. Sans cela, le stockage de l'origine reste « au mieux », et
+  Chrome Android peut l'effacer quand l'appareil manque de place. Chrome accorde ou refuse
+  sans rien demander ; Firefox demande, d'où une demande liée à l'enregistrement d'un compte
+  plutôt qu'au démarrage.
 
 `SecureStore` est le **point d'abstraction pour Tauri** : une future implémentation
 `tauriStore` (trousseau OS via `tauri-plugin-keyring`/stronghold — libsecret/GNOME Keyring

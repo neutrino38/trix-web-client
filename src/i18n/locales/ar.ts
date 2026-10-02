@@ -66,6 +66,11 @@ const messages: Translation = {
   "home.addAccount": "إضافة حساب",
   "home.editAccount": "تعديل",
   "home.version": "الإصدار {version}",
+  "vault.title": "تعذّرت قراءة الحسابات",
+  "vault.explain": "تعذّرت قراءة حساباتك المحفوظة. ربما لا تزال موجودة: أعد المحاولة قبل أي شيء آخر.",
+  "vault.retry": "أعد المحاولة",
+  "vault.reset": "مسح الحسابات المحفوظة",
+  "vault.resetConfirm": "تأكيد: مسح كل الحسابات",
   "fsl.aria": "مدعوم بـ FSL — finite-state-language على GitHub (نافذة جديدة)",
 
   // ---------------------------------------------------------------------
@@ -633,6 +638,7 @@ const messages: Translation = {
   "error.duplicateAccount": "{address} مسجَّل بالفعل في الحساب الآخر",
   "error.passwordRequired": "كلمة المرور مطلوبة",
   "error.saveFailed": "تعذّر الحفظ: {detail}",
+  "error.vaultUnreadable": "تعذّرت قراءة الحسابات: {detail}",
   "error.invalidProxy": "اسم الوسيط غير صالح — تحقّق من عنوان WSS",
   "error.wssRefused": "تعذّر الاتصال بالوسيط (رُفض اتصال WSS)",
   "error.wssTimeout": "الوسيط لا يستجيب (انتهت مهلة WebSocket)",

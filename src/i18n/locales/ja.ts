@@ -58,6 +58,11 @@ const messages: Translation = {
   "home.addAccount": "アカウントを追加する",
   "home.editAccount": "編集",
   "home.version": "バージョン {version}",
+  "vault.title": "アカウントを読み込めません",
+  "vault.explain": "保存したアカウントを読み込めませんでした。まだ残っている可能性があります。まずは再試行してください。",
+  "vault.retry": "再試行",
+  "vault.reset": "保存したアカウントを消去",
+  "vault.resetConfirm": "確認：すべてのアカウントを消去",
   "fsl.aria": "Powered by FSL — GitHub の finite-state-language（新しいウィンドウ）",
 
   // ---------------------------------------------------------------------
@@ -607,6 +612,7 @@ const messages: Translation = {
   "error.duplicateAccount": "{address} はもう一方のアカウントとして登録済みです",
   "error.passwordRequired": "パスワードを入力してください",
   "error.saveFailed": "保存できませんでした：{detail}",
+  "error.vaultUnreadable": "アカウントを読み込めませんでした：{detail}",
   "error.invalidProxy": "プロキシー名が不正です — WSS アドレスを確認してください",
   "error.wssRefused": "プロキシーに接続できません（WSS 接続が拒否されました）",
   "error.wssTimeout": "プロキシーが応答しません（WebSocket タイムアウト）",

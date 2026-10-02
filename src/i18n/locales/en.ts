@@ -50,6 +50,11 @@ const messages: Translation = {
   "home.addAccount": "Add an account",
   "home.editAccount": "Edit",
   "home.version": "Version {version}",
+  "vault.title": "Accounts unreadable",
+  "vault.explain": "Your saved accounts could not be read. They may still be there: try again before anything else.",
+  "vault.retry": "Try again",
+  "vault.reset": "Erase saved accounts",
+  "vault.resetConfirm": "Confirm: erase all accounts",
   "fsl.aria": "Powered by FSL — finite-state-language on GitHub (new window)",
 
   // ---------------------------------------------------------------------
@@ -602,6 +607,7 @@ const messages: Translation = {
   "error.duplicateAccount": "{address} is already saved as the other account",
   "error.passwordRequired": "Password required",
   "error.saveFailed": "Could not save: {detail}",
+  "error.vaultUnreadable": "Could not read the accounts: {detail}",
   "error.invalidProxy": "Invalid proxy name — check the WSS address",
   "error.wssRefused": "Cannot reach the proxy (WSS connection refused)",
   "error.wssTimeout": "The proxy is not responding (WebSocket timeout)",

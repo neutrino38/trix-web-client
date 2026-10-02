@@ -13,6 +13,7 @@ import {
   type Contact,
   type MessageEntry,
   type StoredAccount,
+  VaultUnreadableError,
 } from "../src/storage/store.js";
 import { NO_ICE } from "../src/sip/ice.js";
 
@@ -272,6 +273,51 @@ describe("browserStore — coffre à liste", () => {
     expect(dump).not.toContain(ALICE.ha1);
     expect(dump).not.toContain(ALICE.ha1Sha256);
     expect(dump).not.toContain(ALICE.username);
+  });
+});
+
+describe("browserStore — coffre illisible", () => {
+  it("une clé AES disparue : load rejette, il ne rend pas un coffre vide", async () => {
+    const store = createBrowserStore();
+    await store.save(soloVault());
+    const db = await openTestDb();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const r = db.transaction("vault", "readwrite").objectStore("vault").delete("aes-key");
+        r.onsuccess = () => resolve();
+        r.onerror = () => reject(r.error);
+      });
+    } finally {
+      db.close();
+    }
+    await expect(store.load()).rejects.toBeInstanceOf(VaultUnreadableError);
+    // rien n'a été réécrit : l'enregistrement est toujours là
+    expect(await rawRecord("accounts")).toBeDefined();
+  });
+
+  it("un enregistrement qui ne se déchiffre pas : load rejette", async () => {
+    const store = createBrowserStore();
+    await store.save(soloVault());
+    const db = await openTestDb();
+    try {
+      await dbPut(db, "accounts", { iv: new Uint8Array(12), cipher: new ArrayBuffer(32) });
+    } finally {
+      db.close();
+    }
+    await expect(store.load()).rejects.toBeInstanceOf(VaultUnreadableError);
+  });
+
+  it("l'historique illisible reste tolérant : une liste vide, pas d'échec", async () => {
+    const store = createBrowserStore();
+    await store.save(soloVault());
+    const db = await openTestDb();
+    try {
+      await dbPut(db, `history:${ALICE.id}`, { iv: new Uint8Array(12), cipher: new ArrayBuffer(32) });
+    } finally {
+      db.close();
+    }
+    expect(await store.loadHistory(ALICE.id)).toEqual([]);
+    expect(await store.load()).toEqual(soloVault());
   });
 });
 

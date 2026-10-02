@@ -290,6 +290,57 @@ describe("PhoneMachine — amorçage", () => {
   });
 });
 
+describe("PhoneMachine — coffre illisible", () => {
+  it("une lecture qui échoue mène à vault_error, pas à un accueil sans compte", async () => {
+    const { store, box } = fakeStore(CFG);
+    store.load = async () => {
+      throw new Error("IndexedDB en panne");
+    };
+    const phone = PhoneMachine.start({
+      args: { store, sip: new FakeSip(), transcript: () => [], doNotDisturb: () => false },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("vault_error"));
+    expect(phone.context.accounts).toEqual([]);
+    expect(phone.context.lastError).not.toBeNull();
+    // l'accueil n'est pas offert : rien ne peut écrire par-dessus le coffre
+    phone.send({ type: "ui:configure", id: null });
+    expect(phone.state).toBe("vault_error");
+    expect(box.saved).toEqual(CFG);
+  });
+
+  it("Réessayer relit le coffre et retrouve les comptes", async () => {
+    const { store } = fakeStore(CFG);
+    const load = store.load;
+    let failures = 1;
+    store.load = async () => {
+      if (failures-- > 0) throw new Error("lecture trop lente");
+      return load();
+    };
+    const phone = PhoneMachine.start({
+      args: { store, sip: new FakeSip(), transcript: () => [], doNotDisturb: () => false },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("vault_error"));
+    phone.send({ type: "ui:retryVault" });
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(activeCfg(phone)).toEqual(CFG);
+    expect(phone.context.lastError).toBeNull();
+  });
+
+  it("Effacer vide le coffre, puis l'accueil", async () => {
+    const { store, box } = fakeStore(CFG);
+    store.load = async () => {
+      throw new Error("indéchiffrable");
+    };
+    const phone = PhoneMachine.start({
+      args: { store, sip: new FakeSip(), transcript: () => [], doNotDisturb: () => false },
+    });
+    await vi.waitFor(() => expect(phone.state).toBe("vault_error"));
+    phone.send({ type: "ui:resetVault" });
+    await vi.waitFor(() => expect(phone.state).toBe("home"));
+    expect(box.saved).toBeNull();
+  });
+});
+
 describe("PhoneMachine — configuration imposée par le déploiement", () => {
   // `config.json` est un état de module : chaque cas repose l'ardoise, sans
   // quoi le suivant hériterait d'un proxy imposé qu'il n'a pas demandé
