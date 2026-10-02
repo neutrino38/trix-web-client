@@ -277,7 +277,11 @@ D10 : commencer par lui figerait l'UI actuelle comme seul client possible.
 Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
 
 1. **La règle** : `test/layers.test.ts` (D1), en signalant d'abord les violations connues comme
-   exceptions nommées, retirées au fil des étapes suivantes.
+   exceptions nommées, retirées au fil des étapes suivantes. Fait le 2026-10-02 : le noyau
+   n'importait déjà rien de `ui/`, et deux exceptions seulement restent — `i18n/types.ts` qui
+   importe le dictionnaire français (D9) et `sip/port.ts` qui reçoit des `HTMLVideoElement`
+   (D4). Les points 2 à 4 du contexte ne sont pas des imports interdits mais de la logique
+   absente du noyau : ce test ne les voit pas, les étapes 2 et 3 les traitent.
 2. **Les modèles purs** (D6) : déplacements sans changement de comportement, tests déplacés avec.
 3. **La conversation** (D5) : `core/conversation.ts`, abonnement au canal par le noyau,
    transcription fournie par lui ; `chat.ts` réduit au rendu.
@@ -288,9 +292,16 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    elle, puis chaque écran migre de `phone.context` vers la vue. `trix.debug` remplace
    `window.trix`.
 7. **Les messages** (D9) : `CoreMsgKey`, `core/i18n/`, `formatMsg`.
-8. **La preuve et la distribution** (D10, D11) : `examples/minimal/`, `exports`, guide
-   `docs/utilisation/affiliation.md`, première étiquette annoncée comme base d'affiliation.
-9. **Plus tard** : le composant embarquable (D12).
+8. **La preuve et la distribution** (D10, D11) : `examples/minimal/`, `exports`, première
+   étiquette annoncée comme base d'affiliation.
+9. **Le guide d'affiliation** : `docs/utilisation/affiliation.md`, écrit pour celui qui démarre
+   un projet affilié sans connaître le dépôt — déclarer la dépendance git étiquetée et régler
+   son bundler, appeler `createTrix` et lire la `TrixView`, afficher les flux et les messages
+   du noyau, fournir sa `Platform` hors navigateur, servir `config.json` et `sw.js`, choisir son
+   `storagePrefix`, monter de version en lisant « API noyau » dans `CHANGELOG.md`. Il s'appuie
+   sur `examples/minimal/` et sur l'essai d'installation en réel de la section 4 : il ne décrit
+   que ce qui a été vérifié.
+10. **Plus tard** : le composant embarquable (D12) ; le guide gagne alors sa section.
 
 ## 4. Validation
 
