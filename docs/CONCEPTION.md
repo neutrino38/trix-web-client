@@ -735,7 +735,7 @@ entrant, pour survivre au re-rendu qui l'a déclenché.
   - **événements non consommés** — restés en file d'attente, c'est-à-dire un état sans
     clause pour eux (invariant 7 des SBB, §4.3).
   L'inspection est différée d'une microtask, comme le rendu (§4.6) et pour la même
-  raison. `window.trix.dump()` rend le journal des transitions en clair, à joindre à
+  raison. `trix.debug.dump()` rend le journal des transitions en clair, à joindre à
   un rapport de bug.
 
 ### 4.6 Rendu : une microtask après la transition
@@ -2006,7 +2006,7 @@ seule.
   retour à l'hôte : l'appel, aujourd'hui le seul bloc (§4.3). Les transitions du
   téléphone lui-même n'y sont pas ; elles ne racontent pas un échange SIP, et le
   `logger` de la machine les porte déjà en `console.debug` (§4.5). Le format est celui
-  du journal (`window.trix.dump()`), pour que les deux se relisent ensemble.
+  du journal (`trix.debug.dump()`), pour que les deux se relisent ensemble.
 - Comme pour les paquets, le réglage est consulté à **chaque** transition : cocher la
   case pendant la sonnerie trace la suite de l'appel.
 - `JsSIP.debug.enable("JsSIP:*")` reste disponible depuis la console pour fouiller les

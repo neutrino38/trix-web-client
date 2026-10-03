@@ -153,10 +153,11 @@ Full steps, required modules and per-distribution paths:
 From the browser console:
 
 ```js
-trix.mermaid()   // Mermaid diagrams of PhoneMachine + CallBlock, generated from the code
-trix.dump()      // the last transitions in plain text, to paste into a bug report
-trix.phone.log   // ring buffer of transitions
-trix.phone.state // current state
+trix.view()            // what the UI sees: the core's snapshot
+trix.debug.mermaid()   // Mermaid diagrams of the machines, generated from the code
+trix.debug.dump()      // the last transitions in plain text, to paste into a bug report
+trix.debug.phone.log   // ring buffer of transitions
+trix.debug.phone.state // current state
 ```
 
 The **Trace SIP messages** checkbox (settings, Diagnostics section) prints every packet

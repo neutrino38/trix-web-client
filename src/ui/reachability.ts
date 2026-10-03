@@ -155,6 +155,16 @@ export function dismissPinHint(): void {
  * d'hier n'explique pas une WSS coupée aujourd'hui.
  */
 export function noteSleepReason(reason: PageSleepReason): void {
+  // Les deux derniers instants où du JS tourne avant une suspension :
+  // `trix.system.onSleep` les annonce **avant** que le noyau ne sorte la
+  // machine de l'enregistrement. Le niveau vaut donc encore `direct` ici,
+  // et l'horodatage est juste à la seconde. Pas la veille de l'ordinateur :
+  // elle se constate au réveil, et l'horodater dirait joignable une période
+  // où personne ne l'était.
+  if (reason !== "system") {
+    stamp();
+    disarmStamp();
+  }
   if (reason === "leave") {
     leaving = true;
     return;
@@ -326,9 +336,9 @@ export function watchReachability(phone: PhoneInstance, store: SessionStore): vo
   pinHint = discarded !== null && !store.pinHintShown();
   if (pinHint) store.setPinHintShown();
 
-  // Deux motifs de réévaluation hors machine : l'onglet qui se montre ou se
-  // cache — la notification ne se pose que sur un onglet caché —, et les
-  // deux derniers instants où du JS tourne avant une suspension.
+  // Un motif de réévaluation hors machine : l'onglet qui se montre ou se
+  // cache — la notification ne se pose que sur un onglet caché. Les
+  // suspensions passent par `noteSleepReason`.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       armStamp();
@@ -341,17 +351,6 @@ export function watchReachability(phone: PhoneInstance, store: SessionStore): vo
     // déjà : c'est maintenant que la notification a un sens
     if (episodeSince !== 0 && Date.now() - episodeSince >= NOTIFY_AFTER_MS) notifyAway();
   });
-
-  // `freeze` et `pagehide` s'exécutent **avant** que `Platform.lifecycle` ne
-  // pousse `sys:sleep` dans la machine — les écouteurs partent dans l'ordre
-  // où ils ont été posés, et `main.ts` pose ceux-ci en premier. Le niveau
-  // vaut donc encore `direct` ici, et l'horodatage est juste à la seconde.
-  const lastBreath = (): void => {
-    stamp();
-    disarmStamp();
-  };
-  document.addEventListener("freeze", lastBreath);
-  addEventListener("pagehide", lastBreath);
 
   phone.subscribe(update);
   update();

@@ -309,7 +309,8 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    secondes et le pli mobile restent dans `chat.ts`. Les tests du modèle passent par un faux
    canal (`test/fakes/rtt.ts`) et vérifient ce qui part sur le fil, ce que l'ancien panneau
    ne permettait pas. Reste : `chat.ts` garde son état d'affichage au niveau du module
-   (D12).
+   (D12). Vérifié en réel le 2026-10-03 : texte en temps réel dans les deux sens, et sa
+   transcription dans l'historique.
 4. **Les médias** (D4) : `streams()`/`onStreams()` dans le port, `session` retiré de la vue.
    Fait le 2026-10-02 : `CallSession.streams()` rend `{ remote, local, share }` — routage
    par MID et miroir de l'auto-vue compris, désormais testés sans DOM —, `onStreams()`
@@ -319,7 +320,8 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    CallBlock **à côté** de la vue, dans `ctx.session`, où la lisent l'historique, la
    conversation du noyau et, d'ici à l'étape 6, l'écran d'appel pour ses flux et sa mesure.
    `test/layers.test.ts` n'a plus que l'exception de D9. Les statistiques
-   (`trix.call.stats()`) attendent la façade.
+   (`trix.call.stats()`) attendent la façade. Vérifié en réel le 2026-10-03 : vidéo et
+   partage d'écran.
 5. **La plateforme et l'instance** (D7, D8) : `Platform`, `storagePrefix`, plus d'état de module
    dans le noyau. Fait le 2026-10-03 : `core/platform.ts` et `core/browser/` (D7) ;
    `createSessionStore(prefix)`, `createBrowserStore(prefix)` et `createSipTrace({ prefix })`
@@ -330,10 +332,30 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    a besoin — marqueur de reprise, déploiement, réglage de la trace — dans le contexte du
    téléphone, jusqu'à l'étape 6 ; ses propres états de module restent (D12). Le préfixe ne
    s'applique pas encore aux clés de l'UI (`trix-theme`, `trix-lang`…) ni aux étiquettes de
-   notification : elles sont à l'UI de Trix, qu'un affilié ne monte pas.
+   notification : elles sont à l'UI de Trix, qu'un affilié ne monte pas. Vérifié en réel le
+   2026-10-03, avec l'étape 6 : comptes, historique, contacts, messages, statut et trace
+   retrouvés après redéploiement et rechargement, reprise sur le compte enregistré.
 6. **La façade et la vue** (D2, D3) : `createTrix`, `TrixView`, sélecteurs ; `main.ts` passe par
    elle, puis chaque écran migre de `phone.context` vers la vue. `trix.debug` remplace
-   `window.trix`.
+   `window.trix`. Première moitié faite le 2026-10-03 : `core/index.ts` (la façade, ses
+   commandes par domaine, `trix.call.stats()`) et `core/view.ts` (la vue, mémoïsée sous-vue
+   par sous-vue sur les références qu'elle lit). Le noyau démarre les trois automates, les
+   relie, écoute la `Platform` et publie un instantané par chaîne de transitions ; `main.ts`
+   ne fait plus que monter l'UI. Deux choix de la section 5 sont tranchés : un seul
+   `subscribe` ; le formulaire de paramètres hors contrat — la vue porte le compte édité,
+   le champ suspect et l'écriture en cours, `trix.accounts.save(form)` reçoit le
+   `ConfigForm`. La vue décline l'enregistrement en dix valeurs et non quatre : chacune a
+   ses mots à l'écran, qu'un affilié ne doit pas aller chercher dans l'automate. Ce que le
+   texte de D3 laissait implicite : `trix.system.onSleep` prévient l'UI d'un endormissement
+   **avant** que le noyau ne désenregistre — c'est là que `ui/reachability.ts` pose son
+   dernier horodatage joignable, au lieu de compter sur l'ordre de pose des écouteurs.
+   Reste : les écrans lisent encore les automates par `trix.debug`, hors contrat, et
+   `ctx.session`, `ctx.deployment`, `ctx.trace` restent dans le contexte du téléphone
+   jusqu'à ce qu'aucun écran ne les y lise. Vérifié en réel le 2026-10-03 : ajout et retrait
+   de la vidéo et d'un média, invite du distant, attente, micro, partage d'écran, appel reçu
+   onglet caché. Deux appels avec un Trix sur Chrome Android ont été raccrochés par ce
+   dernier pendant une longue saisie en texte temps réel ; la cause, côté Android, reste à
+   établir.
 7. **Les messages** (D9) : `CoreMsgKey`, `core/i18n/`, `formatMsg`.
 8. **La preuve et la distribution** (D10, D11) : `examples/minimal/`, `exports`, première
    étiquette annoncée comme base d'affiliation.
@@ -359,12 +381,10 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
 
 ## 5. Questions ouvertes
 
-- **Granularité des abonnements** : un seul `subscribe` sur toute la vue, ou des abonnements
-  par domaine (`trix.call.subscribe`) ? Le partage structurel rend le premier suffisant pour
-  commencer.
-- **Le formulaire de paramètres** : la validation (champs suspects, champs imposés par
-  `config.json`) est dans le noyau ; la forme du formulaire, elle, est-elle contractuelle
-  (`ConfigForm`) ou chaque UI construit-elle la sienne ?
+- ~~**Granularité des abonnements**~~ : un seul `subscribe` (étape 6). Des abonnements par
+  domaine pourront s'y ajouter sans rupture.
+- ~~**Le formulaire de paramètres**~~ : hors contrat (étape 6). Le noyau porte la validation et
+  ce qui l'encadre ; chaque UI construit son formulaire et remet un `ConfigForm`.
 - **La page de partage de compte** (`share/`, ADR 0004) : noyau (`share/link.ts` l'est déjà) et
   page à part entière, ou modèle de page à réécrire par l'affilié ?
 
