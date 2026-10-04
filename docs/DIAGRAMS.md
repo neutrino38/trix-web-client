@@ -89,14 +89,15 @@ stateDiagram-v2
   reconnecting --> home: ui:logout (déconnexion)
   reconnecting --> sleeping: sys:sleep (mise en veille)
   reconnecting --> offline: sys:offline (réseau coupé), after 10 s (réseau coupé)
-  offline --> connecting: sys:wake (réseau revenu), ui:retry (reconnexion manuelle)
-  offline --> offline: sys:wake (toujours hors ligne), ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu)
+  offline --> offline: sys:wake (toujours hors ligne), sys:settled (toujours hors ligne), ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu)
+  offline --> connecting: sys:settled (réseau revenu), ui:retry (reconnexion manuelle)
   offline --> sleeping: sys:sleep (mise en veille)
   offline --> reconfiguring: ui:backToSettings (paramètres)
   offline --> switching: ui:switchAccount (changement de compte)
   offline --> home: ui:logout (déconnexion)
-  sleeping --> connecting: sys:wake (réveil : réenregistrement)
-  sleeping --> sleeping: ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu)
+  sleeping --> connecting: sys:settled (réveil : réenregistrement)
+  sleeping --> offline: sys:settled (réseau coupé)
+  sleeping --> sleeping: sys:sleep (rendormi), ui:clearHistory (rien à effacer), ui:clearHistory, ui:addContact (aucun compte actif), ui:addContact (adresse de contact invalide), ui:addContact (déjà au carnet), ui:addContact (contact ajouté), ui:renameContact (renommage ignoré), ui:renameContact (contact renommé), ui:removeContact (contact inconnu), ui:removeContact (contact retiré), ui:blockContact (aucun compte actif), ui:blockContact (adresse à bloquer invalide), ui:blockContact (déjà bloqué), ui:blockContact (contact bloqué), ui:unblockContact (rien à débloquer), ui:unblockContact (contact débloqué), ui:setFlashAlert (aucun compte actif), ui:setFlashAlert (flash inchangé), ui:setFlashAlert (flash d'appel entrant réglé), ui:switchAccount (déjà ce compte), ui:switchAccount (compte inconnu)
   sleeping --> home: ui:logout
   sleeping --> switching: ui:switchAccount (changement de compte)
   sleeping --> reconfiguring: ui:backToSettings
@@ -134,7 +135,7 @@ Blocs entrés depuis cet état (`fx.sbb`) :
 | `ready` | `sip:connected`, `sip:failed`, `sip:ended` |
 | `reconnecting` | `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy` |
 | `offline` | `sys:offline`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy` |
-| `sleeping` | `sys:sleep`, `sys:offline`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed` |
+| `sleeping` | `sys:wake`, `sys:offline`, `ui:call`, `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed` |
 | `reg_failed` | `sip:disconnected`, `sip:unregistered`, `sip:incoming`, `sip:registrationFailed`, `sip:invalidProxy`, `sys:sleep`, `sys:wake` |
 | `unregistering` | `sip:unregistered`, `sip:registrationFailed`, `sip:incoming`, `sys:sleep`, `sys:wake`, `sys:offline` |
 

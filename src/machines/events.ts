@@ -310,6 +310,11 @@ export type PhoneEvent =
    * reads `online()` to know whether it is worth registering again.
    */
   | { type: "sys:offline" }
+  /**
+   * A return has been given time to settle (`SETTLE_MS`): the network the
+   * browser announced is now worth a REGISTER. Sent by the machine itself.
+   */
+  | { type: "sys:settled" }
   | CallControlEvent
   | CallSipEvent
   | CallReturn

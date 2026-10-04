@@ -1584,14 +1584,38 @@ describe("PhoneMachine — perte du proxy et veille", () => {
   });
 
   it("veille hors appel : sleeping, UA arrêté ; réveil : réenregistrement", async () => {
-    const { phone, sip } = await bootTo("ready", CFG);
-    phone.send({ type: "sys:sleep" });
-    expect(phone.state).toBe("sleeping");
-    expect(sip.stopped).toBe(1);
-    phone.send({ type: "sys:wake" });
-    expect(phone.state).toBe("connecting");
-    expect(sip.started).toHaveLength(2);
+    vi.useFakeTimers();
+    try {
+      const { phone, sip } = await bootTo("ready", CFG);
+      phone.send({ type: "sys:sleep" });
+      expect(phone.state).toBe("sleeping");
+      expect(sip.stopped).toBe(1);
+      phone.send({ type: "sys:wake" });
+      // the network is given time to come back before the REGISTER
+      expect(phone.state).toBe("sleeping");
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(phone.state).toBe("connecting");
+      expect(sip.started).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
+
+  it("asleep again before registering: the pending wake is dropped", async () => {
+    vi.useFakeTimers();
+    try {
+      const { phone, sip } = await bootTo("ready", CFG);
+      phone.send({ type: "sys:sleep" });
+      phone.send({ type: "sys:wake" });
+      phone.send({ type: "sys:sleep" });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(phone.state).toBe("sleeping");
+      expect(sip.started).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 
   it("réveil enregistré : REGISTER rafraîchi sur le transport existant", async () => {
     const { phone, sip } = await bootTo("ready", CFG);
@@ -1851,6 +1875,9 @@ describe("PhoneMachine — network cut", () => {
 
       net.up = true;
       phone.send({ type: "sys:wake" });
+      // `online` comes before the network serves: wait before registering
+      expect(phone.state).toBe("offline");
+      await vi.advanceTimersByTimeAsync(1500);
       expect(phone.state).toBe("connecting");
       expect(sip.started).toHaveLength(2);
       sip.send({ type: "sip:connected" });
@@ -1861,15 +1888,36 @@ describe("PhoneMachine — network cut", () => {
     }
   });
 
+  it("a wake that finds no network goes offline, without a try", async () => {
+    vi.useFakeTimers();
+    try {
+      const { phone, sip } = await bootTo("ready", CFG);
+      phone.send({ type: "sys:sleep" });
+      phone.send({ type: "sys:wake" });
+      network(phone).up = false;
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(phone.state).toBe("offline");
+      expect(sip.started).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a network back but a proxy still out of reach joins the reconnection loop", async () => {
-    const { phone, sip } = await bootTo("ready", CFG);
-    const net = network(phone);
-    net.up = false;
-    phone.send({ type: "sys:offline" });
-    net.up = true;
-    phone.send({ type: "sys:wake" });
-    sip.send({ type: "sip:disconnected" });
-    expect(phone.state).toBe("reconnecting");
+    vi.useFakeTimers();
+    try {
+      const { phone, sip } = await bootTo("ready", CFG);
+      const net = network(phone);
+      net.up = false;
+      phone.send({ type: "sys:offline" });
+      net.up = true;
+      phone.send({ type: "sys:wake" });
+      await vi.advanceTimersByTimeAsync(1500);
+      sip.send({ type: "sip:disconnected" });
+      expect(phone.state).toBe("reconnecting");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("starting without a network: offline, not reg_failed", async () => {
@@ -1901,15 +1949,21 @@ describe("PhoneMachine — network cut", () => {
   });
 
   it("refused credentials stay refused once the network is back", async () => {
-    const { phone, sip } = await bootTo("ready", CFG);
-    const net = network(phone);
-    net.up = false;
-    phone.send({ type: "sys:offline" });
-    net.up = true;
-    phone.send({ type: "sys:wake" });
-    sip.send({ type: "sip:connected" });
-    sip.send({ type: "sip:registrationFailed", cause: "Forbidden", statusCode: 403 });
-    expect(phone.state).toBe("reg_failed");
+    vi.useFakeTimers();
+    try {
+      const { phone, sip } = await bootTo("ready", CFG);
+      const net = network(phone);
+      net.up = false;
+      phone.send({ type: "sys:offline" });
+      net.up = true;
+      phone.send({ type: "sys:wake" });
+      await vi.advanceTimersByTimeAsync(1500);
+      sip.send({ type: "sip:connected" });
+      sip.send({ type: "sip:registrationFailed", cause: "Forbidden", statusCode: 403 });
+      expect(phone.state).toBe("reg_failed");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a call dropped by the cut lands in offline", async () => {

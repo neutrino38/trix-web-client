@@ -14,7 +14,7 @@
  * machine : `sleeping` raccroche et désenregistre, le réveil réenregistre.
  */
 
-import { defineMachine, goto, stay, type Fx } from "finite-state-language";
+import { defineMachine, goto, loop, stay, type Fx } from "finite-state-language";
 import {
   newAccountId,
   newInstanceId,
@@ -219,6 +219,14 @@ function fail(ctx: PhoneCtx, message: Msg, code: string, fields: SuspectField) {
   ctx.autoReconnect = false;
   return goto("reg_failed");
 }
+
+/**
+ * How long a return waits before registering again. `online`, like the
+ * first beat after a machine sleep, comes as soon as the interface is up,
+ * before an address or a resolver answers: registering at once failed,
+ * and the next try came ten seconds later (seen live on 2026-10-04).
+ */
+const SETTLE_MS = 1500;
 
 /**
  * The network is gone: no setting is at fault, and nothing is worth trying
@@ -1255,7 +1263,11 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         ctx.autoReconnect = true;
       },
       on: {
-        "sys:wake": (_ev, ctx) =>
+        "sys:wake": (_ev, ctx, fx) => {
+          if (!ctx.online()) return stay("toujours hors ligne");
+          fx.delay({ type: "sys:settled" }, SETTLE_MS);
+        },
+        "sys:settled": (_ev, ctx) =>
           ctx.online() ? goto("connecting", "réseau revenu") : stay("toujours hors ligne"),
         "sys:offline": () => undefined,
         "sys:sleep": () => goto("sleeping", "mise en veille"),
@@ -1298,8 +1310,13 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         ctx.autoReconnect = false;
       },
       on: {
-        "sys:wake": () => goto("connecting", "réveil : réenregistrement"),
-        "sys:sleep": () => undefined,
+        "sys:wake": (_ev, _ctx, fx) => {
+          fx.delay({ type: "sys:settled" }, SETTLE_MS);
+        },
+        "sys:settled": (_ev, ctx) =>
+          ctx.online() ? goto("connecting", "réveil : réenregistrement") : goOffline(ctx),
+        // rendormi avant d'avoir réenregistré : le réveil en attente tombe
+        "sys:sleep": () => loop("rendormi"),
         // le réveil tranchera : sans réseau, la connexion échoue en offline
         "sys:offline": () => undefined,
         // bouton grisé : on consomme pour éviter un appel rejoué à la reconnexion

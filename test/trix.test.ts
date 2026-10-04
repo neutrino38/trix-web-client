@@ -183,13 +183,13 @@ describe("createTrix", () => {
     await registered(trix, sip);
     const seen: TrixView[] = [];
     trix.subscribe((v) => seen.push(v));
-    // two transitions in a row: sleeping, then back to connecting
-    trix.debug.phone.send({ type: "sys:sleep" });
-    trix.debug.phone.send({ type: "sys:wake" });
+    // two transitions in a row: offline, then back to connecting
+    trix.debug.phone.send({ type: "sys:offline" });
+    trix.debug.phone.send({ type: "ui:retry" });
     expect(seen).toHaveLength(0);
     await Promise.resolve();
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.registration).not.toBe("sleeping");
+    expect(seen[0]!.registration).not.toBe("offline");
   });
 
   it("keeps what did not move: a status change leaves the accounts and the history alone", async () => {
