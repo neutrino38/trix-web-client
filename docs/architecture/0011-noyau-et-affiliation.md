@@ -353,7 +353,12 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    `ctx.session`, `ctx.deployment`, `ctx.trace` restent dans le contexte du téléphone
    jusqu'à ce qu'aucun écran ne les y lise. Vérifié en réel le 2026-10-03 : ajout et retrait
    de la vidéo et d'un média, invite du distant, attente, micro, partage d'écran, appel reçu
-   onglet caché. Deux appels avec un Trix sur Chrome Android ont été raccrochés par ce
+   onglet caché. Puis le 2026-10-04 : gel de l'onglet, déchargement (`edge://discard`) et
+   veille de la machine, chacun suivi de sa reprise ; coupure réseau, annoncée comme telle ;
+   statistiques d'appel (`trix.call.stats()`), réglage de la trace SIP, modification d'un
+   compte et signalement du champ suspect. Après la veille comme après la coupure, le premier
+   réenregistrement échoue et le second, dix secondes plus tard, réussit : `online` arrive
+   avant que le réseau ne serve. Deux appels avec un Trix sur Chrome Android ont été raccrochés par ce
    dernier pendant une longue saisie en texte temps réel ; la cause, côté Android, reste à
    établir.
 7. **Les messages** (D9) : `CoreMsgKey`, `core/i18n/`, `formatMsg`.
