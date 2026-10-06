@@ -40,7 +40,7 @@ import type {
 } from "../sip/port.js";
 import { MEDIA_KINDS, NO_MEDIA, anyMedia, isLastMedia, mergeMedia, sameMedia } from "../sip/port.js";
 import type { CallDirection, Contact } from "../storage/store.js";
-import { msg, rawMsg, type Msg, type MsgKey } from "../i18n/types.js";
+import { msg, rawMsg, type Msg, type CoreMsgKey } from "../i18n/types.js";
 import type { CallNotice, CallReturn, CallView, PhoneEvent, SuspectField } from "./events.js";
 import { isBlocked } from "./contacts.js";
 
@@ -435,7 +435,7 @@ function interruptions(ending: Ending): CallOn {
  */
 const NOTICE: Record<
   MediaKind,
-  { declined: MsgKey; refused: MsgKey; added: MsgKey; removed: MsgKey; declinedHere: MsgKey; unavailable: MsgKey }
+  { declined: CoreMsgKey; refused: CoreMsgKey; added: CoreMsgKey; removed: CoreMsgKey; declinedHere: CoreMsgKey; unavailable: CoreMsgKey }
 > = {
   audio: {
     declined: "notice.audioDeclined",

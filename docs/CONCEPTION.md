@@ -70,6 +70,7 @@ src/
     reachability.ts       # niveau de joignabilité, motif, phrase — comme données (§4.13)
     subtitles.ts          # la conversation d'un appel en WebVTT (§4.9)
     diagnostics.ts        # traces des automates sur la console (§4.5)
+    i18n/                 # le catalogue du noyau : ses seules clés, dans chaque langue (§4.7)
     platform.ts           # Platform : ce que le noyau entend de la plateforme (ADR 0011, D7)
     browser/              # browserPlatform(), la seule partie du noyau qui écoute la page
       lifecycle.ts        # gel, dégel, bfcache, veille machine, réseau → sys:sleep / sys:wake (§4.1)
@@ -112,8 +113,9 @@ src/
     theme.ts              # tokens FSL clair/sombre
   i18n/
     index.ts              # registre Vite, détection, t()/tn(), formats Intl
-    types.ts              # Dictionary, Msg — sans dépendance à l'exécution
-    locales/*.ts          # un fichier par langue, le français fait référence
+    types.ts              # CoreMsgKey, Msg — les types du noyau, sans dépendance à l'exécution
+    dictionary.ts         # Dictionary, MsgKey — ceux de l'UI
+    locales/*.ts          # un fichier par langue, qui étend celui du noyau ; le français fait référence
   debug/
     observability.ts      # export toMermaid(), logger de transitions
 public/
@@ -760,6 +762,16 @@ pour la même raison.
 Un fichier par langue dans `src/i18n/locales/`, découvert par
 `import.meta.glob` : ajouter une langue, c'est déposer `xx.ts`, sans registre
 à tenir ni sélecteur à compléter. Trois décisions structurent le reste.
+
+**Le noyau a son propre catalogue** (ADR 0011, D9). Les 73 clés que les
+automates, le port SIP et la conversation peuvent produire (`CoreMsgKey` :
+erreurs, motifs de fin d'appel et d'échec d'un message, messages fugaces,
+notes du fil de texte) vivent dans `src/core/i18n/`, une langue par fichier ;
+chaque dictionnaire de l'UI commence par `...core` et n'ajoute que les
+écrans. Un affilié n'hérite ainsi que des premières : il les affiche avec
+`formatMsg(msg, locale)`, ou les traduit lui-même, et le type lui dit
+lesquelles couvrir. Ajouter une langue, c'est donc déposer deux fichiers —
+`test/i18n.test.ts` refuse une langue de l'UI sans son catalogue du noyau.
 
 **Le français fait référence.** `Dictionary` est le type du dictionnaire
 français ; toute autre langue doit le satisfaire. Une clé ajoutée d'un côté

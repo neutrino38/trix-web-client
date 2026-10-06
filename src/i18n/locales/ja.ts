@@ -31,9 +31,13 @@
  * cherchable.
  */
 
-import type { Translation } from "../types.js";
+import core from "../../core/i18n/ja.js";
+import type { Translation } from "../dictionary.js";
 
 const messages: Translation = {
+  // the core's messages (ADR 0011, D9): this dictionary extends them
+  ...core,
+
   // ---------------------------------------------------------------------
   // Choix de la langue
   // ---------------------------------------------------------------------
@@ -272,7 +276,6 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   // 着信可能性（ADR 0006）
   // ---------------------------------------------------------------------
-  "reach.none": "着信を受けられません。",
   "reach.title": "着信不可 — Trix",
   "reach.notifTitle": "Trix は着信を受けられません",
   "reach.notifFreeze":
@@ -328,7 +331,6 @@ const messages: Translation = {
   // ---------------------------------------------------------------------
   "chat.tab": "チャット",
   "chat.aria": "{peer} との会話",
-  "chat.you": "自分",
   "chat.typing": "入力中",
   "chat.announce": "{who}：{text}",
   "chat.jump.one": "最新へ — {n} 件",
@@ -344,15 +346,8 @@ const messages: Translation = {
   "chat.state.closed": "リアルタイムテキストは終了しました",
   "chat.state.refused": "この相手はリアルタイムテキストに対応していません",
   "chat.state.pending": "{s} 秒後に修正を送信",
-  "chat.note.opened": "リアルタイムテキストを開始しました",
-  "chat.note.lost": "切断中にテキストが失われました",
-  "chat.note.broken": "テキストの接続が切れました — 復旧中",
-  "chat.note.closed": "リアルタイムテキストは終了しました",
-  "chat.note.refused": "この相手はリアルタイムテキストに対応していません",
-  "chat.note.alert": "注意喚起を受信しました",
 
   "chat.log.open": "この通話の会話を読み返す",
-  "chat.log.title": "会話 — {target}",
   "chat.log.count.one": "{n} 件のメッセージ",
   "chat.log.count.other": "{n} 件のメッセージ",
   "chat.log.copy": "コピー",
@@ -361,8 +356,6 @@ const messages: Translation = {
   "chat.log.export": "書き出す",
   "chat.log.exportFailed": "書き出せませんでした",
   "chat.log.close": "閉じる",
-  "chat.log.vttBase": "時刻は通話開始からの経過時間 — {at} の通話。",
-  "chat.log.cut": "会話の冒頭は保存されていません",
 
   // ---------------------------------------------------------------------
   // Actions
@@ -453,28 +446,6 @@ const messages: Translation = {
   "mediaask.share.body": "共有画面が大きく表示され、相手の映像は小さな枠に移ります。拒否しても通話はそのまま続きます。",
   "mediaask.share.accept": "画面を見る",
   "mediaask.reject": "拒否",
-
-  // ---------------------------------------------------------------------
-  // 通話中の一時的なメッセージ
-  // ---------------------------------------------------------------------
-  "notice.videoDeclined": "{peer} はビデオを受け入れませんでした",
-  "notice.videoRefused": "{peer} はこの通話へのビデオ追加を拒否しました",
-  "notice.videoAdded": "{peer} がビデオを追加しました",
-  "notice.videoRemoved": "{peer} がビデオを削除しました",
-  "notice.videoDeclinedHere": "ビデオを拒否しました",
-  "notice.videoUnavailable": "現在ビデオを追加できません",
-  "notice.shareRefused": "{peer} は画面共有を受け入れませんでした",
-  "notice.shareUnavailable": "現在画面を共有できません",
-  "notice.sharePeerStarted": "{peer}さんが画面を共有しています",
-  "notice.sharePeerStopped": "{peer}さんが画面共有を終了しました",
-  "notice.shareDeclinedHere": "画面共有を拒否しました",
-  "notice.audioDeclined": "{peer} は音声を受け入れませんでした",
-  "notice.audioRefused": "{peer} はこの通話への音声の追加を拒否しています",
-  "notice.audioAdded": "{peer} が音声を追加しました",
-  "notice.audioRemoved": "{peer} が音声を削除しました",
-  "notice.audioDeclinedHere": "音声を拒否しました",
-  "notice.audioUnavailable": "現在、音声を追加できません",
-  "notice.dtmfFailed": "トーン {tone} を送信できませんでした",
 
   // ---------------------------------------------------------------------
   // Panneau latéral
@@ -607,58 +578,6 @@ const messages: Translation = {
   "selftest.failed": "テストできません：{detail}",
 
   // ---------------------------------------------------------------------
-  // Erreurs des automates (écrites dans le contexte, rendues par l'UI)
-  // ---------------------------------------------------------------------
-  "error.invalidUri": "SIP アドレスが不正です（形式：ユーザー@ドメイン）",
-  "error.wrongDomain": "このアドレスは {domain} ドメインのものである必要があります",
-  "error.duplicateAccount": "{address} はもう一方のアカウントとして登録済みです",
-  "error.passwordRequired": "パスワードを入力してください",
-  "error.saveFailed": "保存できませんでした：{detail}",
-  "error.vaultUnreadable": "アカウントを読み込めませんでした：{detail}",
-  "error.invalidProxy": "プロキシー名が不正です — WSS アドレスを確認してください",
-  "error.wssRefused": "プロキシーに接続できません（WSS 接続が拒否されました）",
-  "error.wssTimeout": "プロキシーが応答しません（WebSocket タイムアウト）",
-  "error.badCredentials": "SIP アドレス、パスワード、または認証ユーザー名が正しくありません",
-  "error.missingSha256":
-    "このサーバーは SHA-256 認証を要求していますが、このアカウントにはその要約がありません。パスワードを入力し直して計算してください。",
-  "error.regRefused": "登録が拒否されました：{cause}",
-  "error.wssLostDuringReg": "登録中に接続が切れました",
-  "error.registrarTimeout": "レジストラーが応答しません",
-  "error.regLost": "登録が失われました：{cause}",
-  "error.proxyLost": "プロキシーとの接続が切れました",
-  "error.offline": "ネットワークに接続されていません（設定の問題ではありません）",
-  "error.proxyLostDuringCall": "通話中にプロキシーとの接続が切れました",
-  "error.callDropped": "通話が切断されました — プロキシーとの接続が切れました",
-  "error.stunInvalid": "STUN サーバーが不正です（形式：ホスト または ホスト:ポート）",
-  "error.turnInvalid": "TURN サーバーが不正です（形式：ホスト または ホスト:ポート）",
-  "error.turnUserRequired": "TURN ユーザー名を入力してください（中継は必ず認証を求めます）",
-  "error.turnPasswordRequired": "TURN パスワードを入力してください",
-
-  // ---------------------------------------------------------------------
-  // Motifs de fin d'appel (affichés près du champ d'adresse et en historique)
-  // ---------------------------------------------------------------------
-  "reason.hungUp": "通話終了",
-  "reason.sleep": "スリープへの移行",
-  "reason.noAnswer": "応答なし",
-  "reason.declined": "通話が拒否されました",
-  "reason.missed": "不在着信",
-  "reason.missedNoAnswer": "不在着信（応答なし）",
-  "reason.setupFailed": "通話を確立できませんでした",
-  "reason.offerUnsupported": "{detail} のないメディアオファー：WebRTC 非対応",
-  "reason.callFailed": "発信できませんでした：{detail}",
-  "reason.sip": "{cause}（SIP {code}）",
-  "message.reason.noAnswer": "応答なし",
-  "message.reason.notFound": "不明なアドレス",
-  "message.reason.unreachable": "連絡がつきません",
-  "message.reason.refused": "拒否されました",
-  "message.reason.format": "形式が拒否されました",
-  "message.reason.unsupported": "サーバーがメッセージを転送しません",
-  "message.reason.failed": "失敗（SIP {code}）",
-  "message.reason.tooLong": "メッセージが長すぎます",
-  "message.reason.invalid": "無効なアドレス",
-  "message.reason.interrupted": "応答前に接続が切れました",
-
-  // ---------------------------------------------------------------------
   // アカウント共有ページ（share_account.html）
   // ---------------------------------------------------------------------
   "share.title": "共有されたアカウント",
@@ -681,8 +600,6 @@ const messages: Translation = {
   "share.exists": "{address} はこの端末にすでに登録されています。何も変更していません。",
   "share.full": "この端末はすでに {max} 件のアカウントを保持しています。設定でどちらかを削除してから追加してください。",
   "share.saveFailed": "アカウントを保存できませんでした：{detail}",
-
-  "misc.raw": "{text}",
 };
 
 export default messages;

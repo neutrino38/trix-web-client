@@ -1,41 +1,28 @@
 /**
- * Types de l'internationalisation — **sans dépendance à l'exécution**.
+ * Types de l'internationalisation **du noyau** — sans dépendance à
+ * l'exécution (ADR 0011, D9).
  *
- * Ce module n'importe le français qu'en `import type` : la déclaration est
- * effacée à la compilation, donc les automates et le port SIP peuvent
- * parler de messages traduisibles sans faire entrer le moindre
+ * Ce module n'importe le catalogue du noyau qu'en `import type` : la
+ * déclaration est effacée à la compilation, donc les automates et le port
+ * SIP peuvent parler de messages traduisibles sans faire entrer le moindre
  * dictionnaire dans leur bundle.
  *
- * Le français est la langue de référence : `Dictionary` est *son* type, et
- * toute autre langue doit le satisfaire — une clé oubliée est une erreur
- * de compilation, pas une chaîne manquante découverte en production.
+ * Il ne connaît que les clés que le noyau produit (`CoreMsgKey`). Celles des
+ * écrans sont à l'UI (`dictionary.ts`), dont les dictionnaires étendent
+ * celui du noyau : un affilié qui écrit sa propre interface n'hérite que
+ * des premières.
+ *
+ * Le français est la langue de référence : `CoreDictionary` est *son* type,
+ * et toute autre langue du noyau doit le satisfaire — une clé oubliée est
+ * une erreur de compilation, pas une chaîne manquante découverte en
+ * production.
  */
 
-import type fr from "./locales/fr.js";
+import type core from "../core/i18n/fr.js";
 
-export type Dictionary = typeof fr;
-export type MsgKey = keyof Dictionary;
-
-/** Les bases de pluriel du français — `announce.inCall`, depuis `.other`. */
-type BaseOf<K> = K extends `${infer Base}.other` ? Base : never;
-
-/**
- * Ce qu'une langue a le droit d'écrire : **toutes** les clés du français,
- * plus — pour elle seule — les formes de pluriel que le français n'a pas.
- *
- * Le français en compte deux (`.one`, `.other`) ; l'arabe en demande six et
- * le russe quatre. Les faire porter à la langue de référence obligerait à
- * inventer un « duel » français qui n'existe pas, et à le traduire partout.
- * Chaque langue déclare donc les siennes, et `tn()` retombe sur `.other`
- * pour celles qu'elle ne déclare pas.
- *
- * L'ouverture reste close sur le reste : seules ces quatre formes, et
- * seulement sur une base que le français plurialise déjà, échappent au
- * contrôle des clés. Une faute de frappe dans un nom de clé ordinaire est
- * toujours refusée à la compilation.
- */
-export type Translation = Dictionary &
-  Partial<Record<`${BaseOf<MsgKey>}.${"zero" | "two" | "few" | "many"}`, string>>;
+export type CoreDictionary = { readonly [K in keyof typeof core]: string };
+/** Les seules clés que le noyau peut produire — celles qu'un affilié doit couvrir. */
+export type CoreMsgKey = keyof CoreDictionary;
 
 /**
  * Code d'une langue disponible — **le nom de son fichier** (`fr`, `en`,
@@ -43,9 +30,6 @@ export type Translation = Dictionary &
  * telle quelle à `<html lang>` et aux formateurs `Intl`.
  */
 export type Locale = string;
-
-/** Ce que l'utilisateur choisit : une langue, ou la détection automatique. */
-export type LocaleChoice = "auto" | Locale;
 
 export type Vars = Record<string, string | number>;
 
@@ -59,24 +43,23 @@ export type Vars = Record<string, string | number>;
  * figés dans la langue qui avait cours au moment de l'appel.
  */
 export interface Msg {
-  key: MsgKey;
+  key: CoreMsgKey;
   vars?: Vars;
 }
 
 /**
- * La traduction telle que le noyau la reçoit (ADR 0011) : il ne lit aucun
- * dictionnaire lui-même, l'appelant lui passe le sien et sa langue
- * courante. Aujourd'hui celui de l'UI (`translate`, `i18n/index.ts`) ;
- * demain le catalogue du noyau (D9).
+ * La traduction telle que le noyau s'en sert pour écrire — un fichier de
+ * sous-titres, une ligne de console : la sienne (`coreTranslate`,
+ * `core/i18n/`), ou celle de l'UI, qui couvre les mêmes clés et d'autres.
  */
 export interface Translate {
-  t(key: MsgKey | Msg, vars?: Vars): string;
+  t(key: CoreMsgKey | Msg, vars?: Vars): string;
   /** Balise BCP-47 de la langue courante, pour les formateurs `Intl`. */
   locale(): Locale;
 }
 
 /** Fabrique — `msg("error.proxyLost")`, `msg("error.regLost", { cause })`. */
-export function msg(key: MsgKey, vars?: Vars): Msg {
+export function msg(key: CoreMsgKey, vars?: Vars): Msg {
   return vars ? { key, vars } : { key };
 }
 

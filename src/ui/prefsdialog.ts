@@ -17,7 +17,7 @@
 
 import type { Trix } from "../core/index.js";
 import { onLocaleChange, t } from "../i18n/index.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 import { alertPermission, requestAlertPermission } from "./alert.js";
 import { esc } from "./el.js";
 import { langPicker, wireLangPicker } from "./langpicker.js";

@@ -30,10 +30,13 @@
  * moitié traduit.
  */
 
-import type { Locale, LocaleChoice, Msg, MsgKey, Translate, Translation, Vars } from "./types.js";
+import { interpolate } from "../core/i18n/index.js";
+import type { LocaleChoice, MsgKey, Translation } from "./dictionary.js";
+import type { Locale, Msg, Translate, Vars } from "./types.js";
 
 export { msg, rawMsg } from "./types.js";
-export type { Locale, LocaleChoice, Msg, MsgKey, Translation } from "./types.js";
+export type { CoreMsgKey, Locale, Msg } from "./types.js";
+export type { Dictionary, LocaleChoice, MsgKey, Translation } from "./dictionary.js";
 
 const STORAGE_KEY = "trix-lang";
 
@@ -331,22 +334,13 @@ export function onLocaleChange(fn: () => void): () => void {
 // Traduction
 // ---------------------------------------------------------------------------
 
-const PLACEHOLDER = /\{(\w+)\}/g;
-
-function interpolate(template: string, vars: Vars | undefined): string {
-  if (!vars) return template;
-  return template.replaceAll(PLACEHOLDER, (whole, name: string) => {
-    const value = vars[name];
-    return value === undefined ? whole : String(value);
-  });
-}
-
 /**
  * Traduit une clé, ou un message différé produit par un automate.
  *
  * Une clé introuvable rend la clé elle-même : un écran défiguré se répare,
  * un écran vide ne se diagnostique pas. Le cas ne devrait jamais survenir —
- * le typage l'interdit à la compilation.
+ * le typage l'interdit à la compilation. Les messages du noyau en font
+ * partie : le dictionnaire de l'UI étend le sien (ADR 0011, D9).
  */
 export function t(key: MsgKey | Msg, vars?: Vars): string {
   if (typeof key !== "string") return t(key.key, key.vars);

@@ -17,7 +17,7 @@
  */
 
 import { loadDeployment, type Deployment } from "../deployment.js";
-import type { Msg, Translate } from "../i18n/types.js";
+import type { Translate } from "../i18n/types.js";
 import { CallBlock } from "../machines/call.js";
 import type { ConfigForm } from "../machines/events.js";
 import { MessagingMachine } from "../machines/messaging.js";
@@ -33,6 +33,7 @@ import { createSessionStore, type ChosenStatus, type SessionStore } from "../sto
 import { createBrowserStore, type SecureStore } from "../storage/store.js";
 import { browserPlatform } from "./browser/index.js";
 import { createConversation, followCalls, type Conversation } from "./conversation.js";
+import { coreTranslate, loadCoreMessages } from "./i18n/index.js";
 import { consoleSink, formatLog, machineLogger, watchMachine, type Sink } from "./diagnostics.js";
 import type { PageSleepReason, Platform } from "./platform.js";
 import { createViewBuilder, type TrixView } from "./view.js";
@@ -62,7 +63,8 @@ export type { ChatItem } from "../sip/transcript.js";
 export type { ChosenStatus, StatusPrefs } from "../storage/session.js";
 export type { CallLogEntry, Contact, MessageEntry } from "../storage/store.js";
 export type { Thread } from "./thread.js";
-export type { Msg, Translate } from "../i18n/types.js";
+export type { CoreDictionary, CoreMsgKey, Locale, Msg, Translate, Vars } from "../i18n/types.js";
+export { CORE_LOCALES, formatMsg, loadCoreMessages } from "./i18n/index.js";
 export { browserPlatform } from "./browser/index.js";
 
 export interface TrixOptions {
@@ -80,9 +82,15 @@ export interface TrixOptions {
   /** What the core hears from the page (D7); `browserPlatform()` by default. */
   platform?: Platform;
   /**
-   * How the core words what it writes to the console. Until D9 gives the
-   * core its own catalogue, the UI hands its own; without one, the keys are
-   * written as they are.
+   * The language of the core's messages (D9), as a BCP-47 tag: its
+   * catalogue is loaded before `ready` resolves, so that `formatMsg(msg,
+   * locale)` words them at once. French by default; a language Trix does
+   * not ship falls back to it.
+   */
+  locale?: string;
+  /**
+   * How the core words what it writes to the console: its own catalogue in
+   * `locale` by default, or a UI's, which covers the same keys.
    */
   translate?: Translate;
   /** Where the diagnostics go; the console by default. */
@@ -220,12 +228,6 @@ export interface TrixDebug {
   dump(): string;
 }
 
-/** No dictionary: the console shows the keys. */
-const KEYS_ONLY: Translate = {
-  t: (key) => (typeof key === "string" ? key : (key as Msg).key),
-  locale: () => "fr",
-};
-
 export function createTrix(options: TrixOptions = {}): Trix {
   const prefix = options.storagePrefix ?? "trix";
   const platform = options.platform ?? browserPlatform();
@@ -237,11 +239,17 @@ export function createTrix(options: TrixOptions = {}): Trix {
   const listeners = new Set<(view: TrixView) => void>();
   const sleepers = new Set<(reason: PageSleepReason) => void>();
 
+  const locale = options.locale ?? "fr";
+
   const ready = (async () => {
+    // the catalogue comes alongside: nothing waits for it but `ready`, and
+    // until it is there, French words the messages
+    const catalogue = loadCoreMessages(locale);
     const deployment =
       typeof options.config === "object" ? options.config : await loadDeployment(options.config);
     if (disposed) return;
     core = start(deployment);
+    await catalogue;
   })();
 
   function start(deployment: Deployment) {
@@ -295,7 +303,7 @@ export function createTrix(options: TrixOptions = {}): Trix {
     started = phone;
 
     stops.push(
-      watchMachine(phone, options.translate ?? KEYS_ONLY, sink),
+      watchMachine(phone, options.translate ?? coreTranslate(locale), sink),
       followCalls(phone, conversation),
       linkPresence(phone, presence),
       linkMessaging(phone, messaging),

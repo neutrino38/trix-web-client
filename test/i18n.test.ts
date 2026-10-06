@@ -28,8 +28,18 @@ import {
   tn,
   useLocale,
 } from "../src/i18n/index.js";
-import { msg, rawMsg, type Dictionary, type Translation } from "../src/i18n/types.js";
+import { msg, rawMsg } from "../src/i18n/types.js";
+import type { Dictionary, Translation } from "../src/i18n/dictionary.js";
 import fr from "../src/i18n/locales/fr.js";
+import coreFr from "../src/core/i18n/fr.js";
+import {
+  CORE_LOCALES,
+  coreLocaleFor,
+  coreTranslate,
+  formatMsg,
+  loadCoreMessages,
+} from "../src/core/i18n/index.js";
+import type { CoreDictionary } from "../src/i18n/types.js";
 
 const dicts = import.meta.glob<Translation>("../src/i18n/locales/*.ts", {
   eager: true,
@@ -128,6 +138,67 @@ describe("complétude des dictionnaires", () => {
       expect(drift).toEqual([]);
     });
   }
+});
+
+const coreDicts = import.meta.glob<CoreDictionary>("../src/core/i18n/*.ts", {
+  eager: true,
+  import: "default",
+});
+
+const coreByCode = Object.fromEntries(
+  Object.entries(coreDicts)
+    .filter(([path]) => !path.endsWith("/index.ts"))
+    .map(([path, dict]) => [path.slice(path.lastIndexOf("/") + 1, -3), dict]),
+);
+
+describe("catalogue du noyau (ADR 0011, D9)", () => {
+  const reference = Object.keys(coreFr).sort();
+
+  it("une langue du noyau pour chaque langue de l'UI, et réciproquement", () => {
+    expect([...CORE_LOCALES].sort()).toEqual([...LOCALES].sort());
+    expect(Object.keys(coreByCode).sort()).toEqual([...CORE_LOCALES].sort());
+  });
+
+  for (const [code, dict] of Object.entries(coreByCode)) {
+    it(`${code} : exactement les clés du noyau, aucune vide, les mêmes variables`, () => {
+      expect(Object.keys(dict).sort()).toEqual(reference);
+      expect(Object.entries(dict).filter(([, v]) => v.trim() === "")).toEqual([]);
+      const drift = Object.entries(dict).filter(
+        ([key, value]) =>
+          placeholders(value).join(",") !== placeholders(coreFr[key as keyof typeof coreFr]).join(","),
+      );
+      expect(drift).toEqual([]);
+    });
+
+    it(`${code} : le dictionnaire de l'UI reprend le noyau sans le réécrire`, () => {
+      const ui = byCode[code]!;
+      for (const [key, value] of Object.entries(dict)) expect(ui[key as keyof typeof ui]).toBe(value);
+    });
+  }
+
+  it("les clés du noyau ne sont pas celles des écrans", () => {
+    // ce qu'un affilié doit traduire reste court : rien d'un écran n'y entre
+    expect(reference.length).toBeLessThan(Object.keys(fr).length / 4);
+    expect(reference).not.toContain("thread.title");
+  });
+
+  it("choisit la langue servie : exacte, puis primaire, puis le français", () => {
+    expect(coreLocaleFor("fr-CA")).toBe("fr-CA");
+    expect(coreLocaleFor("en-GB")).toBe("en");
+    expect(coreLocaleFor("zh-hans")).toBe("zh-Hans");
+    expect(coreLocaleFor("de")).toBe("fr");
+  });
+
+  it("formatMsg : un message du noyau en mots, sans l'UI", async () => {
+    expect(formatMsg({ key: "error.regLost", vars: { cause: "503" } }, "fr")).toBe("Enregistrement perdu : 503");
+    expect(await loadCoreMessages("en-US")).toBe("en");
+    expect(formatMsg(msg("reason.sip", { cause: "Busy", code: 486 }), "en-US")).toBe("Busy (SIP 486)");
+    expect(formatMsg("error.proxyLost", "en")).toBe("Connection to the proxy lost");
+    expect(formatMsg(rawMsg("Bye"), "ja")).toBe("Bye");
+    // une langue que Trix ne livre pas retombe sur le français
+    expect(formatMsg("error.proxyLost", "de")).toBe("Connexion au proxy perdue");
+    expect(coreTranslate("en").t("error.proxyLost")).toBe("Connection to the proxy lost");
+  });
 });
 
 describe("détection de la langue du navigateur", () => {

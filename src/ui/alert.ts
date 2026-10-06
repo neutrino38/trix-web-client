@@ -30,7 +30,7 @@ import { ringOnce, startRing, stopRing } from "./ring.js";
 import { setTitleOverride } from "./title.js";
 import { setFaviconOverride } from "./favicon.js";
 import { t } from "../i18n/index.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 
 export interface IncomingAlert {
   caller: string;

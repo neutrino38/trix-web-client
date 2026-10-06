@@ -9,7 +9,7 @@
  */
 
 import type { ResumeStore } from "../storage/session.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { CoreMsgKey } from "../i18n/types.js";
 
 /**
  * D1's three levels — not a boolean.
@@ -66,7 +66,7 @@ export function reachabilityWanted(session: ResumeStore): boolean {
  * nobody. `deferred` has none either, for another reason — at step 1,
  * nothing produces it (D1).
  */
-export function reachSentence(r: { level: Reachability; wanted: boolean }): MsgKey | null {
+export function reachSentence(r: { level: Reachability; wanted: boolean }): CoreMsgKey | null {
   return r.level === "none" && r.wanted ? "reach.none" : null;
 }
 

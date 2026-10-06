@@ -10,7 +10,7 @@
  */
 
 import type { RttTransport } from "../sip/rtt.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 
 export const RTT_LABELS: Record<RttTransport, { label: MsgKey; desc: MsgKey }> = {
   none: { label: "config.rttNone", desc: "config.rttNoneDesc" },

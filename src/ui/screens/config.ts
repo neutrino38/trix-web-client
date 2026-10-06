@@ -2,7 +2,7 @@ import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
 import type { SuspectField, Trix, TrixView } from "../../core/index.js";
 import { t } from "../../i18n/index.js";
-import type { Msg } from "../../i18n/types.js";
+import type { Msg } from "../../i18n/index.js";
 import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
 import { showToast } from "../toast.js";
 import { RTT_LABELS } from "../rttlabels.js";

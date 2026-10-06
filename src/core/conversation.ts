@@ -42,7 +42,7 @@ import {
   type T140Event,
 } from "../sip/t140.js";
 import { bubbleText, sealTranscript, type ChatBubble, type ChatItem, type ChatSide } from "../sip/transcript.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { CoreMsgKey } from "../i18n/types.js";
 
 /**
  * The silence to observe before reconciling an edit made **in the middle**
@@ -179,7 +179,7 @@ export function createConversation(): Conversation {
     return b;
   };
 
-  const note = (key: MsgKey): void => {
+  const note = (key: CoreMsgKey): void => {
     const last = s.items.at(-1);
     // the same remark twice in a row says nothing more
     if (last?.kind === "note" && last.key === key) return;

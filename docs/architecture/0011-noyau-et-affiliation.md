@@ -377,7 +377,18 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    avant que le réseau ne serve. Deux appels avec un Trix sur Chrome Android ont été raccrochés par ce
    dernier pendant une longue saisie en texte temps réel ; la cause, côté Android, reste à
    établir.
-7. **Les messages** (D9) : `CoreMsgKey`, `core/i18n/`, `formatMsg`.
+7. **Les messages** (D9) : `CoreMsgKey`, `core/i18n/`, `formatMsg`. Fait le 2026-10-06 : les
+   73 clés que le noyau produit — relevées dans son code par l'arbre syntaxique, pas à la
+   main — quittent les dictionnaires de l'UI pour `core/i18n/<langue>.ts`, que chacun
+   d'eux étend (`...core`). `i18n/types.ts` ne connaît plus que `CoreMsgKey` et
+   `CoreDictionary` ; `Dictionary` et `MsgKey`, qui couvrent les deux, passent à l'UI
+   (`i18n/dictionary.ts`). Le français du noyau est livré avec lui, les autres langues
+   se chargent à la demande (`loadCoreMessages`, des `import()` ordinaires et non un
+   glob de Vite, pour tout bundler) ; `createTrix({ locale })` charge la sienne avant
+   `ready`, et c'est elle qui écrit la console quand l'UI ne donne pas sa traduction.
+   `formatMsg` retombe sur le français, jamais sur une chaîne vide. `test/i18n.test.ts`
+   vérifie que chaque langue de l'UI a son catalogue du noyau, complet, aux mêmes
+   variables, repris tel quel ; `test/layers.test.ts` n'a plus d'exception.
 8. **La preuve et la distribution** (D10, D11) : `examples/minimal/`, `exports`, première
    étiquette annoncée comme base d'affiliation.
 9. **Le guide d'affiliation** : `docs/utilisation/affiliation.md`, écrit pour celui qui démarre

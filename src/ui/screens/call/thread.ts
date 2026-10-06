@@ -66,7 +66,7 @@ import {
   setDraft,
 } from "./parts.js";
 import { showStatsDialog } from "./stats.js";
-import type { MsgKey } from "../../../i18n/types.js";
+import type { MsgKey } from "../../../i18n/index.js";
 
 // ---- what survives a rebuild ----------------------------------------------
 

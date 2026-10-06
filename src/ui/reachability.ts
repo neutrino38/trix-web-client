@@ -37,7 +37,7 @@ import { clearNotice, showNotice } from "./notify.js";
 import { setFaviconState } from "./favicon.js";
 import { setTitleOverride } from "./title.js";
 import { t } from "../i18n/index.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 import { unreachableReason, type UnreachableReason } from "../core/reachability.js";
 
 /** Sous ce seuil, ce n'est pas une absence : c'est une reconnexion (D2). */

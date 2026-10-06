@@ -205,11 +205,7 @@ function sources(dir = join(ROOT, "src")): string[] {
  * The violations that exist today, and the decision of ADR 0011 that
  * removes each one. Cross an entry off once it is fixed — the test insists.
  */
-const KNOWN: Record<string, string[]> = {
-  // D9: `MsgKey = keyof fr` — the core's message keys are the UI dictionary's.
-  // Goes with `CoreMsgKey` and `core/i18n/`.
-  "src/i18n/types.ts": ["imports src/i18n/locales/fr.ts"],
-};
+const KNOWN: Record<string, string[]> = {};
 
 /**
  * Module state the core keeps on purpose: what belongs to the page or to

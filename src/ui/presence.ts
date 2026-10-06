@@ -23,7 +23,7 @@ import type { PresenceView, Trix, TrixView } from "../core/index.js";
 import type { Presence } from "../sip/pidf.js";
 import type { ChosenStatus } from "../storage/session.js";
 import { t } from "../i18n/index.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 import { announce } from "./announce.js";
 import { esc } from "./el.js";
 

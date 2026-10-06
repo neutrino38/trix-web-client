@@ -25,7 +25,7 @@
  */
 
 import { t } from "../i18n/index.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 import { esc } from "./el.js";
 import { audioLevel, barHeight } from "./vumeter.js";
 

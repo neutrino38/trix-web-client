@@ -50,7 +50,7 @@ import { wireShareStage } from "./share.js";
 import { LENS_ICON, startMediaStats } from "./stats.js";
 import { showPrefsDialog } from "../../prefsdialog.js";
 import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
-import type { MsgKey } from "../../../i18n/types.js";
+import type { MsgKey } from "../../../i18n/index.js";
 
 /**
  * État de l'enregistrement : la **clé** du libellé, pas le libellé. Ces tables

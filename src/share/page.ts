@@ -41,7 +41,7 @@ import {
 import { MAX_ACCOUNTS, addressOf, findByAddress } from "../accounts.js";
 import { decodeAccount, linkPayload } from "./link.js";
 import { RTT_LABELS } from "../ui/rttlabels.js";
-import type { MsgKey } from "../i18n/types.js";
+import type { MsgKey } from "../i18n/index.js";
 
 /** Où l'on repart une fois le compte créé — l'application, à côté. */
 const APP_URL = "./";

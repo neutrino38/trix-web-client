@@ -21,7 +21,7 @@
  *   note says so at the head.
  */
 
-import type { MsgKey } from "../i18n/types.js";
+import type { CoreMsgKey } from "../i18n/types.js";
 import type { T140Attrs } from "./t140.js";
 
 /** Who wrote it. `us` is this end, `them` the far one. */
@@ -49,7 +49,7 @@ export interface ChatBubble {
 export interface ChatNote {
   kind: "note";
   id: number;
-  key: MsgKey;
+  key: CoreMsgKey;
   at: number;
 }
 
@@ -69,7 +69,7 @@ const MAX_CHARS = 32_000;
 const MAX_ITEMS = 400;
 
 /** The note that heads a conversation kept from its end only. */
-const CUT: MsgKey = "chat.log.cut";
+const CUT: CoreMsgKey = "chat.log.cut";
 
 /**
  * The thread as it goes into the call log: live bubbles closed at `at`,
