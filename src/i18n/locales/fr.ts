@@ -217,6 +217,10 @@ const messages = {
   "thread.collapse": "Revenir aux échanges",
   "thread.noEvents": "Aucun échange avec ce contact pour l'instant.",
   "thread.noMessages": "Aucun message pour l'instant.",
+  /** Sous les dix derniers échanges de « Tous » : le reste, en un clic. */
+  "thread.more": "Plus…",
+  "thread.moreAria.one": "Afficher {n} échange plus ancien",
+  "thread.moreAria.other": "Afficher les {n} échanges plus anciens",
   "thread.unread.one": "{n} message non lu",
   "thread.unread.other": "{n} messages non lus",
   "thread.blocked": "Bloqué",

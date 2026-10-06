@@ -73,17 +73,18 @@ describe("buildThreads — messages (ADR 0008)", () => {
     expect(mallory!.blocked).toBe(true);
   });
 
-  it("events mix calls and messages oldest first, and segments filter them", () => {
+  it("events mix calls and messages most recent first, and segments filter them", () => {
     const [bob] = buildThreads(
       [BOB],
       [call("bob@example.fr", NOW - 2 * H)],
       {},
       [message("bob@example.fr", NOW - H), message("bob@example.fr", NOW - 3 * H)],
     );
+    // most recent first: what happened last is what one opens a line to see
     expect(threadEvents(bob!, "all").map((e) => [e.kind, e.at])).toEqual([
-      ["message", NOW - 3 * H],
-      ["call", NOW - 2 * H],
       ["message", NOW - H],
+      ["call", NOW - 2 * H],
+      ["message", NOW - 3 * H],
     ]);
     expect(threadEvents(bob!, "calls").map((e) => e.kind)).toEqual(["call"]);
     expect(threadEvents(bob!, "messages").map((e) => e.kind)).toEqual(["message", "message"]);

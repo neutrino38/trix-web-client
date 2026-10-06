@@ -11,7 +11,7 @@
  *
  * Instant messages (ADR 0008) fill the same lines: a line's last exchange
  * is its last call or its last message, whichever came later, and its
- * unfolded body mixes both, oldest first, filtered by segment.
+ * unfolded body mixes both, most recent first, filtered by segment.
  *
  * Pure: the screen renders what this returns, the tests read it.
  */
@@ -150,7 +150,10 @@ function stranger(key: string, target: string): Thread {
   };
 }
 
-/** The events of a line for a segment, oldest first: what its unfolded body lists. */
+/**
+ * The events of a line for a segment, most recent first: what its unfolded
+ * body lists — what happened last is what one opens a line to see.
+ */
 export function threadEvents(thread: Thread, segment: Segment): ThreadEvent[] {
   const events: ThreadEvent[] = [];
   if (segment !== "messages") {
@@ -159,12 +162,12 @@ export function threadEvents(thread: Thread, segment: Segment): ThreadEvent[] {
   if (segment !== "calls") {
     for (const message of thread.messages) events.push({ kind: "message", at: message.at, message });
   }
-  return events.sort((a, b) => a.at - b.at);
+  return events.sort((a, b) => b.at - a.at);
 }
 
 /** The line's most recent event, the one its summary shows. */
 export function lastEvent(thread: Thread): ThreadEvent | null {
-  return threadEvents(thread, "all").at(-1) ?? null;
+  return threadEvents(thread, "all")[0] ?? null;
 }
 
 /** Does this line answer the search? Name, address or a message, case and accents aside. */

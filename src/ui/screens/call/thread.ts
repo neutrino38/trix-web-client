@@ -7,8 +7,9 @@
  * report); unfolding also fills the address to dial.
  *
  * Instant messages (ADR 0008) fill the same lines: an unfolded line lists
- * its calls and messages oldest first, filtered by segment (All, Calls,
- * Messages), and ends with the field to write. Opening a line in a
+ * its calls and messages most recent first, filtered by segment (All,
+ * Calls, Messages), under the field to write. "All" shows the last ten,
+ * and "More…" the rest. Opening a line in a
  * visible tab reads its messages. A blocked contact keeps its line, with
  * neither call button nor writing field.
  *
@@ -90,6 +91,11 @@ let armed: string | null = null;
 let redrawing = false;
 /** What is being written, per line: a redraw must not lose it. */
 const drafts = new Map<string, string>();
+/** "More…" was asked on the open line: all its events show, not the last ten. */
+let showAll = false;
+
+/** What "All" shows of a line before "More…". */
+const ALL_LIMIT = 10;
 
 /** Past this, the writing field shows how much room is left (D2). */
 const COUNT_FROM = 800;
@@ -285,9 +291,12 @@ function lineClearLabel(thread: Thread, messaging: MessagingView): string {
 function body(thread: Thread, now: number, messaging: MessagingView): string {
   const withMessages = messagingOn(messaging);
   const events = threadEvents(thread, lineScope(messaging));
+  // "All" opens on the last ten; the others are one click away
+  const hidden = segment === "all" && !showAll ? Math.max(0, events.length - ALL_LIMIT) : 0;
+  const shown = hidden > 0 ? events.slice(0, ALL_LIMIT) : events;
   const days: string[] = [];
   let day = "";
-  for (const event of events) {
+  for (const event of shown) {
     const label = dayLabel(event.at, now);
     if (label !== day) {
       day = label;
@@ -305,8 +314,12 @@ function body(thread: Thread, now: number, messaging: MessagingView): string {
       : segment === "messages"
         ? "thread.noMessages"
         : "thread.noEvents";
+  const more = hidden
+    ? `<button type="button" class="linkbtn thread-more" data-act="thread-more"
+               aria-label="${esc(tn("thread.moreAria", hidden))}">${esc(t("thread.more"))}</button>`
+    : "";
   const list = days.length
-    ? `<div class="thread-events" data-ref="thread-events">${days.join("")}</div>`
+    ? `<div class="thread-events" data-ref="thread-events" tabindex="-1">${days.join("")}${more}</div>`
     : `<p class="thread-none">${esc(t(none))}</p>`;
   const c = thread.contact;
   const block = c?.blocked
@@ -338,7 +351,8 @@ function body(thread: Thread, now: number, messaging: MessagingView): string {
   const write = withMessages && !thread.blocked && canWrite(messaging) ? composer(thread, messaging) : "";
   // the contact's actions come first: after a long history they would be out of sight.
   // Expanded, the conversation alone: the actions wait for the way back.
-  return `<div class="thread-body">${focused ? "" : actions}${withMessages ? segments() : ""}${list}${write}</div>`;
+  // The field to write sits above the list, against the most recent event.
+  return `<div class="thread-body">${focused ? "" : actions}${withMessages ? segments() : ""}${write}${list}</div>`;
 }
 
 function row(
@@ -559,7 +573,7 @@ function same(a: readonly unknown[], b: readonly unknown[]): boolean {
 }
 
 /** Redraws the list, putting the focus back where it was if it was inside. */
-function redraw(m: Mounted): void {
+function redraw(m: Mounted, keepScroll = false): void {
   const list = m.node.querySelector<HTMLElement>('[data-ref="thread-list"]');
   if (!list) return;
   const active = document.activeElement as HTMLElement | null;
@@ -581,9 +595,9 @@ function redraw(m: Mounted): void {
   redrawing = false;
   stage?.classList.toggle("focus", focused);
   m.signature = signature(app);
-  // the conversation reads from the bottom, where the writing field is
+  // the most recent event is at the top, under the writing field
   const events = list.querySelector<HTMLElement>('[data-ref="thread-events"]');
-  if (events) events.scrollTop = events.scrollHeight;
+  if (events && !keepScroll) events.scrollTop = 0;
   markRead();
   if (inFoot) foot?.querySelector<HTMLElement>('[data-act="thread-clear-all"]')?.focus();
   if (!inside) return;
@@ -735,6 +749,7 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
       case "thread-toggle": {
         openKey = openKey === key ? null : (key ?? null);
         renaming = null;
+        showAll = false;
         // folding the expanded line brings the other lines back
         if (!openKey) focused = false;
         const thread = threadOf(key);
@@ -810,8 +825,22 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
         return;
       case "thread-segment":
         segment = (key as Segment | undefined) ?? "all";
+        showAll = false;
         redraw(m);
         return;
+      case "thread-more": {
+        showAll = true;
+        // the list stays where it was read: the older events follow below
+        const events = stage.querySelector<HTMLElement>('[data-ref="thread-events"]');
+        const top = events?.scrollTop ?? 0;
+        redraw(m, true);
+        const after = stage.querySelector<HTMLElement>('[data-ref="thread-events"]');
+        if (after) {
+          after.scrollTop = top;
+          after.focus({ preventScroll: true });
+        }
+        return;
+      }
       case "thread-retry":
         if (id) trix.messaging.retry(id);
         return;

@@ -365,8 +365,9 @@ messages, one line per correspondent. On a phone it sits under the address field
 - **Lines are grouped** by the last exchange: *Today*, *Yesterday*, *This week*, *Older*,
   and *No exchange yet* for contacts you have not called.
 - **Unfold a line** to see, first, the contact's actions (add, rename, remove, block), then
-  their calls and messages day by day, oldest first, and the field to write. *All*,
-  *Calls* and *Messages* filter what is listed. Each call keeps its buttons: the
+  the field to write and, under it, their calls and messages day by day, most recent
+  first. *All* shows the last ten, and *More…* the rest; *Calls* and *Messages* filter
+  what is listed. Each call keeps its buttons: the
   conversation, the SIP trace and the media summary ([section 11](#11-diagnosing-a-call)).
 - **Search** filters on name, address or the text of a message, accents aside.
 - **Clear**, at the bottom, empties the call history — your contacts stay.

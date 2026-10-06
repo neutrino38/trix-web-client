@@ -1656,9 +1656,12 @@ fieldset.field { border: none; }
 .thread-day { display: flex; align-items: center; gap: 0.6rem; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); }
 .thread-day::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .thread-calls { display: flex; flex-direction: column; gap: 0.35rem; }
+.thread-more { align-self: center; margin-block-start: 0.25rem; }
+.thread-events:focus { outline: none; }
+.thread-events:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Messagerie (ADR 0008) : appels et messages mêlés, du plus ancien au plus
-   récent ; la liste défile seule, pour que le champ d'écriture reste en vue. */
+/* Messagerie (ADR 0008) : appels et messages mêlés, du plus récent au plus
+   ancien, sous le champ d'écriture ; la liste défile seule. */
 .thread-events {
   display: flex; flex-direction: column; gap: 0.35rem;
   max-height: 24rem; overflow-y: auto; padding-inline-end: 0.25rem;
@@ -1735,8 +1738,6 @@ fieldset.field { border: none; }
 .thread-focus .thread-head { border-bottom: 1px solid var(--border); }
 .thread-focus .thread-body { flex: 1; min-height: 0; padding: 0.75rem 1rem 0.9rem; }
 .thread-focus .thread-events { flex: 1; min-height: 0; max-height: none; }
-/* peu de messages : ils se posent en bas, contre le champ d'écriture */
-.thread-focus .thread-events::before { content: ""; margin-block-start: auto; }
 .thread-focus .thread-none { flex: 1; }
 .thread-focus .thread-compose textarea { resize: none; }
 
