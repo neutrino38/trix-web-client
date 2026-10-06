@@ -21,7 +21,7 @@
  * continue pendant qu'on réfléchit, et raccrocher doit rester possible.
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView } from "../../../core/index.js";
 import type { MediaKind } from "../../../sip/port.js";
 import { esc } from "../../el.js";
 import { ICONS, callerName } from "./parts.js";

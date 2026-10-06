@@ -30,8 +30,7 @@
  * noyau (`core/reachability.ts`, ADR 0011) ; ce module les dit.
  */
 
-import type { PhoneInstance } from "../machines/phone.js";
-import type { PageSleepReason } from "../core/platform.js";
+import type { PageSleepReason, Reachability, ReachabilityView, Trix } from "../core/index.js";
 import type { SessionStore } from "../storage/session.js";
 import { alertPermission } from "./alert.js";
 import { clearNotice, showNotice } from "./notify.js";
@@ -39,13 +38,7 @@ import { setFaviconState } from "./favicon.js";
 import { setTitleOverride } from "./title.js";
 import { t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
-import {
-  reachabilityOf,
-  reachabilityWanted,
-  unreachableReason,
-  type Reachability,
-  type UnreachableReason,
-} from "../core/reachability.js";
+import { unreachableReason, type UnreachableReason } from "../core/reachability.js";
 
 /** Sous ce seuil, ce n'est pas une absence : c'est une reconnexion (D2). */
 const NOTIFY_AFTER_MS = 10_000;
@@ -71,7 +64,7 @@ const NOTIF_BODY: Record<UnreachableReason, MsgKey> = {
   lost: "reach.notifLost",
 };
 
-let watched: PhoneInstance | null = null;
+let watched = false;
 let level: Reachability = "none";
 /** Début de l'épisode d'injoignabilité en cours, `0` quand il n'y en a pas. */
 let episodeSince = 0;
@@ -305,10 +298,8 @@ function endEpisode(): void {
   if (session!.alertPosted()) notifyBack();
 }
 
-function update(): void {
-  const phone = watched;
-  if (!phone) return;
-  level = reachabilityOf(phone.state);
+function update(r: ReachabilityView): void {
+  level = r.level;
   if (level === "direct") {
     session!.markReachable();
     endEpisode();
@@ -316,16 +307,20 @@ function update(): void {
     return;
   }
   disarmStamp();
-  if (reachabilityWanted(session!)) beginEpisode();
+  if (r.wanted) beginEpisode();
 }
 
 /**
- * Branche la joignabilité sur la machine. Idempotent : un second appel ne
- * double ni les abonnements ni les timers.
+ * Branche la joignabilité sur la vue du noyau. Idempotent : un second
+ * appel ne double ni les abonnements ni les timers.
+ *
+ * `store` est la session de l'instance — celle que `main.ts` a remise à
+ * `createTrix` : les marqueurs de ce module (dernier instant joignable,
+ * alerte posée, conseil d'épinglage) vivent à côté du marqueur de reprise.
  */
-export function watchReachability(phone: PhoneInstance, store: SessionStore): void {
+export function watchReachability(trix: Trix, store: SessionStore): void {
   if (watched) return;
-  watched = phone;
+  watched = true;
   session = store;
 
   discarded = discardedOnLoad(store.lastReachableAt());
@@ -352,6 +347,15 @@ export function watchReachability(phone: PhoneInstance, store: SessionStore): vo
     if (episodeSince !== 0 && Date.now() - episodeSince >= NOTIFY_AFTER_MS) notifyAway();
   });
 
-  phone.subscribe(update);
-  update();
+  // la vue ne change de référence que si elle change : un instantané qui
+  // ne touche pas à la joignabilité ne relance rien
+  let last: ReachabilityView | null = null;
+  const follow = (r: ReachabilityView): void => {
+    if (r === last) return;
+    last = r;
+    update(r);
+  };
+  trix.subscribe((view) => follow(view.reachability));
+  const first = trix.view();
+  if (first) follow(first.reachability);
 }

@@ -19,9 +19,7 @@
  * the focus back to the button.
  */
 
-import type { PresenceInstance } from "../machines/presence.js";
-import { publishedPresence } from "../machines/presence.js";
-import type { PhoneInstance } from "../machines/phone.js";
+import type { PresenceView, Trix, TrixView } from "../core/index.js";
 import type { Presence } from "../sip/pidf.js";
 import type { ChosenStatus } from "../storage/session.js";
 import { t } from "../i18n/index.js";
@@ -73,32 +71,16 @@ export function glyph(state: Glyph, size = 15, stale = false): string {
 }
 
 /** What the header shows of us: Invisible as such, otherwise what others see. */
-export function myGlyph(ctx: PresenceInstance["context"]): Glyph {
-  if (ctx.prefs.chosen === "invisible") return "invisible";
-  return publishedPresence(ctx.prefs, ctx.inCall, ctx.idle).state;
-}
-
-// ---- the instance the screens read ----------------------------------------
-
-let presence: PresenceInstance | null = null;
-
-/** Called once by `main.ts`: the screens read presence from here. */
-export function bindPresence(instance: PresenceInstance): void {
-  presence = instance;
-}
-
-/** The presence machine the screens read, once `main.ts` has bound it. */
-export function boundPresence(): PresenceInstance | null {
-  return presence;
+export function myGlyph(p: PresenceView): Glyph {
+  return p.prefs.chosen === "invisible" ? "invisible" : p.shown.state;
 }
 
 /**
  * The status button replaces the registration pill only while registered
  * and while the server takes SUBSCRIBE (D8): otherwise the pill of before.
  */
-function statusShown(phone: PhoneInstance): PresenceInstance | null {
-  if (!presence || presence.state !== "live") return null;
-  return phone.state === "ready" || phone.state === "in_call" ? presence : null;
+function statusShown(app: TrixView): PresenceView | null {
+  return app.presence.state === "live" && app.registration === "registered" ? app.presence : null;
 }
 
 /**
@@ -106,11 +88,10 @@ function statusShown(phone: PhoneInstance): PresenceInstance | null {
  * screen when it changes, and only then — contact presence does not move
  * the header.
  */
-export function headerKey(phone: PhoneInstance): string {
-  const p = statusShown(phone);
-  if (!p) return presence?.state ?? "";
-  const c = p.context;
-  return [p.state, myGlyph(c), c.prefs.note ?? "", c.support.publish].join("|");
+export function headerKey(app: TrixView): string {
+  const p = statusShown(app);
+  if (!p) return app.presence.state;
+  return [p.state, myGlyph(p), p.prefs.note ?? "", p.support.publish].join("|");
 }
 
 // ---- the button -------------------------------------------------------------
@@ -121,10 +102,10 @@ const MENU_ID = "status-menu";
  * The status button, or null when the registration pill must stay (D8).
  * `identity` is the account's address, shown after the status as before.
  */
-export function statusButton(phone: PhoneInstance, identity: string): string | null {
-  const p = statusShown(phone);
+export function statusButton(app: TrixView, identity: string): string | null {
+  const p = statusShown(app);
   if (!p) return null;
-  const g = myGlyph(p.context);
+  const g = myGlyph(p);
   return `<button type="button" class="pill statusbtn" data-ref="statusbtn"
       aria-haspopup="dialog" aria-expanded="${open ? "true" : "false"}" aria-controls="${MENU_ID}">
     ${glyph(g)}
@@ -138,9 +119,9 @@ export function statusButton(phone: PhoneInstance, identity: string): string | n
  * PUBLISH, being asleep also means being offline for the contacts: the
  * pill says so, rather than leave the user to believe they still show.
  */
-export function pillLabel(phone: PhoneInstance, label: string): string {
-  const seen = presence?.state === "stale" && presence.context.support.publish === true;
-  return phone.state === "sleeping" && seen ? t("status.sleepingSeen") : label;
+export function pillLabel(app: TrixView, label: string): string {
+  const seen = app.presence.state === "stale" && app.presence.support.publish === true;
+  return app.registration === "sleeping" && seen ? t("status.sleepingSeen") : label;
 }
 
 // ---- the menu ---------------------------------------------------------------
@@ -155,9 +136,9 @@ const CHOICES: readonly { status: ChosenStatus; glyph: Glyph; hint?: MsgKey }[] 
 
 const TICK = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-/** The menu's markup, from the machine's context alone. */
-export function statusMenuHtml(ctx: PresenceInstance["context"]): string {
-  const { prefs } = ctx;
+/** The menu's markup, from the view's presence alone. */
+export function statusMenuHtml(p: PresenceView): string {
+  const { prefs } = p;
   const items = CHOICES.map((c) => {
     const on = prefs.chosen === c.status;
     return `<button type="button" role="menuitemradio" aria-checked="${on}" tabindex="${on ? 0 : -1}"
@@ -172,7 +153,7 @@ export function statusMenuHtml(ctx: PresenceInstance["context"]): string {
     `<label class="statusrule"><input type="checkbox" data-rule="${name}" ${prefs[name] ? "checked" : ""}>
       <span>${esc(t(label))}${hint ? `<span class="sub">${esc(t(hint))}</span>` : ""}</span></label>`;
   return `<div id="${MENU_ID}" class="statusmenu" role="dialog" aria-label="${esc(t("presenceMenu.label"))}">
-    ${ctx.support.publish === false ? `<p class="statusnote-off">${esc(t("presenceMenu.noPublish"))}</p>` : ""}
+    ${p.support.publish === false ? `<p class="statusnote-off">${esc(t("presenceMenu.noPublish"))}</p>` : ""}
     <div class="sect" id="status-seen">${esc(t("presenceMenu.seen"))}</div>
     <div role="menu" aria-labelledby="status-seen">${items}</div>
     <hr>
@@ -231,28 +212,29 @@ export function closeStatusMenu(focusButton = false): void {
   }
 }
 
-function openStatusMenu(): void {
-  if (!presence || open) return;
-  const p = presence;
+function openStatusMenu(trix: Trix): void {
+  const shown = trix.view()?.presence;
+  if (!shown || open) return;
   open = true;
   layer = document.createElement("div");
   layer.className = "statuslayer";
-  layer.innerHTML = statusMenuHtml(p.context);
+  layer.innerHTML = statusMenuHtml(shown);
   document.body.append(layer);
   place();
   button()?.setAttribute("aria-expanded", "true");
 
   const items = () => Array.from(layer!.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
   const choose = (status: ChosenStatus) => {
-    p.send({ type: "ui:setStatus", status });
+    trix.presence.setStatus(status);
     // D11: our own change answers a gesture, so it is said out loud
-    announce(t("announce.statusChanged", { status: t(GLYPH_LABEL[myGlyph(p.context)]) }));
+    const now = trix.view()!.presence;
+    announce(t("announce.statusChanged", { status: t(GLYPH_LABEL[myGlyph(now)]) }));
     closeStatusMenu(true);
   };
   const note = layer.querySelector<HTMLInputElement>("#status-note")!;
   const commitNote = () => {
     const value = note.value.trim() || null;
-    if (value !== p.context.prefs.note) p.send({ type: "ui:setNote", note: value });
+    if (value !== trix.view()!.presence.prefs.note) trix.presence.setNote(value);
   };
 
   const onClick = (e: MouseEvent) => {
@@ -268,7 +250,7 @@ function openStatusMenu(): void {
   const onChange = (e: Event) => {
     const box = e.target as HTMLInputElement;
     if (box.dataset.rule) {
-      p.send({ type: "ui:setRule", rule: box.dataset.rule as "onThePhone" | "awayWhenIdle", on: box.checked });
+      trix.presence.setRule(box.dataset.rule as "onThePhone" | "awayWhenIdle", box.checked);
     } else if (box === note) {
       commitNote();
     }
@@ -329,7 +311,7 @@ function openStatusMenu(): void {
  * menu anchored to it — or close it if the button is gone (the phone left
  * `ready`, the server refused SUBSCRIBE).
  */
-export function wireStatusButton(root: ParentNode): void {
+export function wireStatusButton(root: ParentNode, trix: Trix): void {
   const b = root.querySelector<HTMLElement>('[data-ref="statusbtn"]');
   if (!b) {
     closeStatusMenu();
@@ -339,11 +321,11 @@ export function wireStatusButton(root: ParentNode): void {
     refocus = false;
     queueMicrotask(() => b.focus());
   }
-  b.addEventListener("click", () => (open ? closeStatusMenu(true) : openStatusMenu()));
+  b.addEventListener("click", () => (open ? closeStatusMenu(true) : openStatusMenu(trix)));
   b.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown" && !open) {
       e.preventDefault();
-      openStatusMenu();
+      openStatusMenu(trix);
     }
   });
   if (open) queueMicrotask(place);

@@ -7,7 +7,7 @@
  * `wireCallScreen` (parts.ts), partagé avec la vue mobile.
  */
 
-import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
+import type { Trix, TrixView } from "../../../core/index.js";
 import { el, esc } from "../../el.js";
 import { trixIcon } from "../../logo.js";
 import { pillLabel, statusButton } from "../../presence.js";
@@ -39,30 +39,31 @@ import {
   draft,
   fmtChrono,
   isSpeakerMuted,
+  canDial,
   reachBanner,
   statusOf,
   switchButton,
 } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
-export function renderDesktop(phone: PhoneInstance): HTMLElement {
-  const cfg = activeAccount(phone.context);
-  const view = phone.state === "in_call" ? phone.context.call : null;
-  const status = statusOf(phone.state);
+export function renderDesktop(app: TrixView, trix: Trix): HTMLElement {
+  const cfg = app.account;
+  const view = app.call;
+  const status = statusOf(app.registration);
   const identity = cfg ? ` — ${esc(cfg.username)}@${esc(cfg.domain)}` : "";
-  const failed = phone.state === "reg_failed";
-  const ready = phone.state === "ready";
-  const reconnecting = phone.state === "reconnecting";
-  const offline = phone.state === "offline";
-  const sleeping = phone.state === "sleeping";
+  const failed = app.registration === "failed";
+  const ready = canDial(app);
+  const reconnecting = app.registration === "reconnecting";
+  const offline = app.registration === "offline";
+  const sleeping = app.registration === "sleeping";
   const connected = view?.state === "connected";
   // the SIP trace's box also opens the media stats (call/stats.ts)
-  const traced = phone.context.trace.enabled();
+  const traced = trix.system.trace.enabled();
   const incoming = view?.state === "ringing_in";
   const speakerMuted = isSpeakerMuted();
-  const err = phone.context.lastError;
-  const errCode = phone.context.lastErrorCode;
-  const callError = phone.context.callError;
+  const err = app.errors.last;
+  const errCode = app.errors.code;
+  const callError = app.errors.call;
   const width = panelWidth();
   // Le repli ne vaut qu'en communication : hors appel le panneau porte le
   // composeur, et pendant la sonnerie les boutons de réponse — le masquer
@@ -70,7 +71,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
   // (la barre de surimpression n'existe pas dans ces deux états).
   const collapsed = !!view && !incoming && panelCollapsed();
   // a deployment without text has no chat for the folded panel to promise
-  const withChat = phone.context.deployment.rtt !== "none";
+  const withChat = app.deployment.rtt !== "none";
   // Le tchat n'existe que si le texte est **négocié** (§4.9) : compte sans
   // texte, appel qui n'a pas encore de session (sonnerie entrante),
   // correspondant qui n'a pas suivi — dans tous ces cas la sidebar reste
@@ -128,9 +129,9 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
           // En appel, la pastille de l'appel suffit — comme sur mobile.
           view
             ? ""
-            : (statusButton(phone, cfg ? `${cfg.username}@${cfg.domain}` : "") ??
+            : (statusButton(app, cfg ? `${cfg.username}@${cfg.domain}` : "") ??
               `<span class="pill"><span class="dot ${status.cls}"></span>
-                ${esc(pillLabel(phone, status.label))}${ready ? identity : ""}</span>`)
+                ${esc(pillLabel(app, status.label))}${ready ? identity : ""}</span>`)
         }
         ${
           // en communication, la pastille découvre les statistiques média
@@ -154,7 +155,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
         <!-- La bascule de compte, avant Paramètres : elle ne change pas les
              réglages, elle change d'identité (ADR 0002, décision 4). Absente
              tant qu'il n'y a qu'un compte. -->
-        ${switchButton(phone, view !== null)}
+        ${switchButton(app, view !== null)}
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="prefs" ${view ? "disabled" : ""}
                 title="${esc(t("config.section.alerts") + (view ? t("action.unavailableInCall") : ""))}"
                 aria-label="${esc(t("config.section.alerts"))}">
@@ -174,7 +175,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
       <!-- La joignabilité (ADR 0006, D2) : sous la barre et au-dessus de la
            scène, parce qu'elle ne parle ni de l'appel en cours ni du compte,
            mais de la seule chose qu'un téléphone doit garantir. -->
-      ${reachBanner(phone)}
+      ${reachBanner(app)}
       <!-- pendant la sonnerie, la popup est la seule chose à laquelle répondre :
            \`inert\` retire tout le reste de l'écran au clavier comme à la souris,
            ce que \`aria-modal\` ne dit qu'aux lecteurs d'écran -->
@@ -186,7 +187,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
             !view
               ? // au repos, le fil Échanges tient la scène (ADR 0007, D10) ; ce
                 // que le téléphone a à dire se pose au-dessus de lui
-                threadStage(phone, restNotice)
+                threadStage(app, restNotice)
               : stageChat
               ? chatStage({
                   peer: callerName(view),
@@ -262,7 +263,7 @@ export function renderDesktop(phone: PhoneInstance): HTMLElement {
                 cfg && !view
                   ? `<span class="hint">${t("call.domainHint", { domain: esc(cfg.domain) })}</span>
                      <span class="hint contact" data-ref="contacthint" aria-live="polite">${esc(
-                       contactHint(phone, draft()),
+                       contactHint(app, draft()),
                      )}</span>`
                   : ""
               }

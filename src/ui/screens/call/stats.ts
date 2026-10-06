@@ -32,7 +32,6 @@
  * comme le carnet, et non en encart qui suit la souris.
  */
 
-import type { CallSession } from "../../../sip/port.js";
 import {
   STATS_WINDOW_MS,
   SYNC_LIMIT_MS,
@@ -374,7 +373,7 @@ export function stopMediaStats(): void {
  * identifie l'appel (son instant de décrochage) : l'encart fixé pendant le
  * précédent ne se rouvre pas tout seul sur le suivant.
  */
-export function startMediaStats(node: HTMLElement, session: CallSession, key: number): void {
+export function startMediaStats(node: HTMLElement, measure: () => MediaStats | null, key: number): void {
   stopMediaStats();
   if (key !== openedFor) {
     openedFor = key;
@@ -393,7 +392,7 @@ export function startMediaStats(node: HTMLElement, session: CallSession, key: nu
     else stopMediaStats(); // l'écran a été re-rendu : cette boucle meurt
   };
   const draw = (): void => {
-    if (!card.hidden) card.innerHTML = statsCardHtml(session.mediaStats());
+    if (!card.hidden) card.innerHTML = statsCardHtml(measure());
   };
   /**
    * Ouverture, fermeture, et la boucle de rafraîchissement avec : un encart

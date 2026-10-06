@@ -64,7 +64,7 @@
  * interdit.
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView } from "../../../core/index.js";
 import { canShareScreen, isLastMedia, type MediaKind } from "../../../sip/port.js";
 import type { MsgKey } from "../../../i18n/types.js";
 import { ICONS, ICONS_OFF } from "./parts.js";

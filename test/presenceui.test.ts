@@ -6,14 +6,13 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { useLocale } from "../src/i18n/index.js";
-import { PresenceMachine, type PresenceInstance } from "../src/machines/presence.js";
-import type { PhoneInstance } from "../src/machines/phone.js";
+import type { PresenceState, PresenceView, Registration, TrixView } from "../src/core/index.js";
+import { PresenceMachine, publishedPresence, type PresenceInstance } from "../src/machines/presence.js";
 import type { SipHandle } from "../src/sip/port.js";
 import { NO_PRESENCE } from "../src/sip/presence.js";
 import { NO_MESSAGING } from "../src/sip/message.js";
 import {
   GLYPH_LABEL,
-  bindPresence,
   glyph,
   headerKey,
   myGlyph,
@@ -27,7 +26,23 @@ beforeAll(async () => {
   await useLocale("fr");
 });
 
-const phoneIn = (state: string) => ({ state }) as unknown as PhoneInstance;
+const STATE: Record<string, PresenceState> = { live: "live", no_watch: "noWatch", stale: "stale", disabled: "disabled" };
+
+/** The machine as the view shows it (`core/view.ts`): the screens read nothing else. */
+function viewOf(p: PresenceInstance): PresenceView {
+  const c = p.context;
+  return {
+    state: STATE[p.state] ?? "off",
+    prefs: c.prefs,
+    shown: publishedPresence(c.prefs, c.inCall, c.idle),
+    support: c.support,
+    contacts: c.contacts,
+  };
+}
+
+/** What the header reads of the view: the registration, and our presence. */
+const appIn = (registration: Registration, p: PresenceInstance) =>
+  ({ registration, presence: viewOf(p) }) as TrixView;
 
 function presenceLive(): PresenceInstance {
   const presence = PresenceMachine.start();
@@ -61,7 +76,7 @@ describe("glyphs (D11)", () => {
 
 describe("myGlyph", () => {
   const ctx = (over: Partial<PresenceInstance["context"]>) =>
-    ({ prefs: DEFAULT_STATUS, inCall: false, idle: false, ...over }) as PresenceInstance["context"];
+    viewOf({ state: "live", context: { prefs: DEFAULT_STATUS, inCall: false, idle: false, ...over } } as PresenceInstance);
 
   it("what others see, rules applied", () => {
     expect(myGlyph(ctx({ inCall: true }))).toBe("on-the-phone");
@@ -75,39 +90,34 @@ describe("myGlyph", () => {
 
 describe("the status button (D8)", () => {
   it("replaces the pill when registered and presence is live", () => {
-    bindPresence(presenceLive());
-    const html = statusButton(phoneIn("ready"), "alice@example.fr")!;
+    const html = statusButton(appIn("registered", presenceLive()), "alice@example.fr")!;
     expect(html).toContain("Disponible");
     expect(html).toContain("alice@example.fr");
     expect(html).toContain('aria-haspopup="dialog"');
-    expect(statusButton(phoneIn("in_call"), "")).not.toBeNull();
   });
 
-  it.each(["connecting", "reconnecting", "sleeping", "reg_failed"])("not while %s", (state) => {
-    bindPresence(presenceLive());
-    expect(statusButton(phoneIn(state), "")).toBeNull();
+  it.each<Registration>(["connecting", "reconnecting", "sleeping", "failed"])("not while %s", (registration) => {
+    expect(statusButton(appIn(registration, presenceLive()), "")).toBeNull();
   });
 
   it("not when the server refused SUBSCRIBE: the pill of before", () => {
     const presence = presenceLive();
     presence.send({ type: "sip:presenceSupport", method: "subscribe", supported: false });
-    bindPresence(presence);
-    expect(statusButton(phoneIn("ready"), "")).toBeNull();
+    expect(statusButton(appIn("registered", presence), "")).toBeNull();
   });
 
   it("the header key follows our status, not our contacts", () => {
     const presence = presenceLive();
-    bindPresence(presence);
-    const before = headerKey(phoneIn("ready"));
+    const before = headerKey(appIn("registered", presence));
     presence.send({
       type: "sip:presence",
       uri: "sip:bob@example.fr",
       info: { state: "busy", note: null, since: null },
       pending: false,
     });
-    expect(headerKey(phoneIn("ready"))).toBe(before);
+    expect(headerKey(appIn("registered", presence))).toBe(before);
     presence.send({ type: "ui:setStatus", status: "busy" });
-    expect(headerKey(phoneIn("ready"))).not.toBe(before);
+    expect(headerKey(appIn("registered", presence))).not.toBe(before);
   });
 });
 
@@ -115,7 +125,7 @@ describe("the menu (D5)", () => {
   it("five statuses, the chosen one checked and alone in the tab order", () => {
     const presence = presenceLive();
     presence.send({ type: "ui:setStatus", status: "away" });
-    const html = statusMenuHtml(presence.context);
+    const html = statusMenuHtml(viewOf(presence));
     expect(html.match(/role="menuitemradio"/g)).toHaveLength(5);
     expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
     expect(html).toMatch(/aria-checked="true" tabindex="0"[^>]*data-status="away"/);
@@ -123,7 +133,7 @@ describe("the menu (D5)", () => {
   });
 
   it("says what Do not disturb does to calls", () => {
-    const html = statusMenuHtml(presenceLive().context);
+    const html = statusMenuHtml(viewOf(presenceLive()));
     expect(html).toContain("Les appels entrants sont refusés et notés dans l'historique");
   });
 
@@ -131,7 +141,7 @@ describe("the menu (D5)", () => {
     const presence = presenceLive();
     presence.send({ type: "ui:setNote", note: `<b>"Lyon"</b>` });
     presence.send({ type: "ui:setRule", rule: "awayWhenIdle", on: false });
-    const html = statusMenuHtml(presence.context);
+    const html = statusMenuHtml(viewOf(presence));
     expect(html).toContain('value="&lt;b&gt;&quot;Lyon&quot;&lt;/b&gt;"');
     expect(html).toMatch(/data-rule="onThePhone" checked/);
     expect(html).toMatch(/data-rule="awayWhenIdle" >/);
@@ -139,8 +149,8 @@ describe("the menu (D5)", () => {
 
   it("says so when the server does not take PUBLISH", () => {
     const presence = presenceLive();
-    expect(statusMenuHtml(presence.context)).not.toContain("ne diffuse pas");
+    expect(statusMenuHtml(viewOf(presence))).not.toContain("ne diffuse pas");
     presence.send({ type: "sip:presenceSupport", method: "publish", supported: false });
-    expect(statusMenuHtml(presence.context)).toContain("Ce serveur ne diffuse pas votre statut");
+    expect(statusMenuHtml(viewOf(presence))).toContain("Ce serveur ne diffuse pas votre statut");
   });
 });

@@ -10,7 +10,7 @@
 | Bundler / dev server | **Vite** + TypeScript strict | standard, HMR, build ESM |
 | Logique applicative | **finite-state-language** (FSL) v0.2.x | machines à états typées, blocs de service (SBB), diagrammes extraits des sources, zéro dépendance, ESM |
 | Signalisation SIP | **JsSIP** | SIP over WSS, support `ha1`/`realm` natif, RTCSession |
-| UI | **TypeScript vanilla** (DOM direct, rendu piloté par `instance.subscribe()`) | 3 écrans seulement ; évite React ; bundle minimal ; le hook `finite-state-language/react` reste une porte de sortie si l'UI se complexifie |
+| UI | **TypeScript vanilla** (DOM direct, rendu piloté par `trix.subscribe()`, ADR 0011) | 3 écrans seulement ; évite React ; bundle minimal ; le hook `finite-state-language/react` reste une porte de sortie si l'UI se complexifie |
 | Tests | Vitest + fake timers | même outillage que FSL lui-même |
 
 FSL est ESM only et exige des handlers synchrones (l'async passe par `fx.task`/`fx.delay`) —
@@ -26,8 +26,10 @@ connected / call_failed`), à transposer sur JsSIP.
 ┌───────────────────────────────────────────────┐
 │ UI (vanilla TS)                               │
 │  screens/home  screens/config  screens/call   │
-│        │  render(snapshot)        ▲           │
-│        ▼                          │subscribe  │
+│        │  commandes          ▲ TrixView       │
+│        ▼                     │ subscribe      │
+├───────────────────────────────────────────────┤
+│ Façade core/index.ts : createTrix (ADR 0011)  │
 ├───────────────────────────────────────────────┤
 │ Machines FSL                                  │
 │  PhoneMachine ──fx.sbb──► CallBlock (l'appel) │
@@ -44,8 +46,11 @@ connected / call_failed`), à transposer sur JsSIP.
 ```
 
 Principes :
-- **La UI ne parle jamais à JsSIP.** Elle envoie des événements `ui:*` à la machine et re-rend
-  sur chaque snapshot (`state` + `context`).
+- **La UI ne parle jamais à JsSIP, ni aux automates.** Elle appelle les commandes de la façade
+  (`trix.call.dial()`…), qui les traduisent en événements `ui:*`, et re-rend sur chaque
+  instantané de la vue (`TrixView`) — jamais sur un nom d'état FSL ni sur le contexte d'une
+  machine (ADR 0011, D2 et D3). `test/layers.test.ts` refuse tout import de `machines/` depuis
+  `ui/` et `main.ts`.
 - **JsSIP ne décide de rien.** Le binding (~50 lignes) convertit les callbacks JsSIP en
   événements `sip:*` envoyés à la machine ; les objets `UA` et `RTCSession` vivent dans le
   contexte des machines.

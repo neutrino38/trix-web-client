@@ -1,11 +1,11 @@
-import type { PhoneInstance } from "../../machines/phone.js";
+import type { Trix, TrixView } from "../../core/index.js";
 import { el, esc } from "../el.js";
 import { trixIcon } from "../logo.js";
 import { t } from "../../i18n/index.js";
 import { APP_VERSION } from "../../version.js";
 
 /**
- * The vault could not be read (`vault_error`). This screen exists so that
+ * The vault could not be read (phase `vaultError`). This screen exists so that
  * an unreadable vault never looks like an empty one: the home screen would
  * offer to create an account, and saving it would overwrite the ones that
  * are only unreadable.
@@ -16,8 +16,8 @@ import { APP_VERSION } from "../../version.js";
  * locked out for good; like deleting an account, it takes two clicks, the
  * second on a label that says what goes.
  */
-export function renderVaultError(phone: PhoneInstance): HTMLElement {
-  const err = phone.context.lastError;
+export function renderVaultError(app: TrixView, trix: Trix): HTMLElement {
+  const err = app.errors.last;
   const node = el(`
     <div class="screen-home">
       <div>
@@ -34,11 +34,11 @@ export function renderVaultError(phone: PhoneInstance): HTMLElement {
     </div>`);
   node
     .querySelector('[data-act="retry"]')!
-    .addEventListener("click", () => phone.send({ type: "ui:retryVault" }));
+    .addEventListener("click", () => trix.accounts.retryVault());
   const reset = node.querySelector<HTMLButtonElement>('[data-act="reset"]')!;
   reset.addEventListener("click", () => {
     if (reset.dataset.armed === "yes") {
-      phone.send({ type: "ui:resetVault" });
+      trix.accounts.resetVault();
       return;
     }
     reset.dataset.armed = "yes";

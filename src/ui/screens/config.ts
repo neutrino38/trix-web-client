@@ -1,11 +1,9 @@
-import { editedAccount, type PhoneInstance } from "../../machines/phone.js";
 import { parseSipUri } from "../../sip/uri.js";
 import { el, esc } from "../el.js";
-import type { SuspectField } from "../../machines/events.js";
+import type { SuspectField, Trix, TrixView } from "../../core/index.js";
 import { t } from "../../i18n/index.js";
 import type { Msg } from "../../i18n/types.js";
 import { DEFAULT_RTT_TRANSPORT, RTT_TRANSPORTS, type RttTransport } from "../../sip/rtt.js";
-import { shareUrl } from "../../share/link.js";
 import { showToast } from "../toast.js";
 import { RTT_LABELS } from "../rttlabels.js";
 
@@ -51,21 +49,21 @@ function showShareFallback(node: HTMLElement, link: string): void {
  */
 const URI_USER = "user";
 
-export function renderConfig(phone: PhoneInstance): HTMLElement {
+export function renderConfig(app: TrixView, trix: Trix): HTMLElement {
   // Le compte que le formulaire modifie — pas forcément l'actif : on
   // corrige le compte au repos pendant que l'autre est enregistré
   // (machines/phone.ts). `null` en création.
-  const cfg = editedAccount(phone.context);
-  const saving = phone.state === "saving" || phone.state === "deleting";
-  const err = phone.context.lastError;
-  const errCode = phone.context.lastErrorCode;
-  const suspect = phone.context.suspectFields;
+  const cfg = app.settings?.editing ?? null;
+  const saving = (app.settings?.busy ?? null) !== null;
+  const err = app.errors.last;
+  const errCode = app.errors.code;
+  const suspect = app.settings?.suspect ?? null;
   // "Mot de passe requis" (validation locale) ne vise que le mot de passe.
   // `data-suspect` reste sur le champ : c'est par lui que le surlignage se
   // repose après un échec, sans re-rendre l'écran (`refreshError`).
   const inv = (f: SuspectField): string =>
     ` data-suspect="${f}"${suspect === f ? ' class="invalid"' : ""}`;
-  const turn = cfg?.ice.turn ?? null;
+  const turn = cfg?.turn ?? null;
   /**
    * Ce que l'exploitant a fixé dans `config.json` (src/deployment.ts) :
    * chaque réglage imposé **disparaît** d'ici plutôt que de s'afficher
@@ -74,7 +72,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    * vite. La machine, elle, ne lit pas davantage ces champs : ce qui suit
    * est de l'affichage, pas de la sécurité (machines/phone.ts).
    */
-  const dep = phone.context.deployment;
+  const dep = app.deployment;
   const uriValue = cfg
     ? `${cfg.username}@${cfg.domain}`
     : dep.domain
@@ -95,7 +93,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
           <div class="field">
             <label for="f-stun">${esc(t("config.stun"))}</label>
             <input id="f-stun" name="stun" autocomplete="off" placeholder="${esc(t("config.stunPlaceholder"))}"
-                   value="${cfg?.ice.stun ? esc(cfg.ice.stun) : ""}"${inv("stun")}>
+                   value="${cfg?.stun ? esc(cfg.stun) : ""}"${inv("stun")}>
             <span class="hint">${esc(t("config.stunHint"))}</span>
           </div>
           <div class="field">
@@ -138,7 +136,7 @@ export function renderConfig(phone: PhoneInstance): HTMLElement {
    */
   const advancedOpen =
     cfg?.authUsername != null ||
-    cfg?.ice.stun != null ||
+    cfg?.stun != null ||
     turn !== null ||
     suspect === "stun" ||
     suspect === "turn";
@@ -260,7 +258,7 @@ ${natSection}
             ? `<h3>${esc(t("config.section.diag"))}</h3>
         <div class="field">
           <label class="checkline" for="f-siptrace">
-            <input type="checkbox" id="f-siptrace" ${phone.context.trace.enabled() ? "checked" : ""}>
+            <input type="checkbox" id="f-siptrace" ${trix.system.trace.enabled() ? "checked" : ""}>
             <span><b>${esc(t("config.traceLabel"))}</b>${esc(t("config.traceDesc"))}</span>
           </label>
           <span class="hint">${esc(t("config.traceHint"))}</span>
@@ -322,32 +320,30 @@ ${natSection}
     const turnPass = v("turnPassword");
     const authUsername = authToggle.checked ? v("authUsername") : "";
     const rtt = form.querySelector<HTMLInputElement>('input[name="rtt"]:checked');
-    phone.send({
-      type: "ui:saveConfig",
-      form: {
-        proxy: v("proxy"),
-        uri: v("uri"),
-        displayName: v("displayName"),
-        authUsername: authUsername === "" ? null : authUsername,
-        password: password === "" ? null : password,
-        stun: v("stun"),
-        turn: v("turn"),
-        turnUsername: v("turnUsername"),
-        turnPassword: turnPass === "" ? null : turnPass,
-        turnTls: turnTls?.checked ?? false,
-        rtt: (rtt?.value as RttTransport | undefined) ?? DEFAULT_RTT_TRANSPORT,
-      },
+    trix.accounts.save({
+      proxy: v("proxy"),
+      uri: v("uri"),
+      displayName: v("displayName"),
+      authUsername: authUsername === "" ? null : authUsername,
+      password: password === "" ? null : password,
+      stun: v("stun"),
+      turn: v("turn"),
+      turnUsername: v("turnUsername"),
+      turnPassword: turnPass === "" ? null : turnPass,
+      turnTls: turnTls?.checked ?? false,
+      rtt: (rtt?.value as RttTransport | undefined) ?? DEFAULT_RTT_TRANSPORT,
     });
     // refusée, la soumission laisse la machine où elle est : c'est ici, et
     // nulle part ailleurs, que l'écran apprend pourquoi
     refreshError();
   });
 
-  /** Repose le bandeau et le surlignage sur ce que la machine vient de dire. */
+  /** Repose le bandeau et le surlignage sur ce que le noyau vient de dire. */
   function refreshError(): void {
+    const now = trix.view()!;
     const slot = form.querySelector('[data-ref="errslot"]')!;
-    slot.innerHTML = errorSlot(phone.context.lastError, phone.context.lastErrorCode);
-    const bad = phone.context.suspectFields;
+    slot.innerHTML = errorSlot(now.errors.last, now.errors.code);
+    const bad = now.settings?.suspect ?? null;
     for (const field of form.querySelectorAll<HTMLElement>("[data-suspect]")) {
       field.classList.toggle("invalid", field.dataset.suspect === bad);
     }
@@ -378,7 +374,7 @@ ${natSection}
   // registrar et ne doit pas attendre l'enregistrement pour s'allumer —
   // le socket relit ce réglage à chaque paquet
   const traceToggle = node.querySelector<HTMLInputElement>("#f-siptrace");
-  traceToggle?.addEventListener("change", () => phone.context.trace.set(traceToggle.checked));
+  traceToggle?.addEventListener("change", () => trix.system.trace.set(traceToggle.checked));
 
   // la mention « si différent de … » suit le userpart de l'URI en cours de saisie
   const uriInput = form.querySelector("#f-uri") as HTMLInputElement;
@@ -397,7 +393,7 @@ ${natSection}
   }
   node
     .querySelector('[data-act="cancel"]')!
-    .addEventListener("click", () => phone.send({ type: "ui:cancelConfig" }));
+    .addEventListener("click", () => trix.accounts.cancel());
 
   /**
    * Le lien de partage, copié dans le presse-papier. Il est fabriqué à
@@ -410,7 +406,8 @@ ${natSection}
    * rien : le lien s'affiche alors, sélectionné, à copier à la main.
    */
   node.querySelector('[data-act="share"]')?.addEventListener("click", () => {
-    const link = shareUrl(cfg!, location.href);
+    const link = trix.accounts.shareUrl(location.href);
+    if (!link) return;
     void navigator.clipboard
       ?.writeText(link)
       .then(() => showToast(t("config.shareCopied")))
@@ -432,7 +429,7 @@ ${natSection}
   };
   deleteBtn?.addEventListener("click", () => {
     if (deleteBtn.dataset.armed === "yes") {
-      phone.send({ type: "ui:deleteAccount" });
+      trix.accounts.remove();
       return;
     }
     deleteBtn.dataset.armed = "yes";

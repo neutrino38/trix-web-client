@@ -3,7 +3,7 @@
  * checked always ends up no longer true.
  *
  * The core (`machines/`, `sip/`, `storage/`, `core/`, `deployment.ts`,
- * `accounts.ts`, `i18n/types.ts`) is what an affiliated project builds its
+ * `accounts.ts`, `i18n/types.ts`, `share/link.ts`) is what an affiliated project builds its
  * own UI on. It must therefore:
  *
  * - import nothing but the core itself, and npm packages an affiliate gets
@@ -25,6 +25,11 @@
  * The source is read as TypeScript syntax, not searched as text: the word
  * `Notification` in an IMDN header name or in a comment is not a violation.
  *
+ * The UI (`ui/`, `main.ts`) is the first client of the core, and must be
+ * one like any other (D2, D3): it reads the view and sends the facade's
+ * commands, never a machine. It imports nothing from `machines/` — not even
+ * a type, which the facade re-exports.
+ *
  * Known violations are listed in `KNOWN`, each with the decision that will
  * remove it. The list must match exactly: a new violation fails, and so does
  * an entry that no longer occurs — fixing one means crossing it off here.
@@ -41,7 +46,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 function isCore(file: string): boolean {
   return (
     /^src\/(machines|sip|storage|core)\//.test(file) ||
-    ["src/deployment.ts", "src/accounts.ts", "src/i18n/types.ts"].includes(file)
+    ["src/deployment.ts", "src/accounts.ts", "src/i18n/types.ts", "src/share/link.ts"].includes(file)
   );
 }
 
@@ -151,6 +156,42 @@ function moduleState(file: string, source: string): string[] {
   });
 }
 
+/** Is this file part of Trix's own UI? */
+function isUi(file: string): boolean {
+  return file.startsWith("src/ui/") || file === "src/main.ts";
+}
+
+/** The modules a file imports, statically, dynamically or as types — repo-relative. */
+function importsOf(file: string, source: string): string[] {
+  const found = new Set<string>();
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const visit = (node: ts.Node) => {
+    let spec: string | null = null;
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
+      if (ts.isStringLiteral(node.moduleSpecifier)) spec = node.moduleSpecifier.text;
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      spec = node.arguments[0].text;
+    } else if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    ) {
+      spec = node.argument.literal.text;
+    }
+    if (spec?.startsWith(".")) {
+      found.add(posix.normalize(posix.join(posix.dirname(file), spec)).replace(/\.js$/, ".ts"));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return [...found].sort();
+}
+
 /** Every `.ts` file under `src/`, repo-relative. */
 function sources(dir = join(ROOT, "src")): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -198,6 +239,26 @@ describe("layers (ADR 0011, D1)", () => {
       if (names.length) actual[file] = names;
     }
     expect(actual).toEqual(MODULE_STATE);
+  });
+
+  it("the UI reaches the core through the facade, never a machine (D2, D3)", () => {
+    const actual: Record<string, string[]> = {};
+    for (const file of sources().filter(isUi)) {
+      const machines = importsOf(file, readFileSync(join(ROOT, file), "utf8")).filter((f) =>
+        f.startsWith("src/machines/"),
+      );
+      if (machines.length) actual[file] = machines;
+    }
+    expect(actual).toEqual({});
+  });
+
+  it("sees an import of a machine from the UI, type-only included", () => {
+    expect(importsOf("src/ui/x.ts", `import type { PhoneInstance } from "../machines/phone.js";`)).toEqual([
+      "src/machines/phone.ts",
+    ]);
+    expect(importsOf("src/ui/screens/x.ts", `let v: import("../../machines/events.js").CallView;`)).toEqual([
+      "src/machines/events.ts",
+    ]);
   });
 
   it("sees a top-level let, not a const nor a local one", () => {

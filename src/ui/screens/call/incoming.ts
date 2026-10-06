@@ -16,7 +16,7 @@
  * reste le signal principal pour un public sourd.
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView } from "../../../core/index.js";
 import { esc } from "../../el.js";
 import { callProfile } from "../../../core/callmodes.js";
 import { ICONS, answerChoices, callerName, displayTarget } from "./parts.js";

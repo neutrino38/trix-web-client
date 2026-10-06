@@ -4,20 +4,18 @@
  * notification when the tab is hidden, an announcement for screen
  * readers, and — during a call — the badge at the top of the screen.
  *
- * One watcher on MessagingMachine, which compares what it had with what
- * it has: a message or a held sender it had not seen is news. The first
- * look once the account's vault is read only takes stock — what was in
- * the vault is not news.
+ * One watcher on the view, which compares what it had with what it has: a
+ * message or a held sender it had not seen is news. The first look once
+ * the account's vault is read only takes stock — what was in the vault is
+ * not news.
  *
- * The badge lives outside `#app`, like the announcement region: the call
- * screen is rebuilt on phone transitions only, and a message moves no
- * phone state. It opens nothing and leaves nothing: it says there is
- * something to read at the hang-up.
+ * The badge lives outside `#app`, like the announcement region: it stays
+ * put while the call screen is rebuilt under it. It opens nothing and
+ * leaves nothing: it says there is something to read at the hang-up.
  */
 
 import { t, tn } from "../i18n/index.js";
-import type { MessagingInstance } from "../machines/messaging.js";
-import type { PhoneInstance } from "../machines/phone.js";
+import type { Trix, TrixView } from "../core/index.js";
 import { addressKey } from "../sip/uri.js";
 import type { MessageEntry } from "../storage/store.js";
 import { announce } from "./announce.js";
@@ -61,46 +59,37 @@ function showBadge(text: string | null): void {
   badge.textContent = text;
 }
 
-/** Wires the alerts to a running messaging machine; returns the unsubscribe. */
-export function watchMessageAlerts(
-  phone: PhoneInstance,
-  messaging: MessagingInstance,
-  openKey: () => string | null,
-): () => void {
+/** Wires the alerts to the view; returns the unsubscribe. */
+export function watchMessageAlerts(trix: Trix, openKey: () => string | null): () => void {
   let seen: Set<string> | null = null;
   let held = new Set<string>();
-  let account: string | null = null;
 
-  const nameOf = (key: string): string =>
-    phone.context.contacts.find((c) => addressKey(c.uri) === key)?.name ?? key;
-
-  const step = () => {
-    const ctx = messaging.context;
-    // another account: its vault is not news either
-    if (ctx.accountId !== account) {
-      account = ctx.accountId;
-      seen = null;
-    }
-    const incoming = ctx.messages.filter((m) => m.direction === "incoming");
-    const fresh = seen === null ? [] : incoming.filter((m) => !seen!.has(m.id) && !m.read);
+  const step = (view: TrixView) => {
+    const m = view.messaging;
+    const inCall = view.call !== null;
+    const nameOf = (key: string): string =>
+      view.contacts.find((c) => addressKey(c.uri) === key)?.name ?? key;
+    // another account, or the vault read again: what it holds is not news
+    if (!m.loaded) seen = null;
+    const incoming = m.messages.filter((e) => e.direction === "incoming");
+    const fresh = seen === null ? [] : incoming.filter((e) => !seen!.has(e.id) && !e.read);
     // the first look after the vault is read takes stock, and tells nothing
-    if (ctx.loaded) seen = new Set(incoming.map((m) => m.id));
-    const strangers = ctx.quarantine.filter((q) => !held.has(q.key));
-    held = new Set(ctx.quarantine.map((q) => q.key));
+    if (m.loaded) seen = new Set(incoming.map((e) => e.id));
+    const strangers = m.quarantine.filter((q) => !held.has(q.key));
+    held = new Set(m.quarantine.map((q) => q.key));
 
-    const unread = incoming.filter((m) => !m.read).length;
-    setTitleUnread(unread);
-    setFaviconUnread(unread > 0 ? UNREAD_COLOR : null);
-    showBadge(ctx.inCall ? badgeText(ctx.messages, ctx.quarantine.length, nameOf) : null);
+    setTitleUnread(m.unread);
+    setFaviconUnread(m.unread > 0 ? UNREAD_COLOR : null);
+    showBadge(inCall ? badgeText(m.messages, m.quarantine.length, nameOf) : null);
 
     const hidden = document.visibilityState !== "visible";
-    for (const m of fresh) {
-      const name = nameOf(m.key);
+    for (const e of fresh) {
+      const name = nameOf(e.key);
       if (hidden) {
-        showNotice({ title: name, body: m.text, tag: `trix-message-${m.key}`, keep: false });
+        showNotice({ title: name, body: e.text, tag: `trix-message-${e.key}`, keep: false });
       }
-      if (ctx.inCall) announce(t("message.announce", { name }));
-      else if (!hidden && openKey() === m.key) announce(t("message.announceText", { name, text: m.text }));
+      if (inCall) announce(t("message.announce", { name }));
+      else if (!hidden && openKey() === e.key) announce(t("message.announceText", { name, text: e.text }));
     }
     for (const q of strangers) {
       // never the text of an unknown sender on a lock screen
@@ -112,10 +101,11 @@ export function watchMessageAlerts(
           keep: false,
         });
       }
-      if (ctx.inCall) announce(t("message.badgeStranger"));
+      if (inCall) announce(t("message.badgeStranger"));
     }
   };
 
-  step();
-  return messaging.subscribe(step);
+  const first = trix.view();
+  if (first) step(first);
+  return trix.subscribe(step);
 }

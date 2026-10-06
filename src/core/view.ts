@@ -16,7 +16,13 @@ import { addressOf } from "../accounts.js";
 import type { Deployment } from "../deployment.js";
 import type { Msg } from "../i18n/types.js";
 import type { CallView, SuspectField } from "../machines/events.js";
-import { shownPrompt, unreadByKey, type MessagingInstance, type Quarantined } from "../machines/messaging.js";
+import {
+  shownPrompt,
+  unreadByKey,
+  type MessagingCtx,
+  type MessagingInstance,
+  type Quarantined,
+} from "../machines/messaging.js";
 import { activeAccount, editedAccount, type PhoneInstance } from "../machines/phone.js";
 import {
   publishedPresence,
@@ -27,7 +33,7 @@ import type { PublishedPresence } from "../sip/pidf.js";
 import type { RttTransport, RttState } from "../sip/rtt.js";
 import type { ChatItem } from "../sip/transcript.js";
 import type { ResumeStore, StatusPrefs } from "../storage/session.js";
-import type { CallLogEntry, Contact, StoredAccount } from "../storage/store.js";
+import type { CallLogEntry, Contact, MessageEntry, StoredAccount } from "../storage/store.js";
 import type { Conversation } from "./conversation.js";
 import { reachabilityOf, reachabilityWanted, type Reachability } from "./reachability.js";
 import { buildThreads, type Thread } from "./thread.js";
@@ -76,8 +82,8 @@ export interface SettingsView {
   editing: AccountView | null;
   /** The field the last failure blames, to highlight. */
   suspect: SuspectField | null;
-  /** A save or a removal is being written. */
-  busy: boolean;
+  /** What is being written: the account, or its removal. */
+  busy: "saving" | "deleting" | null;
 }
 
 /** The real-time text of the call in progress (ADR 0011, D5). */
@@ -106,13 +112,26 @@ export interface PresenceView {
   contacts: Readonly<Record<string, ContactPresence>>;
 }
 
+/**
+ * `disabled`: turned off by the deployment; `off`: no account yet;
+ * `offline`: an account, not registered — what is written waits (D3).
+ */
+export type MessagingState = "disabled" | "off" | "offline" | "online";
+
 export interface MessagingView {
+  state: MessagingState;
   enabled: boolean;
+  /** The account's vault is read: what comes after is news (D10). */
+  loaded: boolean;
+  /** Every message of the account, both ways, oldest first. */
+  messages: readonly MessageEntry[];
   /** Unread incoming messages, all correspondents together. */
   unread: number;
   /** By correspondent key. */
   unreadByKey: ReadonlyMap<string, number>;
-  /** The unknown sender to ask about now (ADR 0008, D5), if any. */
+  /** The unknown senders held, in turn (ADR 0008, D5). */
+  quarantine: readonly Quarantined[];
+  /** The one to ask about now, if any. */
   prompt: Quarantined | null;
   /** The server answered 405 or 501 to a MESSAGE. */
   unsupported: boolean;
@@ -177,6 +196,12 @@ const REGISTRATION: Record<string, Registration> = {
   sleeping: "sleeping",
   reg_failed: "failed",
   unregistering: "unregistering",
+};
+
+const MESSAGING_STATE: Record<string, MessagingState> = {
+  disabled: "disabled",
+  offline: "offline",
+  online: "online",
 };
 
 const PRESENCE_STATE: Record<string, PresenceState> = {
@@ -245,7 +270,13 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
     (list: readonly AccountView[], id: string | null) => list.find((a) => a.id === id) ?? null,
   );
   const settings = memo(
-    (phase: Phase, list: readonly AccountView[], editing: string | null, suspect: SuspectField | null, busy: boolean) =>
+    (
+      phase: Phase,
+      list: readonly AccountView[],
+      editing: string | null,
+      suspect: SuspectField | null,
+      busy: SettingsView["busy"],
+    ) =>
       phase === "settings"
         ? { editing: list.find((a) => a.id === editing) ?? null, suspect, busy }
         : null,
@@ -277,14 +308,26 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
   const messaging = memo(
     (
       state: string,
-      messages: Parameters<typeof unreadByKey>[0],
+      loaded: boolean,
+      messages: MessagingCtx["messages"],
+      quarantine: MessagingCtx["quarantine"],
       prompt: Quarantined | null,
       unsupported: boolean,
     ): MessagingView => {
       const byKey = unreadByKey(messages);
       let unread = 0;
       for (const n of byKey.values()) unread += n;
-      return { enabled: state !== "disabled", unread, unreadByKey: byKey, prompt, unsupported };
+      return {
+        state: MESSAGING_STATE[state] ?? "off",
+        enabled: state !== "disabled",
+        loaded,
+        messages,
+        unread,
+        unreadByKey: byKey,
+        quarantine,
+        prompt,
+        unsupported,
+      };
     },
   );
   const reachability = memo(
@@ -318,7 +361,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
         list,
         editedAccount(ctx)?.id ?? null,
         ctx.suspectFields,
-        phone.state === "saving" || phone.state === "deleting",
+        phone.state === "saving" || phone.state === "deleting" ? phone.state : null,
       ),
       call,
       conversation: conversation(src.conversationRevision(), call?.textChannel ?? false),
@@ -333,7 +376,14 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
         pres.context.support,
         pres.context.contacts,
       ),
-      messaging: messaging(msgs.state, msgs.context.messages, shownPrompt(msgs.context), msgs.context.unsupported),
+      messaging: messaging(
+        msgs.state,
+        msgs.context.loaded,
+        msgs.context.messages,
+        msgs.context.quarantine,
+        shownPrompt(msgs.context),
+        msgs.context.unsupported,
+      ),
       reachability: reachability(reachabilityOf(phone.state), reachabilityWanted(src.session)),
       errors: errors(ctx.lastError, ctx.lastErrorCode, ctx.callError, ctx.contactError),
     };

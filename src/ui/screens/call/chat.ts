@@ -17,11 +17,11 @@
  * secondes, qui ne repeint que sa ligne.
  *
  * L'état d'affichage (pli mobile, suivi du bas, bulles non vues) vit ici,
- * hors du DOM : l'écran d'appel est reconstruit à chaque notification de
- * la machine.
+ * hors du DOM : l'écran d'appel est reconstruit à chaque instantané de la
+ * vue.
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView, Trix } from "../../../core/index.js";
 import type { RttState } from "../../../sip/rtt.js";
 import {
   bubbleText,
@@ -68,8 +68,34 @@ const hasDom = (): boolean => typeof document !== "undefined";
 export type { ChatBubble, ChatItem, ChatNote, ChatRun, ChatSide };
 export { bubbleText };
 
+/** Ce que le panneau lit de la conversation, et ce qu'il y écrit. */
+export type ConversationSource = Pick<
+  Conversation,
+  "items" | "link" | "refused" | "draft" | "holdUntil" | "type" | "enter" | "subscribe"
+>;
+
+/**
+ * La conversation du noyau telle que la façade la donne : lue dans la vue
+ * (ADR 0011, D3), écrite par ses commandes, ses événements suivis par son
+ * abonnement (D5). Hors d'un appel qui porte du texte, la vue n'en a pas :
+ * le panneau lit alors une conversation vide et fermée.
+ */
+export function conversationOf(trix: Trix): ConversationSource {
+  const now = () => trix.view()?.conversation ?? null;
+  return {
+    items: () => now()?.items ?? [],
+    link: () => now()?.link ?? "closed",
+    refused: () => now()?.refused ?? false,
+    draft: () => now()?.draft ?? "",
+    holdUntil: () => now()?.holdUntil ?? 0,
+    type: (value) => trix.conversation.type(value),
+    enter: () => trix.conversation.enter(),
+    subscribe: (listener) => trix.conversation.subscribe(listener),
+  };
+}
+
 /** La conversation montrée : celle de `main.ts`, une vide tant qu'il n'en a pas posé. */
-let conv: Conversation = createConversation();
+let conv: ConversationSource = createConversation();
 let unfollow = conv.subscribe(onConversation);
 
 /** Nom du correspondant, tel que les bulles le portent — relu à chaque rendu. */
@@ -86,7 +112,7 @@ let pinned = true;
 let unseen = 0;
 
 /** Pose la conversation que le panneau montre. Appelé une fois, depuis `main.ts`. */
-export function showConversation(c: Conversation): void {
+export function showConversation(c: ConversationSource): void {
   unfollow();
   conv = c;
   unfollow = c.subscribe(onConversation);
@@ -148,8 +174,6 @@ export const chatLinkState = (): RttState => conv.link();
  */
 export const chatRefused = (): boolean => conv.refused();
 export const chatMobileOpen = (): boolean => mobileOpen;
-/** Ce qui est parti sur le fil — la bulle locale vivante, en somme. */
-export const chatSent = (): string => conv.sent();
 /** Ce que le champ doit montrer : la frappe, nettoyée de ce qu'une bulle ne porte pas. */
 export const chatDraft = (): string => conv.draft();
 

@@ -22,12 +22,13 @@ import { CallBlock } from "../machines/call.js";
 import type { ConfigForm } from "../machines/events.js";
 import { MessagingMachine } from "../machines/messaging.js";
 import { linkMessaging } from "../machines/messagingsignals.js";
-import { PhoneMachine, type PhoneInstance } from "../machines/phone.js";
+import { PhoneMachine, editedAccount, type PhoneInstance } from "../machines/phone.js";
 import { PresenceMachine } from "../machines/presence.js";
 import { linkPresence } from "../machines/presencesignals.js";
 import { createJsSipPort, type CallMedia, type CallStreams, type MediaKind, type SipPort } from "../sip/port.js";
 import type { MediaStats } from "../sip/stats.js";
 import { createSipTrace, type SipTrace } from "../sip/trace.js";
+import { shareUrl } from "../share/link.js";
 import { createSessionStore, type ChosenStatus, type SessionStore } from "../storage/session.js";
 import { createBrowserStore, type SecureStore } from "../storage/store.js";
 import { browserPlatform } from "./browser/index.js";
@@ -39,6 +40,7 @@ import { createViewBuilder, type TrixView } from "./view.js";
 export type {
   AccountView,
   ConversationView,
+  MessagingState,
   MessagingView,
   Phase,
   PresenceState,
@@ -51,6 +53,9 @@ export type {
 export type { ActivityEvents, LifecycleEvents, PageSleepReason, Platform } from "./platform.js";
 export type { Deployment } from "../deployment.js";
 export type { CallView, ConfigForm, SuspectField } from "../machines/events.js";
+export type { HeldMessage, Quarantined } from "../machines/messaging.js";
+export type { ContactPresence } from "../machines/presence.js";
+export type { Reachability } from "./reachability.js";
 export type { CallMedia, CallStreams, MediaKind } from "../sip/port.js";
 export type { MediaStats } from "../sip/stats.js";
 export type { ChatItem } from "../sip/transcript.js";
@@ -91,7 +96,11 @@ export interface TrixOptions {
 export interface Trix {
   /** The deployment read and the machines started. The vault is read after: see `view.phase`. */
   readonly ready: Promise<void>;
-  /** The last snapshot, `null` before `ready`. */
+  /**
+   * The snapshot as things stand, `null` before `ready`. Read right after a
+   * command, it already shows its result; it is the very object the next
+   * notification will carry, so `===` keeps its meaning.
+   */
   view(): TrixView | null;
   /**
    * Called with each new snapshot, a microtask after the chain of
@@ -107,6 +116,12 @@ export interface Trix {
     save(form: ConfigForm): void;
     /** Remove the account being edited, with its history. */
     remove(): void;
+    /**
+     * The link that hands the account being edited to another browser
+     * (`share/link.ts`, ADR 0004). It carries the digest: show it to its
+     * owner only. `null` while no saved account is being edited.
+     */
+    shareUrl(base: string | URL): string | null;
     /** Register on this account, from the accounts screen. */
     use(id: string): void;
     /** Move to the other account while registered — refused once a call rings. */
@@ -300,7 +315,9 @@ export function createTrix(options: TrixOptions = {}): Trix {
       conversationRevision: () => revision,
       session,
     });
-    let view = build();
+    // what was last handed to the listeners: `build()` read in between by
+    // `view()` returns the same object, which is then published as new
+    let published = build();
     let queued = false;
     const notify = (): void => {
       if (queued) return;
@@ -309,9 +326,9 @@ export function createTrix(options: TrixOptions = {}): Trix {
         queued = false;
         if (disposed) return;
         const next = build();
-        if (next === view) return;
-        view = next;
-        for (const l of [...listeners]) l(view);
+        if (next === published) return;
+        published = next;
+        for (const l of [...listeners]) l(next);
       });
     };
     stops.push(
@@ -350,7 +367,7 @@ export function createTrix(options: TrixOptions = {}): Trix {
       messaging,
       conversation,
       trace,
-      view: () => view,
+      view: build,
       stops,
     };
   }
@@ -377,6 +394,10 @@ export function createTrix(options: TrixOptions = {}): Trix {
       cancel: () => phone({ type: "ui:cancelConfig" }),
       save: (form) => phone({ type: "ui:saveConfig", form }),
       remove: () => phone({ type: "ui:deleteAccount" }),
+      shareUrl(base) {
+        const account = core ? editedAccount(core.phone.context) : null;
+        return account ? shareUrl(account, base) : null;
+      },
       use: (id) => phone({ type: "ui:useAccount", id }),
       switchTo: (id) => phone({ type: "ui:switchAccount", id }),
       retry: () => phone({ type: "ui:retry" }),

@@ -13,8 +13,7 @@
  * `wireCallScreen` (parts.ts), partagé avec la vue bureau.
  */
 
-import { activeAccount, type PhoneInstance } from "../../../machines/phone.js";
-import type { CallView } from "../../../machines/events.js";
+import type { CallView, Trix, TrixView } from "../../../core/index.js";
 import { el, esc } from "../../el.js";
 import { pillLabel, statusButton } from "../../presence.js";
 import { threadStage } from "./thread.js";
@@ -44,29 +43,30 @@ import {
   draft,
   fmtChrono,
   isSpeakerMuted,
+  canDial,
   reachBanner,
   statusOf,
   switchButton,
 } from "./parts.js";
 import { t } from "../../../i18n/index.js";
 
-export function renderMobile(phone: PhoneInstance): HTMLElement {
-  const cfg = activeAccount(phone.context);
-  const view = phone.state === "in_call" ? phone.context.call : null;
-  const status = statusOf(phone.state);
-  const failed = phone.state === "reg_failed";
-  const ready = phone.state === "ready";
-  const reconnecting = phone.state === "reconnecting";
-  const offline = phone.state === "offline";
-  const sleeping = phone.state === "sleeping";
+export function renderMobile(app: TrixView, trix: Trix): HTMLElement {
+  const cfg = app.account;
+  const view = app.call;
+  const status = statusOf(app.registration);
+  const failed = app.registration === "failed";
+  const ready = canDial(app);
+  const reconnecting = app.registration === "reconnecting";
+  const offline = app.registration === "offline";
+  const sleeping = app.registration === "sleeping";
   const connected = view?.state === "connected";
   // the SIP trace's box also opens the media stats (call/stats.ts)
-  const traced = phone.context.trace.enabled();
+  const traced = trix.system.trace.enabled();
   const incoming = view?.state === "ringing_in";
   const speakerMuted = isSpeakerMuted();
-  const err = phone.context.lastError;
-  const errCode = phone.context.lastErrorCode;
-  const callError = phone.context.callError;
+  const err = app.errors.last;
+  const errCode = app.errors.code;
+  const callError = app.errors.call;
   // le tchat n'existe que si le texte est **négocié** (§4.9) ; déplié, il
   // prend la place que la vidéo lui cède — ce n'est pas une couche de plus
   const chat = chatAvailable(view);
@@ -86,7 +86,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
         ${
           // hors appel et enregistré : le statut de présence, sans l'adresse
           // que la place ne permet pas (ADR 0007, D5) ; en appel, l'appel
-          (!view && statusButton(phone, "")) ||
+          (!view && statusButton(app, "")) ||
           `<span class="dot ${status.cls}" title="${esc(status.label)}"
                 role="img" aria-label="${esc(status.label)}"></span>
           ${
@@ -95,7 +95,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
             statsPill(
               view
                 ? `${esc(callLabel(view.state))} — ${esc(displayTarget(view.target))}`
-                : esc(pillLabel(phone, status.label)),
+                : esc(pillLabel(app, status.label)),
               { cls: "mstatus", connected, traced },
             )
           }`
@@ -111,7 +111,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
               )}</span></span>`
             : ""
         }
-        ${switchButton(phone, view !== null)}
+        ${switchButton(app, view !== null)}
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="prefs" ${view ? "disabled" : ""}
                 aria-label="${esc(t("config.section.alerts"))}">${ICONS.prefs}</button>
         <button class="iconbtn ${view ? "inactive" : ""}" data-act="settings" ${view ? "disabled" : ""}
@@ -120,7 +120,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                 aria-label="${esc(t("action.logout"))}">${ICONS.logout}</button>
       </div>
       <!-- la joignabilité, sous la barre comme sur bureau (ADR 0006, D2) -->
-      ${reachBanner(phone)}
+      ${reachBanner(app)}
 
       ${
         // sonnerie : la scène reste au repos derrière la popup, seul endroit où
@@ -236,7 +236,7 @@ export function renderMobile(phone: PhoneInstance): HTMLElement {
                ${
                  // le fil Échanges sous l'adresse (ADR 0007, D10) : c'est
                  // l'écran d'accueil du téléphone, sans la place d'une scène
-                 threadStage(phone, "")
+                 threadStage(app, "")
                }
              </div>`
       }

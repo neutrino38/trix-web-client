@@ -17,7 +17,7 @@
  * locale, instantanée, et ne peut pas échouer (D7).
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView } from "../../../core/index.js";
 import { callerName } from "./parts.js";
 import { esc } from "../../el.js";
 import { t } from "../../../i18n/index.js";

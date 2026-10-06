@@ -20,7 +20,7 @@
  * son état survit aux re-rendus parce qu'il vit ici, hors du DOM.
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView } from "../../../core/index.js";
 import { t } from "../../../i18n/index.js";
 import { esc } from "../../el.js";
 

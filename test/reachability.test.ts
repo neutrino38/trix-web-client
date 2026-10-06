@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocale } from "../src/i18n/index.js";
 import { createSessionStore } from "../src/storage/session.js";
+import { reachabilityOf, reachabilityWanted } from "../src/core/reachability.js";
 
 interface PostedNotification {
   title: string;
@@ -115,21 +116,27 @@ function fire(type: string, event: unknown = {}): void {
   for (const fn of listeners.get(type) ?? []) fn(event);
 }
 
-/** La machine, réduite à ce que la joignabilité lui demande : un état, et un abonnement. */
+/**
+ * Le noyau, réduit à ce que la joignabilité lui demande : la vue, et un
+ * abonnement. Le niveau suit l'état du téléphone comme dans `core/view.ts`,
+ * et le souhait d'être joignable se lit dans la session à chaque instantané.
+ */
 function fakePhone(state: string) {
-  const subs: (() => void)[] = [];
+  const subs: ((view: unknown) => void)[] = [];
+  const view = () => ({
+    reachability: { level: reachabilityOf(state), wanted: reachabilityWanted(createSessionStore()) },
+  });
   return {
-    get state() {
-      return state;
-    },
-    subscribe(fn: () => void) {
+    view,
+    subscribe(fn: (view: unknown) => void) {
       subs.push(fn);
       return () => {};
     },
-    /** Change d'état et prévient, comme le ferait une transition. */
+    /** Change d'état et publie, comme le ferait le noyau après la transition. */
     goto(next: string) {
       state = next;
-      for (const fn of subs) fn();
+      const v = view();
+      for (const fn of subs) fn(v);
     },
   };
 }
@@ -199,12 +206,14 @@ describe("niveaux de joignabilité (D1)", () => {
 
   it("la phrase ne se dit que si l'on avait demandé à être joignable", async () => {
     stubBrowser({ stored: {} });
-    const { reachSentence } = await loadCore();
+    const { reachSentence, reachabilityOf, reachabilityWanted } = await loadCore();
+    const sentence = (state: string) =>
+      reachSentence({ level: reachabilityOf(state), wanted: reachabilityWanted(createSessionStore()) });
     // personne n'a demandé : l'accueil n'est pas une panne
-    expect(reachSentence("reconnecting", createSessionStore())).toBeNull();
+    expect(sentence("reconnecting")).toBeNull();
     stubBrowser({ stored: { "trix-resume": "acc-1" } });
-    expect(reachSentence("reconnecting", createSessionStore())).toBe("reach.none");
-    expect(reachSentence("ready", createSessionStore())).toBeNull();
+    expect(sentence("reconnecting")).toBe("reach.none");
+    expect(sentence("ready")).toBeNull();
   });
 
   it("le motif : hors ligne d'abord, puis ce que le cycle de vie a dit, puis le simple constat", async () => {

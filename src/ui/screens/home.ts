@@ -1,11 +1,10 @@
-import { activeAccount, type PhoneInstance } from "../../machines/phone.js";
-import { MAX_ACCOUNTS, addressOf } from "../../accounts.js";
+import type { AccountView, Trix, TrixView } from "../../core/index.js";
+import { MAX_ACCOUNTS } from "../../accounts.js";
 import { el, esc } from "../el.js";
 import { fslBadge, trixIcon } from "../logo.js";
 import { langPicker, wireLangPicker } from "../langpicker.js";
 import { t } from "../../i18n/index.js";
 import { APP_VERSION } from "../../version.js";
-import type { StoredAccount } from "../../storage/store.js";
 
 /**
  * Une ligne de compte : de quoi le reconnaître, de quoi s'y enregistrer, et
@@ -13,22 +12,21 @@ import type { StoredAccount } from "../../storage/store.js";
  * plein — c'est celui qu'on rouvre le plus souvent, et il doit se cliquer
  * sans être lu.
  */
-function accountRow(account: StoredAccount, active: boolean): string {
+function accountRow(account: AccountView, active: boolean): string {
   const who = account.displayName.trim();
   return `<li class="account-row">
       <button class="btn ${active ? "primary" : ""}" data-act="use" data-id="${esc(account.id)}">
         ${esc(t("home.useAccount"))}
       </button>
-      <span class="account-hint">${who ? `${esc(who)} — ` : ""}${esc(addressOf(account))}</span>
+      <span class="account-hint">${who ? `${esc(who)} — ` : ""}${esc(account.address)}</span>
       <button class="btn ghost" data-act="edit" data-id="${esc(account.id)}">
         ${esc(t("home.editAccount"))}
       </button>
     </li>`;
 }
 
-export function renderHome(phone: PhoneInstance): HTMLElement {
-  const { accounts } = phone.context;
-  const active = activeAccount(phone.context);
+export function renderHome(app: TrixView, trix: Trix): HTMLElement {
+  const { accounts, account: active } = app;
   // Le coffre en tient deux (ADR 0002) ; passé la limite, l'accueil cesse
   // simplement de proposer d'en ajouter un. Rien d'autre ne change.
   const room = accounts.length < MAX_ACCOUNTS;
@@ -67,17 +65,15 @@ export function renderHome(phone: PhoneInstance): HTMLElement {
       ${fslBadge()}
     </div>`);
   for (const btn of node.querySelectorAll<HTMLElement>('[data-act="use"]')) {
-    btn.addEventListener("click", () =>
-      phone.send({ type: "ui:useAccount", id: btn.dataset.id! }),
-    );
+    btn.addEventListener("click", () => trix.accounts.use(btn.dataset.id!));
   }
   for (const btn of node.querySelectorAll<HTMLElement>('[data-act="edit"]')) {
-    btn.addEventListener("click", () => phone.send({ type: "ui:configure", id: btn.dataset.id! }));
+    btn.addEventListener("click", () => trix.accounts.configure(btn.dataset.id!));
   }
   // `id: null` : un formulaire vide, et non celui d'un compte existant
   node
     .querySelector('[data-act="new"]')
-    ?.addEventListener("click", () => phone.send({ type: "ui:configure", id: null }));
+    ?.addEventListener("click", () => trix.accounts.configure(null));
   wireLangPicker(node);
   return node;
 }

@@ -2,8 +2,8 @@
  * The prompt for a message from an unknown address (ADR 0008, D5): one
  * native `<dialog>` at a time, for the sender MessagingMachine shows.
  *
- * The machine decides what is shown and when its two minutes run; this
- * module only mirrors it. It never opens during a call (D10): a prompt
+ * The core decides what is shown and when its two minutes run; this
+ * module only mirrors the view. It never opens during a call (D10): a prompt
  * shown when a call starts is closed without an answer, and comes back
  * at the hang-up.
  *
@@ -16,9 +16,7 @@
  */
 
 import { t } from "../i18n/index.js";
-import type { MessagingInstance, Quarantined } from "../machines/messaging.js";
-import { shownPrompt } from "../machines/messaging.js";
-import type { PhoneInstance } from "../machines/phone.js";
+import type { Quarantined, Trix, TrixView } from "../core/index.js";
 import { esc } from "./el.js";
 
 let open: { key: string; dialog: HTMLDialogElement } | null = null;
@@ -49,7 +47,7 @@ function close(): void {
   current?.dialog.remove();
 }
 
-function show(q: Quarantined, phone: PhoneInstance, messaging: MessagingInstance): void {
+function show(q: Quarantined, trix: Trix): void {
   const dlg = document.createElement("dialog");
   dlg.className = "stranger-dialog";
   dlg.setAttribute("aria-labelledby", "stranger-title");
@@ -59,13 +57,13 @@ function show(q: Quarantined, phone: PhoneInstance, messaging: MessagingInstance
     if (act === "accept") {
       // the book files what was held (`phone:contacts`); acceptSender covers
       // an address the book refuses to take
-      phone.send({ type: "ui:addContact", name: q.name ?? "", uri: q.uri });
-      messaging.send({ type: "ui:acceptSender", key: q.key });
+      trix.contacts.add(q.name ?? "", q.uri);
+      trix.messaging.acceptSender(q.key);
     } else if (act === "block") {
-      phone.send({ type: "ui:blockContact", uri: q.uri, name: q.name ?? "" });
-      messaging.send({ type: "ui:refuseSender", key: q.key });
+      trix.contacts.block(q.uri, q.name ?? "");
+      trix.messaging.refuseSender(q.key);
     } else {
-      messaging.send({ type: "ui:refuseSender", key: q.key });
+      trix.messaging.refuseSender(q.key);
     }
   };
   dlg.addEventListener("click", (e) => {
@@ -81,9 +79,9 @@ function show(q: Quarantined, phone: PhoneInstance, messaging: MessagingInstance
   dlg.showModal();
 }
 
-/** After each change of the messaging machine: show, swap or close the prompt. */
-export function syncStrangerPrompt(phone: PhoneInstance, messaging: MessagingInstance): void {
-  const wanted = messaging.context.inCall ? null : shownPrompt(messaging.context);
+/** After each new view: show, swap or close the prompt. */
+export function syncStrangerPrompt(view: TrixView, trix: Trix): void {
+  const wanted = view.call ? null : view.messaging.prompt;
   if (open && open.key === wanted?.key) {
     // a second message from the same sender joins the open prompt
     const list = open.dialog.querySelector(".stranger-messages");
@@ -93,5 +91,5 @@ export function syncStrangerPrompt(phone: PhoneInstance, messaging: MessagingIns
     return;
   }
   close();
-  if (wanted) show(wanted, phone, messaging);
+  if (wanted) show(wanted, trix);
 }

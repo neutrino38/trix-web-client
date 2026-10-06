@@ -15,7 +15,7 @@
  * (`ui:setFlashAlert`).
  */
 
-import { activeAccount, type PhoneInstance } from "../machines/phone.js";
+import type { Trix } from "../core/index.js";
 import { onLocaleChange, t } from "../i18n/index.js";
 import type { MsgKey } from "../i18n/types.js";
 import { alertPermission, requestAlertPermission } from "./alert.js";
@@ -102,7 +102,7 @@ function prefsHtml(flash: boolean): string {
 }
 
 /** Opens the dialog. A second click while it is open does nothing more. */
-export function showPrefsDialog(phone: PhoneInstance): void {
+export function showPrefsDialog(trix: Trix): void {
   if (document.querySelector("dialog.prefs-dialog")) return;
   const dlg = document.createElement("dialog");
   dlg.className = "stats-dialog prefs-dialog";
@@ -110,12 +110,12 @@ export function showPrefsDialog(phone: PhoneInstance): void {
 
   const render = (): void => {
     dlg.innerHTML = prefsHtml(
-      activeAccount(phone.context)?.flashAlert !== false,
+      trix.view()?.account?.flashAlert !== false,
     );
 
     const flash = dlg.querySelector<HTMLInputElement>("#p-flash")!;
     flash.addEventListener("change", () =>
-      phone.send({ type: "ui:setFlashAlert", on: flash.checked }),
+      trix.accounts.setFlashAlert(flash.checked),
     );
     // the permission can only be asked from a user gesture; the row is
     // rewritten in place with the new state, whatever it is
@@ -151,8 +151,8 @@ export function showPrefsDialog(phone: PhoneInstance): void {
   const offLocale = onLocaleChange(render);
   // a call coming in or going out takes the screen: the settings step aside,
   // and so does a self-test that would hold the microphone
-  const offPhone = phone.subscribe((n) => {
-    if (n.state === "in_call" || n.context.incoming) {
+  const offPhone = trix.subscribe((view) => {
+    if (view.phase === "inCall") {
       selfTest?.close();
       dlg.close();
     }

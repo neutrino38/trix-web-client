@@ -6,15 +6,17 @@
  * Le câblage est piloté par les attributs `data-act` / `data-ref` et
  * tolère l'absence de chaque élément : les deux templates peuvent donc
  * omettre ce qu'ils veulent sans qu'aucun `if (mobile)` n'apparaisse ici
- * ni là-bas. C'est ce qui permet de garder **une seule** PhoneMachine.
+ * ni là-bas. C'est ce qui permet de garder **un seul** noyau pour les deux.
+ *
+ * Ce qui s'affiche vient de la vue (`TrixView`), ce qui part passe par les
+ * commandes de la façade (`Trix`) : l'écran ne touche à aucun automate
+ * (ADR 0011, D2 et D3).
  */
 
-import type { PhoneInstance } from "../../../machines/phone.js";
-import type { CallView } from "../../../machines/events.js";
+import type { AccountView, CallView, Registration, Trix, TrixView } from "../../../core/index.js";
 import type { CallLogEntry } from "../../../storage/store.js";
-import { MEDIA_KINDS, type CallMedia, type CallSession } from "../../../sip/port.js";
+import { MEDIA_KINDS, type CallMedia } from "../../../sip/port.js";
 import type { RttTransport } from "../../../sip/rtt.js";
-import type { AccountConfig, StoredAccount } from "../../../storage/store.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import {
   answerActs,
@@ -51,29 +53,33 @@ import { formatDayMonth, formatTime, t, tn } from "../../../i18n/index.js";
 import type { MsgKey } from "../../../i18n/types.js";
 
 /**
- * État du téléphone : la **clé** du libellé, pas le libellé. Ces tables
+ * État de l'enregistrement : la **clé** du libellé, pas le libellé. Ces tables
  * sont des constantes de module, évaluées une fois à l'import — y figer
  * une traduction la rendrait sourde au changement de langue, qui ne
  * recharge que les écrans. Les deux accesseurs ci-dessous résolvent au
  * moment du rendu.
  */
-export const STATUS: Record<string, { key: MsgKey; cls: "ok" | "warn" | "err" }> = {
+export const STATUS: Partial<Record<Registration, { key: MsgKey; cls: "ok" | "warn" | "err" }>> = {
   connecting: { key: "status.connecting", cls: "warn" },
   registering: { key: "status.registering", cls: "warn" },
-  ready: { key: "status.ready", cls: "ok" },
-  in_call: { key: "status.ready", cls: "ok" },
+  registered: { key: "status.ready", cls: "ok" },
   reconnecting: { key: "status.reconnecting", cls: "err" },
   offline: { key: "status.offline", cls: "err" },
   switching: { key: "status.switching", cls: "warn" },
   sleeping: { key: "status.sleeping", cls: "warn" },
-  reg_failed: { key: "status.regFailed", cls: "err" },
+  failed: { key: "status.regFailed", cls: "err" },
   unregistering: { key: "status.unregistering", cls: "warn" },
 };
 
-/** L'état du téléphone tel qu'il s'affiche : libellé traduit + couleur. */
-export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "err" } {
-  const entry = STATUS[state];
-  return entry ? { label: t(entry.key), cls: entry.cls } : { label: state, cls: "warn" };
+/** L'enregistrement tel qu'il s'affiche : libellé traduit + couleur. */
+export function statusOf(registration: Registration): { label: string; cls: "ok" | "warn" | "err" } {
+  const entry = STATUS[registration];
+  return entry ? { label: t(entry.key), cls: entry.cls } : { label: registration, cls: "warn" };
+}
+
+/** Enregistré et sans appel : on peut composer. */
+export function canDial(app: TrixView): boolean {
+  return app.phase === "ready" && app.registration === "registered";
 }
 
 /**
@@ -88,9 +94,9 @@ export function statusOf(state: string): { label: string; cls: "ok" | "warn" | "
  * recommencer. Les deux dernières se masquent — elles parlent du passé —,
  * la première non : elle décrit ce qui est.
  */
-export function reachBanner(phone: PhoneInstance): string {
+export function reachBanner(app: TrixView): string {
   const notes: string[] = [];
-  const sentence = reachSentence(phone.state, phone.context.resume);
+  const sentence = reachSentence(app.reachability);
   if (sentence) {
     notes.push(`<p class="reach-note err" role="status">${esc(t(sentence))}</p>`);
   }
@@ -183,9 +189,8 @@ export const ICONS = {
  * alors nulle part, plutôt que de s'afficher grisé pour une raison qu'un
  * seul compte ne laisse pas deviner.
  */
-export function otherAccount(phone: PhoneInstance): StoredAccount | null {
-  const { accounts, activeId } = phone.context;
-  return accounts.find((a) => a.id !== activeId) ?? null;
+export function otherAccount(app: TrixView): AccountView | null {
+  return app.accounts.find((a) => a.id !== app.account?.id) ?? null;
 }
 
 /**
@@ -193,8 +198,8 @@ export function otherAccount(phone: PhoneInstance): StoredAccount | null {
  * un appel comme le sont Paramètres et Se déconnecter — et refusé de toute
  * façon par le bloc si l'événement passait quand même (machines/call.ts).
  */
-export function switchButton(phone: PhoneInstance, inCall: boolean): string {
-  const other = otherAccount(phone);
+export function switchButton(app: TrixView, inCall: boolean): string {
+  const other = otherAccount(app);
   if (!other) return "";
   const label = t("action.switchAccount", { address: `${other.username}@${other.domain}` });
   return `<button class="iconbtn ${inCall ? "inactive" : ""}" data-act="switch"
@@ -449,14 +454,16 @@ export function fmtChrono(startedAt: number): string {
 // ---------------------------------------------------------------------------
 
 export interface CallScreenCtx {
-  phone: PhoneInstance;
+  trix: Trix;
   view: CallView | null;
   ready: boolean;
-  cfg: AccountConfig | null;
+  cfg: AccountView | null;
+  /** Le déploiement transporte le texte : le panneau replié promet le tchat. */
+  withChat: boolean;
 }
 
 export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
-  const { phone, view, ready, cfg } = ctx;
+  const { trix, view, ready, cfg, withChat } = ctx;
   // Tous les éléments qui portent l'action, et pas seulement le premier : une
   // même commande peut avoir deux boutons dans un même gabarit — Raccrocher
   // est dans la sidebar **et** en rond rouge dans la barre de surimpression,
@@ -469,14 +476,12 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   };
 
   // --- barre d'en-tête ----------------------------------------------------
-  on('[data-act="prefs"]', () => showPrefsDialog(phone));
-  on('[data-act="settings"]', () => phone.send({ type: "ui:backToSettings" }));
-  on('[data-act="logout"]', () => phone.send({ type: "ui:logout" }));
-  on('[data-act="switch"]', (btn) =>
-    phone.send({ type: "ui:switchAccount", id: btn.dataset.id! }),
-  );
-  on('[data-act="retry"]', () => phone.send({ type: "ui:retry" }));
-  on('[data-act="fix-settings"]', () => phone.send({ type: "ui:backToSettings" }));
+  on('[data-act="prefs"]', () => showPrefsDialog(trix));
+  on('[data-act="settings"]', () => trix.accounts.backToSettings());
+  on('[data-act="logout"]', () => trix.accounts.logout());
+  on('[data-act="switch"]', (btn) => trix.accounts.switchTo(btn.dataset.id!));
+  on('[data-act="retry"]', () => trix.accounts.retry());
+  on('[data-act="fix-settings"]', () => trix.accounts.backToSettings());
 
   // --- lancement d'appel ---------------------------------------------------
   const targetInput = node.querySelector('[data-ref="target"]') as HTMLInputElement | null;
@@ -488,7 +493,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       targetInput.focus();
       return;
     }
-    phone.send({ type: "ui:call", target, media: currentMode(cfg.rtt).media });
+    trix.call.dial(target, currentMode(cfg.rtt).media);
   };
   if (targetInput && !view) {
     targetInput.addEventListener("input", () => {
@@ -555,11 +560,9 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   // --- appel entrant --------------------------------------------------------
   if (view?.state === "ringing_in") {
     for (const choice of answerChoices(view.offered)) {
-      on(`[data-act="${choice.act}"]`, () =>
-        phone.send({ type: "ui:answer", media: answerMedia(choice.act, view.offered) }),
-      );
+      on(`[data-act="${choice.act}"]`, () => trix.call.answer(answerMedia(choice.act, view.offered)));
     }
-    on('[data-act="reject"]', () => phone.send({ type: "ui:reject" }));
+    on('[data-act="reject"]', () => trix.call.reject());
     // alerte multi-canal : l'application s'adresse d'abord à des sourds
     startIncomingAlert({
       caller: callerName(view),
@@ -586,7 +589,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   else stopRingback();
 
   // --- message fugace -------------------------------------------------------
-  // L'écran est reconstruit à chaque notification de la machine : c'est le
+  // L'écran est reconstruit à chaque instantané pendant l'appel : c'est le
   // numéro d'ordre, et lui seul, qui distingue un message neuf d'un rendu de
   // plus. Sans lui, le même bandeau se rallumerait à chaque battement du
   // chrono — et deux refus identiques n'en feraient qu'un.
@@ -600,21 +603,21 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   }
 
   // --- commandes en communication -----------------------------------------
-  on('[data-act="hangup"]', () => phone.send({ type: "ui:hangup" }));
+  on('[data-act="hangup"]', () => trix.call.hangup());
   // les deux boutons de l'axe 1, câblés par la même ligne : c'est ce que
   // « strictement symétriques » veut dire jusque dans le code (ADR 0003, D6)
   for (const kind of MEDIA_KINDS) {
-    on(`[data-act="toggle-${kind}"]`, () => phone.send({ type: "ui:toggleMedia", kind }));
+    on(`[data-act="toggle-${kind}"]`, () => trix.call.toggleMedia(kind));
   }
   // le partage rejoint l'axe 1 : il change ce que le correspondant voit, et
   // le bouton n'existe que là où la machine sait capturer un écran (D8)
-  on('[data-act="share"]', () => phone.send({ type: "ui:toggleShare" }));
+  on('[data-act="share"]', () => trix.call.toggleShare());
   // deux boutons pour un seul geste : celui de la barre, et « Reprendre »
   // dans le bandeau plein écran. `on` les câble tous les deux
-  on('[data-act="pause"]', () => phone.send({ type: "ui:togglePause" }));
-  on('[data-act="accept-media"]', () => phone.send({ type: "ui:acceptMedia" }));
-  on('[data-act="reject-media"]', () => phone.send({ type: "ui:rejectMedia" }));
-  on('[data-act="selfview"]', () => phone.send({ type: "ui:toggleSelfView" }));
+  on('[data-act="pause"]', () => trix.call.togglePause());
+  on('[data-act="accept-media"]', () => trix.call.acceptMedia());
+  on('[data-act="reject-media"]', () => trix.call.rejectMedia());
+  on('[data-act="selfview"]', () => trix.call.toggleSelfView());
   // écoute : UI pure (mute de l'élément <video> distant), pas de machine
   on('[data-act="speaker"]', (btn) => {
     speakerMuted = !speakerMuted;
@@ -661,7 +664,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   // Le pavé s'ouvre et se ferme sans la machine (call/dtmf.ts) ; seule la
   // tonalité pressée lui est envoyée, et c'est elle qui décidera si elle
   // rejoint l'écho de l'écran.
-  wireDtmf(node, (tone) => phone.send({ type: "ui:dtmf", tone }));
+  wireDtmf(node, (tone) => trix.call.dtmf(tone));
 
   // --- tchat texte temps réel ----------------------------------------------
   // Comme le pavé DTMF : le panneau vit hors de la machine, qui ne sait rien
@@ -683,7 +686,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
   // --- panneau latéral (repli, largeur) ------------------------------------
   // absent de la vue mobile : `wirePanel` ne trouve alors ni bouton ni
   // poignée et ne fait rien, comme tout le reste de ce câblage
-  wirePanel(node, phone.context.deployment.rtt !== "none");
+  wirePanel(node, withChat);
 
   // --- préférences ---------------------------------------------------------
   // seule la taille du texte reste ici : c'est le seul réglage qu'on ajuste en
@@ -693,16 +696,15 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 
   // --- média, chrono, vu-mètres --------------------------------------------
   const remote = node.querySelector('[data-ref="remote"]') as HTMLVideoElement | null;
-  // la session, hors de la vue (ADR 0011, D4) : d'ici à la façade, l'écran
-  // ne lui demande que ses flux et sa mesure
-  const session = phone.context.session;
+  // les flux et la mesure, par la façade (ADR 0011, D4) : l'écran ne voit
+  // jamais la session SIP elle-même
   if (view && remote) {
     const self = node.querySelector('[data-ref="self"]') as HTMLVideoElement | null;
     // la surface de l'écran partagé n'existe que pendant un partage reçu ;
     // le port y route la piste **par son MID**, jamais par ordre d'arrivée
     const shared = node.querySelector('[data-ref="share"]') as HTMLVideoElement | null;
     remote.muted = speakerMuted;
-    if (session) showStreams(node, session, remote, self, shared);
+    showStreams(node, trix.call, remote, self, shared);
 
     // plein écran : le double-clic est un raccourci, le bouton est le chemin
     // praticable au clavier (RGAA 7.3) — les deux mènent au même geste
@@ -730,7 +732,7 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
       }, 1000);
       startVuMeters(node, remote, self);
       // mesure du média sur fenêtre glissante, découverte depuis la pastille
-      if (session) startMediaStats(node, session, startedAt);
+      startMediaStats(node, trix.call.stats, startedAt);
     }
   }
 }
@@ -739,8 +741,8 @@ export function wireCallScreen(node: HTMLElement, ctx: CallScreenCtx): void {
 // Flux : les surfaces de l'écran, branchées sur ce que le port en dit.
 // ---------------------------------------------------------------------------
 
-/** Ce qu'il faut de la session pour montrer l'appel. */
-type CallMediaSource = Pick<CallSession, "streams" | "onStreams">;
+/** Ce qu'il faut de la façade pour montrer l'appel. */
+type CallMediaSource = Pick<Trix["call"], "streams" | "onStreams">;
 
 let streamsOff: (() => void) | null = null;
 
@@ -763,21 +765,21 @@ function shows(video: HTMLVideoElement, stream: MediaStream | null): boolean {
  */
 export function showStreams(
   node: HTMLElement,
-  session: CallMediaSource,
+  source: CallMediaSource,
   remote: HTMLVideoElement,
   self: HTMLVideoElement | null,
   shared: HTMLVideoElement | null,
 ): void {
   streamsOff?.();
   const sync = (): void => {
-    const { remote: theirs, local: mine, share } = session.streams();
+    const { remote: theirs, local: mine, share } = source.streams();
     if (theirs && !shows(remote, theirs)) remote.srcObject = theirs;
     if (self && mine && !shows(self, mine)) self.srcObject = mine;
     if (shared && !shows(shared, share)) shared.srcObject = share;
   };
   // le nœud n'est pas encore dans la page au câblage : c'est aux annonces
   // suivantes seulement qu'un nœud détaché veut dire « re-rendu »
-  streamsOff = session.onStreams(() => {
+  streamsOff = source.onStreams(() => {
     if (node.isConnected) return sync();
     streamsOff?.();
     streamsOff = null;

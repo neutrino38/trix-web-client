@@ -22,24 +22,24 @@
  * it takes the whole screen — the correspondent's name above, the
  * writing field below.
  *
- * The screen is rebuilt on phone transitions only. Presence, messages and
- * the contact book change without one, so the list redraws itself
- * (`refreshThread`), keeping the search field, the address being typed,
- * what is being written and — when it can — the focus.
+ * The screen is rebuilt only when what it frames changes. Presence,
+ * messages and the contact book change without that, so the list redraws
+ * itself (`refreshThread`), keeping the search field, the address being
+ * typed, what is being written and — when it can — the focus.
+ *
+ * Everything shown comes from the view (`TrixView`), everything done goes
+ * through the facade (`Trix`): no machine is read here (ADR 0011, D3).
  */
 
-import type { PhoneInstance } from "../../../machines/phone.js";
-import { activeAccount } from "../../../machines/phone.js";
-import type { PresenceInstance } from "../../../machines/presence.js";
-import type { MessagingInstance } from "../../../machines/messaging.js";
+import type { MessagingView, PresenceView, Trix, TrixView } from "../../../core/index.js";
 import { MAX_MESSAGE_BYTES, utf8Length } from "../../../sip/message.js";
 import type { MessageEntry } from "../../../storage/store.js";
-import { boundMessaging, canWrite, messagingOn } from "../../messaging.js";
+import { canWrite, messagingOn } from "../../messaging.js";
 import { formatDayMonth, formatTime, localeTag, t, tn } from "../../../i18n/index.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { showChatDialog } from "../../chatdialog.js";
 import { esc } from "../../el.js";
-import { GLYPH_LABEL, boundPresence, glyph, type Glyph } from "../../presence.js";
+import { GLYPH_LABEL, glyph, type Glyph } from "../../presence.js";
 import { showTraceDialog } from "../../tracedialog.js";
 import {
   buildThreads,
@@ -58,6 +58,7 @@ import {
   HISTORY_ICONS,
   ICONS,
   OUTCOME_KEY,
+  canDial,
   currentMode,
   displayTarget,
   fmtDuration,
@@ -124,10 +125,10 @@ interface LinePresence {
  * not there to be had (D8): a server that refused SUBSCRIBE, or presence
  * turned off — contacts stay callable, without pretending.
  */
-export function linePresence(thread: Thread, presence: PresenceInstance | null): LinePresence {
+export function linePresence(thread: Thread, presence: PresenceView): LinePresence {
   if (!thread.contact) return { glyph: null, stale: false, text: t("thread.notContact"), reachable: false };
-  const state = presence?.state;
-  if (!presence || state === "no_watch" || state === "disabled" || state === "off") {
+  const state = presence.state;
+  if (state === "noWatch" || state === "disabled" || state === "off") {
     return { glyph: null, stale: false, text: "", reachable: false };
   }
   const p = thread.presence;
@@ -247,7 +248,7 @@ function segments(): string {
   </div>`;
 }
 
-function composer(thread: Thread, messaging: MessagingInstance): string {
+function composer(thread: Thread, messaging: MessagingView): string {
   const draft = drafts.get(thread.key) ?? "";
   const bytes = utf8Length(draft);
   const over = bytes > MAX_MESSAGE_BYTES;
@@ -266,7 +267,7 @@ function composer(thread: Thread, messaging: MessagingInstance): string {
 }
 
 /** What erasing reaches in a line: what its segment shows (only calls, without messaging). */
-function lineScope(messaging: MessagingInstance | null): Segment {
+function lineScope(messaging: MessagingView): Segment {
   return messagingOn(messaging) ? segment : "calls";
 }
 
@@ -276,12 +277,12 @@ const LINE_CLEAR: Record<Segment, { label: MsgKey; confirm: MsgKey }> = {
   messages: { label: "thread.clear.messages", confirm: "thread.clearConfirm.messages" },
 };
 
-function lineClearLabel(thread: Thread, messaging: MessagingInstance | null): string {
+function lineClearLabel(thread: Thread, messaging: MessagingView): string {
   const keys = LINE_CLEAR[lineScope(messaging)];
   return armed === thread.key ? t(keys.confirm, { name: thread.name }) : t(keys.label);
 }
 
-function body(thread: Thread, now: number, messaging: MessagingInstance | null): string {
+function body(thread: Thread, now: number, messaging: MessagingView): string {
   const withMessages = messagingOn(messaging);
   const events = threadEvents(thread, lineScope(messaging));
   const days: string[] = [];
@@ -342,8 +343,8 @@ function body(thread: Thread, now: number, messaging: MessagingInstance | null):
 
 function row(
   thread: Thread,
-  presence: PresenceInstance | null,
-  messaging: MessagingInstance | null,
+  presence: PresenceView,
+  messaging: MessagingView,
   ready: boolean,
   now: number,
 ): string {
@@ -395,8 +396,8 @@ function row(
   </li>`;
 }
 
-function addForm(phone: PhoneInstance): string {
-  const error = phone.context.contactError;
+function addForm(app: TrixView): string {
+  const error = app.errors.contact;
   return `<form class="thread-addform" data-form="add">
     <div class="field">
       <label for="thread-add-name">${esc(t("thread.form.name"))}</label>
@@ -436,36 +437,24 @@ function firstContact(threads: readonly Thread[]): string {
   </div>`;
 }
 
-/** The list alone: what `refreshThread` redraws. */
-function threadsOf(phone: PhoneInstance): Thread[] {
-  const messaging = boundMessaging();
-  return buildThreads(
-    phone.context.contacts,
-    phone.context.history,
-    boundPresence()?.context.contacts ?? {},
-    messagingOn(messaging) ? messaging.context.messages : [],
-  );
-}
-
 /** Expanded only while there is a conversation to show: the open line, with messaging on. */
-function focusOn(threads: readonly Thread[]): boolean {
-  if (focused && !(openKey && messagingOn(boundMessaging()) && threads.some((th) => th.key === openKey))) {
+function focusOn(app: TrixView): boolean {
+  if (focused && !(openKey && messagingOn(app.messaging) && app.threads.some((th) => th.key === openKey))) {
     focused = false;
   }
   return focused;
 }
 
-function listHtml(phone: PhoneInstance, now: number): string {
-  const presence = boundPresence();
-  const messaging = boundMessaging();
-  const threads = threadsOf(phone);
-  const ready = phone.state === "ready";
-  if (focusOn(threads)) {
+/** The list alone: what `refreshThread` redraws. */
+function listHtml(app: TrixView, now: number): string {
+  const { presence, messaging, threads } = app;
+  const ready = canDial(app);
+  if (focusOn(app)) {
     const open = threads.find((th) => th.key === openKey)!;
     return `<ul class="thread-focus">${row(open, presence, messaging, ready, now)}</ul>`;
   }
   const sections = threadSections(threads, query, now);
-  const first = !adding && !query.trim() && phone.context.contacts.length === 0 ? firstContact(threads) : "";
+  const first = !adding && !query.trim() && app.contacts.length === 0 ? firstContact(threads) : "";
   const content = sections.length
     ? sections
         .map(
@@ -478,7 +467,7 @@ function listHtml(phone: PhoneInstance, now: number): string {
     : threads.length
       ? `<p class="thread-none">${esc(t("thread.noMatch"))}</p>`
       : "";
-  return `${adding ? addForm(phone) : first}${content}`;
+  return `${adding ? addForm(app) : first}${content}`;
 }
 
 /**
@@ -486,10 +475,10 @@ function listHtml(phone: PhoneInstance, now: number): string {
  * thread — a failed registration, a reconnection, the page asleep.
  */
 /** The foot's erase-all: there as soon as there is a call or a message to erase. */
-function footHtml(phone: PhoneInstance): string {
-  const messaging = boundMessaging();
-  const messages = messagingOn(messaging) && messaging.context.messages.length > 0;
-  if (!messages && phone.context.history.length === 0) return "";
+function footHtml(app: TrixView): string {
+  const { messaging } = app;
+  const messages = messagingOn(messaging) && messaging.messages.length > 0;
+  if (!messages && app.history.length === 0) return "";
   const label =
     armed === "all" ? t(messagingOn(messaging) ? "thread.clearAllConfirm" : "thread.clearCallsConfirm") : t("history.clear");
   return `<button type="button" class="linkbtn" data-act="thread-clear-all" data-armed="${
@@ -497,14 +486,14 @@ function footHtml(phone: PhoneInstance): string {
   }">${esc(label)}</button>`;
 }
 
-export function threadStage(phone: PhoneInstance, notice: string): string {
-  const foot = footHtml(phone);
+export function threadStage(app: TrixView, notice: string): string {
+  const foot = footHtml(app);
   // SUBSCRIBE refused (D8): said once, above the lines that lost their glyph
-  const noPresence = boundPresence()?.state === "no_watch" && !noPresenceDismissed;
+  const noPresence = app.presence.state === "noWatch" && !noPresenceDismissed;
   // MESSAGE refused by the server (ADR 0008, D13): said while it lasts
-  const messaging = boundMessaging();
-  const noMessaging = messagingOn(messaging) && messaging.context.unsupported;
-  const list = listHtml(phone, Date.now());
+  const { messaging } = app;
+  const noMessaging = messagingOn(messaging) && messaging.unsupported;
+  const list = listHtml(app, Date.now());
   return `<div class="thread-stage ${focused ? "focus" : ""}">
     ${notice ? `<div class="thread-notice">${notice}</div>` : ""}
     ${
@@ -530,14 +519,13 @@ export function threadStage(phone: PhoneInstance, notice: string): string {
 }
 
 /** The hint under the address field: who it is, and how they are (D10). */
-export function contactHint(phone: PhoneInstance, typed: string): string {
-  const cfg = activeAccount(phone.context);
+export function contactHint(app: TrixView, typed: string): string {
+  const cfg = app.account;
   if (!cfg) return "";
-  const contact = contactFor(phone.context.contacts, typed, cfg.domain);
+  const contact = contactFor(app.contacts, typed, cfg.domain);
   if (!contact) return "";
-  const presence = boundPresence();
-  const thread = buildThreads([contact], [], presence?.context.contacts ?? {})[0]!;
-  const status = linePresence(thread, presence).text;
+  const thread = buildThreads([contact], [], app.presence.contacts)[0]!;
+  const status = linePresence(thread, app.presence).text;
   return status ? t("call.contactHint", { name: contact.name, status }) : contact.name;
 }
 
@@ -545,25 +533,24 @@ export function contactHint(phone: PhoneInstance, typed: string): string {
 
 interface Mounted {
   node: HTMLElement;
-  phone: PhoneInstance;
+  trix: Trix;
   signature: readonly unknown[];
 }
 
 let mounted: Mounted | null = null;
 
-function signature(phone: PhoneInstance): readonly unknown[] {
-  const presence = boundPresence();
-  const messaging = boundMessaging();
+/** What the list shows, as references: the view keeps them while they do not move. */
+function signature(app: TrixView): readonly unknown[] {
   return [
-    messaging?.state,
-    messaging?.context.messages,
-    messaging?.context.unsupported,
-    phone.state,
-    phone.context.contacts,
-    phone.context.history,
-    phone.context.contactError,
-    presence?.state,
-    presence?.context.contacts,
+    app.threads,
+    app.history,
+    app.messaging.state,
+    app.messaging.messages,
+    app.messaging.unsupported,
+    app.phase,
+    app.registration,
+    app.errors.contact,
+    app.presence.state,
   ];
 }
 
@@ -583,16 +570,17 @@ function redraw(m: Mounted): void {
   const stage = list.closest(".thread-stage");
   const foot = stage?.querySelector<HTMLElement>('[data-ref="thread-foot"]');
   const inFoot = !!active && !!foot?.contains(active);
+  const app = m.trix.view()!;
   redrawing = true;
-  list.innerHTML = listHtml(m.phone, Date.now());
+  list.innerHTML = listHtml(app, Date.now());
   if (foot) {
-    const html = footHtml(m.phone);
+    const html = footHtml(app);
     foot.innerHTML = html;
     foot.hidden = !html;
   }
   redrawing = false;
   stage?.classList.toggle("focus", focused);
-  m.signature = signature(m.phone);
+  m.signature = signature(app);
   // the conversation reads from the bottom, where the writing field is
   const events = list.querySelector<HTMLElement>('[data-ref="thread-events"]');
   if (events) events.scrollTop = events.scrollHeight;
@@ -620,12 +608,11 @@ export function openThreadKey(): string | null {
  * so the redraw this causes does not loop.
  */
 function markRead(): void {
-  const messaging = boundMessaging();
-  if (!openKey || !messagingOn(messaging) || document.visibilityState !== "visible") return;
-  const key = openKey;
-  if (messaging.context.messages.some((m) => m.key === key && !m.read)) {
-    messaging.send({ type: "ui:read", key });
-  }
+  const key = openThreadKey();
+  const trix = mounted?.trix;
+  const messaging = trix?.view()?.messaging;
+  if (!key || !trix || !messaging || !messagingOn(messaging) || document.visibilityState !== "visible") return;
+  if ((messaging.unreadByKey.get(key) ?? 0) > 0) trix.messaging.read(key);
 }
 
 // a line left open in a hidden tab is read when the tab comes back
@@ -635,27 +622,28 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
 export function refreshThread(): void {
   const m = mounted;
   if (!m || !m.node.isConnected) return;
-  const next = signature(m.phone);
+  const next = signature(m.trix.view()!);
   if (!same(next, m.signature)) redraw(m);
 }
 
-export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
+export function wireThread(node: HTMLElement, trix: Trix): void {
   const stage = node.querySelector<HTMLElement>(".thread-stage");
   if (!stage) {
     mounted = null;
     return;
   }
-  const m: Mounted = { node, phone, signature: signature(phone) };
+  const app = (): TrixView => trix.view()!;
+  const m: Mounted = { node, trix, signature: signature(app()) };
   mounted = m;
   const target = node.querySelector<HTMLInputElement>('[data-ref="target"]');
   const hint = node.querySelector<HTMLElement>('[data-ref="contacthint"]');
   const updateHint = () => {
-    if (hint && target) hint.textContent = contactHint(phone, target.value);
+    if (hint && target) hint.textContent = contactHint(app(), target.value);
   };
   target?.addEventListener("input", updateHint);
 
-  const threadOf = (key: string | undefined): Thread | undefined => threadsOf(phone).find((th) => th.key === key);
-  const entryAt = (i: string | undefined) => phone.context.history[Number(i)];
+  const threadOf = (key: string | undefined): Thread | undefined => app().threads.find((th) => th.key === key);
+  const entryAt = (i: string | undefined) => app().history[Number(i)];
 
   stage.addEventListener("input", (e) => {
     const input = e.target as HTMLInputElement;
@@ -705,7 +693,7 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
     for (const b of stage.querySelectorAll<HTMLElement>('[data-armed="yes"]')) {
       b.dataset.armed = "no";
       b.textContent =
-        b.dataset.act === "thread-clear-all" ? t("history.clear") : t(LINE_CLEAR[lineScope(boundMessaging())].label);
+        b.dataset.act === "thread-clear-all" ? t("history.clear") : t(LINE_CLEAR[lineScope(app().messaging)].label);
     }
   };
   // leaving an armed button disarms it: a red button left armed behind is a trap
@@ -760,10 +748,10 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         return;
       }
       case "thread-call": {
-        const cfg = activeAccount(phone.context);
+        const cfg = app().account;
         const thread = threadOf(key);
         const to = cfg && thread ? normalizeTarget(thread.target, cfg.domain) : null;
-        if (cfg && to) phone.send({ type: "ui:call", target: to, media: currentMode(cfg.rtt).media });
+        if (cfg && to) trix.call.dial(to, currentMode(cfg.rtt).media);
         return;
       }
       case "thread-add":
@@ -780,7 +768,7 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
       case "thread-add-number": {
         const thread = threadOf(key);
         if (!thread) return;
-        phone.send({ type: "ui:addContact", name: "", uri: thread.target });
+        trix.contacts.add("", thread.target);
         // the button is gone with the stranger's line: the focus goes to the
         // line that now holds the contact, same key
         redraw(m);
@@ -799,15 +787,15 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         redraw(m);
         return;
       case "thread-remove":
-        if (id) phone.send({ type: "ui:removeContact", id });
+        if (id) trix.contacts.remove(id);
         return;
       case "thread-block": {
         const thread = threadOf(key);
-        if (thread) phone.send({ type: "ui:blockContact", uri: thread.target, name: thread.contact ? thread.name : "" });
+        if (thread) trix.contacts.block(thread.target, thread.contact ? thread.name : "");
         return;
       }
       case "thread-unblock":
-        if (id) phone.send({ type: "ui:unblockContact", id });
+        if (id) trix.contacts.unblock(id);
         return;
       case "thread-expand":
         focused = true;
@@ -825,7 +813,7 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         redraw(m);
         return;
       case "thread-retry":
-        if (id) boundMessaging()?.send({ type: "ui:retry", id });
+        if (id) trix.messaging.retry(id);
         return;
       case "thread-banner-dismiss":
         noPresenceDismissed = true;
@@ -834,7 +822,7 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
       case "thread-clear": {
         const thread = threadOf(key);
         if (!thread) return;
-        const messaging = boundMessaging();
+        const { messaging } = app();
         if (armed !== thread.key) {
           armed = thread.key;
           el.dataset.armed = "yes";
@@ -843,8 +831,8 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         }
         armed = null;
         const scope = lineScope(messaging);
-        if (scope !== "messages") phone.send({ type: "ui:clearHistory", key: thread.key });
-        if (scope !== "calls") messaging?.send({ type: "ui:clearMessages", key: thread.key });
+        if (scope !== "messages") trix.call.clearHistory(thread.key);
+        if (scope !== "calls") trix.messaging.clear(thread.key);
         if (mounted) redraw(mounted);
         focusAfterClear(thread.key);
         return;
@@ -853,12 +841,12 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
         if (armed !== "all") {
           armed = "all";
           el.dataset.armed = "yes";
-          el.textContent = t(messagingOn(boundMessaging()) ? "thread.clearAllConfirm" : "thread.clearCallsConfirm");
+          el.textContent = t(messagingOn(app().messaging) ? "thread.clearAllConfirm" : "thread.clearCallsConfirm");
           return;
         }
         armed = null;
-        phone.send({ type: "ui:clearHistory" });
-        boundMessaging()?.send({ type: "ui:clearMessages" });
+        trix.call.clearHistory();
+        trix.messaging.clear();
         if (mounted) redraw(mounted);
         focusAfterClear(openKey);
         return;
@@ -885,9 +873,9 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
     e.preventDefault();
     const data = new FormData(form);
     if (form.dataset.form === "add") {
-      phone.send({ type: "ui:addContact", name: String(data.get("name") ?? ""), uri: String(data.get("uri") ?? "") });
-      // refused: the form stays, with the reason (the machine said it in contactError)
-      if (!phone.context.contactError) {
+      trix.contacts.add(String(data.get("name") ?? ""), String(data.get("uri") ?? ""));
+      // refused: the form stays, with the reason (the view says it in `errors.contact`)
+      if (!app().errors.contact) {
         adding = false;
         addDraft = { name: "", uri: "" };
         redraw(m);
@@ -899,17 +887,17 @@ export function wireThread(node: HTMLElement, phone: PhoneInstance): void {
     } else if (form.dataset.form === "compose" && form.dataset.key) {
       const key = form.dataset.key;
       const thread = threadOf(key);
-      const cfg = activeAccount(phone.context);
+      const cfg = app().account;
       const to = thread && cfg ? normalizeTarget(thread.target, cfg.domain) : null;
       const text = String(data.get("text") ?? "");
       if (!to || !text.trim() || utf8Length(text) > MAX_MESSAGE_BYTES) return;
-      boundMessaging()?.send({ type: "ui:send", uri: to, text });
+      trix.messaging.send(to, text);
       drafts.delete(key);
       redraw(m);
       stage.querySelector<HTMLTextAreaElement>("#thread-compose")?.focus();
     } else if (form.dataset.form === "rename" && form.dataset.id) {
       renaming = null;
-      phone.send({ type: "ui:renameContact", id: form.dataset.id, name: String(data.get("name") ?? "") });
+      trix.contacts.rename(form.dataset.id, String(data.get("name") ?? ""));
       redraw(m);
     }
   });

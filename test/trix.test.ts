@@ -208,6 +208,65 @@ describe("createTrix", () => {
     expect(after.errors).toBe(before.errors);
   });
 
+  it("shows a command's result at once, in the very object the next notification carries", async () => {
+    const { trix, sip } = make();
+    await registered(trix, sip);
+    const seen: TrixView[] = [];
+    trix.subscribe((v) => seen.push(v));
+    trix.presence.setStatus("busy");
+    const now = trix.view()!;
+    expect(now.presence.prefs.chosen).toBe("busy");
+    expect(trix.view()).toBe(now);
+    await Promise.resolve();
+    expect(seen).toEqual([now]);
+    expect(seen[0]).toBe(now);
+  });
+
+  it("says where messaging stands, and what it holds", async () => {
+    const { trix, sip } = make();
+    await trix.ready;
+    await vi.waitFor(() => expect(trix.view()?.phase).toBe("accounts"));
+    // the vault names an account: messages wait for the registration (ADR 0008, D3)
+    expect(trix.view()!.messaging).toMatchObject({ state: "offline", enabled: true });
+    await registered(trix, sip);
+    await vi.waitFor(() => expect(trix.view()!.messaging.loaded).toBe(true));
+    expect(trix.view()!.messaging).toMatchObject({
+      state: "online",
+      messages: [],
+      quarantine: [],
+      prompt: null,
+      unread: 0,
+    });
+  });
+
+  it("says what the settings are writing, and hands the edited account's link", async () => {
+    const { trix } = make();
+    await trix.ready;
+    await vi.waitFor(() => expect(trix.view()?.phase).toBe("accounts"));
+    expect(trix.accounts.shareUrl("https://trix.example.fr/")).toBeNull();
+    trix.accounts.configure(null);
+    expect(trix.view()!.settings).toEqual({ editing: null, suspect: null, busy: null });
+    expect(trix.accounts.shareUrl("https://trix.example.fr/")).toBeNull();
+    trix.accounts.cancel();
+    trix.accounts.configure(ACCOUNT.id);
+    expect(trix.view()!.settings?.editing?.id).toBe(ACCOUNT.id);
+    expect(trix.accounts.shareUrl("https://trix.example.fr/")).toMatch(/^https:\/\/trix\.example\.fr\/.*#/);
+    trix.accounts.save({
+      proxy: ACCOUNT.proxy,
+      uri: "alice@example.fr",
+      displayName: "Alice",
+      authUsername: null,
+      password: null,
+      stun: "",
+      turn: "",
+      turnUsername: "",
+      turnPassword: null,
+      turnTls: false,
+      rtt: "websocket",
+    });
+    expect(trix.view()!.settings?.busy).toBe("saving");
+  });
+
   it("lets the UI hear a sleep while the registration still stands", async () => {
     const { trix, sip, page } = make();
     await registered(trix, sip);

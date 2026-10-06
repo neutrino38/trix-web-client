@@ -58,15 +58,16 @@ export function reachabilityWanted(session: ResumeStore): boolean {
 }
 
 /**
- * The sentence the page shows, or `null` when there is nothing to say.
+ * The sentence the page shows, or `null` when there is nothing to say —
+ * read from the view's `reachability`.
  *
  * `direct` is not said again: the header's badge already reads
  * "Registered", and one more sentence confirming all is well would inform
  * nobody. `deferred` has none either, for another reason — at step 1,
  * nothing produces it (D1).
  */
-export function reachSentence(state: string, session: ResumeStore): MsgKey | null {
-  return reachabilityOf(state) === "none" && reachabilityWanted(session) ? "reach.none" : null;
+export function reachSentence(r: { level: Reachability; wanted: boolean }): MsgKey | null {
+  return r.level === "none" && r.wanted ? "reach.none" : null;
 }
 
 /**

@@ -32,7 +32,7 @@
  * qu'un message fugace passe serait pire que pas de zoom du tout.
  */
 
-import type { CallView } from "../../../machines/events.js";
+import type { CallView } from "../../../core/index.js";
 import { formatNumber, t } from "../../../i18n/index.js";
 import { esc } from "../../el.js";
 

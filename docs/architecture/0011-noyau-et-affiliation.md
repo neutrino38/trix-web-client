@@ -43,7 +43,7 @@ une clé et ses variables). Ce qui empêche aujourd'hui l'affiliation :
 
 ### D1 — Deux couches, et une règle vérifiée
 
-- **Le noyau** : `machines/`, `sip/`, `storage/`, `deployment.ts`, `accounts.ts`,
+- **Le noyau** : `machines/`, `sip/`, `storage/`, `deployment.ts`, `accounts.ts`, `share/link.ts`,
   `i18n/types.ts`, et un nouveau `src/core/` qui porte la façade (D2) et les modèles sortis de
   `ui/` (D5, D6). Les répertoires existants **ne sont pas déplacés** : le diff resterait illisible
   pour un gain nul.
@@ -349,9 +349,25 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    texte de D3 laissait implicite : `trix.system.onSleep` prévient l'UI d'un endormissement
    **avant** que le noyau ne désenregistre — c'est là que `ui/reachability.ts` pose son
    dernier horodatage joignable, au lieu de compter sur l'ordre de pose des écouteurs.
-   Reste : les écrans lisent encore les automates par `trix.debug`, hors contrat, et
-   `ctx.session`, `ctx.deployment`, `ctx.trace` restent dans le contexte du téléphone
-   jusqu'à ce qu'aucun écran ne les y lise. Vérifié en réel le 2026-10-03 : ajout et retrait
+   Seconde moitié faite le 2026-10-06 : chaque écran lit la `TrixView` et n'agit que par
+   les commandes de la façade ; `main.ts` ne touche plus `trix.debug`, qui ne sert plus
+   qu'à la console. `test/layers.test.ts` le vérifie : `ui/` et `main.ts` n'importent rien
+   de `machines/`, pas même un type — la façade réexporte ceux dont l'UI a besoin. Pour
+   y arriver, la vue a gagné ce que les écrans lisaient dans les automates : l'état de la
+   messagerie (`messaging.state`), ses messages, sa quarantaine et la fin de la lecture
+   du coffre (`loaded`) ; `settings.busy` dit **ce qui** s'écrit (`saving`, `deleting`)
+   et non plus seulement que quelque chose s'écrit. `trix.view()` calcule l'instantané à
+   la demande : lu juste après une commande, il en montre déjà le résultat, et c'est le
+   même objet que portera la notification suivante — l'écran de paramètres et le fil
+   Échanges relisent ainsi le refus d'un champ ou d'un contact sans attendre une
+   microtâche. Le lien de partage d'un compte porte son HA1, que la vue ne montre pas :
+   il passe par une commande, `trix.accounts.shareUrl()`, et `share/link.ts` entre dans
+   le noyau (question ouverte de la section 5, pour moitié). La conversation de l'appel
+   se lit dans la vue (`conversationOf`, `ui/screens/call/chat.ts`), la joignabilité de
+   l'UI suit `view.reachability`, et la session de l'instance est créée par `main.ts`,
+   qui la remet à `createTrix` et à `ui/reachability.ts`. `ctx.session`,
+   `ctx.deployment` et `ctx.trace` restent dans le contexte du téléphone : ce sont des
+   entrées des automates, que plus aucun écran n'y lit. Vérifié en réel le 2026-10-03 : ajout et retrait
    de la vidéo et d'un média, invite du distant, attente, micro, partage d'écran, appel reçu
    onglet caché. Puis le 2026-10-04 : gel de l'onglet, déchargement (`edge://discard`) et
    veille de la machine, chacun suivi de sa reprise ; coupure réseau, annoncée comme telle ;
@@ -390,8 +406,9 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
   domaine pourront s'y ajouter sans rupture.
 - ~~**Le formulaire de paramètres**~~ : hors contrat (étape 6). Le noyau porte la validation et
   ce qui l'encadre ; chaque UI construit son formulaire et remet un `ConfigForm`.
-- **La page de partage de compte** (`share/`, ADR 0004) : noyau (`share/link.ts` l'est déjà) et
-  page à part entière, ou modèle de page à réécrire par l'affilié ?
+- **La page de partage de compte** (`share/page.ts`, ADR 0004) : page à part entière, ou modèle
+  de page à réécrire par l'affilié ? Le lien lui-même est au noyau depuis l'étape 6
+  (`share/link.ts`, `trix.accounts.shareUrl()`).
 
 ## Références
 
