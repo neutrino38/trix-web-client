@@ -55,6 +55,7 @@ import type { MessagingLink, MessagingSipEvent } from "../sip/message.js";
 import type { ImdnStatus, Wanted } from "../sip/imdn.js";
 import type { SipHandle } from "../sip/port.js";
 import { addressKey } from "../sip/uri.js";
+import { COMPOSING_IDLE_MS, COMPOSING_REFRESH_S, REMOTE_REFRESH_S } from "../sip/iscomposing.js";
 import { buildFtHttp, type UploadAccount, type UploadFailure, type UploadFile, type UploadResult } from "../sip/ftupload.js";
 import {
   capMessages,
@@ -90,6 +91,14 @@ export type MessagingEvent =
   | { type: "ui:send"; uri: string; text: string }
   /** Send `file` to `uri`, with `caption` as its text (ADR 0012, D7, D8). */
   | { type: "ui:sendFile"; uri: string; file: UploadFile; caption?: string }
+  /** A key pressed in `uri`'s writing field (ADR 0012, D9). */
+  | { type: "ui:typing"; uri: string }
+  /** A voice message for `uri` started or stopped being recorded. */
+  | { type: "ui:recording"; uri: string; on: boolean }
+  /** A peer's `active` ran out, unless renewed since (`until` tells). */
+  | { type: "composing:expire"; key: string; until: number }
+  /** Our own typing: still going since `stamp`, or over. */
+  | { type: "typing:check"; key: string; stamp: number }
   | { type: "ui:retry"; id: string }
   /** The correspondent's line is open in a visible tab. */
   | { type: "ui:read"; key: string }
@@ -151,6 +160,26 @@ export interface MessagingCtx {
    * (`message.reason.fileLost`).
    */
   pendingFiles: Map<string, UploadFile>;
+  /** Who is writing to us, by key, and until when (ADR 0012, D9). A new object at each change. */
+  composing: Readonly<Record<string, ComposingPeer>>;
+  /** What we told each correspondent we are writing, by key. */
+  typing: Record<string, OwnTyping>;
+}
+
+/** A correspondent writing to us — or recording a voice message — until `until`. */
+export interface ComposingPeer {
+  voice: boolean;
+  until: number;
+}
+
+/** Our side of the indicator, for one correspondent. */
+interface OwnTyping {
+  uri: string;
+  voice: boolean;
+  /** When `active` last left. */
+  lastSent: number;
+  /** The last key pressed. */
+  lastInput: number;
 }
 
 type Ev<T extends MessagingEvent["type"]> = Extract<MessagingEvent, { type: T }>;
@@ -343,6 +372,18 @@ function startUpload(ctx: MessagingCtx, fx: MFx, id: string, store: UploadAccoun
   );
 }
 
+/** A correspondent stops being shown as writing. */
+function quiet(ctx: MessagingCtx, key: string): void {
+  if (!(key in ctx.composing)) return;
+  const { [key]: _gone, ...rest } = ctx.composing;
+  ctx.composing = rest;
+}
+
+/** A message left for `key`: what we were writing is in it, nothing more to say (Linphone drops it too). */
+function doneTyping(ctx: MessagingCtx, key: string): void {
+  delete ctx.typing[key];
+}
+
 // ---- handlers ---------------------------------------------------------------
 
 function account(ev: Ev<"phone:account">, ctx: MessagingCtx, fx: MFx) {
@@ -354,6 +395,8 @@ function account(ev: Ev<"phone:account">, ctx: MessagingCtx, fx: MFx) {
   ctx.inFlight = [];
   ctx.quarantine = [];
   ctx.pendingFiles = new Map();
+  ctx.composing = {};
+  ctx.typing = {};
   ctx.link = null;
   if (ev.accountId === null) return goto("off", "no account");
   const id = ev.accountId;
@@ -451,6 +494,8 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
     ev.answer(480);
     return stay("message with nowhere to go");
   }
+  // what they were writing has arrived
+  quiet(ctx, key);
   const at = ev.date ?? ctx.now();
   const contact = contactOf(ctx, key);
   if (contact?.blocked) {
@@ -548,6 +593,7 @@ function write(ev: Ev<"ui:send">, ctx: MessagingCtx) {
   };
   ctx.messages = [...ctx.messages, entry];
   dispatch(ctx, entry);
+  doneTyping(ctx, key);
   save(ctx);
   return stay("message written");
 }
@@ -580,6 +626,7 @@ function writeFile(ev: Ev<"ui:sendFile">, ctx: MessagingCtx, fx: MFx) {
   };
   ctx.messages = [...ctx.messages, entry];
   ctx.pendingFiles.set(entry.id, ev.file);
+  doneTyping(ctx, key);
   startUpload(ctx, fx, entry.id, store, ev.file);
   save(ctx);
   return stay("file written");
@@ -630,6 +677,83 @@ function retry(ev: Ev<"ui:retry">, ctx: MessagingCtx, fx: MFx) {
 function fileStoreChanged(ev: Ev<"phone:fileStore">, ctx: MessagingCtx) {
   ctx.fileStore = ev.fileStore;
   return stay(ev.fileStore ? "file store known" : "no file store");
+}
+
+/**
+ * A correspondent writes, records, or stopped (ADR 0012, D9). Shown only
+ * for a line of ours — a stranger's indicator says nothing to show.
+ */
+function composingCame(ev: Ev<"sip:composing">, ctx: MessagingCtx, fx: MFx) {
+  const key = addressKey(ev.from);
+  if (key === null || !known(ctx, key) || contactOf(ctx, key)?.blocked) return stay("indicator from no line of ours");
+  if (!ev.active) {
+    quiet(ctx, key);
+    return stay("peer stopped writing");
+  }
+  const until = ctx.now() + (ev.refreshS ?? REMOTE_REFRESH_S) * 1000;
+  ctx.composing = { ...ctx.composing, [key]: { voice: ev.voice, until } };
+  fx.delay({ type: "composing:expire", key, until }, until - ctx.now(), { sticky: true });
+  return stay(ev.voice ? "peer recording" : "peer writing");
+}
+
+function composingExpire(ev: Ev<"composing:expire">, ctx: MessagingCtx) {
+  if (ctx.composing[ev.key]?.until !== ev.until) return stay("indicator renewed since");
+  quiet(ctx, ev.key);
+  return stay("peer indicator ran out");
+}
+
+/** A key pressed: `active` if not said within the refresh, and a check for silence. */
+function typingInput(ev: Ev<"ui:typing">, ctx: MessagingCtx, fx: MFx) {
+  const key = addressKey(ev.uri);
+  if (key === null || ctx.accountId === null) return stay("typing to nobody");
+  const now = ctx.now();
+  const own = ctx.typing[key];
+  if (own?.voice) return stay("recording, not typing");
+  if (!own || now - own.lastSent >= COMPOSING_REFRESH_S * 1000) {
+    ctx.link?.composing(ev.uri, true);
+    ctx.typing[key] = { uri: ev.uri, voice: false, lastSent: now, lastInput: now };
+  } else {
+    own.lastInput = now;
+  }
+  fx.delay({ type: "typing:check", key, stamp: now }, COMPOSING_IDLE_MS, { sticky: true });
+  return stay("typing");
+}
+
+/** Silence since `stamp`: typing is over, said `idle`. A recording is renewed instead. */
+function typingCheck(ev: Ev<"typing:check">, ctx: MessagingCtx, fx: MFx) {
+  const own = ctx.typing[ev.key];
+  if (!own) return stay("nothing being written");
+  if (own.voice) {
+    if (ev.stamp !== own.lastSent) return stay("renewed since");
+    const now = ctx.now();
+    ctx.link?.composing(own.uri, true, true);
+    own.lastSent = now;
+    fx.delay({ type: "typing:check", key: ev.key, stamp: now }, COMPOSING_REFRESH_S * 1000, { sticky: true });
+    return stay("still recording");
+  }
+  if (ev.stamp !== own.lastInput) return stay("typed since");
+  ctx.link?.composing(own.uri, false);
+  delete ctx.typing[ev.key];
+  return stay("typing over");
+}
+
+/** A voice message recorded for `uri`: `active` with its type while it lasts (design §9.2). */
+function recording(ev: Ev<"ui:recording">, ctx: MessagingCtx, fx: MFx) {
+  const key = addressKey(ev.uri);
+  if (key === null || ctx.accountId === null) return stay("recording for nobody");
+  const now = ctx.now();
+  if (ev.on) {
+    ctx.link?.composing(ev.uri, true, true);
+    ctx.typing[key] = { uri: ev.uri, voice: true, lastSent: now, lastInput: now };
+    fx.delay({ type: "typing:check", key, stamp: now }, COMPOSING_REFRESH_S * 1000, { sticky: true });
+    return stay("recording");
+  }
+  // stopped: sent (the message says the rest) or cancelled (said idle)
+  if (ctx.typing[key]?.voice) {
+    delete ctx.typing[key];
+    ctx.link?.composing(ev.uri, false);
+  }
+  return stay("recording over");
 }
 
 function markRead(ev: Ev<"ui:read">, ctx: MessagingCtx) {
@@ -720,6 +844,8 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
     upload: () => Promise.resolve({ ok: false, failure: "noAnswer", status: null } as UploadResult),
     fileStore: null,
     pendingFiles: new Map(),
+    composing: {},
+    typing: {},
   }),
 
   states: {
@@ -743,6 +869,11 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:sendFile": writeFile,
         "task:upload": uploaded,
         "phone:fileStore": fileStoreChanged,
+        "sip:composing": composingCame,
+        "composing:expire": composingExpire,
+        "ui:typing": typingInput,
+        "typing:check": typingCheck,
+        "ui:recording": recording,
         "ui:retry": retry,
         "ui:read": markRead,
         "ui:acceptSender": accept,
@@ -769,6 +900,11 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:sendFile": writeFile,
         "task:upload": uploaded,
         "phone:fileStore": fileStoreChanged,
+        "sip:composing": composingCame,
+        "composing:expire": composingExpire,
+        "ui:typing": typingInput,
+        "typing:check": typingCheck,
+        "ui:recording": recording,
         "ui:retry": retry,
         "ui:read": markRead,
         "ui:acceptSender": accept,
@@ -795,6 +931,11 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "ui:sendFile": writeFile,
         "task:upload": uploaded,
         "phone:fileStore": fileStoreChanged,
+        "sip:composing": composingCame,
+        "composing:expire": composingExpire,
+        "ui:typing": typingInput,
+        "typing:check": typingCheck,
+        "ui:recording": recording,
         "ui:retry": retry,
         "ui:read": markRead,
         "ui:acceptSender": accept,
@@ -825,6 +966,11 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "task:loadMessages": () => stay("messaging off"),
         "ui:send": () => stay("messaging off"),
         "ui:sendFile": () => stay("messaging off"),
+        "sip:composing": () => stay("messaging off"),
+        "composing:expire": () => stay("messaging off"),
+        "ui:typing": () => stay("messaging off"),
+        "typing:check": () => stay("messaging off"),
+        "ui:recording": () => stay("messaging off"),
         "task:upload": () => stay("messaging off"),
         "phone:fileStore": () => stay("messaging off"),
         "ui:retry": () => stay("messaging off"),

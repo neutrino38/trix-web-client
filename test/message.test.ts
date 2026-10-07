@@ -575,3 +575,40 @@ describe("sending a file (ADR 0012, D7, D8)", () => {
     expect(() => link.sendFile("f1", "sip:bob@example.org", XML, "x".repeat(MAX_MESSAGE_BYTES + 1))).toThrow(RangeError);
   });
 });
+
+describe("is composing (ADR 0012, D9)", () => {
+  const XML = (state: string, type = "text/plain") =>
+    `<?xml version="1.0" encoding="UTF-8"?><isComposing xmlns="urn:ietf:params:xml:ns:im-iscomposing"><state>${state}</state><contenttype>${type}</contenttype><refresh>60</refresh></isComposing>`;
+
+  it("bare: 200, and the machine is told", () => {
+    const { link, events } = setup();
+    const { view, replies } = incoming({ contentType: "application/im-iscomposing+xml", body: XML("active") });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([{ type: "sip:composing", from: "sip:bob@example.org", active: true, voice: false, refreshS: 60 }]);
+  });
+
+  it("in CPIM, a voice message being recorded", () => {
+    const { link, events } = setup();
+    const body = ["From: <sip:bob@example.org>", "", "Content-Type: application/im-iscomposing+xml", "", XML("active", "audio/wav;voice-recording=yes")].join("\r\n");
+    link.receive(incoming({ contentType: "message/cpim", body }).view);
+    expect(events).toEqual([expect.objectContaining({ type: "sip:composing", voice: true })]);
+  });
+
+  it("sends it bare, non-urgent, never kept", () => {
+    const sent: { contentType: string; body: string; headers?: readonly string[] }[] = [];
+    const link = openMessaging({
+      sender: (_uri, body, contentType, _done, headers) => sent.push({ contentType, body, ...(headers ? { headers } : {}) }),
+      self: "sip:alice@example.org",
+      parser: new DOMParser() as never,
+      send: () => {},
+      now: () => NOW,
+    });
+    link.composing("sip:bob@example.org", true, true);
+    expect(sent[0]).toEqual({
+      contentType: "application/im-iscomposing+xml",
+      body: expect.stringContaining("<contenttype>audio/wav;voice-recording=yes</contenttype>"),
+      headers: ["Priority: non-urgent", "Expires: 0"],
+    });
+  });
+});

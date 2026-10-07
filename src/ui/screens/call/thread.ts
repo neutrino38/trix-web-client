@@ -38,7 +38,10 @@ import type { MessageEntry } from "../../../storage/store.js";
 import { canWrite, messagingOn } from "../../messaging.js";
 import { formatDayMonth, formatTime, localeTag, t, tn } from "../../../i18n/index.js";
 import { normalizeTarget } from "../../../sip/uri.js";
-import { entryText, fileCard } from "../../attachment.js";
+import { entryText, fileCard, formatLength } from "../../attachment.js";
+import { canRecordVoice, MAX_VOICE_MS, startVoice, type VoiceRecording } from "../../voicerecorder.js";
+import { showToast } from "../../toast.js";
+import { VOICE_RECORDING_TYPE } from "../../../sip/fthttp.js";
 import { fetchFile, markUnplayable, onFileChange } from "../../filefetch.js";
 import type { FileAttachment } from "../../../sip/fthttp.js";
 import { showChatDialog } from "../../chatdialog.js";
@@ -258,6 +261,48 @@ function segments(): string {
   </div>`;
 }
 
+/** The voice message being recorded, for one line at a time (ADR 0012, D10). */
+let voice: {
+  key: string;
+  uri: string;
+  rec: VoiceRecording;
+  tick: ReturnType<typeof setInterval>;
+  cap: ReturnType<typeof setTimeout>;
+} | null = null;
+
+/** "Bob is writing…", or recording, for the open line; empty when neither (ADR 0012, D9). */
+function composingText(thread: Thread | undefined, messaging: MessagingView): string {
+  const peer = thread ? messaging.composing[thread.key] : undefined;
+  if (!thread || !peer) return "";
+  return t(peer.voice ? "message.composing.voice" : "message.composing.text", { name: thread.name });
+}
+
+function composingLine(thread: Thread, messaging: MessagingView): string {
+  return `<p class="thread-composing" data-ref="composing" data-key="${esc(thread.key)}" aria-live="polite">${esc(
+    composingText(thread, messaging),
+  )}</p>`;
+}
+
+/** Attaching and recording, when the account has a file store. */
+function attachControls(thread: Thread, messaging: MessagingView): string {
+  if (!messaging.canSendFiles) return "";
+  if (voice?.key === thread.key) {
+    return `<span class="compose-recording" role="status"><span aria-hidden="true">⏺</span> ${esc(
+      t("message.recording"),
+    )} <span data-ref="record-time">${formatLength(Date.now() - voice.rec.startedAt)}</span></span>
+    <button type="button" class="btn small primary" data-act="compose-record-send">${esc(t("message.recordSend"))}</button>
+    <button type="button" class="btn small" data-act="compose-record-cancel">${esc(t("message.recordCancel"))}</button>`;
+  }
+  return `<label class="btn small" title="${esc(t("message.attachHint"))}">${esc(t("message.attach"))}
+        <input type="file" accept="image/*" class="sr-only" data-ref="compose-file"></label>${
+          canRecordVoice()
+            ? `<button type="button" class="btn small" data-act="compose-record" title="${esc(t("message.recordHint"))}">${esc(
+                t("message.record"),
+              )}</button>`
+            : ""
+        }`;
+}
+
 function composer(thread: Thread, messaging: MessagingView): string {
   const draft = drafts.get(thread.key) ?? "";
   const bytes = utf8Length(draft);
@@ -267,12 +312,7 @@ function composer(thread: Thread, messaging: MessagingView): string {
     <label class="sr-only" for="thread-compose">${esc(t("message.compose", { name: thread.name }))}</label>
     <textarea id="thread-compose" name="text" rows="2" dir="auto" placeholder="${esc(t("message.placeholder"))}"
               ${over ? 'aria-invalid="true"' : ""} aria-describedby="thread-compose-count">${esc(draft)}</textarea>
-    <span class="compose-actions">${
-      messaging.canSendFiles
-        ? `<label class="btn small" title="${esc(t("message.attachHint"))}">${esc(t("message.attach"))}
-        <input type="file" accept="image/*" class="sr-only" data-ref="compose-file"></label>`
-        : ""
-    }<button type="submit" class="btn small primary" ${over || !draft.trim() ? "disabled" : ""}>${esc(
+    <span class="compose-actions">${attachControls(thread, messaging)}<button type="submit" class="btn small primary" ${over || !draft.trim() ? "disabled" : ""}>${esc(
       t("message.send"),
     )}</button></span>
     <span class="compose-count ${over ? "over" : ""}" id="thread-compose-count" data-ref="compose-count"
@@ -361,7 +401,8 @@ function body(thread: Thread, now: number, messaging: MessagingView): string {
   // the contact's actions come first: after a long history they would be out of sight.
   // Expanded, the conversation alone: the actions wait for the way back.
   // The field to write sits above the list, against the most recent event.
-  return `<div class="thread-body">${focused ? "" : actions}${withMessages ? segments() : ""}${write}${list}</div>`;
+  const writing = withMessages ? composingLine(thread, messaging) : "";
+  return `<div class="thread-body">${focused ? "" : actions}${withMessages ? segments() : ""}${write}${writing}${list}</div>`;
 }
 
 function row(
@@ -659,8 +700,17 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
 export function refreshThread(): void {
   const m = mounted;
   if (!m || !m.node.isConnected) return;
-  const next = signature(m.trix.view()!);
+  const app = m.trix.view()!;
+  const next = signature(app);
   if (!same(next, m.signature)) redraw(m);
+  // the indicator changes alone, without a redraw: a voice message playing goes on
+  for (const line of m.node.querySelectorAll<HTMLElement>('[data-ref="composing"]')) {
+    const text = composingText(
+      app.threads.find((th) => th.key === line.dataset.key),
+      app.messaging,
+    );
+    if (line.textContent !== text) line.textContent = text;
+  }
 }
 
 export function wireThread(node: HTMLElement, trix: Trix): void {
@@ -699,6 +749,37 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
 
   const threadOf = (key: string | undefined): Thread | undefined => app().threads.find((th) => th.key === key);
   const entryAt = (i: string | undefined) => app().history[Number(i)];
+  /** The address a line writes to. */
+  const targetOf = (key: string | undefined): string | null => {
+    const thread = threadOf(key);
+    const cfg = app().account;
+    return thread && cfg ? normalizeTarget(thread.target, cfg.domain) : null;
+  };
+
+  /** Stops the voice message being recorded: sent, or dropped. */
+  const endVoice = async (send: boolean): Promise<void> => {
+    const v = voice;
+    if (!v) return;
+    voice = null;
+    clearInterval(v.tick);
+    clearTimeout(v.cap);
+    if (send) {
+      const clip = await v.rec.stop();
+      if (clip) {
+        trix.messaging.sendFile(v.uri, {
+          name: clip.name,
+          type: VOICE_RECORDING_TYPE,
+          data: clip.blob,
+          playingLengthMs: clip.durationMs,
+        });
+      }
+    } else {
+      v.rec.cancel();
+    }
+    // sent: the message says the rest; dropped: the peer is told it stopped
+    trix.messaging.recording(v.uri, false);
+    redraw(m, true);
+  };
 
   stage.addEventListener("input", (e) => {
     const input = e.target as HTMLInputElement;
@@ -713,6 +794,9 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
       const key = input.closest<HTMLElement>("[data-key]")?.dataset.key;
       if (!key) return;
       drafts.set(key, input.value);
+      // the correspondent learns we write (ADR 0012, D9); the machine paces it
+      const to = targetOf(key);
+      if (to && input.value.trim()) trix.messaging.typing(to);
       // the counter and the button follow the typing, without a redraw
       const bytes = utf8Length(input.value);
       const over = bytes > MAX_MESSAGE_BYTES;
@@ -884,6 +968,36 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
       }
       case "thread-retry":
         if (id) trix.messaging.retry(id);
+        return;
+      case "compose-record": {
+        const key = el.closest<HTMLElement>('[data-form="compose"]')?.dataset.key;
+        const to = targetOf(key);
+        if (!key || !to || voice) return;
+        startVoice()
+          .then((rec) => {
+            voice = {
+              key,
+              uri: to,
+              rec,
+              tick: setInterval(() => {
+                const time = stage.querySelector<HTMLElement>('[data-ref="record-time"]');
+                if (time && voice) time.textContent = formatLength(Date.now() - voice.rec.startedAt);
+              }, 1000),
+              // a voice message, not a dictation: it leaves by itself at the bound
+              cap: setTimeout(() => void endVoice(true), MAX_VOICE_MS),
+            };
+            trix.messaging.recording(to, true);
+            redraw(m, true);
+            stage.querySelector<HTMLElement>('[data-act="compose-record-send"]')?.focus();
+          })
+          .catch(() => showToast(t("message.recordDenied")));
+        return;
+      }
+      case "compose-record-send":
+        void endVoice(true);
+        return;
+      case "compose-record-cancel":
+        void endVoice(false);
         return;
       case "file-fetch": {
         const file = fileByUrl(app(), el.dataset.url);

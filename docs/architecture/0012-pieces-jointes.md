@@ -1,8 +1,8 @@
 # ADR 0012 — Les pièces jointes, comme Linphone les envoie
 
 **Statut :** accepté — 2026-10-07 · **implémenté** — 2026-10-07 : réception (T1), affichage et
-lecture dans la page (T2), envoi d'une photo et légende (T3, T5) ; message vocal à venir (T4) ;
-validation réelle à faire (§4)
+lecture dans la page (T2), envoi d'une photo et légende (T3, T5), message vocal et indicateur de
+saisie (T4) ; validation réelle à faire (§4)
 **Portée :** `sip/fthttp.ts` (nouveau), `sip/message.ts`, `sip/port.ts`, `storage/store.ts`,
 `machines/messaging.ts`, `ui/attachment.ts` (nouveau), `ui/filefetch.ts` (nouveau), `ui/screens/call/thread.ts`,
 `ui/messagealerts.ts`, `ui/theme.css`, `i18n/locales/*`
@@ -129,6 +129,33 @@ corps SIP reste en une seule partie. Une légende au-delà de 1 000 octets (ADR 
 la photo part seule, et le texte reste dans la zone de saisie. Linphone affiche une légende reçue,
 mais n'en envoie jamais : c'est une limite de Linphone, que Trix ne compense pas.
 
+### D9 — L'indicateur de saisie
+
+Trix n'en avait aucun. Il lit maintenant l'isComposing (RFC 3994, `sip/iscomposing.ts`), nu ou en
+CPIM, répondu 200, et l'envoie **nu**, `Priority: non-urgent`, `Expires: 0` — comme Linphone, et
+pour que kelixip ne le garde jamais.
+
+- **Reçu** : « Bob écrit… » ou « Bob enregistre un message vocal… » sous la zone de saisie de la
+  ligne ouverte, jusqu'au `refresh` annoncé (120 s sans) ou jusqu'à son message. Seulement pour une
+  ligne à nous — contact, ou quelqu'un à qui l'on a écrit — et jamais pour un bloqué ; d'un
+  inconnu, il ne dit rien à montrer. L'indicateur se met à jour **sans redessiner le fil**, pour
+  ne pas couper un message vocal en lecture.
+- **Envoyé** : `active` à la frappe, au plus une fois par 60 s ; `idle` après 15 s sans touche ;
+  rien quand le message part, que le destinataire sait déjà lire. Pendant un enregistrement,
+  `active` avec le type du message vocal, renouvelé chaque minute, et `idle` s'il est abandonné.
+
+### D10 — Le message vocal
+
+Le bouton « Vocal » enregistre au micro (`ui/voicerecorder.ts`), avec `MediaRecorder` en
+`audio/webm; codecs=opus` si le navigateur l'a, sinon Ogg/Opus ; « Envoyer le vocal » l'envoie,
+« Annuler » le jette. Le fichier s'appelle `vocal_<date>.mka` et part avec le type de Linphone,
+`audio/wav;voice-recording=yes`, quel que soit son conteneur — c'est à ce type seul que Linphone
+reconnaît un message vocal — et sa durée mesurée en millisecondes dans le XML. Un enregistrement
+s'arrête et part de lui-même au bout de cinq minutes. Un micro refusé se dit.
+
+Que le lecteur de Linphone lise le WebM d'un navigateur est une **mesure** (§4) ; à défaut, un
+encodeur WAV PCM 16 kHz mono dans le client, construit sur cette mesure.
+
 ## 2. Ce que le serveur de référence demande à l'envoi
 
 Lu dans le code du serveur de référence, et vérifié sur sa répétition en conteneurs
@@ -172,7 +199,10 @@ En réel, avec un Linphone de bureau provisionné (`file_transfer_server_url`) :
 6. une photo envoyée de Trix s'affiche chez Linphone et dans un second Trix, et revient
    « Distribué » des deux ; avec une légende, Linphone l'affiche sous la photo ;
 7. **la mesure** : le message vocal de Linphone se joue — ou dit qu'il ne se joue pas — dans
-   Chromium, Firefox et Safari, et le résultat est écrit ici.
+   Chromium, Firefox et Safari, et le résultat est écrit ici ;
+8. **la mesure** : un message vocal de Trix se joue chez Linphone avec la bonne durée ;
+9. « Bob écrit… » apparaît dans Trix quand Linphone écrit, et l'inverse ; « enregistre un message
+   vocal » pendant un enregistrement, des deux côtés.
 
 ## Références
 

@@ -70,7 +70,8 @@ import {
   type ImdnStatus,
   type Wanted,
 } from "./imdn.js";
-import { FTHTTP_CONTENT_TYPE, readAttachment, type FileAttachment } from "./fthttp.js";
+import { FTHTTP_CONTENT_TYPE, readAttachment, VOICE_RECORDING_TYPE, type FileAttachment } from "./fthttp.js";
+import { buildIsComposing, COMPOSING_HEADERS, ISCOMPOSING_CONTENT_TYPE, readIsComposing } from "./iscomposing.js";
 import type { XmlParser } from "./pidf.js";
 import { addressKey } from "./uri.js";
 
@@ -119,6 +120,17 @@ export type MessagingSipEvent =
       status: number | null;
     }
   | {
+      /** The correspondent is writing, or recording a voice message, or stopped (ADR 0012, D9). */
+      type: "sip:composing";
+      /** `sip:user@host`. */
+      from: string;
+      active: boolean;
+      /** A voice message is being recorded. */
+      voice: boolean;
+      /** How long `active` holds, in seconds; null: the default. */
+      refreshS: number | null;
+    }
+  | {
       /** A positive IMDN about one of our messages (ADR 0010). */
       type: "sip:receipt";
       /** The receipt's sender, `sip:user@host`. */
@@ -141,6 +153,12 @@ export interface MessagingLink {
    * does. In CPIM first; after a 415, bare.
    */
   sendFile(id: string, uri: string, xml: string, caption?: string): void;
+  /**
+   * Tells `uri` we are writing — or recording a voice message, `voice` —
+   * or stopped (ADR 0012, D9). Bare, never in CPIM; reports nothing and
+   * never throws: a lost indicator is corrected by the next one.
+   */
+  composing(uri: string, active: boolean, voice?: boolean): void;
   /**
    * Tells `uri` that its message `messageId`, which it dated `at`, was
    * delivered or displayed (ADR 0010). Reports nothing, and never throws.
@@ -175,6 +193,8 @@ export type MessageSender = (
   body: string,
   contentType: string,
   done: (status: number | null) => void,
+  /** Header fields beyond the body's, `Name: value` — an isComposing's (ADR 0012, D9). */
+  extraHeaders?: readonly string[],
 ) => void;
 
 export interface MessagingDeps {
@@ -192,6 +212,11 @@ export interface MessagingDeps {
 /** Length of `text` once encoded in UTF-8. */
 export function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
+}
+
+/** A media type without its parameters, lower case; "" for none. */
+function mediaTypeOf(contentType: string | null): string {
+  return contentType?.split(";")[0]!.trim().toLowerCase() ?? "";
 }
 
 /** Is this body type one we display (D1)? A body without a type is not: RFC 3428 requires one. */
@@ -223,6 +248,21 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
   const newId = deps.newId ?? (() => crypto.randomUUID());
   /** Correspondents who refused CPIM with 415: bare text from then on. */
   const plainOnly = new Set<string>();
+
+  /** An indicator is taken from anyone, answered 200; the machine decides whom it shows. */
+  function receiveComposing(req: IncomingView, body: string): void {
+    req.reply(200);
+    if (req.user === null || req.user === "" || send === null) return;
+    const c = readIsComposing(body, deps.parser);
+    if (c === null) return;
+    send({
+      type: "sip:composing",
+      from: `sip:${req.user}@${req.host.toLowerCase()}`,
+      active: c.active,
+      voice: c.contentType !== null && c.contentType.replace(/\s+/g, "").toLowerCase() === VOICE_RECORDING_TYPE,
+      refreshS: c.refreshS,
+    });
+  }
 
   /** Receipts are taken from anyone; the machine only matches them against what we sent. */
   function receiveReceipts(req: IncomingView, bodies: string[]): void {
@@ -287,6 +327,16 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
       });
     },
 
+    composing(uri, active, voice = false) {
+      if (send === null) return;
+      const body = buildIsComposing(active, voice ? VOICE_RECORDING_TYPE : "text/plain");
+      try {
+        deps.sender(uri, body, ISCOMPOSING_CONTENT_TYPE, () => {}, COMPOSING_HEADERS);
+      } catch {
+        // an address that cannot go out: nothing to tell
+      }
+    },
+
     receipt(uri, messageId, at, status) {
       const key = addressKey(uri);
       // no receipt to someone who refused CPIM: it would be refused too
@@ -337,6 +387,10 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
           receiveReceipts(req, receipts);
           return;
         }
+      }
+      if (mediaTypeOf(contentType) === ISCOMPOSING_CONTENT_TYPE) {
+        receiveComposing(req, body);
+        return;
       }
       let file: FileAttachment | null = null;
       if (!readableType(contentType)) {
@@ -416,6 +470,7 @@ export function fileContent(xml: string, caption?: string): { contentType: strin
 export const NO_MESSAGING: OpenMessaging = {
   send() {},
   sendFile() {},
+  composing() {},
   receipt() {},
   receive(req) {
     req.reply(480);
@@ -464,12 +519,13 @@ export function jssipIncoming(e: JsSipMessageEvent): IncomingView {
 
 /** The `MessageSender` of a live UA. */
 export function jssipSender(ua: UA): MessageSender {
-  return (uri, body, contentType, done) => {
+  return (uri, body, contentType, done, extraHeaders = []) => {
     // JsSIP would send `MESSAGE undefined` rather than refuse
     if (!normalizeTarget(uri)) throw new TypeError(`invalid SIP target: ${uri}`);
     type Outcome = { response?: { status_code?: number } | null };
     ua.sendMessage(uri, body, {
       contentType,
+      ...(extraHeaders.length ? { extraHeaders: [...extraHeaders] } : {}),
       eventHandlers: {
         succeeded: (e: Outcome) => done(e.response?.status_code ?? 200),
         // a local failure (timeout, transport) carries no response

@@ -192,6 +192,10 @@ export interface Trix {
     send(uri: string, text: string): void;
     /** Send a file, with an optional caption (ADR 0012, D7, D8). */
     sendFile(uri: string, file: UploadFile, caption?: string): void;
+    /** A key pressed in the writing field for `uri` (ADR 0012, D9). */
+    typing(uri: string): void;
+    /** A voice message for `uri` started or stopped being recorded. */
+    recording(uri: string, on: boolean): void;
     retry(id: string): void;
     /** This correspondent's line is open in a visible tab. */
     read(key: string): void;
@@ -460,6 +464,8 @@ export function createTrix(options: TrixOptions = {}): Trix {
     },
     messaging: {
       send: (uri, text) => messaging({ type: "ui:send", uri, text }),
+      typing: (uri) => messaging({ type: "ui:typing", uri }),
+      recording: (uri, on) => messaging({ type: "ui:recording", uri, on }),
       sendFile: (uri, file, caption) =>
         messaging({ type: "ui:sendFile", uri, file, ...(caption !== undefined ? { caption } : {}) }),
       retry: (id) => messaging({ type: "ui:retry", id }),

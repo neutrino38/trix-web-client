@@ -43,6 +43,7 @@ function fakeStore(initial: MessageEntry[] = []) {
 function fakeHandle(opts: { throws?: Error } = {}) {
   const sent: { id: string; uri: string; text: string }[] = [];
   const sentFiles: { id: string; uri: string; xml: string; caption?: string }[] = [];
+  const indicators: { uri: string; active: boolean; voice: boolean }[] = [];
   const receipts: { uri: string; messageId: string; at: number; status: ImdnStatus }[] = [];
   let send: ((ev: MessagingSipEvent) => void) | null = null;
   const link: MessagingLink = {
@@ -53,6 +54,9 @@ function fakeHandle(opts: { throws?: Error } = {}) {
     sendFile(id, uri, xml, caption) {
       if (opts.throws) throw opts.throws;
       sentFiles.push({ id, uri, xml, ...(caption !== undefined ? { caption } : {}) });
+    },
+    composing(uri, active, voice = false) {
+      indicators.push({ uri, active, voice });
     },
     receipt(uri, messageId, at, status) {
       receipts.push({ uri, messageId, at, status });
@@ -80,7 +84,7 @@ function fakeHandle(opts: { throws?: Error } = {}) {
   const outcome = (id: string, status: number | null) => send!({ type: "sip:messageSent", id, status });
   const receipt = (from: string, messageId: string, status: ImdnStatus) =>
     send!({ type: "sip:receipt", from, messageId, status });
-  return { handle, sent, sentFiles, receipts, deliver, outcome, receipt };
+  return { handle, sent, sentFiles, indicators, receipts, deliver, outcome, receipt };
 }
 
 let clock = 1_000_000;
@@ -796,5 +800,67 @@ describe("sending a file (ADR 0012, D7)", () => {
     };
     const t = await start({ initial: [lost] });
     expect(t.m.context.messages[0]).toEqual(expect.objectContaining({ state: "failed", reason: { key: "message.reason.fileLost" } }));
+  });
+});
+
+describe("is composing (ADR 0012, D9)", () => {
+  const composing = (from: string, active: boolean, voice = false, refreshS: number | null = null) =>
+    ({ type: "sip:composing", from, active, voice, refreshS }) as const;
+
+  it("a contact writing shows until its refresh runs out, or its message arrives", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = await start();
+    const h = up(t);
+    t.send(composing(BOB.uri, true, false, 60));
+    expect(t.m.context.composing).toEqual({ "bob@example.org": { voice: false, until: clock + 60_000 } });
+    h.deliver(BOB.uri, "Salut");
+    expect(t.m.context.composing).toEqual({});
+    t.send(composing(BOB.uri, true, true));
+    expect(t.m.context.composing["bob@example.org"]!.voice).toBe(true);
+    clock += 120_000;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(t.m.context.composing).toEqual({});
+  });
+
+  it("a stranger's indicator is not shown", async () => {
+    const t = await start();
+    up(t);
+    t.send(composing(CARLA, true));
+    expect(t.m.context.composing).toEqual({});
+  });
+
+  it("ours: active once per refresh, idle after the silence, nothing once the message leaves", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = await start();
+    const h = up(t);
+    t.send({ type: "ui:typing", uri: BOB.uri });
+    t.send({ type: "ui:typing", uri: BOB.uri });
+    expect(h.indicators).toEqual([{ uri: BOB.uri, active: true, voice: false }]);
+    clock += 15_000;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(h.indicators).toEqual([
+      { uri: BOB.uri, active: true, voice: false },
+      { uri: BOB.uri, active: false, voice: false },
+    ]);
+    t.send({ type: "ui:typing", uri: BOB.uri });
+    t.send({ type: "ui:send", uri: BOB.uri, text: "Salut" });
+    clock += 15_000;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(h.indicators).toHaveLength(3);
+  });
+
+  it("recording: active with the voice type, renewed, idle when dropped", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const t = await start();
+    const h = up(t);
+    t.send({ type: "ui:recording", uri: BOB.uri, on: true });
+    clock += 60_000;
+    await vi.advanceTimersByTimeAsync(60_000);
+    t.send({ type: "ui:recording", uri: BOB.uri, on: false });
+    expect(h.indicators).toEqual([
+      { uri: BOB.uri, active: true, voice: true },
+      { uri: BOB.uri, active: true, voice: true },
+      { uri: BOB.uri, active: false, voice: false },
+    ]);
   });
 });

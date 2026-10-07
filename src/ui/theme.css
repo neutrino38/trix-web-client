@@ -1712,6 +1712,8 @@ fieldset.field { border: none; }
 }
 .thread-compose .compose-actions { display: flex; gap: 0.35rem; align-items: center; }
 .thread-compose .compose-actions label.btn { cursor: pointer; }
+.thread-compose .compose-recording { font-size: 0.85rem; color: var(--red); font-variant-numeric: tabular-nums; }
+.thread-composing { min-height: 1.1em; margin: 0.15rem 0 0; font-size: 0.8rem; font-style: italic; color: var(--ink-soft); }
 .thread-compose .compose-actions label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
 .thread-compose textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .thread-compose textarea[aria-invalid="true"] { border-color: var(--red); }

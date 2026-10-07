@@ -19,6 +19,7 @@ import type { CallView, SuspectField } from "../machines/events.js";
 import {
   shownPrompt,
   unreadByKey,
+  type ComposingPeer,
   type MessagingCtx,
   type MessagingInstance,
   type Quarantined,
@@ -139,6 +140,8 @@ export interface MessagingView {
   unsupported: boolean;
   /** The account has a file store: files can be sent (ADR 0012, D1). */
   canSendFiles: boolean;
+  /** Who is writing to us now, by key — or recording a voice message (ADR 0012, D9). */
+  composing: Readonly<Record<string, ComposingPeer>>;
 }
 
 export interface ReachabilityView {
@@ -319,6 +322,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
       prompt: Quarantined | null,
       unsupported: boolean,
       canSendFiles: boolean,
+      composing: Readonly<Record<string, ComposingPeer>>,
     ): MessagingView => {
       const byKey = unreadByKey(messages);
       let unread = 0;
@@ -334,6 +338,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
         prompt,
         unsupported,
         canSendFiles,
+        composing,
       };
     },
   );
@@ -391,6 +396,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
         shownPrompt(msgs.context),
         msgs.context.unsupported,
         msgs.context.fileStore !== null,
+        msgs.context.composing,
       ),
       reachability: reachability(reachabilityOf(phone.state), reachabilityWanted(src.session)),
       errors: errors(ctx.lastError, ctx.lastErrorCode, ctx.callError, ctx.contactError),
