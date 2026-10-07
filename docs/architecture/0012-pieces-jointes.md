@@ -1,9 +1,10 @@
 # ADR 0012 — Les pièces jointes, comme Linphone les envoie
 
-**Statut :** accepté — 2026-10-07 · **réception implémentée** — 2026-10-07 (T1) ; téléchargement
-intégré, envoi et légende à venir (T2 à T5) ; validation réelle à faire (§4)
+**Statut :** accepté — 2026-10-07 · **réception implémentée** — 2026-10-07 (T1), **affichage et
+lecture dans la page** — 2026-10-07 (T2) ; envoi et légende à venir (T3 à T5) ; validation réelle
+à faire (§4)
 **Portée :** `sip/fthttp.ts` (nouveau), `sip/message.ts`, `sip/port.ts`, `storage/store.ts`,
-`machines/messaging.ts`, `ui/attachment.ts` (nouveau), `ui/screens/call/thread.ts`,
+`machines/messaging.ts`, `ui/attachment.ts` (nouveau), `ui/filefetch.ts` (nouveau), `ui/screens/call/thread.ts`,
 `ui/messagealerts.ts`, `ui/theme.css`, `i18n/locales/*`
 **Hors périmètre :** les vignettes (`file-info type="thumbnail"`, que Linphone ignore) ; le
 chiffrement LIME (`file-key`) ; les conversations de groupe ; plusieurs fichiers par message.
@@ -54,9 +55,8 @@ un lien « Télécharger » que le navigateur ouvre (`target="_blank"`, `rel="no
 plus de lien. La légende, s'il y en a une, s'affiche sous la carte ; sinon la liste des échanges
 et les notifications disent « Fichier : nom » ou « Message vocal, 0:04 » (`entryText`).
 
-Seule une URL `http(s)` devient un lien : un `javascript:` ou un `data:` venu d'un XML ne
-produit aucun fichier. La lecture dans la page (image affichée, message vocal joué) est T2 : elle
-demande un `fetch` et un choix de décodeur que la mesure tranchera.
+Seule une URL `http(s)` est jamais demandée : un `javascript:` ou un `data:` venu d'un XML ne
+produit aucun fichier.
 
 ### D4 — Un accusé nu est accepté
 
@@ -72,6 +72,31 @@ partie est le XML et une autre un `text/plain` en UTF-8 ou US-ASCII (la légende
 quelle, espaces finaux compris) ; l'ancien `message/external-body; access-type=URL`. Tout autre
 type reste refusé 415, et un XML qui ne nomme aucun fichier téléchargeable aussi. L'`Accept` du
 415 liste désormais ces types et `message/imdn+xml`.
+
+### D6 — Le fichier est récupéré, puis montré dans la page
+
+`ui/filefetch.ts` récupère le fichier par `fetch`, `credentials: "omit"` : le serveur le sert en
+statique, l'URL est la capacité, et nos cookies n'ont rien à y faire (le serveur répond avec
+l'en-tête CORS de l'origine de Trix). Une image s'affiche dans la carte, un message vocal s'y joue
+(`<audio>`), tout autre fichier s'offre à l'enregistrement ; dans les trois cas un lien
+« Enregistrer » le donne au navigateur avec son nom d'origine.
+
+- **Images et messages vocaux de 10 Mo au plus se récupèrent seuls**, à l'affichage de leur carte,
+  comme Linphone le fait (`auto_download_incoming_files_max_size`) ; le reste attend le bouton.
+  Un SVG ne s'affiche jamais : il porterait du script dans la page.
+- **Le conteneur audio est lu sur ses quatre premiers octets**, jamais sur le type du XML :
+  Linphone étiquette `audio/wav` un fichier Matroska/Opus. `RIFF` donne `audio/wav`, l'en-tête EBML
+  `audio/webm`, `OggS` `audio/ogg`. La durée affichée est celle du XML.
+- **Ce que le navigateur ne sait pas lire, il le dit** : l'`error` de l'élément `<audio>` fait
+  passer la carte à « Ce navigateur ne lit pas ce format » et au seul lien d'enregistrement. Quels
+  navigateurs lisent le `.mka` de Linphone est une **mesure** (§4) ; un démultiplexeur en WASM ou
+  WebCodecs ne se construit que si elle échoue là où il le faut.
+- **Une carte se redessine seule.** L'état d'un fichier vit hors des redessins du fil, par URL ;
+  quand il change, seule sa carte est remplacée, pour qu'un message vocal en lecture ne soit pas
+  coupé par l'arrivée d'un autre fichier. Les URL d'objet sont gardées pour la session, les plus
+  anciennes libérées au-delà de quarante.
+- Un 404 dit « Le fichier n'est plus sur le serveur », sans nouvel essai ; un autre échec,
+  « Échec du téléchargement », avec « Réessayer ».
 
 ## 2. À retenir pour l'envoi (T3)
 
@@ -108,7 +133,10 @@ En réel, avec un Linphone de bureau provisionné (`file_transfer_server_url`) :
 1. une photo de Linphone s'affiche en carte, avec le bon nom et la bonne taille ;
 2. un message vocal de Linphone s'affiche avec sa durée ;
 3. un texte s'affiche toujours en texte ;
-4. un Linphone sans CPIM reçoit 200 à ses accusés.
+4. un Linphone sans CPIM reçoit 200 à ses accusés ;
+5. la photo s'affiche dans la carte sans clic, et un fichier de plus de 10 Mo attend le bouton ;
+6. **la mesure** : le message vocal de Linphone se joue — ou dit qu'il ne se joue pas — dans
+   Chromium, Firefox et Safari, et le résultat est écrit ici.
 
 ## Références
 

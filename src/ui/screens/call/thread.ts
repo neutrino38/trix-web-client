@@ -39,6 +39,8 @@ import { canWrite, messagingOn } from "../../messaging.js";
 import { formatDayMonth, formatTime, localeTag, t, tn } from "../../../i18n/index.js";
 import { normalizeTarget } from "../../../sip/uri.js";
 import { entryText, fileCard } from "../../attachment.js";
+import { fetchFile, markUnplayable, onFileChange } from "../../filefetch.js";
+import type { FileAttachment } from "../../../sip/fthttp.js";
 import { showChatDialog } from "../../chatdialog.js";
 import { esc } from "../../el.js";
 import { GLYPH_LABEL, glyph, type Glyph } from "../../presence.js";
@@ -573,6 +575,19 @@ function same(a: readonly unknown[], b: readonly unknown[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
+/** The file a card names, from the messages the view holds. */
+function fileByUrl(app: TrixView, url: string | undefined): FileAttachment | undefined {
+  return url === undefined ? undefined : app.messaging.messages.find((e) => e.file?.url === url)?.file;
+}
+
+/** Images and voice messages under the bound are fetched as soon as their card shows (ADR 0012, D6). */
+function autoFetch(root: ParentNode, app: TrixView): void {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-autofetch]")) {
+    const file = fileByUrl(app, el.dataset.fileCard);
+    if (file) void fetchFile(file);
+  }
+}
+
 /** Redraws the list, putting the focus back where it was if it was inside. */
 function redraw(m: Mounted, keepScroll = false): void {
   const list = m.node.querySelector<HTMLElement>('[data-ref="thread-list"]');
@@ -596,6 +611,7 @@ function redraw(m: Mounted, keepScroll = false): void {
   redrawing = false;
   stage?.classList.toggle("focus", focused);
   m.signature = signature(app);
+  autoFetch(list, app);
   // the most recent event is at the top, under the writing field
   const events = list.querySelector<HTMLElement>('[data-ref="thread-events"]');
   if (events && !keepScroll) events.scrollTop = 0;
@@ -650,6 +666,24 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
   const app = (): TrixView => trix.view()!;
   const m: Mounted = { node, trix, signature: signature(app()) };
   mounted = m;
+  // a file's fetch moves on: its card alone is redrawn, so a voice message
+  // playing elsewhere in the thread is not cut off
+  onFileChange((file) => {
+    if (!node.isConnected) return;
+    for (const card of stage.querySelectorAll<HTMLElement>(`[data-file-card="${CSS.escape(file.url)}"]`)) {
+      card.outerHTML = fileCard(file, Date.now());
+    }
+  });
+  // the browser could not play what it got: the card offers to save it
+  stage.addEventListener(
+    "error",
+    (e) => {
+      const el = e.target;
+      if (el instanceof HTMLAudioElement && el.dataset.fileUrl) markUnplayable(el.dataset.fileUrl);
+    },
+    true,
+  );
+  autoFetch(stage, app());
   const target = node.querySelector<HTMLInputElement>('[data-ref="target"]');
   const hint = node.querySelector<HTMLElement>('[data-ref="contacthint"]');
   const updateHint = () => {
@@ -845,6 +879,11 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
       case "thread-retry":
         if (id) trix.messaging.retry(id);
         return;
+      case "file-fetch": {
+        const file = fileByUrl(app(), el.dataset.url);
+        if (file) void fetchFile(file);
+        return;
+      }
       case "thread-banner-dismiss":
         noPresenceDismissed = true;
         el.closest(".thread-banner")?.remove();

@@ -36,17 +36,36 @@ describe("formats", () => {
 });
 
 describe("fileCard", () => {
-  it("a file still kept: its name escaped, its size, and the link to it", () => {
-    const html = fileCard(PHOTO, NOW);
+  it("not fetched yet: its name escaped, its size, a button to fetch it", () => {
+    const html = fileCard(PHOTO, NOW, { status: "idle" });
     expect(html).toContain("photo &lt;1&gt;.jpg");
-    expect(html).toContain('href="https://files.example.org/files/tmp/a.jpg"');
-    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('data-act="file-fetch"');
+    expect(html).toContain('data-autofetch="1"');
   });
 
-  it("past its until: no link, said expired", () => {
-    const html = fileCard({ ...PHOTO, until: NOW - 1 }, NOW);
-    expect(html).not.toContain("href=");
+  it("fetched: the image shown, and a link to save it", () => {
+    const html = fileCard(PHOTO, NOW, { status: "ready", objectUrl: "blob:x", kind: "image" });
+    expect(html).toContain('<img class="msg-file-img" src="blob:x"');
+    expect(html).toContain('download="photo &lt;1&gt;.jpg"');
+    expect(html).not.toContain("data-autofetch");
+  });
+
+  it("a voice message fetched plays; refused by the browser, it is saved instead", () => {
+    expect(fileCard(VOICE, NOW, { status: "ready", objectUrl: "blob:v", kind: "audio" })).toContain("<audio");
+    const refused = fileCard(VOICE, NOW, { status: "unplayable", objectUrl: "blob:v" });
+    expect(refused).not.toContain("<audio");
+    expect(refused).toContain('href="blob:v"');
+  });
+
+  it("past its until and not fetched: expired, nothing to fetch", () => {
+    const html = fileCard({ ...PHOTO, until: NOW - 1 }, NOW, { status: "idle" });
+    expect(html).not.toContain("file-fetch");
     expect(html).toContain("msg-file-state");
+  });
+
+  it("gone from the server: said so, and no retry", () => {
+    const html = fileCard(PHOTO, NOW, { status: "failed", httpStatus: 404 });
+    expect(html).not.toContain("file-fetch");
   });
 
   it("a voice message says so, with its length", () => {
