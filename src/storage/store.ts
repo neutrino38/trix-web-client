@@ -22,6 +22,7 @@ import type { TraceLine } from "../sip/record.js";
 import type { MediaStats } from "../sip/stats.js";
 import type { ChatItem } from "../sip/transcript.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
+import type { FileAttachment } from "../sip/fthttp.js";
 import { parseRttTransport, type RttTransport } from "../sip/rtt.js";
 import { rawMsg, type Msg } from "../i18n/types.js";
 
@@ -256,6 +257,12 @@ export interface MessageEntry {
   deliveryOwed?: true;
   /** Incoming: the sender asked for a read receipt, not sent yet (ADR 0010). */
   displayWanted?: true;
+  /**
+   * The file the message names (ADR 0012): sent by Linphone through an
+   * HTTP store, described by the store's XML. `text` is then its caption,
+   * empty without one.
+   */
+  file?: FileAttachment;
   /** Why a send failed, as a deferred message. */
   reason: Msg | null;
   /** Incoming messages only; always true for outgoing ones. */

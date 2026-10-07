@@ -222,7 +222,15 @@ describe("incoming MESSAGE in CPIM (ADR 0009)", () => {
     expect(events).toEqual([]);
   });
 
-  it("refuses another inner type with 415 — a file transfer, say", () => {
+  it("refuses another inner type with 415 — HTML, say", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const { view, replies } = incoming({ contentType: "message/cpim", body: cpim({ inner: "text/html", body: "<p>Bonjour</p>" }) });
+    link.receive(view);
+    expect(replies).toEqual([415]);
+    expect(events).toEqual([]);
+  });
+
+  it("refuses with 415 a file transfer that names no file", () => {
     const { link, events } = setup((ev) => ev.answer(200));
     const inner = "application/vnd.gsma.rcs-ft-http+xml";
     const { view, replies } = incoming({ contentType: "message/cpim", body: cpim({ inner, body: "<file/>" }) });
@@ -464,5 +472,70 @@ describe("jssipIncoming", () => {
     expect(a.replies).toEqual(["SIP/2.0 202 Accepted"]);
     expect(b.replies).toEqual(["SIP/2.0 603 Decline"]);
     expect(a.message._is_replied).toBe(true);
+  });
+});
+
+describe("files (ADR 0012)", () => {
+  const FT = "application/vnd.gsma.rcs-ft-http+xml";
+  const XML =
+    '<?xml version="1.0" encoding="UTF-8"?><file xmlns="urn:gsma:params:xml:ns:rcs:rcs:fthttp"><file-info type="file">' +
+    "<file-size>3000</file-size><file-name>photo.jpg</file-name><content-type>image/jpeg</content-type>" +
+    '<data url="https://files.example.org/files/tmp/a.jpg" until="2026-10-14T15:30:46Z"/></file-info></file>';
+  const inCpim = (inner: string, body: string) =>
+    [
+      "From: <sip:bob@example.org>",
+      "To: <sip:alice@example.org>",
+      "DateTime: 2026-09-29T09:00:00Z",
+      "NS: imdn <urn:ietf:params:imdn>",
+      "imdn.Message-ID: F1",
+      "imdn.Disposition-Notification: positive-delivery, display",
+      "",
+      `Content-Type: ${inner}`,
+      "",
+      body,
+    ].join("\r\n");
+
+  it("a bare file, as a Linphone without CPIM sends it: filed, no text, no Message-ID", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const { view, replies } = incoming({ contentType: FT, body: XML });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([
+      expect.objectContaining({ type: "sip:message", text: "", messageId: null, file: expect.objectContaining({ name: "photo.jpg", size: 3000 }) }),
+    ]);
+  });
+
+  it("a file in CPIM keeps its Message-ID and the receipts it asks for", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    link.receive(incoming({ contentType: "message/cpim", body: inCpim(FT, XML) }).view);
+    expect(events).toEqual([
+      expect.objectContaining({ messageId: "F1", wants: { delivery: true, display: true }, file: expect.objectContaining({ url: "https://files.example.org/files/tmp/a.jpg" }) }),
+    ]);
+  });
+
+  it("a caption beside the file becomes the message's text", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const multi = ["--b", `Content-Type: ${FT}`, "", XML, "--b", "Content-Type: text/plain;charset=UTF-8", "", "la terrasse", "--b--"].join("\r\n");
+    link.receive(incoming({ contentType: "message/cpim", body: inCpim("multipart/mixed;boundary=b", multi) }).view);
+    expect(events).toEqual([expect.objectContaining({ text: "la terrasse", file: expect.objectContaining({ name: "photo.jpg" }) })]);
+  });
+
+  it("a text carries no file", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    link.receive(incoming().view);
+    expect(events).toEqual([expect.objectContaining({ text: "Bonjour", file: null })]);
+  });
+
+  it("a bare receipt is answered 200, as one in CPIM (D4)", () => {
+    const { link, events } = setup((ev) => ev.answer(200));
+    const imdn =
+      '<?xml version="1.0" encoding="UTF-8"?><imdn xmlns="urn:ietf:params:xml:ns:imdn"><message-id>call-id-of-its-leg@192.0.2.10</message-id>' +
+      "<datetime>2026-09-29T09:00:00Z</datetime><delivery-notification><status><delivered/></status></delivery-notification></imdn>";
+    const { view, replies } = incoming({ contentType: "message/imdn+xml", body: imdn });
+    link.receive(view);
+    expect(replies).toEqual([200]);
+    expect(events).toEqual([
+      { type: "sip:receipt", from: "sip:bob@example.org", messageId: "call-id-of-its-leg@192.0.2.10", status: "delivered" },
+    ]);
   });
 });

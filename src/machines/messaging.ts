@@ -98,7 +98,7 @@ export type MessagingEvent =
   | TaskResult<"loadMessages", { accountId: string; messages: MessageEntry[] }>;
 
 /** One message held for an unknown sender, with the receipts it will owe once accepted. */
-export type HeldMessage = Pick<MessageEntry, "text" | "at" | "messageId" | "deliveryOwed" | "displayWanted">;
+export type HeldMessage = Pick<MessageEntry, "text" | "file" | "at" | "messageId" | "deliveryOwed" | "displayWanted">;
 
 /** An unknown sender and what they wrote, held until the user decides (D5). */
 export interface Quarantined {
@@ -362,6 +362,7 @@ function fileAll(ctx: MessagingCtx, q: Quarantined): void {
         uri: q.uri,
         direction: "incoming",
         text: m.text,
+        ...(m.file ? { file: m.file } : {}),
         at: m.at,
         ...(m.messageId ? { messageId: m.messageId } : {}),
         ...(m.deliveryOwed ? { deliveryOwed: true } : {}),
@@ -396,7 +397,8 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
     ev.answer(202);
     return stay("message already held");
   }
-  const one: HeldMessage = { text: ev.text, at, ...(messageId !== undefined ? { messageId } : {}), ...owed(ev.wants) };
+  const file = ev.file ? { file: ev.file } : {};
+  const one: HeldMessage = { text: ev.text, ...file, at, ...(messageId !== undefined ? { messageId } : {}), ...owed(ev.wants) };
   if (known(ctx, key)) {
     ev.answer(200);
     const entry: MessageEntry = {
@@ -405,6 +407,7 @@ function received(ev: Ev<"sip:message">, ctx: MessagingCtx, fx: MFx) {
       uri: ev.from,
       direction: "incoming",
       text: ev.text,
+      ...file,
       at,
       ...(messageId !== undefined ? { messageId } : {}),
       ...owed(ev.wants),

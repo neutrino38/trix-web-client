@@ -1,6 +1,7 @@
 /**
  * The messaging link: SIP MESSAGE out of any call (RFC 3428), in
- * `text/plain`, bare or wrapped in CPIM (ADR 0008, D1; ADR 0009).
+ * `text/plain`, bare or wrapped in CPIM (ADR 0008, D1; ADR 0009), and the
+ * files Linphone sends the same way (ADR 0012).
  *
  * `openMessaging` holds the policy and never sees JsSIP: it is handed a
  * `MessageSender`, and the port feeds it each incoming request as an
@@ -18,13 +19,18 @@
  *   `imdn.Message-ID` and the receipts it asks for go with the event
  *   (ADR 0009, ADR 0010);
  * - a receipt (IMDN, `sip/imdn.ts`), alone or gathered in a
- *   `multipart/mixed`: **200**, from anyone, and one `sip:receipt` per
- *   positive receipt it holds — the machine matches it against what we
- *   sent to that sender, and nothing else;
- * - a body type other than `text/plain`, or a charset other than UTF-8 or
- *   US-ASCII: **415**, before anyone sees it. JsSIP writes the `Accept`
- *   header of a 415 from `C.ACCEPTED_BODY_TYPES`, which the port extends
- *   with `text/plain` and `message/cpim` (`sip/port.ts`);
+ *   `multipart/mixed`, in CPIM or bare: **200**, from anyone, and one
+ *   `sip:receipt` per positive receipt it holds — the machine matches it
+ *   against what we sent to that sender, and nothing else. A bare one is
+ *   what a Linphone without CPIM sends; it names the Call-ID of its own
+ *   leg, which matches nothing, but it is not refused (ADR 0012, D4);
+ * - a file (ADR 0012, `sip/fthttp.ts`): the RCS XML, alone or beside a
+ *   `text/plain` caption in a `multipart/mixed`, or the older
+ *   `message/external-body`; filed like a text, the caption as its text;
+ * - any other body type, or a charset other than UTF-8 or US-ASCII:
+ *   **415**, before anyone sees it. JsSIP writes the `Accept` header of a
+ *   415 from `C.ACCEPTED_BODY_TYPES`, which the port extends with what is
+ *   read here (`sip/port.ts`);
  * - a `From` with no user part: **403** — there is no address to file it
  *   under, nor to answer;
  * - no link open yet, or closed: **480**;
@@ -64,6 +70,7 @@ import {
   type ImdnStatus,
   type Wanted,
 } from "./imdn.js";
+import { readAttachment, type FileAttachment } from "./fthttp.js";
 import type { XmlParser } from "./pidf.js";
 import { addressKey } from "./uri.js";
 
@@ -89,7 +96,10 @@ export type MessagingSipEvent =
       from: string;
       /** The display name of the `From`, if any. */
       name: string | null;
+      /** The text, or a file's caption; empty for a file sent alone. */
       text: string;
+      /** The file the message names (ADR 0012); null for a text. */
+      file: FileAttachment | null;
       /**
        * When it was written: the CPIM `DateTime`, else the `Date` header —
        * when present, readable and not in the future (D8, ADR 0009).
@@ -292,10 +302,23 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
         date = notFuture(cpim.dateTime, now()) ?? date;
         messageId = cpim.messageId;
         if (messageId !== null) wants = wantedReceipts(cpim.disposition);
+      } else {
+        // a receipt outside CPIM: a Linphone not provisioned for it (ADR 0012, D4)
+        const receipts = imdnBodies(contentType, body);
+        if (receipts !== null) {
+          receiveReceipts(req, receipts);
+          return;
+        }
       }
+      let file: FileAttachment | null = null;
       if (!readableType(contentType)) {
-        req.reply(415);
-        return;
+        const attachment = readAttachment(contentType, body, deps.parser);
+        if (attachment === null) {
+          req.reply(415);
+          return;
+        }
+        file = attachment.file;
+        body = attachment.caption ?? "";
       }
       if (req.user === null || req.user === "") {
         req.reply(403);
@@ -312,6 +335,7 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
         from,
         name: req.name,
         text: body,
+        file,
         date,
         messageId,
         wants,

@@ -22,6 +22,7 @@ import { announce } from "./announce.js";
 import { setFaviconUnread } from "./favicon.js";
 import { showNotice } from "./notify.js";
 import { setTitleUnread } from "./title.js";
+import { entryText } from "./attachment.js";
 
 /** The favicon dot for unread messages: the accent, not the red of being unreachable. */
 const UNREAD_COLOR = "#7B54A0";
@@ -86,10 +87,10 @@ export function watchMessageAlerts(trix: Trix, openKey: () => string | null): ()
     for (const e of fresh) {
       const name = nameOf(e.key);
       if (hidden) {
-        showNotice({ title: name, body: e.text, tag: `trix-message-${e.key}`, keep: false });
+        showNotice({ title: name, body: entryText(e), tag: `trix-message-${e.key}`, keep: false });
       }
       if (inCall) announce(t("message.announce", { name }));
-      else if (!hidden && openKey() === e.key) announce(t("message.announceText", { name, text: e.text }));
+      else if (!hidden && openKey() === e.key) announce(t("message.announceText", { name, text: entryText(e) }));
     }
     for (const q of strangers) {
       // never the text of an unknown sender on a lock screen

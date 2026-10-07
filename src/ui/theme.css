@@ -1684,6 +1684,14 @@ fieldset.field { border: none; }
 }
 .msg.out { align-self: flex-end; background: var(--accent-soft); }
 .msg p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.9rem; }
+.msg-file {
+  display: flex; align-items: center; gap: 0.6rem; margin: 0.1rem 0 0.25rem;
+  padding: 0.45rem 0.6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--ground);
+}
+.msg-file-icon { font-size: 1.4rem; line-height: 1; }
+.msg-file-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.msg-file-name { font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
+.msg-file-facts, .msg-file-state { font-size: 0.75rem; color: var(--ink-soft); }
 .msg-meta { display: block; font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
 /* --ink-soft sur --accent-soft tombe sous 4,5:1 dans les deux thèmes */
 .msg.out .msg-meta { color: var(--ink); }

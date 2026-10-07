@@ -556,12 +556,14 @@ export const ALLOWED_METHODS_WITH_MESSAGE = `${ALLOWED_METHODS},MESSAGE`;
 
 /**
  * Les types de corps annoncés dans `Accept` (réponse à OPTIONS, et 415).
- * Ceux de JsSIP, plus `text/plain` et `message/cpim` quand la messagerie
- * est allumée : c'est ce que dit le 415 opposé à un MESSAGE d'un autre
- * type (ADR 0008, D1 ; ADR 0009).
+ * Ceux de JsSIP, plus ce que la messagerie lit quand elle est allumée :
+ * `text/plain` et `message/cpim`, les accusés nus, et les fichiers à la
+ * Linphone — XML RCS, seul ou avec sa légende, ou `message/external-body`.
+ * C'est ce que dit le 415 opposé à un MESSAGE d'un autre type (ADR 0008,
+ * D1 ; ADR 0009 ; ADR 0012).
  */
 export const ACCEPTED_BODY_TYPES = "application/sdp, application/dtmf-relay";
-export const ACCEPTED_BODY_TYPES_WITH_TEXT = `${ACCEPTED_BODY_TYPES}, text/plain, message/cpim`;
+export const ACCEPTED_BODY_TYPES_WITH_TEXT = `${ACCEPTED_BODY_TYPES}, text/plain, message/cpim, message/imdn+xml, application/vnd.gsma.rcs-ft-http+xml, multipart/mixed, message/external-body`;
 
 /**
  * Écrit les deux listes dans les constantes de JsSIP — le même objet que

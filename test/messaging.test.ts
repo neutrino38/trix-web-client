@@ -19,6 +19,7 @@ import { messagingSignals } from "../src/machines/messagingsignals.js";
 import type { PhoneView } from "../src/machines/presencesignals.js";
 import type { MessageAnswer, MessagingLink, MessagingSipEvent } from "../src/sip/message.js";
 import { NOTHING_WANTED, type ImdnStatus, type Wanted } from "../src/sip/imdn.js";
+import type { FileAttachment } from "../src/sip/fthttp.js";
 import type { SipHandle } from "../src/sip/port.js";
 import type { Contact, MessageEntry, SecureStore } from "../src/storage/store.js";
 
@@ -63,9 +64,10 @@ function fakeHandle(opts: { throws?: Error } = {}) {
     date: number | null = null,
     messageId: string | null = null,
     wants: Wanted = NOTHING_WANTED,
+    file: FileAttachment | null = null,
   ): MessageAnswer | null => {
     let answer: MessageAnswer | null = null;
-    send!({ type: "sip:message", from, name: null, text, date, messageId, wants, answer: (c) => (answer ??= c) });
+    send!({ type: "sip:message", from, name: null, text, file, date, messageId, wants, answer: (c) => (answer ??= c) });
     return answer;
   };
   const outcome = (id: string, status: number | null) => send!({ type: "sip:messageSent", id, status });
@@ -668,5 +670,39 @@ describe("messagingSignals", () => {
     expect(messagingSignals(ready, { ...ready, state: "in_call" })).toEqual([{ type: "phone:callStarted" }]);
     expect(messagingSignals({ ...ready, state: "in_call" }, ready)).toEqual([{ type: "phone:callEnded" }]);
     expect(messagingSignals(ready, { ...ready, state: "sleeping" })).toEqual([{ type: "phone:down" }]);
+  });
+});
+
+describe("files (ADR 0012)", () => {
+  const PHOTO: FileAttachment = {
+    url: "https://files.example.org/files/tmp/a.jpg",
+    name: "photo.jpg",
+    size: 3000,
+    contentType: "image/jpeg",
+    until: null,
+    playingLengthMs: null,
+  };
+
+  it("a contact's file is filed with it, its caption as the text", async () => {
+    const t = await start();
+    const h = up(t);
+    expect(h.deliver(BOB.uri, "la terrasse", null, "F1", NOTHING_WANTED, PHOTO)).toBe(200);
+    expect(t.m.context.messages).toEqual([expect.objectContaining({ text: "la terrasse", file: PHOTO, messageId: "F1" })]);
+  });
+
+  it("a text carries none", async () => {
+    const t = await start();
+    const h = up(t);
+    h.deliver(BOB.uri, "Salut");
+    expect(t.m.context.messages[0]).not.toHaveProperty("file");
+  });
+
+  it("an unknown sender's file is held with the message, and filed with it once accepted", async () => {
+    const t = await start();
+    const h = up(t);
+    expect(h.deliver(CARLA, "", null, null, NOTHING_WANTED, PHOTO)).toBe(202);
+    expect(t.m.context.quarantine[0]!.messages).toEqual([{ text: "", file: PHOTO, at: clock }]);
+    t.send({ type: "ui:acceptSender", key: "carla@example.org" });
+    expect(t.m.context.messages).toEqual([expect.objectContaining({ key: "carla@example.org", text: "", file: PHOTO })]);
   });
 });

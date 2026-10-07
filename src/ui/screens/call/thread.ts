@@ -38,6 +38,7 @@ import type { MessageEntry } from "../../../storage/store.js";
 import { canWrite, messagingOn } from "../../messaging.js";
 import { formatDayMonth, formatTime, localeTag, t, tn } from "../../../i18n/index.js";
 import { normalizeTarget } from "../../../sip/uri.js";
+import { entryText, fileCard } from "../../attachment.js";
 import { showChatDialog } from "../../chatdialog.js";
 import { esc } from "../../el.js";
 import { GLYPH_LABEL, glyph, type Glyph } from "../../presence.js";
@@ -175,7 +176,7 @@ function summary(thread: Thread): string {
   const event = lastEvent(thread);
   if (event?.kind === "message") {
     const m = event.message;
-    const text = m.direction === "outgoing" ? t("message.you", { text: m.text }) : m.text;
+    const text = m.direction === "outgoing" ? t("message.you", { text: entryText(m) }) : entryText(m);
     return `${BUBBLE}<span dir="auto">${esc(text)}</span>`;
   }
   const last = thread.calls[0]?.entry;
@@ -212,14 +213,14 @@ function messageState(m: MessageEntry): string {
   }
 }
 
-function messageRow(m: MessageEntry, thread: Thread): string {
+function messageRow(m: MessageEntry, thread: Thread, now: number): string {
   const out = m.direction === "outgoing";
   const state = messageState(m);
   // the sender is said to screen readers; sight reads it from the side
   const who = out ? t("message.mine") : t("message.from", { name: thread.name });
   return `<div class="msg ${out ? "out" : "in"} ${m.state}">
     <span class="sr-only">${esc(who)}</span>
-    <p dir="auto">${esc(m.text)}</p>
+    ${m.file ? fileCard(m.file, now) : ""}${m.text !== "" || !m.file ? `<p dir="auto">${esc(m.text)}</p>` : ""}
     <span class="msg-meta">${esc(formatTime(m.at))}${state ? ` · ${esc(state)}` : ""}${
       m.state === "sent" && !m.receipt ? `<span class="sr-only"> · ${esc(t("message.state.sent"))}</span>` : ""
     }${
@@ -305,7 +306,7 @@ function body(thread: Thread, now: number, messaging: MessagingView): string {
     days.push(
       event.kind === "call"
         ? historyRow(event.call.entry, event.call.index, "thread-")
-        : messageRow(event.message, thread),
+        : messageRow(event.message, thread, now),
     );
   }
   const none =
