@@ -33,6 +33,7 @@ const messages: CoreDictionary = {
   "error.turnInvalid": "خادم TURN غير صالح (المتوقَّع: المضيف أو المضيف:المنفذ)",
   "error.turnUserRequired": "معرّف TURN مطلوب (المُرحِّل يطلب المصادقة دائمًا)",
   "error.turnPasswordRequired": "كلمة مرور TURN مطلوبة",
+  "error.fileStoreInvalid": "خادم ملفات غير صالح (المتوقع: عنوان https://)",
 
   // ---------------------------------------------------------------------
   // Why a call ended (`CallLogEntry.reason`, `errors.call`)
@@ -61,6 +62,10 @@ const messages: CoreDictionary = {
   "message.reason.tooLong": "الرسالة طويلة جدًا",
   "message.reason.invalid": "عنوان غير صالح",
   "message.reason.interrupted": "انقطع الاتصال قبل الردّ",
+  "message.reason.fileTooLarge": "الملف كبير جدًا على الخادم",
+  "message.reason.fileCredentials": "يرفض خادم الملفات بيانات اعتمادك",
+  "message.reason.fileStore": "لم يقبله خادم الملفات",
+  "message.reason.fileLost": "فُقد الملف عند إعادة تحميل الصفحة",
 
   // ---------------------------------------------------------------------
   // Passing messages of the call (`CallView.notice`)

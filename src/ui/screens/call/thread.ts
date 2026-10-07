@@ -204,7 +204,8 @@ function dayLabel(ts: number, now: number): string {
 function messageState(m: MessageEntry): string {
   switch (m.state) {
     case "pending":
-      return t("message.state.pending");
+      // a file the store has not taken yet (ADR 0012, D7)
+      return t(m.file?.url === "" ? "message.state.uploading" : "message.state.pending");
     case "failed":
       return t("message.state.failed", { reason: m.reason ? t(m.reason) : "" });
     case "sent":
@@ -266,9 +267,14 @@ function composer(thread: Thread, messaging: MessagingView): string {
     <label class="sr-only" for="thread-compose">${esc(t("message.compose", { name: thread.name }))}</label>
     <textarea id="thread-compose" name="text" rows="2" dir="auto" placeholder="${esc(t("message.placeholder"))}"
               ${over ? 'aria-invalid="true"' : ""} aria-describedby="thread-compose-count">${esc(draft)}</textarea>
-    <button type="submit" class="btn small primary" ${over || !draft.trim() ? "disabled" : ""}>${esc(
+    <span class="compose-actions">${
+      messaging.canSendFiles
+        ? `<label class="btn small" title="${esc(t("message.attachHint"))}">${esc(t("message.attach"))}
+        <input type="file" accept="image/*" class="sr-only" data-ref="compose-file"></label>`
+        : ""
+    }<button type="submit" class="btn small primary" ${over || !draft.trim() ? "disabled" : ""}>${esc(
       t("message.send"),
-    )}</button>
+    )}</button></span>
     <span class="compose-count ${over ? "over" : ""}" id="thread-compose-count" data-ref="compose-count"
           ${bytes >= COUNT_FROM ? "" : "hidden"}>${esc(t("message.count", { n: bytes, max: MAX_MESSAGE_BYTES }))}</span>
     ${offline ? `<span class="compose-hint">${esc(t("message.offline"))}</span>` : ""}
@@ -935,6 +941,26 @@ export function wireThread(node: HTMLElement, trix: Trix): void {
         return;
       }
     }
+  });
+
+  // a photo chosen leaves at once, with what was being written as its caption (ADR 0012, D7, D8)
+  stage.addEventListener("change", (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.dataset.ref !== "compose-file" || !input.files?.length) return;
+    const form = input.closest<HTMLFormElement>('[data-form="compose"]');
+    const key = form?.dataset.key;
+    const thread = threadOf(key);
+    const cfg = app().account;
+    const to = thread && cfg ? normalizeTarget(thread.target, cfg.domain) : null;
+    const chosen = input.files[0]!;
+    input.value = "";
+    if (!to || !key) return;
+    const draft = (drafts.get(key) ?? "").trim();
+    // a caption past the bound would be refused by the link: the photo goes alone, the text stays
+    const caption = draft !== "" && utf8Length(draft) <= MAX_MESSAGE_BYTES ? draft : undefined;
+    trix.messaging.sendFile(to, { name: chosen.name, type: chosen.type || "application/octet-stream", data: chosen }, caption);
+    if (caption !== undefined) drafts.delete(key);
+    redraw(m);
   });
 
   stage.addEventListener("submit", (e) => {

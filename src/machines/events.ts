@@ -35,6 +35,8 @@ export interface ConfigForm {
   turnTls: boolean;
   /** Transport du texte en temps réel — WebSocket ou canal de données. */
   rtt: RttTransport;
+  /** Serveur de fichiers de la messagerie (ADR 0012, D1) ; vide = aucun. Absent : inchangé. */
+  fileStore?: string;
 }
 
 /**
@@ -42,7 +44,7 @@ export interface ConfigForm {
  * retour sur les paramètres, pour dire où chercher plutôt que d'annoncer
  * une erreur en l'air.
  */
-export type SuspectField = "proxy" | "credentials" | "stun" | "turn";
+export type SuspectField = "proxy" | "credentials" | "stun" | "turn" | "fileStore";
 
 /** Commandes UI valables pendant un appel — consommées par le bloc CallBlock. */
 export type CallControlEvent =

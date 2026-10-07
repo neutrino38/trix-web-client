@@ -32,6 +32,7 @@ const messages: CoreDictionary = {
   "error.turnInvalid": "TURN 服务器无效（应为 主机 或 主机:端口）",
   "error.turnUserRequired": "请输入 TURN 用户名（中继始终需要认证）",
   "error.turnPasswordRequired": "请输入 TURN 密码",
+  "error.fileStoreInvalid": "文件服务器无效（应为 https:// 地址）",
 
   // ---------------------------------------------------------------------
   // Why a call ended (`CallLogEntry.reason`, `errors.call`)
@@ -60,6 +61,10 @@ const messages: CoreDictionary = {
   "message.reason.tooLong": "消息过长",
   "message.reason.invalid": "地址无效",
   "message.reason.interrupted": "收到答复前连接已断开",
+  "message.reason.fileTooLarge": "文件对服务器来说太大",
+  "message.reason.fileCredentials": "文件服务器拒绝了您的凭据",
+  "message.reason.fileStore": "文件服务器未接收",
+  "message.reason.fileLost": "页面重新加载时文件丢失",
 
   // ---------------------------------------------------------------------
   // Passing messages of the call (`CallView.notice`)

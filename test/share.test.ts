@@ -23,6 +23,7 @@ const CFG: AccountConfig = {
   flashAlert: true,
   ice: { stun: null, turn: null },
   rtt: "websocket",
+  fileStore: "",
 };
 
 /** Un compte décodé, quel qu'il soit — les cas nominaux n'en doutent pas. */
@@ -35,6 +36,12 @@ function decoded(data: string): AccountConfig {
 describe("lien de partage — aller-retour", () => {
   it("un compte traverse le lien intact", () => {
     expect(decoded(encodeAccount(CFG))).toEqual(CFG);
+  });
+
+  it("le serveur de fichiers suit (ADR 0012, D1), et seule une adresse https passe", () => {
+    const withStore = { ...CFG, fileStore: "https://files.example.fr/files/hft.php" };
+    expect(decoded(encodeAccount(withStore)).fileStore).toBe("https://files.example.fr/files/hft.php");
+    expect(decoded(encodeAccount({ ...CFG, fileStore: "javascript:alert(1)" })).fileStore).toBe("");
   });
 
   it("les serveurs ICE suivent, mot de passe TURN compris", () => {

@@ -33,6 +33,7 @@ const messages: CoreDictionary = {
   "error.turnInvalid": "Serveur TURN invalide (attendu : hôte ou hôte:port)",
   "error.turnUserRequired": "Identifiant TURN requis (le relais est toujours authentifié)",
   "error.turnPasswordRequired": "Mot de passe TURN requis",
+  "error.fileStoreInvalid": "Serveur de fichiers invalide (attendu : une adresse https://)",
 
   // ---------------------------------------------------------------------
   // Why a call ended (`CallLogEntry.reason`, `errors.call`)
@@ -61,6 +62,10 @@ const messages: CoreDictionary = {
   "message.reason.tooLong": "Message trop long",
   "message.reason.invalid": "Adresse invalide",
   "message.reason.interrupted": "Connexion perdue avant la réponse",
+  "message.reason.fileTooLarge": "Fichier trop volumineux pour le serveur",
+  "message.reason.fileCredentials": "Le serveur de fichiers refuse vos identifiants",
+  "message.reason.fileStore": "Le serveur de fichiers ne l'a pas pris",
+  "message.reason.fileLost": "Fichier perdu au rechargement de la page",
 
   // ---------------------------------------------------------------------
   // Passing messages of the call (`CallView.notice`)

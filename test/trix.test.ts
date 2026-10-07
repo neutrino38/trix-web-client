@@ -26,6 +26,7 @@ const ACCOUNT: StoredAccount = {
   flashAlert: true,
   ice: { stun: null, turn: { host: "turn.example.fr", username: "alice", password: "secret", tls: true } },
   rtt: "websocket",
+  fileStore: "",
 };
 
 function fakeStore(accounts: StoredAccount[] = [ACCOUNT]): SecureStore {

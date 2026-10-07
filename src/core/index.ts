@@ -21,6 +21,7 @@ import type { Translate } from "../i18n/types.js";
 import { CallBlock } from "../machines/call.js";
 import type { ConfigForm } from "../machines/events.js";
 import { MessagingMachine } from "../machines/messaging.js";
+import { uploadFile, type UploadFile } from "../sip/ftupload.js";
 import { linkMessaging } from "../machines/messagingsignals.js";
 import { PhoneMachine, editedAccount, type PhoneInstance } from "../machines/phone.js";
 import { PresenceMachine } from "../machines/presence.js";
@@ -189,6 +190,8 @@ export interface Trix {
   };
   messaging: {
     send(uri: string, text: string): void;
+    /** Send a file, with an optional caption (ADR 0012, D7, D8). */
+    sendFile(uri: string, file: UploadFile, caption?: string): void;
     retry(id: string): void;
     /** This correspondent's line is open in a visible tab. */
     read(key: string): void;
@@ -277,7 +280,13 @@ export function createTrix(options: TrixOptions = {}): Trix {
     const messaging = MessagingMachine.start({
       debug: true,
       logger: machineLogger(() => null, sink),
-      args: { store, enabled: deployment.messaging, visible: platform.visible() },
+      args: {
+        store,
+        enabled: deployment.messaging,
+        visible: platform.visible(),
+        // the XML the store answers is read like any other (ADR 0012, D7)
+        upload: (account, file) => uploadFile(account, file, new DOMParser()),
+      },
     });
 
     // created before the phone, which reads its transcript when filing the call
@@ -451,6 +460,8 @@ export function createTrix(options: TrixOptions = {}): Trix {
     },
     messaging: {
       send: (uri, text) => messaging({ type: "ui:send", uri, text }),
+      sendFile: (uri, file, caption) =>
+        messaging({ type: "ui:sendFile", uri, file, ...(caption !== undefined ? { caption } : {}) }),
       retry: (id) => messaging({ type: "ui:retry", id }),
       read: (key) => messaging({ type: "ui:read", key }),
       acceptSender: (key) => messaging({ type: "ui:acceptSender", key }),

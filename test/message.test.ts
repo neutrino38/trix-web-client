@@ -539,3 +539,39 @@ describe("files (ADR 0012)", () => {
     ]);
   });
 });
+
+describe("sending a file (ADR 0012, D7, D8)", () => {
+  const XML = '<?xml version="1.0" encoding="UTF-8"?><file xmlns="urn:gsma:params:xml:ns:rcs:rcs:fthttp"/>';
+
+  it("in CPIM, the XML as the content, receipts asked", () => {
+    const { link, sent } = setup();
+    link.sendFile("f1", "sip:bob@example.org", XML);
+    expect(sent[0]!.contentType).toBe("message/cpim");
+    expect(sent[0]!.body).toContain("imdn.Message-ID: f1");
+    expect(sent[0]!.body).toContain("Content-Type: application/vnd.gsma.rcs-ft-http+xml");
+    expect(sent[0]!.body.endsWith(XML)).toBe(true);
+  });
+
+  it("with a caption: a multipart inside the envelope, the XML first", () => {
+    const { link, sent } = setup();
+    link.sendFile("f1", "sip:bob@example.org", XML, "la terrasse");
+    const body = sent[0]!.body;
+    expect(body).toMatch(/Content-Type: multipart\/mixed;boundary=trix-/);
+    expect(body.indexOf("application/vnd.gsma.rcs-ft-http+xml")).toBeLessThan(body.indexOf("la terrasse"));
+  });
+
+  it("a 415 to CPIM sends the bare XML, and reports once", () => {
+    const { link, sent, events } = setup();
+    link.sendFile("f1", "sip:bob@example.org", XML);
+    sent[0]!.done(415);
+    expect(sent[1]!.contentType).toBe("application/vnd.gsma.rcs-ft-http+xml");
+    expect(sent[1]!.body).toBe(XML);
+    sent[1]!.done(200);
+    expect(events).toEqual([{ type: "sip:messageSent", id: "f1", status: 200 }]);
+  });
+
+  it("a caption past the bound is refused, as a text would be", () => {
+    const { link } = setup();
+    expect(() => link.sendFile("f1", "sip:bob@example.org", XML, "x".repeat(MAX_MESSAGE_BYTES + 1))).toThrow(RangeError);
+  });
+});

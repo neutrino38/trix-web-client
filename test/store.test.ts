@@ -28,6 +28,7 @@ const CFG: AccountConfig = {
   flashAlert: true,
   ice: NO_ICE,
   rtt: "websocket",
+  fileStore: "",
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -23,6 +23,7 @@ import type { MediaStats } from "../sip/stats.js";
 import type { ChatItem } from "../sip/transcript.js";
 import { NO_ICE, type IceConfig } from "../sip/ice.js";
 import type { FileAttachment } from "../sip/fthttp.js";
+import { parseFileStore } from "../sip/ftupload.js";
 import { parseRttTransport, type RttTransport } from "../sip/rtt.js";
 import { rawMsg, type Msg } from "../i18n/types.js";
 
@@ -69,6 +70,13 @@ export interface AccountConfig {
    * changer de forme sans qu'on l'ait demandé.
    */
   rtt: RttTransport;
+  /**
+   * Le serveur de fichiers de la messagerie (ADR 0012, D1) : l'URL de dépôt
+   * (`https://…/files/hft.php`). Réglage d'opérateur, comme le proxy ; la
+   * chaîne vide dit « pièces jointes désactivées », et c'est la valeur des
+   * comptes enregistrés avant son introduction.
+   */
+  fileStore: string;
 }
 
 /**
@@ -565,6 +573,7 @@ export function migrateAccount(cfg: AccountConfig): AccountConfig {
     flashAlert: cfg.flashAlert ?? true,
     ice: cfg.ice ?? { ...NO_ICE },
     rtt: parseRttTransport(cfg.rtt),
+    fileStore: parseFileStore(cfg.fileStore),
   };
 }
 

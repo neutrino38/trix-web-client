@@ -72,6 +72,8 @@ export interface AccountView {
   stun: string | null;
   turn: { host: string; username: string; tls: boolean } | null;
   rtt: RttTransport;
+  /** The messaging file store, empty for none (ADR 0012, D1). */
+  fileStore: string;
   /** A SHA-256 digest is kept: a server that challenges with it will be answered. */
   sha256: boolean;
 }
@@ -135,6 +137,8 @@ export interface MessagingView {
   prompt: Quarantined | null;
   /** The server answered 405 or 501 to a MESSAGE. */
   unsupported: boolean;
+  /** The account has a file store: files can be sent (ADR 0012, D1). */
+  canSendFiles: boolean;
 }
 
 export interface ReachabilityView {
@@ -232,6 +236,7 @@ function accountView(a: StoredAccount): AccountView {
     stun: a.ice.stun,
     turn: a.ice.turn ? { host: a.ice.turn.host, username: a.ice.turn.username, tls: a.ice.turn.tls } : null,
     rtt: a.rtt,
+    fileStore: a.fileStore,
     sha256: a.ha1Sha256 !== "",
   };
 }
@@ -313,6 +318,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
       quarantine: MessagingCtx["quarantine"],
       prompt: Quarantined | null,
       unsupported: boolean,
+      canSendFiles: boolean,
     ): MessagingView => {
       const byKey = unreadByKey(messages);
       let unread = 0;
@@ -327,6 +333,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
         quarantine,
         prompt,
         unsupported,
+        canSendFiles,
       };
     },
   );
@@ -383,6 +390,7 @@ export function createViewBuilder(src: ViewSources): () => TrixView {
         msgs.context.quarantine,
         shownPrompt(msgs.context),
         msgs.context.unsupported,
+        msgs.context.fileStore !== null,
       ),
       reachability: reachability(reachabilityOf(phone.state), reachabilityWanted(src.session)),
       errors: errors(ctx.lastError, ctx.lastErrorCode, ctx.callError, ctx.contactError),

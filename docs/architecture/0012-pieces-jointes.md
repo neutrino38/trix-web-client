@@ -1,8 +1,8 @@
 # ADR 0012 — Les pièces jointes, comme Linphone les envoie
 
-**Statut :** accepté — 2026-10-07 · **réception implémentée** — 2026-10-07 (T1), **affichage et
-lecture dans la page** — 2026-10-07 (T2) ; envoi et légende à venir (T3 à T5) ; validation réelle
-à faire (§4)
+**Statut :** accepté — 2026-10-07 · **implémenté** — 2026-10-07 : réception (T1), affichage et
+lecture dans la page (T2), envoi d'une photo et légende (T3, T5) ; message vocal à venir (T4) ;
+validation réelle à faire (§4)
 **Portée :** `sip/fthttp.ts` (nouveau), `sip/message.ts`, `sip/port.ts`, `storage/store.ts`,
 `machines/messaging.ts`, `ui/attachment.ts` (nouveau), `ui/filefetch.ts` (nouveau), `ui/screens/call/thread.ts`,
 `ui/messagealerts.ts`, `ui/theme.css`, `i18n/locales/*`
@@ -36,8 +36,11 @@ serveurs ICE, c'est un réglage d'opérateur : `config.json` peut l'épingler (c
 l'écran de réglages ; un lien de partage le transporte, puisqu'il n'est pas un secret — les
 empreintes le sont.
 
-Le champ arrive avec l'**envoi** (T3) : la réception n'en a pas besoin, l'URL du fichier est dans
-le XML.
+Le champ « Serveur de fichiers » est dans la section du compte, sous le serveur SIP, et disparaît
+quand `config.json` l'impose ou que la messagerie est éteinte. Une saisie qui n'est pas une adresse
+`https://` est refusée à l'enregistrement, champ désigné — `http://` n'est admis que vers la machine
+elle-même, pour le développement. La réception n'en a pas besoin : l'URL du fichier est dans le
+XML ; sans serveur, Trix reçoit et affiche, mais n'offre pas d'envoyer.
 
 ### D2 — Un fichier est une entrée de message comme une autre
 
@@ -98,10 +101,38 @@ l'en-tête CORS de l'origine de Trix). Une image s'affiche dans la carte, un mes
 - Un 404 dit « Le fichier n'est plus sur le serveur », sans nouvel essai ; un autre échec,
   « Échec du téléchargement », avec « Réessayer ».
 
-## 2. À retenir pour l'envoi (T3)
+### D7 — Envoyer un fichier : déposer, puis envoyer le XML
+
+Le bouton « Joindre » de la zone de saisie ouvre le sélecteur de photos ; le fichier choisi part
+aussitôt. `machines/messaging.ts` crée l'entrée tout de suite, en attente, avec la description du
+fichier et une URL vide (« Envoi du fichier… »), et lance le dépôt (`sip/ftupload.ts`) ; quand le
+serveur a répondu, l'entrée apprend son URL et le XML part par le lien, en CPIM comme un texte,
+avec le même `imdn.Message-ID` et les mêmes demandes d'accusés, en XML nu après un 415. Déposé
+hors ligne, il attend l'enregistrement comme un texte (ADR 0008, D3).
+
+- Le XML est celui que Linphone reconstruit (CRLF, espace de noms `am`, nom percent-encodé, type
+  local) : l'URL, `until` et la taille du serveur, le nom et le type du fichier choisi.
+- Le fichier lui-même n'est gardé qu'en mémoire, jamais dans le coffre : un fichier non déposé quand
+  la page se recharge échoue, « Fichier perdu au rechargement de la page ». « Réessayer » redépose
+  un fichier que la page a encore.
+- Les échecs du dépôt se disent : 400 « Fichier trop volumineux pour le serveur », 401
+  « Le serveur de fichiers refuse vos identifiants », le reste « Le serveur de fichiers ne l'a pas
+  pris ». Un dépôt est abandonné après cinq minutes.
+- Pas de limite de taille côté client, pas de barre de progression : la limite est celle du
+  serveur, qui la dit par son 400, et `fetch` ne rapporte pas la progression d'un envoi.
+
+### D8 — La légende
+
+Ce qui est en cours de saisie quand la photo est choisie part avec elle, en légende : un
+`multipart/mixed`, le XML d'abord puis le `text/plain`, **à l'intérieur** de l'enveloppe CPIM — le
+corps SIP reste en une seule partie. Une légende au-delà de 1 000 octets (ADR 0008, D2) ne part pas :
+la photo part seule, et le texte reste dans la zone de saisie. Linphone affiche une légende reçue,
+mais n'en envoie jamais : c'est une limite de Linphone, que Trix ne compense pas.
+
+## 2. Ce que le serveur de référence demande à l'envoi
 
 Lu dans le code du serveur de référence, et vérifié sur sa répétition en conteneurs
-(elixip, `packaging/fhft/rehearsal/`) :
+(elixip, `packaging/fhft/rehearsal/`), par le code de Trix lui-même :
 
 - le `From` HTTP doit être une **URI nue**, `sip:user@domaine` : le serveur en extrait l'usager et
   le realm par découpage, et un nom affiché ou des chevrons cassent le realm ;
@@ -122,6 +153,9 @@ Lu dans le code du serveur de référence, et vérifié sur sa répétition en c
 
 ## 4. Validation
 
+Contre la répétition du serveur en conteneurs, le 2026-10-07 : le dépôt de Trix authentifié par
+son HA1, le fichier relu à l'identique, un mauvais mot de passe lu « identifiants refusés ».
+
 Tests automatiques : le XML du serveur de référence tel qu'il l'a renvoyé, celui que Linphone
 reconstruit (CRLF, vignette ignorée, `file-key` ignoré, durée), le nom percent-encodé, les URL
 refusées, `until` ; le fichier nu, en CPIM, avec sa légende, `external-body` ; l'accusé nu ; la
@@ -135,7 +169,9 @@ En réel, avec un Linphone de bureau provisionné (`file_transfer_server_url`) :
 3. un texte s'affiche toujours en texte ;
 4. un Linphone sans CPIM reçoit 200 à ses accusés ;
 5. la photo s'affiche dans la carte sans clic, et un fichier de plus de 10 Mo attend le bouton ;
-6. **la mesure** : le message vocal de Linphone se joue — ou dit qu'il ne se joue pas — dans
+6. une photo envoyée de Trix s'affiche chez Linphone et dans un second Trix, et revient
+   « Distribué » des deux ; avec une légende, Linphone l'affiche sous la photo ;
+7. **la mesure** : le message vocal de Linphone se joue — ou dit qu'il ne se joue pas — dans
    Chromium, Firefox et Safari, et le résultat est écrit ici.
 
 ## Références

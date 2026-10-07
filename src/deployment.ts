@@ -29,6 +29,7 @@
  */
 
 import { parseIceHost, type IceConfig, type TurnServer } from "./sip/ice.js";
+import { parseFileStore } from "./sip/ftupload.js";
 import type { RttTransport } from "./sip/rtt.js";
 import type { AccountConfig } from "./storage/store.js";
 
@@ -46,6 +47,8 @@ export interface Deployment {
   ice: IceConfig | null;
   /** Real-time text transport; the menu is hidden when set. */
   rtt: RttTransport | null;
+  /** The messaging file store (`file_transfer_server`, ADR 0012, D1); the field is hidden when set. */
+  fileStore: string | null;
   /** False only for `"debug_activated": "no"`: no SIP trace, and no way to ask for one. */
   debug: boolean;
   /**
@@ -67,6 +70,7 @@ export const OPEN_DEPLOYMENT: Deployment = {
   domain: null,
   ice: null,
   rtt: null,
+  fileStore: null,
   debug: true,
   presence: true,
   messaging: true,
@@ -143,6 +147,16 @@ function rttOf(raw: Record<string, unknown>): RttTransport | null {
   return value === "none" || value === "websocket" || value === "datachannel" ? value : null;
 }
 
+/**
+ * The store's upload URL, `https://` — the same reading as the settings
+ * field (`parseFileStore`). A malformed one leaves the field to the person,
+ * as a malformed proxy does.
+ */
+function fileStoreOf(raw: Record<string, unknown>): string | null {
+  const value = parseFileStore(text(raw, "file_transfer_server"));
+  return value === "" ? null : value;
+}
+
 /** Parses whatever `config.json` held. Anything unusable falls back to open. */
 export function parseDeployment(raw: unknown): Deployment {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return OPEN_DEPLOYMENT;
@@ -152,6 +166,7 @@ export function parseDeployment(raw: unknown): Deployment {
     domain: domainOf(obj),
     ice: iceOf(obj),
     rtt: rttOf(obj),
+    fileStore: fileStoreOf(obj),
     // stated and not "no" — an absent key leaves the trace available
     debug: text(obj, "debug_activated")?.toLowerCase() !== "no",
     // same reading: only "no" turns it off, and discovery (D8) does the rest
@@ -195,5 +210,6 @@ export function pinAccount(cfg: AccountConfig, dep: Deployment): AccountConfig |
     proxy: dep.proxy ?? cfg.proxy,
     ice: dep.ice ?? cfg.ice,
     rtt: dep.rtt ?? cfg.rtt,
+    fileStore: dep.fileStore ?? cfg.fileStore,
   };
 }

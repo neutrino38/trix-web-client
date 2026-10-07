@@ -30,6 +30,7 @@ const ACCOUNT: AccountConfig = {
   flashAlert: true,
   ice: NO_ICE,
   rtt: "none",
+  fileStore: "",
 };
 
 afterEach(() => {
@@ -184,12 +185,23 @@ describe("loadDeployment", () => {
   });
 });
 
+describe("parseDeployment — the file store (ADR 0012, D1)", () => {
+  it("an https upload URL pins it; anything else leaves the field", () => {
+    expect(parseDeployment({ file_transfer_server: "https://files.example.fr/files/hft.php" }).fileStore).toBe(
+      "https://files.example.fr/files/hft.php",
+    );
+    expect(parseDeployment({ file_transfer_server: "http://files.example.fr/files/hft.php" }).fileStore).toBeNull();
+    expect(parseDeployment({}).fileStore).toBeNull();
+  });
+});
+
 describe("pinAccount", () => {
   const pinned: Deployment = {
     proxy: "wss://sip.example.fr:8443/ws",
     domain: "example.fr",
     ice: { stun: "stun.example.fr", turn: null },
     rtt: "datachannel",
+    fileStore: null,
     debug: false,
     presence: false,
     messaging: true,

@@ -33,6 +33,7 @@ const messages: CoreDictionary = {
   "error.turnInvalid": "TURN サーバーが不正です（形式：ホスト または ホスト:ポート）",
   "error.turnUserRequired": "TURN ユーザー名を入力してください（中継は必ず認証を求めます）",
   "error.turnPasswordRequired": "TURN パスワードを入力してください",
+  "error.fileStoreInvalid": "ファイルサーバーが無効です（https:// のアドレスが必要です）",
 
   // ---------------------------------------------------------------------
   // Why a call ended (`CallLogEntry.reason`, `errors.call`)
@@ -61,6 +62,10 @@ const messages: CoreDictionary = {
   "message.reason.tooLong": "メッセージが長すぎます",
   "message.reason.invalid": "無効なアドレス",
   "message.reason.interrupted": "応答前に接続が切れました",
+  "message.reason.fileTooLarge": "ファイルがサーバーには大きすぎます",
+  "message.reason.fileCredentials": "ファイルサーバーが認証情報を拒否しました",
+  "message.reason.fileStore": "ファイルサーバーが受け付けませんでした",
+  "message.reason.fileLost": "ページの再読み込みでファイルが失われました",
 
   // ---------------------------------------------------------------------
   // Passing messages of the call (`CallView.notice`)

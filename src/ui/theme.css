@@ -1710,6 +1710,9 @@ fieldset.field { border: none; }
   font: inherit; font-size: 0.9rem; color: var(--ink); background: var(--ground); resize: vertical;
   border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem 0.7rem; min-height: 44px; max-height: 12rem;
 }
+.thread-compose .compose-actions { display: flex; gap: 0.35rem; align-items: center; }
+.thread-compose .compose-actions label.btn { cursor: pointer; }
+.thread-compose .compose-actions label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
 .thread-compose textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .thread-compose textarea[aria-invalid="true"] { border-color: var(--red); }
 .thread-compose .compose-count, .thread-compose .compose-hint {

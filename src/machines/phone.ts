@@ -49,6 +49,7 @@ import { parseRttTransport } from "../sip/rtt.js";
 import { OPEN_DEPLOYMENT, pinAccount, type Deployment } from "../deployment.js";
 import type { SipTrace } from "../sip/trace.js";
 import { msg, type Msg } from "../i18n/types.js";
+import { parseFileStore } from "../sip/ftupload.js";
 
 export interface PhoneCtx {
   /** Injectés via start({ args }) — jamais recréés par la machine. */
@@ -576,6 +577,16 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     }
     ice = parsedIce.ice;
   }
+  // le serveur de fichiers : optionnel, mais une saisie qui n'est pas une
+  // URL https ne s'enregistre pas en silence — les pièces jointes
+  // échoueraient plus tard, sans dire pourquoi (ADR 0012, D1)
+  const typedStore = f.fileStore?.trim();
+  const fileStore = dep.fileStore ?? (typedStore === undefined ? (edited?.fileStore ?? "") : parseFileStore(typedStore));
+  if (dep.fileStore === null && typedStore && fileStore === "") {
+    ctx.lastError = msg("error.fileStoreInvalid");
+    ctx.suspectFields = "fileStore";
+    return stay("serveur de fichiers invalide");
+  }
   const account: StoredAccount = {
     // un compte modifié garde son identifiant, donc son historique — c'est
     // tout l'intérêt de ne pas le nommer par son adresse
@@ -596,6 +607,7 @@ function saveConfig(ev: Extract<PhoneEvent, { type: "ui:saveConfig" }>, ctx: Pho
     // rien à valider : le choix vient d'un bouton radio, et une valeur
     // inconnue (compte migré, formulaire trafiqué) retombe sur le défaut
     rtt: dep.rtt ?? parseRttTransport(f.rtt),
+    fileStore,
   };
   ctx.accounts = edited
     ? ctx.accounts.map((a) => (a.id === account.id ? account : a))

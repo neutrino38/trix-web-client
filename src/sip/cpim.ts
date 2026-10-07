@@ -160,11 +160,20 @@ export const DISPOSITION_REQUEST = "positive-delivery, display";
 
 /** A `text/plain` message wrapped in CPIM, with its `imdn.Message-ID` and a request for receipts. */
 export function buildCpim(opts: Envelope & { text: string }): string {
+  return buildCpimContent({ ...opts, contentType: "text/plain;charset=UTF-8", body: opts.text });
+}
+
+/**
+ * Any content wrapped in CPIM the same way — a file's XML, or the XML and
+ * its caption in a `multipart/mixed` (ADR 0012, D7). The content type is
+ * written whole, a multipart's boundary included.
+ */
+export function buildCpimContent(opts: Envelope & { contentType: string; body: string }): string {
   return envelope(
     opts,
     [`imdn.Disposition-Notification: ${DISPOSITION_REQUEST}`],
-    ["Content-Type: text/plain;charset=UTF-8"],
-    opts.text,
+    [`Content-Type: ${opts.contentType}`],
+    opts.body,
   );
 }
 

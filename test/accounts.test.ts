@@ -42,6 +42,7 @@ const ALICE: StoredAccount = {
   flashAlert: true,
   ice: NO_ICE,
   rtt: "websocket",
+  fileStore: "",
 };
 
 const BOB: StoredAccount = {

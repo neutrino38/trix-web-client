@@ -63,7 +63,10 @@ export function fileCard(file: FileAttachment, now: number, state: FileState = f
 
   let action: string;
   let shown = "";
-  if (state.status === "ready" || state.status === "unplayable") {
+  if (file.url === "") {
+    // ours, not on the store yet: the message's state says where it is
+    action = "";
+  } else if (state.status === "ready" || state.status === "unplayable") {
     // fetched before it expired: what is here stays usable
     if (state.status === "ready" && state.kind === "image") {
       shown = `<img class="msg-file-img" src="${esc(state.objectUrl)}" alt="${esc(name)}">`;
@@ -84,7 +87,8 @@ export function fileCard(file: FileAttachment, now: number, state: FileState = f
   } else {
     action = fetchButton(t("message.file.download"));
   }
-  const auto = state.status === "idle" && !isExpired(file, now) && wantsAutoFetch(file) ? ' data-autofetch="1"' : "";
+  const auto =
+    file.url !== "" && state.status === "idle" && !isExpired(file, now) && wantsAutoFetch(file) ? ' data-autofetch="1"' : "";
   return `<div class="msg-file" data-file-card="${esc(file.url)}"${auto}>
       <div class="msg-file-row">${head}
       <span class="msg-file-action">${action}</span></div>${shown}

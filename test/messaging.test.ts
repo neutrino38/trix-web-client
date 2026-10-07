@@ -13,13 +13,15 @@ import {
   QUARANTINE_MS,
   shownPrompt,
   unreadByKey,
+  type MessagingCtx,
   type MessagingEvent,
 } from "../src/machines/messaging.js";
-import { messagingSignals } from "../src/machines/messagingsignals.js";
+import { messagingSignals, type MessagingPhoneView } from "../src/machines/messagingsignals.js";
 import type { PhoneView } from "../src/machines/presencesignals.js";
 import type { MessageAnswer, MessagingLink, MessagingSipEvent } from "../src/sip/message.js";
 import { NOTHING_WANTED, type ImdnStatus, type Wanted } from "../src/sip/imdn.js";
 import type { FileAttachment } from "../src/sip/fthttp.js";
+import type { UploadResult } from "../src/sip/ftupload.js";
 import type { SipHandle } from "../src/sip/port.js";
 import type { Contact, MessageEntry, SecureStore } from "../src/storage/store.js";
 
@@ -40,12 +42,17 @@ function fakeStore(initial: MessageEntry[] = []) {
 
 function fakeHandle(opts: { throws?: Error } = {}) {
   const sent: { id: string; uri: string; text: string }[] = [];
+  const sentFiles: { id: string; uri: string; xml: string; caption?: string }[] = [];
   const receipts: { uri: string; messageId: string; at: number; status: ImdnStatus }[] = [];
   let send: ((ev: MessagingSipEvent) => void) | null = null;
   const link: MessagingLink = {
     send(id, uri, text) {
       if (opts.throws) throw opts.throws;
       sent.push({ id, uri, text });
+    },
+    sendFile(id, uri, xml, caption) {
+      if (opts.throws) throw opts.throws;
+      sentFiles.push({ id, uri, xml, ...(caption !== undefined ? { caption } : {}) });
     },
     receipt(uri, messageId, at, status) {
       receipts.push({ uri, messageId, at, status });
@@ -73,15 +80,22 @@ function fakeHandle(opts: { throws?: Error } = {}) {
   const outcome = (id: string, status: number | null) => send!({ type: "sip:messageSent", id, status });
   const receipt = (from: string, messageId: string, status: ImdnStatus) =>
     send!({ type: "sip:receipt", from, messageId, status });
-  return { handle, sent, receipts, deliver, outcome, receipt };
+  return { handle, sent, sentFiles, receipts, deliver, outcome, receipt };
 }
 
 let clock = 1_000_000;
 
-async function start(opts: { contacts?: Contact[]; initial?: MessageEntry[]; enabled?: boolean } = {}) {
+async function start(
+  opts: { contacts?: Contact[]; initial?: MessageEntry[]; enabled?: boolean; upload?: MessagingCtx["upload"] } = {},
+) {
   const store = fakeStore(opts.initial);
   const m = MessagingMachine.start({
-    args: { store: store.store, enabled: opts.enabled ?? true, now: () => clock },
+    args: {
+      store: store.store,
+      enabled: opts.enabled ?? true,
+      now: () => clock,
+      ...(opts.upload ? { upload: opts.upload } : {}),
+    },
   });
   const send = (ev: MessagingEvent) => m.send(ev);
   send({ type: "phone:account", accountId: "acc", contacts: opts.contacts ?? [BOB, MALLORY] });
@@ -637,20 +651,29 @@ describe("failureReason", () => {
 
 describe("messagingSignals", () => {
   const handle = {} as SipHandle;
-  const view = (over: Partial<PhoneView> = {}): PhoneView => ({
+  const view = (over: Partial<MessagingPhoneView> = {}): MessagingPhoneView => ({
     state: "home",
     handle: null,
     activeId: null,
     contacts: [],
+    fileStore: null,
     ...over,
   });
 
-  it("the account first, then up", () => {
+  it("the account first, its file store, then up", () => {
     const contacts = [BOB];
     expect(messagingSignals(null, view({ state: "ready", handle, activeId: "a", contacts }))).toEqual([
       { type: "phone:account", accountId: "a", contacts },
+      { type: "phone:fileStore", fileStore: null },
       { type: "phone:up", handle },
     ]);
+  });
+
+  it("the file store again when the account's settings move it (ADR 0012, D1)", () => {
+    const before = view({ state: "ready", handle, activeId: "a" });
+    const fileStore = { url: "https://files.example.org/files/hft.php", from: "sip:alice@example.org", username: "alice", ha1: "h", ha1Sha256: "" };
+    expect(messagingSignals(before, { ...before, fileStore })).toEqual([{ type: "phone:fileStore", fileStore }]);
+    expect(messagingSignals({ ...before, fileStore }, { ...before, fileStore: { ...fileStore } })).toEqual([]);
   });
 
   it("the account while unregistered too", () => {
@@ -704,5 +727,74 @@ describe("files (ADR 0012)", () => {
     expect(t.m.context.quarantine[0]!.messages).toEqual([{ text: "", file: PHOTO, at: clock }]);
     t.send({ type: "ui:acceptSender", key: "carla@example.org" });
     expect(t.m.context.messages).toEqual([expect.objectContaining({ key: "carla@example.org", text: "", file: PHOTO })]);
+  });
+});
+
+describe("sending a file (ADR 0012, D7)", () => {
+  const STORE = { url: "https://files.example.org/files/hft.php", from: "sip:alice@example.org", username: "alice", ha1: "h", ha1Sha256: "" };
+  const FILE = { name: "photo.jpg", type: "image/jpeg", data: new Blob(["hello"]) };
+  const STORED: FileAttachment = {
+    url: "https://files.example.org/files/tmp/a.jpg",
+    name: "photo.jpg",
+    size: 5,
+    contentType: "image/jpeg",
+    until: Date.parse("2026-10-14T15:30:46Z"),
+    playingLengthMs: null,
+  };
+
+  it("pending while uploading, then the XML leaves, with the caption", async () => {
+    let finish!: (r: UploadResult) => void;
+    const t = await start({ upload: () => new Promise((resolve) => (finish = resolve)) });
+    t.send({ type: "phone:fileStore", fileStore: STORE });
+    const h = up(t);
+    t.send({ type: "ui:sendFile", uri: BOB.uri, file: FILE, caption: " la terrasse " });
+    const [entry] = t.m.context.messages;
+    expect(entry).toEqual(expect.objectContaining({ state: "pending", text: "la terrasse", file: expect.objectContaining({ url: "", size: 5 }) }));
+    expect(h.sentFiles).toEqual([]);
+    finish({ ok: true, file: STORED });
+    await vi.waitFor(() => expect(t.m.context.messages[0]!.file).toEqual(STORED));
+    expect(h.sentFiles).toEqual([{ id: entry!.id, uri: BOB.uri, xml: expect.stringContaining("files/tmp/a.jpg"), caption: "la terrasse" }]);
+    h.outcome(entry!.id, 200);
+    expect(t.m.context.messages[0]!.state).toBe("sent");
+  });
+
+  it("uploaded while unregistered: it waits, and leaves at the registration", async () => {
+    const t = await start({ upload: async () => ({ ok: true, file: STORED }) });
+    t.send({ type: "phone:fileStore", fileStore: STORE });
+    t.send({ type: "ui:sendFile", uri: BOB.uri, file: FILE });
+    await vi.waitFor(() => expect(t.m.context.messages[0]).toEqual(expect.objectContaining({ state: "pending", file: STORED })));
+    const h = up(t);
+    expect(h.sentFiles).toHaveLength(1);
+  });
+
+  it("refused by the store: failed, with the store's reason; a retry uploads again", async () => {
+    const results: UploadResult[] = [{ ok: false, failure: "tooLarge", status: 400 }, { ok: true, file: STORED }];
+    const upload = vi.fn(async () => results.shift()!);
+    const t = await start({ upload });
+    t.send({ type: "phone:fileStore", fileStore: STORE });
+    const h = up(t);
+    t.send({ type: "ui:sendFile", uri: BOB.uri, file: FILE });
+    await vi.waitFor(() =>
+      expect(t.m.context.messages[0]).toEqual(expect.objectContaining({ state: "failed", reason: { key: "message.reason.fileTooLarge" } })),
+    );
+    t.send({ type: "ui:retry", id: t.m.context.messages[0]!.id });
+    await vi.waitFor(() => expect(h.sentFiles).toHaveLength(1));
+    expect(upload).toHaveBeenCalledTimes(2);
+  });
+
+  it("no file store: nothing is written", async () => {
+    const t = await start();
+    up(t);
+    t.send({ type: "ui:sendFile", uri: BOB.uri, file: FILE });
+    expect(t.m.context.messages).toEqual([]);
+  });
+
+  it("a file the page lost on reloading fails, said so", async () => {
+    const lost: MessageEntry = {
+      id: "x1", key: "bob@example.org", uri: BOB.uri, direction: "outgoing", text: "",
+      file: { ...STORED, url: "" }, at: 1, state: "pending", reason: null, read: true,
+    };
+    const t = await start({ initial: [lost] });
+    expect(t.m.context.messages[0]).toEqual(expect.objectContaining({ state: "failed", reason: { key: "message.reason.fileLost" } }));
   });
 });

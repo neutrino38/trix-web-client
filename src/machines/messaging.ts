@@ -55,6 +55,7 @@ import type { MessagingLink, MessagingSipEvent } from "../sip/message.js";
 import type { ImdnStatus, Wanted } from "../sip/imdn.js";
 import type { SipHandle } from "../sip/port.js";
 import { addressKey } from "../sip/uri.js";
+import { buildFtHttp, type UploadAccount, type UploadFailure, type UploadFile, type UploadResult } from "../sip/ftupload.js";
 import {
   capMessages,
   newAccountId,
@@ -78,13 +79,17 @@ export type MessagingPhoneSignal =
   | { type: "phone:down" }
   | { type: "phone:callStarted" }
   | { type: "phone:callEnded" }
-  | { type: "phone:contacts"; contacts: Contact[] };
+  | { type: "phone:contacts"; contacts: Contact[] }
+  /** The account's file store and credentials, at choice and at each change (ADR 0012, D1); null: none. */
+  | { type: "phone:fileStore"; fileStore: UploadAccount | null };
 
 export type MessagingEvent =
   | MessagingPhoneSignal
   | MessagingSipEvent
   /** Write to `uri`, a normalized SIP address (`sip/uri.ts`). */
   | { type: "ui:send"; uri: string; text: string }
+  /** Send `file` to `uri`, with `caption` as its text (ADR 0012, D7, D8). */
+  | { type: "ui:sendFile"; uri: string; file: UploadFile; caption?: string }
   | { type: "ui:retry"; id: string }
   /** The correspondent's line is open in a visible tab. */
   | { type: "ui:read"; key: string }
@@ -95,7 +100,8 @@ export type MessagingEvent =
   | { type: "ui:clearMessages"; key?: string }
   | { type: "sys:visible"; visible: boolean }
   | { type: "quarantine:expire"; key: string; shownAt: number }
-  | TaskResult<"loadMessages", { accountId: string; messages: MessageEntry[] }>;
+  | TaskResult<"loadMessages", { accountId: string; messages: MessageEntry[] }>
+  | TaskResult<"upload", { id: string; result: UploadResult }>;
 
 /** One message held for an unknown sender, with the receipts it will owe once accepted. */
 export type HeldMessage = Pick<MessageEntry, "text" | "file" | "at" | "messageId" | "deliveryOwed" | "displayWanted">;
@@ -135,6 +141,16 @@ export interface MessagingCtx {
   unsupported: boolean;
   /** Saves run one after the other, so an older list never lands last. */
   saving: Promise<void>;
+  /** Injected: puts a file on the store (`sip/ftupload.ts`). */
+  upload: (account: UploadAccount, file: UploadFile) => Promise<UploadResult>;
+  /** The account's file store; null: attachments off (ADR 0012, D1). */
+  fileStore: UploadAccount | null;
+  /**
+   * The files still to upload, by entry id — in memory only: a file is
+   * never written to the vault, and one the page lost on reloading fails
+   * (`message.reason.fileLost`).
+   */
+  pendingFiles: Map<string, UploadFile>;
 }
 
 type Ev<T extends MessagingEvent["type"]> = Extract<MessagingEvent, { type: T }>;
@@ -239,8 +255,11 @@ function update(ctx: MessagingCtx, id: string, change: Partial<MessageEntry>): v
 /** Hands one pending message to the link; a refusal of the link fails it at once. */
 function dispatch(ctx: MessagingCtx, m: MessageEntry): void {
   if (!ctx.link) return;
+  // a file not on the store yet is the upload's to hand over (ADR 0012, D7)
+  if (m.file && m.file.url === "") return;
   try {
-    ctx.link.send(m.id, m.uri, m.text);
+    if (m.file) ctx.link.sendFile(m.id, m.uri, buildFtHttp(m.file), m.text === "" ? undefined : m.text);
+    else ctx.link.send(m.id, m.uri, m.text);
     ctx.inFlight = [...ctx.inFlight, m.id];
   } catch (e) {
     const reason = e instanceof RangeError ? msg("message.reason.tooLong") : msg("message.reason.invalid");
@@ -276,6 +295,54 @@ function dropQuarantined(ctx: MessagingCtx, key: string): Quarantined | null {
   return held;
 }
 
+/** Why an upload failed, as the thread says it (ADR 0012, D7). */
+export function uploadReason(failure: UploadFailure): Msg {
+  switch (failure) {
+    case "tooLarge":
+      return msg("message.reason.fileTooLarge");
+    case "credentials":
+      return msg("message.reason.fileCredentials");
+    default:
+      return msg("message.reason.fileStore");
+  }
+}
+
+/**
+ * A file written before the page was reloaded, and not uploaded then, is
+ * gone: its bytes were in memory only. It fails, said so.
+ */
+function failLostUploads(ctx: MessagingCtx): void {
+  ctx.messages = ctx.messages.map((m) =>
+    m.direction === "outgoing" && m.state === "pending" && m.file?.url === "" && !ctx.pendingFiles.has(m.id)
+      ? { ...m, state: "failed", reason: msg("message.reason.fileLost") }
+      : m,
+  );
+}
+
+/** Past this, an upload is given up: a photo on a slow uplink, but never a message stuck pending. */
+export const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * Starts uploading the file of entry `id`. The promise carries the id
+ * whatever happens — a timeout included — so the entry always learns its
+ * fate.
+ */
+function startUpload(ctx: MessagingCtx, fx: MFx, id: string, store: UploadAccount, file: UploadFile): void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<UploadResult>((resolve) => {
+    timer = setTimeout(() => resolve({ ok: false, failure: "noAnswer", status: null }), UPLOAD_TIMEOUT_MS);
+  });
+  const result = Promise.race([
+    ctx.upload(store, file).catch((): UploadResult => ({ ok: false, failure: "noAnswer", status: null })),
+    late,
+  ]).finally(() => clearTimeout(timer));
+  fx.task(
+    result.then((r) => ({ id, result: r })),
+    "upload",
+    { timeout: UPLOAD_TIMEOUT_MS + 5_000 },
+  );
+}
+
 // ---- handlers ---------------------------------------------------------------
 
 function account(ev: Ev<"phone:account">, ctx: MessagingCtx, fx: MFx) {
@@ -286,6 +353,7 @@ function account(ev: Ev<"phone:account">, ctx: MessagingCtx, fx: MFx) {
   ctx.messages = [];
   ctx.inFlight = [];
   ctx.quarantine = [];
+  ctx.pendingFiles = new Map();
   ctx.link = null;
   if (ev.accountId === null) return goto("off", "no account");
   const id = ev.accountId;
@@ -312,6 +380,7 @@ function loaded(ev: Ev<"task:loadMessages">, ctx: MessagingCtx) {
   // filed while the vault was read, and already in it: delivered twice (ADR 0009)
   const fresh = ctx.messages.filter((m) => !ids.has(m.id) && !(m.messageId && delivered.has(`${m.key} ${m.messageId}`)));
   ctx.messages = [...ev.value.messages, ...fresh];
+  failLostUploads(ctx);
   settleReceipts(ctx);
   flush(ctx);
   return stay("messages loaded");
@@ -483,13 +552,84 @@ function write(ev: Ev<"ui:send">, ctx: MessagingCtx) {
   return stay("message written");
 }
 
-function retry(ev: Ev<"ui:retry">, ctx: MessagingCtx) {
+/** A file to send: an entry at once, pending, while the store takes it (ADR 0012, D7). */
+function writeFile(ev: Ev<"ui:sendFile">, ctx: MessagingCtx, fx: MFx) {
+  const key = addressKey(ev.uri);
+  const store = ctx.fileStore;
+  if (key === null || ctx.accountId === null || store === null) return stay("nowhere to send a file");
+  if (ctx.unsupported) return stay("server does not route messages");
+  const caption = ev.caption?.trim() ?? "";
+  const entry: MessageEntry = {
+    id: newAccountId(),
+    key,
+    uri: ev.uri,
+    direction: "outgoing",
+    text: caption,
+    file: {
+      url: "",
+      name: ev.file.name,
+      size: ev.file.data.size,
+      contentType: ev.file.type,
+      until: null,
+      playingLengthMs: ev.file.playingLengthMs ?? null,
+    },
+    at: ctx.now(),
+    state: "pending",
+    reason: null,
+    read: true,
+  };
+  ctx.messages = [...ctx.messages, entry];
+  ctx.pendingFiles.set(entry.id, ev.file);
+  startUpload(ctx, fx, entry.id, store, ev.file);
+  save(ctx);
+  return stay("file written");
+}
+
+/** The store answered: the entry learns its URL and leaves, or fails with the store's reason. */
+function uploaded(ev: Ev<"task:upload">, ctx: MessagingCtx) {
+  // startUpload's promise never rejects and ends on its own bound, with
+  // the id: a failed task is a bug, and there is no entry to tell
+  if (!ev.ok) return stay("upload task failed");
+  const { id, result } = ev.value;
+  const m = ctx.messages.find((x) => x.id === id);
+  if (!m || !m.file) return stay("upload of a message no longer here");
+  if (!result.ok) {
+    update(ctx, id, { state: "failed", reason: uploadReason(result.failure) });
+    save(ctx);
+    return stay("upload refused");
+  }
+  ctx.pendingFiles.delete(id);
+  update(ctx, id, { file: result.file });
+  const fresh = ctx.messages.find((x) => x.id === id)!;
+  dispatch(ctx, fresh);
+  save(ctx);
+  return stay("file uploaded");
+}
+
+function retry(ev: Ev<"ui:retry">, ctx: MessagingCtx, fx: MFx) {
   const m = ctx.messages.find((x) => x.id === ev.id);
   if (!m || m.state !== "failed") return stay("nothing to retry");
   // it goes back to the end of the conversation, as if written now
   ctx.messages = [...ctx.messages.filter((x) => x.id !== m.id), { ...m, state: "pending", reason: null, at: ctx.now() }];
+  // a file the store never took is uploaded again, if the page still has it
+  if (m.file?.url === "") {
+    const file = ctx.pendingFiles.get(m.id);
+    if (!file || ctx.fileStore === null) {
+      update(ctx, m.id, { state: "failed", reason: msg("message.reason.fileLost") });
+      save(ctx);
+      return stay("file lost");
+    }
+    startUpload(ctx, fx, m.id, ctx.fileStore, file);
+    save(ctx);
+    return stay("file retried");
+  }
   flush(ctx);
   return stay("message retried");
+}
+
+function fileStoreChanged(ev: Ev<"phone:fileStore">, ctx: MessagingCtx) {
+  ctx.fileStore = ev.fileStore;
+  return stay(ev.fileStore ? "file store known" : "no file store");
 }
 
 function markRead(ev: Ev<"ui:read">, ctx: MessagingCtx) {
@@ -577,6 +717,9 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
     quarantine: [],
     unsupported: false,
     saving: Promise.resolve(),
+    upload: () => Promise.resolve({ ok: false, failure: "noAnswer", status: null } as UploadResult),
+    fileStore: null,
+    pendingFiles: new Map(),
   }),
 
   states: {
@@ -597,6 +740,9 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "sip:receipt": receiptCame,
         "task:loadMessages": loaded,
         "ui:send": write,
+        "ui:sendFile": writeFile,
+        "task:upload": uploaded,
+        "phone:fileStore": fileStoreChanged,
         "ui:retry": retry,
         "ui:read": markRead,
         "ui:acceptSender": accept,
@@ -620,6 +766,9 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "sip:receipt": receiptCame,
         "task:loadMessages": loaded,
         "ui:send": write,
+        "ui:sendFile": writeFile,
+        "task:upload": uploaded,
+        "phone:fileStore": fileStoreChanged,
         "ui:retry": retry,
         "ui:read": markRead,
         "ui:acceptSender": accept,
@@ -643,6 +792,9 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "sip:receipt": receiptCame,
         "task:loadMessages": loaded,
         "ui:send": write,
+        "ui:sendFile": writeFile,
+        "task:upload": uploaded,
+        "phone:fileStore": fileStoreChanged,
         "ui:retry": retry,
         "ui:read": markRead,
         "ui:acceptSender": accept,
@@ -672,6 +824,9 @@ export const MessagingMachine = defineMachine<MessagingCtx, MessagingEvent>()({
         "sip:receipt": () => stay("messaging off"),
         "task:loadMessages": () => stay("messaging off"),
         "ui:send": () => stay("messaging off"),
+        "ui:sendFile": () => stay("messaging off"),
+        "task:upload": () => stay("messaging off"),
+        "phone:fileStore": () => stay("messaging off"),
         "ui:retry": () => stay("messaging off"),
         "ui:read": () => stay("messaging off"),
         "ui:acceptSender": () => stay("messaging off"),

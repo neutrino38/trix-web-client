@@ -60,7 +60,7 @@
 
 import type { UA } from "jssip";
 import { normalizeTarget } from "jssip/lib/Utils.js";
-import { buildCpim, buildImdnCpim, CPIM_CONTENT_TYPE, isCpim, parseCpim } from "./cpim.js";
+import { buildCpim, buildCpimContent, buildImdnCpim, CPIM_CONTENT_TYPE, isCpim, parseCpim } from "./cpim.js";
 import {
   buildImdn,
   imdnBodies,
@@ -70,7 +70,7 @@ import {
   type ImdnStatus,
   type Wanted,
 } from "./imdn.js";
-import { readAttachment, type FileAttachment } from "./fthttp.js";
+import { FTHTTP_CONTENT_TYPE, readAttachment, type FileAttachment } from "./fthttp.js";
 import type { XmlParser } from "./pidf.js";
 import { addressKey } from "./uri.js";
 
@@ -135,6 +135,12 @@ export interface MessagingLink {
    * `MAX_MESSAGE_BYTES`, and then reports nothing.
    */
   send(id: string, uri: string, text: string): void;
+  /**
+   * Sends a file's XML to `uri` (ADR 0012, D7) — with `caption` beside it
+   * in a `multipart/mixed` when there is one — and reports it as `send()`
+   * does. In CPIM first; after a 415, bare.
+   */
+  sendFile(id: string, uri: string, xml: string, caption?: string): void;
   /**
    * Tells `uri` that its message `messageId`, which it dated `at`, was
    * delivered or displayed (ADR 0010). Reports nothing, and never throws.
@@ -259,6 +265,28 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
       });
     },
 
+    sendFile(id, uri, xml, caption) {
+      if (caption !== undefined && utf8Length(caption) > MAX_MESSAGE_BYTES) {
+        throw new RangeError(`caption of ${utf8Length(caption)} bytes, over ${MAX_MESSAGE_BYTES}`);
+      }
+      if (send === null) return;
+      const { contentType, body } = fileContent(xml, caption);
+      const report = (status: number | null) => send?.({ type: "sip:messageSent", id, status });
+      const key = addressKey(uri) ?? uri;
+      const bare = () => deps.sender(uri, body, contentType, report);
+      if (plainOnly.has(key)) {
+        bare();
+        return;
+      }
+      const cpim = buildCpimContent({ from: deps.self, to: uri, at: now(), messageId: id, contentType, body });
+      deps.sender(uri, cpim, CPIM_CONTENT_TYPE, (status) => {
+        if (status === 415 && send !== null) {
+          plainOnly.add(key);
+          bare();
+        } else report(status);
+      });
+    },
+
     receipt(uri, messageId, at, status) {
       const key = addressKey(uri);
       // no receipt to someone who refused CPIM: it would be refused too
@@ -362,9 +390,32 @@ export function openMessaging(deps: MessagingDeps): OpenMessaging {
   };
 }
 
+/**
+ * A file's XML as a MESSAGE body: alone, or first in a `multipart/mixed`
+ * with its caption after it — the order Linphone reads (ADR 0012, D8).
+ */
+export function fileContent(xml: string, caption?: string): { contentType: string; body: string } {
+  if (caption === undefined || caption.trim() === "") return { contentType: FTHTTP_CONTENT_TYPE, body: xml };
+  const boundary = `trix-${crypto.randomUUID()}`;
+  const body = [
+    `--${boundary}`,
+    `Content-Type: ${FTHTTP_CONTENT_TYPE}`,
+    "",
+    xml,
+    `--${boundary}`,
+    "Content-Type: text/plain;charset=UTF-8",
+    "",
+    caption,
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+  return { contentType: `multipart/mixed;boundary=${boundary}`, body };
+}
+
 /** A link that does nothing: before registration, or after `stop()`. */
 export const NO_MESSAGING: OpenMessaging = {
   send() {},
+  sendFile() {},
   receipt() {},
   receive(req) {
     req.reply(480);

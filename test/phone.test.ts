@@ -54,6 +54,7 @@ const CFG: AccountConfig = {
   flashAlert: true,
   ice: NO_ICE,
   rtt: "websocket",
+  fileStore: "",
 };
 
 /** L'identifiant du compte que `fakeStore` sème — les tests le nomment. */
@@ -377,6 +378,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       domain: null,
       ice: { stun: "stun.impose.fr", turn: null },
       rtt: "datachannel",
+      fileStore: null,
       debug: true,
       presence: true,
       messaging: true,
@@ -421,6 +423,7 @@ describe("PhoneMachine — configuration imposée par le déploiement", () => {
       domain: "example.fr",
       ice: { stun: "stun.impose.fr", turn: null },
       rtt: "datachannel",
+      fileStore: null,
       debug: true,
       presence: true,
       messaging: true,
@@ -711,6 +714,31 @@ describe("PhoneMachine — configuration", () => {
     expect(phone.context.lastError).toEqual({ key: "error.stunInvalid" });
     expect(phone.context.suspectFields).toBe("stun");
     expect(box.saved).toEqual(CFG); // rien n'a été enregistré
+  });
+
+  it("serveur de fichiers (ADR 0012, D1) : une adresse https s'enregistre, une autre est refusée", async () => {
+    const { phone, box } = await bootTo("home", CFG);
+    const form = (fileStore: string) => ({
+      proxy: CFG.proxy,
+      uri: `${CFG.username}@${CFG.domain}`,
+      displayName: CFG.displayName,
+      authUsername: null,
+      password: null,
+      stun: "",
+      turn: "",
+      turnUsername: "",
+      turnPassword: null,
+      turnTls: false,
+      rtt: "websocket" as const,
+      fileStore,
+    });
+    phone.send({ type: "ui:configure", id: phone.context.accounts[0]?.id ?? null });
+    phone.send({ type: "ui:saveConfig", form: form("ftp://files.example.fr") });
+    expect(phone.context.lastError).toEqual({ key: "error.fileStoreInvalid" });
+    expect(phone.context.suspectFields).toBe("fileStore");
+    expect(box.saved).toEqual(CFG);
+    phone.send({ type: "ui:saveConfig", form: form("https://files.example.fr/files/hft.php") });
+    expect(phone.context.accounts[0]!.fileStore).toBe("https://files.example.fr/files/hft.php");
   });
 
   it("flash d'appel entrant désactivé : persisté sans réenregistrement", async () => {

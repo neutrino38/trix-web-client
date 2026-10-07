@@ -36,6 +36,7 @@
 
 import { parseIceHost, type IceConfig, type TurnServer } from "../sip/ice.js";
 import { parseRttTransport } from "../sip/rtt.js";
+import { parseFileStore } from "../sip/ftupload.js";
 import type { AccountConfig } from "../storage/store.js";
 
 /** La page qui reçoit les liens, servie à côté d'`index.html`. */
@@ -106,6 +107,7 @@ export function encodeAccount(cfg: AccountConfig): string {
       flashAlert: cfg.flashAlert,
       ice: cfg.ice,
       rtt: cfg.rtt,
+      fileStore: cfg.fileStore,
     },
   };
   return toBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
@@ -236,6 +238,7 @@ export function decodeAccount(data: string): DecodeResult {
       flashAlert: raw.flashAlert !== false,
       ice: iceOf(raw.ice),
       rtt: parseRttTransport(raw.rtt),
+      fileStore: parseFileStore(raw.fileStore),
     },
   };
 }

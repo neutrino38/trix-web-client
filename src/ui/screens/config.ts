@@ -208,6 +208,18 @@ ${natSection}
                  value="${cfg ? esc(cfg.proxy) : ""}"${inv("proxy")}>
         </div>`
         }
+        ${
+          // imposé, ou la messagerie éteinte : rien à régler (ADR 0012, D1)
+          dep.fileStore || !dep.messaging
+            ? ""
+            : `<div class="field">
+          <label for="f-filestore">${esc(t("config.fileStore"))}</label>
+          <input id="f-filestore" name="fileStore" type="url" autocomplete="off"
+                 placeholder="${esc(t("config.fileStorePlaceholder"))}"
+                 value="${cfg ? esc(cfg.fileStore) : ""}"${inv("fileStore")}>
+          <span class="hint">${esc(t("config.fileStoreHint"))}</span>
+        </div>`
+        }
         <div class="field">
           <label for="f-uri">${esc(t("config.uri"))}</label>
           <input id="f-uri" name="uri" required autocomplete="username"
@@ -332,6 +344,8 @@ ${natSection}
       turnPassword: turnPass === "" ? null : turnPass,
       turnTls: turnTls?.checked ?? false,
       rtt: (rtt?.value as RttTransport | undefined) ?? DEFAULT_RTT_TRANSPORT,
+      // absent du formulaire (imposé, ou messagerie éteinte) : inchangé
+      ...(form.querySelector('[name="fileStore"]') ? { fileStore: v("fileStore") } : {}),
     });
     // refusée, la soumission laisse la machine où elle est : c'est ici, et
     // nulle part ailleurs, que l'écran apprend pourquoi
