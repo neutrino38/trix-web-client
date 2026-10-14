@@ -115,7 +115,8 @@ export async function fetchFile(file: FileAttachment, fetchImpl: typeof fetch = 
     const bytes = new Uint8Array(await res.arrayBuffer());
     const { kind, type } = kindOf(file, bytes.subarray(0, 4));
     set(file, { status: "ready", objectUrl: URL.createObjectURL(new Blob([bytes], { type })), kind });
-  } catch {
+  } catch (err) {
+    console.warn("[trix] fetching a received file failed", err);
     set(file, { status: "failed", httpStatus: null });
   }
 }

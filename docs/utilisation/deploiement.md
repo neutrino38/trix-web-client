@@ -26,6 +26,17 @@ Le serveur SIP n'est pas mandaté par le serveur web. L'utilisateur saisit l'URL
 son proxy dans l'écran de configuration. La directive `connect-src 'self' wss:` de la CSP
 autorise n'importe quel hôte en WebSocket sécurisé.
 
+Le serveur de fichiers de la messagerie se règle lui aussi par compte. Pour cette raison,
+`connect-src` autorise aussi `https:` : l'envoi d'un fichier et la lecture d'un fichier reçu
+passent par `fetch`. Sans cette directive, le navigateur bloque la requête avant de l'envoyer.
+L'onglet Réseau reste vide et la pièce jointe s'affiche « Non remis ». Les fichiers reçus
+sont ensuite affichés en `blob:`, d'où `blob:` dans `img-src` et `media-src`.
+
+Le serveur de fichiers est sur une autre origine, il doit donc répondre au CORS de Trix :
+`Access-Control-Allow-Origin` avec l'origine du client, `Access-Control-Allow-Headers: From,
+Authorization` pour la pré-vérification `OPTIONS`, et `Access-Control-Expose-Headers:
+WWW-Authenticate`. Sans ce dernier, Trix ne peut pas lire le challenge Digest du 401.
+
 ## Construire et installer les fichiers
 
 1. Construisez le client :

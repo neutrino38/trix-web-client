@@ -183,7 +183,10 @@ export async function uploadFile(
       if (challenge === null) return { ok: false, failure: "noDigest", status: 401 };
     }
     return failed(null);
-  } catch {
+  } catch (err) {
+    // a CSP connect-src without the store, or a store without CORS, ends
+    // here before any request shows in the network panel
+    console.warn("[trix] upload to the file store failed", err);
     return failed(null);
   }
 }
