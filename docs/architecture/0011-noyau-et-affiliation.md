@@ -428,8 +428,23 @@ contrat demande une version majeure (D10).
 
 - `test/layers.test.ts` sans exception restante. **Fait** (étape 7).
 - `examples/minimal/` construit et lancé contre un vrai serveur SIP : enregistrement, appel
-  audio + texte, transcription dans l'historique, message, changement de statut. Construit
-  (étape 8) ; **l'essai contre un vrai serveur reste à faire**.
+  audio + texte, transcription dans l'historique, message, changement de statut. **Vérifié
+  le 2026-10-14**, contre un autre Trix, avec le texte en canal de données (un appel de pair
+  à pair sans serveur de médias ne peut pas le porter en WebSocket) :
+  - enregistrement ;
+  - appel sortant et appel entrant, son et texte ;
+  - deux appels de suite ;
+  - transcription relue dans le fil Échanges ;
+  - message dans les deux sens et non-lus ;
+  - changement de statut vu en face.
+
+  L'essai a trouvé deux défauts, que les tests ne voyaient pas :
+  - L'exemple appelait `call.onStreams` avant `ready`, et la page restait blanche. Ce que
+    l'on peut appeler avant `ready` est maintenant écrit dans la façade.
+  - Surtout, `call.onStreams` ne valait que pour l'appel en cours. L'UI de Trix s'y
+    réabonne à chaque écran d'appel et ne le voyait pas. Un affilié qui s'abonne une seule
+    fois n'avait aucun son. La façade suit maintenant chaque appel, et
+    `test/trix.test.ts` le vérifie.
 - Un projet vierge, hors de ce dépôt, installe Trix par l'URL git étiquetée et construit avec
   Vite sans configuration particulière. **Vérifié le 2026-10-14**, par `git+file://` sur un
   commit plutôt que par l'URL publique, faute d'étiquette poussée. `tsc --noEmit` et

@@ -111,8 +111,10 @@ function settings(view: TrixView): Node {
   const rtt = h(
     "select",
     { name: "rtt" },
-    ...(["websocket", "datachannel", "none"] as const).map((t) =>
-      h("option", { value: t, textContent: t, selected: (a?.rtt ?? "websocket") === t }),
+    // the data channel first: without a media server between the two ends,
+    // a peer-to-peer call carries its text no other way
+    ...(["datachannel", "websocket", "none"] as const).map((t) =>
+      h("option", { value: t, textContent: t, selected: (a?.rtt ?? "datachannel") === t }),
     ),
   );
   add(
