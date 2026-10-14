@@ -84,6 +84,7 @@ The rest is in French: [docs/SPECS.md](docs/SPECS.md) (spécifications),
 [docs/DIAGRAMS.md](docs/DIAGRAMS.md) (diagrammes générés depuis le code),
 [docs/mockups/mockup.html](docs/mockups/mockup.html) (maquettes),
 [docs/utilisation/deploiement.md](docs/utilisation/deploiement.md) (déploiement),
+[docs/utilisation/affiliation.md](docs/utilisation/affiliation.md) (bâtir sa propre interface sur le noyau),
 [docs/architecture/](docs/architecture/) (décisions d'architecture, une par fichier).
 
 ## Useful commands

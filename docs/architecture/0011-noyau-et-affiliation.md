@@ -420,6 +420,11 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    `storagePrefix`, monter de version en lisant « API noyau » dans `CHANGELOG.md`. Il s'appuie
    sur `examples/minimal/` et sur l'essai d'installation en réel de la section 4 : il ne décrit
    que ce qui a été vérifié.
+   Fait le 2026-10-14. Ce qui n'a été vérifié qu'avec des faux y est dit comme tel : une
+   `Platform` hors navigateur, un bundler autre que Vite. Le guide signale aussi les pièges
+   que les essais ont révélés : ce qui ne peut pas être appelé avant `ready`, l'élément
+   `<audio>` à garder hors de la zone reconstruite, le texte en canal de données pour un appel
+   de pair à pair, et la CSP et le CORS du serveur de fichiers.
 10. **Plus tard** : le composant embarquable (D12) ; le guide gagne alors sa section.
 
 La version **1.0.0** clôt le chantier, avec l'étape 9 : à partir d'elle, une rupture du
