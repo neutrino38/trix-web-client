@@ -147,8 +147,8 @@ function applySgr(attrs: T140Attrs, ps: number): T140Attrs {
   else if (ps === 24) delete next.underline;
   else if (ps === 39) delete next.color;
   else if (ps === 49) delete next.background;
-  else if (FG[ps]) next.color = FG[ps];
-  else if (ps >= 90 && ps <= 97 && FG[ps - 60]) next.color = FG[ps - 60];
+  else if (FG[ps]) next.color = FG[ps]!;
+  else if (ps >= 90 && ps <= 97 && FG[ps - 60]) next.color = FG[ps - 60]!;
   else if (ps >= 40 && ps <= 47 && FG[ps - 10]) next.background = wash(FG[ps - 10]!);
   else if (ps >= 100 && ps <= 107 && FG[ps - 70]) next.background = wash(FG[ps - 70]!);
   // tout autre paramètre est ignoré, et le flux continue (RFC 8865 §5.2)

@@ -232,7 +232,7 @@ function notify(ctx: CallHost, fx: CallFx, message: Msg): void {
   publish("connected", ctx, fx.data);
 }
 
-function failReason(ev: { cause: string; statusCode?: number; detail?: string }): Msg {
+function failReason(ev: { cause: string; statusCode?: number | undefined; detail?: string }): Msg {
   // la cause vient de JsSIP, le code du protocole et le détail du
   // navigateur : aucun des trois ne se traduit — seul leur assemblage est
   // une phrase. Le détail n'existe que pour un échec média, et c'est lui

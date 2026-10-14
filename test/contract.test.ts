@@ -9,6 +9,11 @@
  * through properties, signatures, unions and type arguments, and every
  * named type declared under `src/` that it meets must be exported too.
  *
+ * And the sources are compiled by the affiliate's own TypeScript, with its
+ * own options (D11): the core must therefore build under the strict ones
+ * an affiliate may well have on, not only under ours. A style option such
+ * as `noPropertyAccessFromIndexSignature` is not supported.
+ *
  * Two doors are left out of the walk, on purpose: `Trix.debug` (D9, not
  * part of the contract) and the test hooks of `TrixOptions` (`store`,
  * `session`, `sip`), which hand in the core's own internals.
@@ -32,11 +37,20 @@ function memberName(prop: ts.Symbol): string | null {
   return parent && ts.isInterfaceDeclaration(parent) ? `${parent.name.text}.${prop.name}` : null;
 }
 
-function program(): { checker: ts.TypeChecker; facade: ts.SourceFile } {
+/** The options an affiliate may add to ours, and the core must build under. */
+const AFFILIATE_STRICT: ts.CompilerOptions = {
+  exactOptionalPropertyTypes: true,
+  noUnusedLocals: true,
+  noUnusedParameters: true,
+  noImplicitOverride: true,
+  noImplicitReturns: true,
+  noFallthroughCasesInSwitch: true,
+};
+
+function program(extra: ts.CompilerOptions = {}): ts.Program {
   const config = ts.readConfigFile(join(ROOT, "tsconfig.json"), ts.sys.readFile);
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT);
-  const prog = ts.createProgram([FACADE], parsed.options);
-  return { checker: prog.getTypeChecker(), facade: prog.getSourceFile(FACADE)! };
+  return ts.createProgram([FACADE], { ...parsed.options, ...extra });
 }
 
 /** Is this declaration one of Trix's own, rather than the DOM's or a package's? */
@@ -47,7 +61,9 @@ function isOwn(decl: ts.Declaration): boolean {
 
 /** The named types of `src/` the contract reaches: name → `src/file.ts, via path`. */
 function reached(): { exported: Set<string>; met: Map<string, string> } {
-  const { checker, facade } = program();
+  const prog = program();
+  const checker = prog.getTypeChecker();
+  const facade = prog.getSourceFile(FACADE)!;
   const exports = checker.getExportsOfModule(checker.getSymbolAtLocation(facade)!);
   const exported = new Set(exports.map((s) => s.name));
   const met = new Map<string, string>();
@@ -119,5 +135,18 @@ describe("the core's contract (ADR 0011, D10)", () => {
     const { exported, met } = reached();
     const missing = [...met].filter(([name]) => !exported.has(name)).map(([name, file]) => `${name} (${file})`);
     expect(missing.sort()).toEqual([]);
+  }, 30_000);
+
+  it("builds under the strict options an affiliate may have on (D11)", () => {
+    const prog = program(AFFILIATE_STRICT);
+    const errors = ts
+      .getPreEmitDiagnostics(prog)
+      .filter((d) => d.file?.fileName.startsWith(join(ROOT, "src")))
+      .map((d) => {
+        const at = d.file!.getLineAndCharacterOfPosition(d.start ?? 0);
+        const text = ts.flattenDiagnosticMessageText(d.messageText, " ");
+        return `${relative(ROOT, d.file!.fileName)}:${at.line + 1} ${text}`;
+      });
+    expect(errors).toEqual([]);
   }, 30_000);
 });

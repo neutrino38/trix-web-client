@@ -18,7 +18,6 @@ import { defineMachine, goto, loop, stay, type Fx } from "finite-state-language"
 import {
   newAccountId,
   newInstanceId,
-  type AccountConfig,
   type CallDirection,
   type CallLogEntry,
   type Contact,
@@ -1278,6 +1277,7 @@ export const PhoneMachine = defineMachine<PhoneCtx, PhoneEvent>()({
         "sys:wake": (_ev, ctx, fx) => {
           if (!ctx.online()) return stay("toujours hors ligne");
           fx.delay({ type: "sys:settled" }, SETTLE_MS);
+          return undefined;
         },
         "sys:settled": (_ev, ctx) =>
           ctx.online() ? goto("connecting", "réseau revenu") : stay("toujours hors ligne"),

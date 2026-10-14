@@ -208,7 +208,8 @@ l'autre.
 ### D10 — Le contrat, ses versions, sa preuve
 
 - Le contrat est **ce qu'exporte `src/core/index.ts`**, rien d'autre.
-- Les versions suivent semver sur ce contrat, avec les étiquettes git du dépôt (`v0.10.0`…).
+- Les versions suivent semver sur ce contrat, avec les étiquettes git du dépôt, sans préfixe
+  (`0.10.9`…), comme celles qui existent déjà.
   Avant 1.0, une version mineure peut rompre, et le dit dans `CHANGELOG.md` sous « API noyau ».
 - **Un exemple minimal** (`examples/minimal/`, quelques centaines de lignes) est une seconde UI
   écrite contre la seule façade : comptes, appel audio et texte, fil Échanges. Il est compilé par
@@ -221,7 +222,7 @@ L'affilié déclare Trix comme dépendance **par son URL git et une étiquette**
 
 ```json
 "dependencies": {
-  "trix": "git+https://github.com/neutrino38/trix-web-client.git#v0.10.0"
+  "trix": "git+https://github.com/neutrino38/trix-web-client.git#1.0.0"
 }
 ```
 
@@ -390,7 +391,27 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    vérifie que chaque langue de l'UI a son catalogue du noyau, complet, aux mêmes
    variables, repris tel quel ; `test/layers.test.ts` n'a plus d'exception.
 8. **La preuve et la distribution** (D10, D11) : `examples/minimal/`, `exports`, première
-   étiquette annoncée comme base d'affiliation.
+   étiquette annoncée comme base d'affiliation. Fait le 2026-10-14, sauf l'étiquette.
+   - `test/contract.test.ts` parcourt les exports de la façade avec le vérificateur de types.
+     Chaque type nommé de `src/` rencontré en chemin doit être exporté lui aussi. Il en
+     manquait 26 : les bulles de la conversation, `RttState`, `FileAttachment`,
+     `UploadFile`, l'issue d'un appel… Un affilié n'aurait pu les nommer qu'en important un
+     module interne. Ils sont exportés, avec `bubbleText`, `isVoiceMessage` et
+     `isExpired`. `Trix.debug` et les accès de test de `TrixOptions` (`store`, `session`,
+     `sip`) restent hors du parcours, puisqu'ils sont hors contrat.
+   - `examples/minimal/` est une seconde UI, sans framework, qui importe `trix/core` et
+     rien d'autre ; `test/layers.test.ts` le vérifie. Grâce au champ `exports`, le paquet
+     s'importe lui-même par son nom, comme chez un affilié : ni `tsc` ni Vite n'ont besoin
+     d'alias. `npm run build` la construit dans son propre `dist/`, que `deploy.sh`
+     n'envoie jamais, et `npm run example` la sert.
+   - `CHANGELOG.md` commence, avec sa rubrique « API noyau ».
+   - Les sources sont compilées par le TypeScript de l'affilié, **avec ses options** (D11).
+     L'essai en réel l'a montré : sous `exactOptionalPropertyTypes` ou `noUnusedLocals`,
+     le noyau ne compilait pas. Il compile maintenant, et `test/contract.test.ts` le
+     vérifie sous ces options et quatre autres options strictes. Les options de pur style,
+     comme `noPropertyAccessFromIndexSignature`, ne sont pas prises en charge.
+   - Les étiquettes restent sans préfixe, comme les existantes. La base d'affiliation sera
+     la **1.0.0**, posée à la fin de l'étape 9 : le contrat sera alors prouvé et documenté.
 9. **Le guide d'affiliation** : `docs/utilisation/affiliation.md`, écrit pour celui qui démarre
    un projet affilié sans connaître le dépôt — déclarer la dépendance git étiquetée et régler
    son bundler, appeler `createTrix` et lire la `TrixView`, afficher les flux et les messages
@@ -400,16 +421,25 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    que ce qui a été vérifié.
 10. **Plus tard** : le composant embarquable (D12) ; le guide gagne alors sa section.
 
+La version **1.0.0** clôt le chantier, avec l'étape 9 : à partir d'elle, une rupture du
+contrat demande une version majeure (D10).
+
 ## 4. Validation
 
-- `test/layers.test.ts` sans exception restante.
+- `test/layers.test.ts` sans exception restante. **Fait** (étape 7).
 - `examples/minimal/` construit et lancé contre un vrai serveur SIP : enregistrement, appel
-  audio + texte, transcription dans l'historique, message, changement de statut.
+  audio + texte, transcription dans l'historique, message, changement de statut. Construit
+  (étape 8) ; **l'essai contre un vrai serveur reste à faire**.
 - Un projet vierge, hors de ce dépôt, installe Trix par l'URL git étiquetée et construit avec
-  Vite sans configuration particulière — **à vérifier en réel** : la compilation des sources
-  TypeScript d'une dépendance par le pré-bundling de Vite est l'hypothèse de D11.
+  Vite sans configuration particulière. **Vérifié le 2026-10-14**, par `git+file://` sur un
+  commit plutôt que par l'URL publique, faute d'étiquette poussée. `tsc --noEmit` et
+  `vite build` passent sans alias. En développement, le pré-bundling de Vite compile les
+  sources TypeScript de la dépendance (`node_modules/.vite/deps/trix_core.js`) : l'hypothèse
+  de D11 tient. L'installation par git prend tout le dépôt (docs, tests), faute de champ
+  `files`. C'est sans effet sur le bundle, et c'est laissé tel quel.
 - Deux `createTrix` avec des `storagePrefix` différents dans la même page : deux comptes, deux
-  enregistrements, aucune donnée partagée.
+  enregistrements, aucune donnée partagée. Couvert avec des faux par `test/trix.test.ts`
+  (« keeps two instances apart ») ; **l'essai avec deux vrais comptes reste à faire**.
 
 ## 5. Questions ouvertes
 

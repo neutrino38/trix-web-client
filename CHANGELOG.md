@@ -26,6 +26,10 @@ la fin du chantier d'affiliation (ADR 0011, étape 9).
   - **autres** : `ThreadCall`, `IceConfig`, `TurnServer`, `Sink`.
 - Trois fonctions pures sont maintenant exportées : `bubbleText` (le texte d'une bulle),
   `isVoiceMessage` et `isExpired` (pour une pièce jointe).
+- Le noyau compile maintenant sous les options strictes qu'un affilié peut activer :
+  `exactOptionalPropertyTypes`, `noUnusedLocals`, `noUnusedParameters`,
+  `noImplicitOverride`, `noImplicitReturns` et `noFallthroughCasesInSwitch`. Les options de
+  pur style, comme `noPropertyAccessFromIndexSignature`, ne sont pas prises en charge.
 - `examples/minimal/` est une seconde interface qui n'utilise que `trix/core` : comptes, appel
   audio avec texte en temps réel, fil Échanges, messages et statut. Elle se lance avec
   `npm run example`.

@@ -58,7 +58,7 @@ export type SipEvent =
   | {
       type: "sip:registrationFailed";
       cause: string;
-      statusCode?: number;
+      statusCode?: number | undefined;
       /**
        * Le registrar a défié en SHA-256 (RFC 8760) et le compte n'a pas
        * d'empreinte pour cet algorithme-là : le défi est resté sans
@@ -180,7 +180,7 @@ export type CallSipEvent =
   | { type: "sip:progress"; media: CallMedia }
   | { type: "sip:accepted" }
   | { type: "sip:confirmed" }
-  | { type: "sip:ended"; cause: string; originator?: SipOriginator }
+  | { type: "sip:ended"; cause: string; originator?: SipOriginator | undefined }
   /**
    * Fin de session avant établissement. `detail` porte ce que le
    * navigateur a dit quand l'échec vient du média (`sip/mediaerror.ts`) :
@@ -190,8 +190,8 @@ export type CallSipEvent =
   | {
       type: "sip:failed";
       cause: string;
-      statusCode?: number;
-      originator?: SipOriginator;
+      statusCode?: number | undefined;
+      originator?: SipOriginator | undefined;
       detail?: string;
     }
   /**
@@ -211,7 +211,7 @@ export type CallSipEvent =
   | {
       type: "sip:mediaRefused";
       by: "remote" | "local";
-      statusCode?: number;
+      statusCode?: number | undefined;
       /**
        * Le refus porte sur le **partage d'écran** et non sur un média de
        * l'appel (ADR 0005, D3) : ce n'est pas la même phrase à l'écran, et
