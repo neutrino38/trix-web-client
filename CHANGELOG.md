@@ -4,11 +4,15 @@ Ce journal suit ce qui change pour **les projets affiliés** (ADR 0011). La rubr
 « API noyau » de chaque version décrit les changements de ce qu'exporte `trix/core`
 (`src/core/index.ts`), qui est le contrat. Le reste du dépôt est interne.
 
-Les versions suivent semver sur ce contrat. Avant 1.0.0, une version mineure peut le rompre ;
-elle le signale alors ici, sous « API noyau », par la mention **Rupture**. La 1.0.0 viendra à
-la fin du chantier d'affiliation (ADR 0011, étape 9).
+Les versions suivent semver sur ce contrat. À partir de la 1.0.0, une version mineure ajoute
+au contrat sans le rompre ; seule une version majeure le rompt, et le signale ici, sous
+« API noyau », par la mention **Rupture**.
 
-## Non publiée
+## 1.0.0 — 2026-10-14
+
+La base d'affiliation : le contrat est vérifié par les tests, éprouvé par une seconde
+interface (`examples/minimal/`) contre un vrai serveur, et décrit par le guide
+[`docs/utilisation/affiliation.md`](docs/utilisation/affiliation.md).
 
 ### API noyau
 
@@ -37,7 +41,8 @@ la fin du chantier d'affiliation (ADR 0011, étape 9).
   avant `ready`. L'écouteur est aussi prévenu quand un appel commence ou se termine.
 - `examples/minimal/` est une seconde interface qui n'utilise que `trix/core` : comptes, appel
   audio avec texte en temps réel, fil Échanges, messages et statut. Elle se lance avec
-  `npm run example`.
+  `npm run example`. Avec `?double`, deux instances tournent dans la même page.
+- Le guide d'affiliation : `docs/utilisation/affiliation.md`.
 
 ## 0.10.9 — 2026-10-14
 

@@ -1,7 +1,7 @@
 {
   "name": "trix",
   "private": true,
-  "version": "0.10.9",
+  "version": "1.0.0",
   "type": "module",
   "exports": {
     "./core": "./src/core/index.ts"
