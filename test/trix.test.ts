@@ -8,7 +8,7 @@ import { createTrix, type Platform, type Trix, type TrixView } from "../src/core
 import type { PageSleepReason } from "../src/core/platform.js";
 import { OPEN_DEPLOYMENT, type Deployment } from "../src/deployment.js";
 import { NO_MESSAGING } from "../src/sip/message.js";
-import type { SipEvent, SipPort } from "../src/sip/port.js";
+import type { CallSession, CallSipEvent, SipEvent, SipPort } from "../src/sip/port.js";
 import { NO_PRESENCE } from "../src/sip/presence.js";
 import { DEFAULT_STATUS, type SessionStore, type StatusPrefs } from "../src/storage/session.js";
 import type { SecureStore, StoredAccount, Vault } from "../src/storage/store.js";
@@ -73,9 +73,28 @@ function fakeSession(): SessionStore & { prefs: Map<string, StatusPrefs> } {
   };
 }
 
+/** A call's session that only keeps its stream listeners, for the test to fire. */
+function fakeCallSession(): CallSession & { fire(): void; listening(): number } {
+  const listeners = new Set<() => void>();
+  const own = {
+    onStreams(l: () => void) {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    streams: () => ({ remote: null, local: null, share: null }),
+    fire: () => listeners.forEach((l) => l()),
+    listening: () => listeners.size,
+  };
+  // everything else the call machine may ask: done, and nothing to say
+  return new Proxy(own, {
+    get: (target, key) => (key in target ? target[key as keyof typeof target] : () => null),
+  }) as unknown as CallSession & { fire(): void; listening(): number };
+}
+
 class FakeSip implements SipPort {
   send: (ev: SipEvent) => void = () => {};
   stopped = 0;
+  calls: { session: ReturnType<typeof fakeCallSession>; send: (ev: CallSipEvent) => void }[] = [];
   start(_cfg: StoredAccount, send: (ev: SipEvent) => void) {
     this.send = send;
     return {
@@ -85,8 +104,10 @@ class FakeSip implements SipPort {
       presence: () => NO_PRESENCE,
       messaging: () => NO_MESSAGING,
       refresh: () => true,
-      call: () => {
-        throw new Error("no call in these tests");
+      call: (_target: string, _media: unknown, send: (ev: CallSipEvent) => void) => {
+        const session = fakeCallSession();
+        this.calls.push({ session, send });
+        return session;
       },
     };
   }
@@ -289,6 +310,30 @@ describe("createTrix", () => {
     expect(b.trix.view()!.presence.prefs.chosen).toBe("available");
     expect(b.trix.view()!.registration).toBe("off");
     expect(b.sip.stopped).toBe(0);
+  });
+
+  it("tells a stream listener of every call, subscribed once before any (D4)", async () => {
+    const { trix, sip } = make();
+    let heard = 0;
+    // before ready, as an affiliate wiring its page would
+    trix.call.onStreams(() => heard++);
+    await registered(trix, sip);
+    const media = { audio: true, video: false, text: false };
+
+    for (const round of [0, 1]) {
+      trix.call.dial("bob@example.fr", media);
+      await vi.waitFor(() => expect(sip.calls).toHaveLength(round + 1));
+      const call = sip.calls[round]!;
+      await vi.waitFor(() => expect(call.session.listening()).toBe(1));
+      const before = heard;
+      call.session.fire();
+      expect(heard).toBe(before + 1);
+      call.send({ type: "sip:failed", cause: "Busy", statusCode: 486 });
+      await vi.waitFor(() => expect(trix.view()?.call).toBeNull());
+      // the call's end is a change of streams too, and its session is let go
+      expect(heard).toBeGreaterThan(before + 1);
+      expect(call.session.listening()).toBe(0);
+    }
   });
 
   it("disposes: unregisters, lets go of the platform, and notifies no more", async () => {

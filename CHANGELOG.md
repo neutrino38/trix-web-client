@@ -30,6 +30,11 @@ la fin du chantier d'affiliation (ADR 0011, étape 9).
   `exactOptionalPropertyTypes`, `noUnusedLocals`, `noUnusedParameters`,
   `noImplicitOverride`, `noImplicitReturns` et `noFallthroughCasesInSwitch`. Les options de
   pur style, comme `noPropertyAccessFromIndexSignature`, ne sont pas prises en charge.
+- **Correction** : `call.onStreams` suit maintenant tous les appels. Avant, l'écouteur
+  s'accrochait à la session de l'appel en cours : posé hors appel, il était ignoré sans
+  message, et posé pendant un appel, il disparaissait avec lui. Un affilié qui s'abonnait une
+  seule fois n'entendait donc pas les appels suivants. On s'abonne maintenant une fois, même
+  avant `ready`. L'écouteur est aussi prévenu quand un appel commence ou se termine.
 - `examples/minimal/` est une seconde interface qui n'utilise que `trix/core` : comptes, appel
   audio avec texte en temps réel, fil Échanges, messages et statut. Elle se lance avec
   `npm run example`.

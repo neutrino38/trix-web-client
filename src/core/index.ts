@@ -26,7 +26,14 @@ import { linkMessaging } from "../machines/messagingsignals.js";
 import { PhoneMachine, editedAccount, type PhoneInstance } from "../machines/phone.js";
 import { PresenceMachine } from "../machines/presence.js";
 import { linkPresence } from "../machines/presencesignals.js";
-import { createJsSipPort, type CallMedia, type CallStreams, type MediaKind, type SipPort } from "../sip/port.js";
+import {
+  createJsSipPort,
+  type CallMedia,
+  type CallSession,
+  type CallStreams,
+  type MediaKind,
+  type SipPort,
+} from "../sip/port.js";
 import type { MediaStats } from "../sip/stats.js";
 import { createSipTrace, type SipTrace } from "../sip/trace.js";
 import { shareUrl } from "../share/link.js";
@@ -116,9 +123,9 @@ export interface TrixOptions {
 export interface Trix {
   /**
    * The deployment read and the machines started. The vault is read after:
-   * see `view.phase`. Until it resolves, every command throws, and so do
-   * `call.onStreams` and `conversation.subscribe`; only `view()`,
-   * `subscribe` and `system.onSleep` may be called before.
+   * see `view.phase`. Until it resolves, every command throws, and so does
+   * `conversation.subscribe`; only `view()`, `subscribe`, `call.onStreams`
+   * and `system.onSleep` may be called before.
    */
   readonly ready: Promise<void>;
   /**
@@ -174,7 +181,11 @@ export interface Trix {
     dtmf(tone: string): void;
     /** The call's media, for the UI to set as `srcObject` (D4); all `null` out of a call. */
     streams(): CallStreams;
-    /** Tracks added, a share started or stopped. Returns what unsubscribes. */
+    /**
+     * Tracks added, a share started or stopped, a call begun or ended.
+     * Subscribe once: the listener follows every call. Returns what
+     * unsubscribes.
+     */
     onStreams(listener: () => void): () => void;
     /** The last ten seconds of media, `null` when nothing is measured or the trace is off. */
     stats(): MediaStats | null;
@@ -261,6 +272,10 @@ export function createTrix(options: TrixOptions = {}): Trix {
   let disposed = false;
   const listeners = new Set<(view: TrixView) => void>();
   const sleepers = new Set<(reason: PageSleepReason) => void>();
+  const streamListeners = new Set<() => void>();
+  const streamsChanged = (): void => {
+    for (const l of [...streamListeners]) l();
+  };
 
   const locale = options.locale ?? "fr";
 
@@ -378,6 +393,28 @@ export function createTrix(options: TrixOptions = {}): Trix {
       }),
     );
 
+    // A listener of `onStreams` is the facade's, not a call's: each call's
+    // session forgets its own when it ends, and none exists between calls.
+    // So the facade's listeners follow the session — bound to each new one,
+    // and told at once, since its streams may already be there (early media)
+    // and the previous call's are gone. Read a microtask after the
+    // transition, as the view is: `enter()` writes the session after it.
+    let streamSession: CallSession | null = null;
+    let unbindStreams = (): void => {};
+    const followStreams = (): void => {
+      if (disposed) return;
+      const current = phone.context.session;
+      if (current === streamSession) return;
+      unbindStreams();
+      streamSession = current;
+      unbindStreams = current ? current.onStreams(streamsChanged) : () => {};
+      streamsChanged();
+    };
+    stops.push(
+      phone.subscribe(() => queueMicrotask(followStreams)),
+      () => unbindStreams(),
+    );
+
     // Sleeps and returns of the page (ADR 0006, D3 and D5): all unregister,
     // every return registers again. The UI hears the sleep first.
     stops.push(
@@ -457,7 +494,10 @@ export function createTrix(options: TrixOptions = {}): Trix {
       toggleSelfView: () => phone({ type: "ui:toggleSelfView" }),
       dtmf: (tone) => phone({ type: "ui:dtmf", tone }),
       streams: () => core?.phone.context.session?.streams() ?? noStreams,
-      onStreams: (listener) => live().phone.context.session?.onStreams(listener) ?? (() => {}),
+      onStreams: (listener) => {
+        streamListeners.add(listener);
+        return () => streamListeners.delete(listener);
+      },
       stats: () => core?.phone.context.session?.mediaStats() ?? null,
       clearHistory: (key) => phone(key === undefined ? { type: "ui:clearHistory" } : { type: "ui:clearHistory", key }),
     },
