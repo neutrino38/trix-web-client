@@ -114,7 +114,12 @@ export interface TrixOptions {
 }
 
 export interface Trix {
-  /** The deployment read and the machines started. The vault is read after: see `view.phase`. */
+  /**
+   * The deployment read and the machines started. The vault is read after:
+   * see `view.phase`. Until it resolves, every command throws, and so do
+   * `call.onStreams` and `conversation.subscribe`; only `view()`,
+   * `subscribe` and `system.onSleep` may be called before.
+   */
   readonly ready: Promise<void>;
   /**
    * The snapshot as things stand, `null` before `ready`. Read right after a

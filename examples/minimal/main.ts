@@ -328,11 +328,12 @@ function render(): void {
   }
 }
 
+// the commands, onStreams included, wait for the core to be ready
+await trix.ready;
+
 // the call's sound: a stream, set on an element this page owns (D4)
 trix.call.onStreams(() => {
   remote.srcObject = trix.call.streams().remote;
 });
-
-await trix.ready;
 trix.subscribe(render);
 render();
