@@ -14,12 +14,13 @@
       .muted { color: gray; }
       .bubble.us { text-align: right; }
       textarea { width: 100%; }
+      /* ?double: two instances side by side, stacked on a narrow screen */
+      body:has(#app.double) { max-width: 80rem; }
+      .double { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 2rem; }
     </style>
   </head>
   <body>
     <div id="app"></div>
-    <!-- outside #app: rebuilding the screen must not cut the call's sound -->
-    <audio id="remote" autoplay></audio>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
