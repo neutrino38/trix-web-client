@@ -391,7 +391,8 @@ Chaque étape laisse l'application fonctionnelle et la suite de tests verte.
    vérifie que chaque langue de l'UI a son catalogue du noyau, complet, aux mêmes
    variables, repris tel quel ; `test/layers.test.ts` n'a plus d'exception.
 8. **La preuve et la distribution** (D10, D11) : `examples/minimal/`, `exports`, première
-   étiquette annoncée comme base d'affiliation. Fait le 2026-10-14, sauf l'étiquette.
+   étiquette annoncée comme base d'affiliation. Fait le 2026-10-14, sauf l'étiquette ; les
+   quatre validations de la section 4 sont passées.
    - `test/contract.test.ts` parcourt les exports de la façade avec le vérificateur de types.
      Chaque type nommé de `src/` rencontré en chemin doit être exporté lui aussi. Il en
      manquait 26 : les bulles de la conversation, `RttState`, `FileAttachment`,
@@ -454,7 +455,15 @@ contrat demande une version majeure (D10).
   `files`. C'est sans effet sur le bundle, et c'est laissé tel quel.
 - Deux `createTrix` avec des `storagePrefix` différents dans la même page : deux comptes, deux
   enregistrements, aucune donnée partagée. Couvert avec des faux par `test/trix.test.ts`
-  (« keeps two instances apart ») ; **l'essai avec deux vrais comptes reste à faire**.
+  (« keeps two instances apart »). **Vérifié le 2026-10-14** avec deux vrais comptes, par
+  `examples/minimal/?double` (préfixes `minimal-a` et `minimal-b`) :
+  - deux enregistrements simultanés ;
+  - un appel de l'une à l'autre dans la même page ;
+  - des statuts indépendants ;
+  - deux bases IndexedDB distinctes.
+
+  Deux onglets ne valaient pas cet essai : chacun a son propre JsSIP et ses propres modules,
+  alors que dans une page, le correctif SHA-256 de JsSIP et ses objets globaux sont partagés.
 
 ## 5. Questions ouvertes
 
