@@ -234,7 +234,17 @@ function thread(view: TrixView, t: Thread): Node {
         ),
       ),
       ...t.calls.map(({ entry }) =>
-        h("li", { className: "muted", textContent: `Appel ${entry.direction} : ${entry.outcome}` }),
+        h(
+          "li",
+          { className: "muted" },
+          `Appel ${entry.direction} : ${entry.outcome}`,
+          // what was written during the call, kept with it in the history
+          ...(entry.chat ?? []).map((item) =>
+            item.kind === "bubble"
+              ? h("div", { className: `bubble ${item.side}`, textContent: bubbleText(item) })
+              : null,
+          ),
+        ),
       ),
     ),
     !t.blocked &&
