@@ -6,7 +6,7 @@
  */
 
 import { formatNumber, t } from "../i18n/index.js";
-import { isExpired, isVoiceMessage, type FileAttachment } from "../sip/fthttp.js";
+import { isExpired, isVoiceMessage, type FileAttachment } from "../core/index.js";
 import type { MessageEntry } from "../storage/store.js";
 import { esc } from "./el.js";
 import { fileState, wantsAutoFetch, type FileState } from "./filefetch.js";

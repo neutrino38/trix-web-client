@@ -3,12 +3,16 @@
   "private": true,
   "version": "0.10.9",
   "type": "module",
+  "exports": {
+    "./core": "./src/core/index.ts"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite build --config examples/minimal/vite.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
-    "diagrams": "UPDATE_DIAGRAMS=1 vitest run test/diagrams.test.ts"
+    "diagrams": "UPDATE_DIAGRAMS=1 vitest run test/diagrams.test.ts",
+    "example": "vite --config examples/minimal/vite.config.ts"
   },
   "dependencies": {
     "finite-state-language": "^0.2.0",

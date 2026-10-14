@@ -19,7 +19,7 @@
  * file arriving.
  */
 
-import { isVoiceMessage, type FileAttachment } from "../sip/fthttp.js";
+import { isVoiceMessage, type FileAttachment } from "../core/index.js";
 
 /** Linphone downloads by itself below this (`auto_download_incoming_files_max_size`, desktop). */
 export const AUTO_FETCH_MAX = 10 * 1024 * 1024;

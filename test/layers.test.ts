@@ -30,6 +30,10 @@
  * commands, never a machine. It imports nothing from `machines/` — not even
  * a type, which the facade re-exports.
  *
+ * The minimal example (`examples/minimal/`) is the contract's proof (D10):
+ * it imports `trix/core` and nothing else — no internal module, by path or
+ * otherwise. Its build configuration is not part of it.
+ *
  * Known violations are listed in `KNOWN`, each with the decision that will
  * remove it. The list must match exactly: a new violation fails, and so does
  * an entry that no longer occurs — fixing one means crossing it off here.
@@ -192,6 +196,33 @@ function importsOf(file: string, source: string): string[] {
   return [...found].sort();
 }
 
+/** Every module specifier a file names, statically, dynamically or as a type. */
+function specifiersOf(file: string, source: string): string[] {
+  const found = new Set<string>();
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const visit = (node: ts.Node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
+      if (ts.isStringLiteral(node.moduleSpecifier)) found.add(node.moduleSpecifier.text);
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments[0] &&
+      ts.isStringLiteral(node.arguments[0])
+    ) {
+      found.add(node.arguments[0].text);
+    } else if (
+      ts.isImportTypeNode(node) &&
+      ts.isLiteralTypeNode(node.argument) &&
+      ts.isStringLiteral(node.argument.literal)
+    ) {
+      found.add(node.argument.literal.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return [...found].sort();
+}
+
 /** Every `.ts` file under `src/`, repo-relative. */
 function sources(dir = join(ROOT, "src")): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -245,6 +276,16 @@ describe("layers (ADR 0011, D1)", () => {
       );
       if (machines.length) actual[file] = machines;
     }
+    expect(actual).toEqual({});
+  });
+
+  it("the minimal example imports trix/core and nothing else (D10)", () => {
+    const actual: Record<string, string[]> = {};
+    for (const file of sources(join(ROOT, "examples")).filter((f) => !f.endsWith("vite.config.ts"))) {
+      const other = specifiersOf(file, readFileSync(join(ROOT, file), "utf8")).filter((s) => s !== "trix/core");
+      if (other.length) actual[file] = other;
+    }
+    expect(sources(join(ROOT, "examples")).length).toBeGreaterThan(1);
     expect(actual).toEqual({});
   });
 
